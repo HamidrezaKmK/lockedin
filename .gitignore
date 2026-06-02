@@ -216,3 +216,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# lockedin: all per-user content (PDFs, reports, credentials) lives here
+data/
+
+.claude/*

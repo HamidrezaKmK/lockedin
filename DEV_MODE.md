@@ -1,0 +1,65 @@
+# DEV MODE — Claude as your research-report assistant (no server)
+
+Run `./claude_scientist.sh` to launch Claude Code as your report assistant: it manages your
+reports directly on disk — summarize new papers, write and edit report pages, reorganize
+bubbles, answer questions about your library — the same job as the in-app chat sidebar, but
+through the CLI, using your Claude subscription (no API keys, no rate-limited token path).
+
+The plain `claude` command is **not** repurposed — `claude_scientist.sh` injects the role for
+that one session via `--append-system-prompt`.
+
+## Setup (once)
+
+```bash
+cp .env.example .env          # then edit: DEV_USERNAME / DEV_PASSWORD = your lockedin account
+```
+
+`.env` is git-ignored. Then:
+
+```bash
+./claude_scientist.sh                 # interactive — authenticates, then greets with your bubbles
+./claude_scientist.sh "summarize the new FLIPD paper into my diffusion report"   # one-shot kickoff
+```
+
+The script verifies your `.env` credentials (via `uv run lockedin devmode`) before launching and
+exits if they don't match.
+
+---
+
+## Your role (read this if you are the agent)
+
+When the user asks you to work on **their reports** (not the lockedin codebase), you are their
+research-report assistant for the account in `.env`. Do this:
+
+1. **Authenticate & locate.** Run `uv run lockedin devmode`. It loads `.env`, checks the
+   password, and prints the workspace path + the user's bubbles and page counts. **If it fails,
+   stop** and tell the user — do not read or edit anything under `data/users/`.
+
+2. **Work only inside** `data/users/<DEV_USERNAME>/`. Never touch other users' folders or
+   `data/users/accounts.yaml`.
+
+3. **The Markdown is the report.** Edit the `.md` files directly — that's the deliverable.
+
+### What you can do for the user
+
+- **Summarize a new paper into a report** — read `ASSETS/<pdf_id>/summary.md` (and `text.txt`
+  for detail; skip the big `paper.pdf`) and weave it into the relevant page.
+- **Edit / rewrite a page** — `REPORTS/<bubble-slug>/pages/<page-slug>.md`.
+- **Add a page** — create `pages/<new-slug>.md` (start with `# Title`) **and** append
+  `{page_slug: <new-slug>, title: <Title>}` to that bubble's `pages.yaml`.
+- **Add a bubble** — make `REPORTS/<slug>/pages.yaml` (`home: overview`, one `overview` page) +
+  `pages/overview.md`, then add the slug to `bubbles.yaml` with `approved: true`.
+- **Answer questions** grounded in the user's PDFs/pages; say so when you're unsure rather than
+  inventing citations.
+- **Re-sync** — if the user also runs lockedin elsewhere, `rsync` their
+  `data/users/<DEV_USERNAME>/` down before editing and back up after; there's no built-in sync.
+
+### Formatting rules (match the app)
+
+- Math uses `$…$` (inline) and `$$…$$` (display) only — never `\( \)` or `\[ \]`.
+- Internal links: `[[page-slug]]` or `[[Exact Page Title]]` (titles resolve to slugs on save).
+- Output is clean report prose a reader sees — no XML tags, no "I changed…" changelog lines.
+- `data/` is git-ignored: never commit the user's content or `.env`.
+
+After structural edits, run `uv run lockedin devmode` again to re-print the bubble/page list as
+a sanity check.
