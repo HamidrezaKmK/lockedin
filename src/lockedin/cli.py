@@ -84,5 +84,28 @@ def devmode():
         typer.echo("    (none yet)")
 
 
+@app.command()
+def slackbot():
+    """Run the Slack bot (socket mode). Reads tokens from .env. Users authenticate on first contact."""
+    import os
+
+    from dotenv import load_dotenv
+
+    from . import paths
+
+    load_dotenv(paths.base_root() / ".env")  # must happen before slackbot module is imported
+
+    from .slackbot import run
+
+    bot_token = os.environ.get("SLACK_BOT_TOKEN", "")
+    app_token = os.environ.get("SLACK_APP_TOKEN", "")
+    if not bot_token or not app_token:
+        typer.secho("Set SLACK_BOT_TOKEN and SLACK_APP_TOKEN in your .env file.", fg="red")
+        raise typer.Exit(1)
+
+    typer.secho("Starting lockedin Slack bot …", fg="cyan")
+    run(slack_bot_token=bot_token, slack_app_token=app_token)
+
+
 if __name__ == "__main__":
     app()

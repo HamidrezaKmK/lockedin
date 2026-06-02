@@ -16,6 +16,8 @@ dependencies = [
     "typer",
     "google-genai",           # Gemini via Google GenAI SDK
     "python-dotenv",          # load DEV_USERNAME/DEV_PASSWORD from .env in DEV mode
+    "slack-bolt",             # Slack bot (socket mode)
+    "httpx",                  # HTTP client used by slackbot to call lockedin API
 ]
 
 [project.scripts]

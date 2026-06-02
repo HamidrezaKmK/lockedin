@@ -1,9 +1,9 @@
-"""Live integration test: a realistic editing interaction driven by the real qwen model.
+"""Live integration test: a realistic read-only chat driven by the real qwen model.
 
-Unlike test_editing_logic (canned model), this exercises the *actual* model end-to-end to catch
-prompt-level regressions — e.g. the model copying ``## [Overview]`` into a section edit and
-duplicating the page. qwen is non-deterministic, so we assert structural INVARIANTS that must
-hold for any sane output, retrying a couple of times to ride out connection blips / off turns.
+Unlike test_editing_logic (canned model), this exercises the *actual* model end-to-end. The chat
+is READ-ONLY (no editing), so we assert the invariants that must hold for any sane output:
+the chat never mutates a page, and no raw ``<EDIT>``/``<NEWPAGE>`` tags leak into the displayed
+reply. qwen is non-deterministic, so we retry a couple of times to ride out blips / off turns.
 
 Skipped automatically when Ollama/qwen is unreachable or the diffusion PDFs aren't present
 locally (run ``uv run python -m tests.setup_unittest_user`` to provision them).
@@ -12,7 +12,6 @@ Run: ``uv run python -m unittest tests.test_live_qwen -v``
 """
 from __future__ import annotations
 
-import re
 import tempfile
 import time
 import unittest
@@ -39,7 +38,7 @@ RAW_TAGS = ("<EDIT", "</EDIT", "<NEWPAGE", "</NEWPAGE")
 
 
 @unittest.skipIf(_SKIP, _SKIP_REASON)
-class LiveQwenEditing(unittest.TestCase):
+class LiveQwenChat(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self.home = Path(self._tmp.name)
@@ -74,41 +73,25 @@ class LiveQwenEditing(unittest.TestCase):
         for tag in RAW_TAGS:
             self.assertNotIn(tag, text, f"raw tag {tag} leaked into saved content:\n{text}")
 
-    def test_dedupe_does_not_duplicate_the_page(self):
-        # Try a few phrasings until the model proposes an edit; then check the invariant.
-        for prompt in ("Edit the overview so each page is linked only once.",
-                       "The Key Papers links are duplicated — remove the duplicates.",
-                       "Dedupe the links in the overview."):
-            done = self._chat(prompt)
-            ep = done.get("edit_proposal")
-            self._assert_no_raw_tags(done.get("chat_text", ""))
-            if not ep:
-                continue
-            # Apply the proposal exactly as Accept would, then check the saved page.
-            write_overview(self.home, ep["content"])
-            saved = read_overview(self.home)
-            self._assert_no_raw_tags(saved)
-            self.assertEqual(saved.count("# Diffusion Models"), 1,
-                             f"page title duplicated — the append bug is back:\n{saved}")
-            # every wikilink resolves to a real page slug after normalization-on-save
-            with paths.use_root(self.home):
-                slugs = {p["page_slug"] for p in bubbles.list_pages(DIFFUSION_BUBBLE)}
-            for tgt in re.findall(r"\[\[([^\]]+)\]\]", saved):
-                self.assertIn(tgt, slugs, f"dead link [[{tgt}]] in saved overview")
-            return
-        self.skipTest("qwen never proposed an edit across phrasings (model off turn)")
+    def test_chat_answers_without_raw_tags(self):
+        # A normal content question should get a non-empty reply with no leaked edit tags.
+        done = self._chat("Briefly, what problem do these papers address?")
+        text = done.get("chat_text", "")
+        self.assertTrue(text.strip(), "qwen returned an empty reply")
+        self._assert_no_raw_tags(text)
 
-    def test_new_pages_are_not_created_during_chat(self):
-        # Regardless of what the model proposes, chat must not create pages itself.
+    def test_chat_never_mutates_pages(self):
+        # Even when asked to edit, the read-only chat must not change or create any page.
         with paths.use_root(self.home):
-            before = {p["page_slug"] for p in bubbles.list_pages(DIFFUSION_BUBBLE)}
-        done = self._chat("Create a dedicated page for each of the two papers.")
+            before_pages = {p["page_slug"] for p in bubbles.list_pages(DIFFUSION_BUBBLE)}
+        before_overview = read_overview(self.home)
+        done = self._chat("Rewrite the overview and add a new page for each paper.")
         self._assert_no_raw_tags(done.get("chat_text", ""))
         with paths.use_root(self.home):
-            after = {p["page_slug"] for p in bubbles.list_pages(DIFFUSION_BUBBLE)}
-        self.assertEqual(before, after, "chat created pages without per-page confirmation")
-        for p in (done.get("new_page_proposals") or []):
-            self._assert_no_raw_tags(p["content"])
+            after_pages = {p["page_slug"] for p in bubbles.list_pages(DIFFUSION_BUBBLE)}
+        self.assertEqual(before_pages, after_pages, "chat created/removed pages — it must be read-only")
+        self.assertEqual(before_overview, read_overview(self.home),
+                         "chat mutated the overview — it must be read-only")
 
 
 if __name__ == "__main__":

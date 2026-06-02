@@ -28,8 +28,11 @@
   body.light .toastui-editor-defaultUI{filter:invert(1) hue-rotate(180deg)}
   body.light .toastui-editor-defaultUI img{filter:invert(1) hue-rotate(180deg)}
   *{box-sizing:border-box}
+  html,body{height:100%}
   body{margin:0;font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-       background:var(--bg);color:var(--ink)}
+       background:var(--bg);color:var(--ink);overflow:hidden;overflow:clip}
+  /* Auth screen can scroll internally on very short viewports (body itself never scrolls) */
+  #auth{overflow-y:auto}
   button{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--panel2);
          color:var(--ink);border-radius:8px;padding:7px 12px}
   button:hover{border-color:var(--accent)}
@@ -58,13 +61,21 @@
   .err{color:var(--bad);min-height:18px;font-size:13px}
 
   /* shell */
-  #app{display:none;min-height:100vh;grid-template-rows:auto 1fr;grid-template-columns:220px 1fr;
+  #app{display:none;height:100vh;overflow:hidden;overflow:clip;grid-template-rows:auto 1fr;
+       grid-template-columns:220px minmax(0,1fr);
        grid-template-areas:"top top" "side main"}
   #topbar{grid-area:top;display:flex;align-items:center;gap:14px;padding:10px 16px;
-          border-bottom:1px solid var(--line);background:var(--panel)}
-  #side{grid-area:side;border-right:1px solid var(--line);background:var(--panel);padding:14px 10px}
-  #main{grid-area:main;padding:18px 22px;overflow:auto;height:calc(100vh - 53px);box-sizing:border-box}
-  #main.detailmode{overflow:hidden;display:flex;flex-direction:column;padding-bottom:0}
+          border-bottom:1px solid var(--line);background:var(--panel);min-width:0}
+  #topbar #modelTabs{min-width:0;overflow:hidden}
+  #side{grid-area:side;border-right:1px solid var(--line);background:var(--panel);padding:14px 10px;
+        overflow:hidden;transition:width .2s ease,padding .15s ease}
+  /* min-height/min-width:0 let the grid track govern size (no hardcoded topbar height,
+     no flex/grid blowout from wide content → no surprise global scrollbars) */
+  #main{grid-area:main;padding:18px 22px;overflow:auto;min-width:0;min-height:0;box-sizing:border-box}
+  /* overflow:clip (with hidden fallback) — clips like hidden but is NOT a scroll container, so a
+     focus/scrollIntoView inside the editor can't programmatically scroll these layout boxes and
+     leave them stuck (the editor's own internal scroller absorbs it instead). */
+  #main.detailmode{overflow:hidden;overflow:clip;display:flex;flex-direction:column;padding-bottom:0;min-height:0}
   .navbtn{display:block;width:100%;text-align:left;border:none;background:transparent;
           padding:10px 12px;border-radius:8px;color:var(--muted);margin-bottom:4px}
   .navbtn.active{background:var(--panel2);color:var(--ink)}
@@ -74,34 +85,53 @@
         border:1px solid var(--line);background:var(--panel2)}
   .mtab.active{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
   .mtab .gear{opacity:.6}
-  #modelCfg{position:absolute;top:52px;right:16px;width:340px;z-index:30}
+  #modelCfg{position:absolute;top:52px;right:16px;width:340px;max-width:calc(100vw - 32px);
+            max-height:calc(100vh - 70px);overflow:auto;z-index:30}
 
   /* grids */
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px}
   .acard{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
          padding:14px;cursor:pointer;transition:border-color .15s}
   .acard:hover{border-color:var(--accent)}
-  .acard h4{margin:0 0 6px}
+  .acard h4{margin:0 0 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
+  .truncate{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .badge{font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid var(--warn);
          color:var(--warn)}
 
   /* bubble detail */
-  #detail{display:grid;grid-template-columns:1.7fr 1fr;gap:16px;flex:1;min-height:0}
+  #detail{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(0,1fr);gap:16px;flex:1;
+          min-height:0;min-width:0}
   .pane{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
-        display:flex;flex-direction:column;min-height:0}
+        display:flex;flex-direction:column;min-height:0;min-width:0;overflow:hidden;overflow:clip}
   .pane .hd{padding:10px 12px;border-bottom:1px solid var(--line);display:flex;gap:8px;
-            align-items:center;flex-wrap:wrap}
-  .pane .bd{padding:12px;overflow:auto;flex:1;min-height:0}
+            align-items:center;flex-wrap:wrap;flex:0 0 auto;min-width:0}
+  .pane .bd{padding:12px;overflow:auto;flex:1;min-height:0;min-width:0}
   #editor{width:100%;height:100%;min-height:340px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
           font-size:13px;border:none;background:transparent;resize:none}
-  .preview{line-height:1.6}
+  .preview{line-height:1.6;overflow-wrap:anywhere;word-break:break-word}
   .preview h1{font-size:24px} .preview h2{font-size:19px;border-bottom:1px solid var(--line);padding-bottom:4px}
-  .preview code{background:var(--panel2);padding:1px 5px;border-radius:5px}
+  .preview code{background:var(--panel2);padding:1px 5px;border-radius:5px;overflow-wrap:anywhere}
   .preview pre{background:var(--panel2);padding:10px;border-radius:8px;overflow:auto}
+  .preview pre code{overflow-wrap:normal;word-break:normal}
+  .preview img{max-width:100%;height:auto;border-radius:8px}
+  /* tables + blockquotes — shared by the preview pane and chat messages */
+  .preview table,.msg table{display:block;width:max-content;max-width:100%;overflow-x:auto;
+        border-collapse:collapse;margin:8px 0;font-size:13px}
+  .preview th,.preview td,.msg th,.msg td{border:1px solid var(--line);padding:5px 9px;text-align:left}
+  .preview thead th,.msg thead th{background:var(--panel2)}
+  .preview blockquote,.msg blockquote{margin:8px 0;padding:4px 12px;border-left:3px solid var(--accent);
+        color:var(--muted);background:var(--panel2);border-radius:0 6px 6px 0}
+  .preview blockquote p,.msg blockquote p{margin:4px 0}
+  /* Wide display-math scrolls inside its block instead of stretching the pane */
+  .katex-display{overflow-x:auto;overflow-y:hidden;max-width:100%}
+  .eq-ref{color:var(--accent);font-weight:500}
 
   /* chat */
-  #chatlog{display:flex;flex-direction:column;gap:10px}
-  .msg{padding:9px 11px;border-radius:10px;max-width:95%}
+  #chatlog{display:flex;flex-direction:column;gap:10px;min-width:0}
+  .msg{padding:9px 11px;border-radius:10px;max-width:95%;min-width:0;overflow-wrap:anywhere;word-break:break-word}
+  .msg pre{overflow:auto;max-width:100%}
+  .msg img{max-width:100%;height:auto}
+  .msg .katex-display{overflow-x:auto;overflow-y:hidden}
   .msg.user{align-self:flex-end;background:var(--panel2)}
   .msg.assistant{align-self:flex-start;background:#13202b;border:1px solid var(--line)}
   .synced{font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid var(--good);color:var(--good)}
@@ -114,34 +144,34 @@
   .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--panel2);
          border:1px solid var(--line);padding:10px 16px;border-radius:10px;z-index:50}
 
-  /* diff review */
+  /* modal overlay (used by the help modal) */
   .overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;
            justify-content:center;z-index:60}
   .diffbox{background:var(--panel);border:1px solid var(--line);border-radius:12px;
            width:min(840px,93vw);max-height:85vh;display:flex;flex-direction:column}
-  .diffbody{overflow:auto;padding:10px 12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
-            font-size:12.5px;line-height:1.5}
-  .dl{white-space:pre-wrap;padding:1px 8px;border-radius:4px}
-  .dl.add{background:rgba(92,230,160,.14);color:#bff0d4}
-  .dl.del{background:rgba(255,122,122,.14);color:#ffc9c9}
-  .dl.ctx{color:var(--muted)}
-  .dl.gap{color:var(--muted);text-align:center;font-style:italic;opacity:.7}
-  .diffedit{width:100%;min-height:180px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
-            font-size:12.5px;line-height:1.5;background:var(--panel2);color:var(--ink);
-            border:1px solid var(--line);border-radius:8px;padding:10px 12px;resize:vertical}
+  .diffbody{overflow:auto;padding:10px 12px;line-height:1.5}
+
+  /* chat pane collapse */
+  #detail.chat-collapsed{grid-template-columns:1fr}
+  #detail.chat-collapsed>.pane:last-child{display:none!important}
+  /* preview-pane toggle is handled via S.previewEl.classList.toggle("hide") */
 
   /* page tabs + editor host */
   .ptabs{display:flex;gap:4px;flex-wrap:wrap;align-items:center;padding:8px 10px;
-         border-bottom:1px solid var(--line)}
+         border-bottom:1px solid var(--line);flex:0 0 auto;min-width:0}
   .ptab{padding:4px 10px;border-radius:7px 7px 0 0;border:1px solid var(--line);
         background:var(--panel2);cursor:pointer;font-size:13px;display:flex;gap:6px;align-items:center}
   .ptab.active{border-color:var(--accent);color:var(--ink);background:var(--bg)}
   .ptab .x{opacity:.5;font-size:11px}
   .ptab .x:hover{opacity:1;color:var(--bad)}
-  #editorHost{flex:1;min-height:0}
-  #editorHost .toastui-editor-defaultUI{height:100%}
-  /* Hide the Markdown/WYSIWYG mode-switch tab — markdown+preview is the right mode for math */
+  #editorHost{flex:1;min-height:0;min-width:0;display:flex;overflow:hidden;overflow:clip}
+  #editorWrap{flex:1;min-height:0;min-width:0;overflow:hidden;overflow:clip}
+  #editorWrap .toastui-editor-defaultUI{height:100%}
+  #previewWrap{flex:1;overflow:auto;padding:12px 16px;border-left:1px solid var(--line);
+               min-width:0;min-height:0;line-height:1.6}
+  /* Hide Toast UI's built-in preview controls — we use our own custom renderer */
   .toastui-editor-mode-switch{display:none!important}
+  .toastui-editor-tabs{display:none!important}
   .wikilink{color:var(--accent2);border-bottom:1px dashed var(--accent2);cursor:pointer}
   .scopebar{display:flex;gap:6px;align-items:center;padding:6px 10px;border-top:1px solid var(--line)}
   .scopebar select{width:auto;max-width:230px}
@@ -161,11 +191,34 @@
   .session-row{display:flex;align-items:center;gap:6px;padding:5px 10px;border-top:1px solid var(--line);font-size:12px}
   .session-row:first-child{border-top:none}
   .session-row .session-title{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink)}
-  /* new-page proposal card */
-  .npcard{margin-top:8px;padding:9px 11px;border:1px solid var(--accent2);border-radius:10px;
-          background:rgba(92,230,196,.07)}
-  .nphead{font-size:13px;color:var(--accent2)}
-  .npreview{font-size:12px;color:var(--muted);margin:5px 0 2px;line-height:1.45}
+
+  /* ── Mobile ── */
+  @media (max-width:700px){
+    /* On phones the whole page scrolls naturally instead of a locked app shell. */
+    html,body{height:auto;overflow:visible}
+    #app{height:auto;min-height:100vh;overflow:visible;grid-template-columns:0 minmax(0,1fr)!important}
+    /* keep the topbar pinned while the page scrolls */
+    #topbar{position:sticky;top:0;z-index:25;padding:8px 10px;gap:8px}
+    /* always collapse sidebar — hamburger still toggles it as a narrow overlay */
+    #side{width:0!important;min-width:0!important;padding:0!important;border-right:none!important;
+          position:fixed;top:49px;bottom:0;left:0;z-index:20;box-shadow:2px 0 12px rgba(0,0,0,.4)}
+    #app.side-open #side{width:220px!important;padding:14px 10px!important;border-right:1px solid var(--line)!important}
+    #app.side-open::after{content:'';position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:19}
+    /* main scrolls with the page */
+    #main{height:auto;overflow:visible}
+    #main.detailmode{height:auto;overflow:visible;min-height:0}
+    /* stack bubble detail panes; each pane gets a usable fixed height + internal scroll */
+    #detail{grid-template-columns:1fr;min-height:0}
+    .pane{height:78vh;min-height:320px}
+    /* stack editor over preview rather than a cramped side-by-side split */
+    #editorHost{flex-direction:column}
+    #previewWrap{border-left:none;border-top:1px solid var(--line)}
+    /* hide model tabs — too wide for mobile */
+    #modelTabs{display:none}
+    /* single-column cards */
+    .grid{grid-template-columns:1fr}
+    .brand{font-size:18px}
+  }
 </style>
 </head>
 <body>
@@ -188,10 +241,12 @@
 <!-- ============ APP ============ -->
 <div id="app">
   <div id="topbar">
+    <button class="ghost small" id="sideToggle" title="Toggle sidebar" style="font-size:16px;padding:5px 10px">☰</button>
     <div class="brand">🔒 <span class="lock">locked</span>in</div>
     <div class="row" id="modelTabs"></div>
     <div class="spacer"></div>
     <span class="muted" id="who"></span>
+    <button class="ghost small" id="helpBtn" title="User guide">?</button>
     <button class="ghost small" id="themeToggle" title="Toggle light/dark mode">☀️</button>
     <button class="ghost small" id="logout">Log out</button>
   </div>
@@ -206,6 +261,13 @@
 </div>
 
 <div id="modelCfg" class="card col hide"></div>
+<div id="helpModal" class="overlay hide">
+  <div class="diffbox" style="width:min(780px,95vw);max-height:88vh">
+    <div class="hd"><b>User Guide</b><span class="spacer"></span>
+      <button class="ghost small" id="helpClose">✕</button></div>
+    <div class="diffbody preview" id="helpBody" style="font-family:inherit;font-size:14px;padding:16px 20px"></div>
+  </div>
+</div>
 <div id="toast" class="toast hide"></div>
 
 <script>
@@ -219,6 +281,51 @@
     return e;};
   const toast = (m)=>{const t=$("#toast"); t.textContent=m; t.classList.remove("hide");
     clearTimeout(t._t); t._t=setTimeout(()=>t.classList.add("hide"),2600);};
+
+  // ---------- sidebar toggle ----------
+  function applySideCollapsed(collapsed){
+    const side=document.getElementById("side"), app=document.getElementById("app");
+    if(!side||!app)return;
+    if(collapsed){
+      side.style.width="0"; side.style.padding="0"; side.style.borderRight="none";
+      app.style.gridTemplateColumns="0 1fr";
+    } else {
+      side.style.width=""; side.style.padding=""; side.style.borderRight="";
+      app.style.gridTemplateColumns="220px 1fr";
+    }
+  }
+  document.getElementById("sideToggle").onclick=()=>{
+    if(window.innerWidth<=700){
+      // Mobile: toggle overlay class; tap backdrop to close
+      document.getElementById("app").classList.toggle("side-open");
+    } else {
+      const next=localStorage.getItem("li_side")!=="1";
+      localStorage.setItem("li_side",next?"1":"0");
+      applySideCollapsed(next);
+    }
+  };
+  // Close mobile sidebar when tapping the backdrop
+  document.getElementById("app").addEventListener("click",e=>{
+    if(e.target===e.currentTarget&&window.innerWidth<=700)
+      e.currentTarget.classList.remove("side-open");
+  });
+  // Close mobile sidebar when a nav item is tapped
+  document.querySelectorAll(".navbtn").forEach(b=>b.addEventListener("click",()=>{
+    if(window.innerWidth<=700) document.getElementById("app").classList.remove("side-open");
+  }));
+
+  // ---------- hash routing ----------
+  function pushRoute(hash){history.pushState(null,"",hash?"#"+hash:"#");}
+  function applyHash(){
+    const h=location.hash.replace(/^#/,"");
+    if(!h||h==="assets"){switchView("assets",{noRoute:true});return;}
+    if(h==="bubbles"){switchView("bubbles",{noRoute:true});return;}
+    if(h==="attention"){switchView("attention",{noRoute:true});return;}
+    const m=h.match(/^bubble\/([^/]+)$/);
+    if(m){openBubble(m[1],{noRoute:true});return;}
+    switchView("assets",{noRoute:true});
+  }
+  window.onpopstate=()=>applyHash();
 
   // ---------- api ----------
   function claudeHeaders(){
@@ -252,11 +359,29 @@
   // ---------- markdown + math ----------
   function renderMarkdown(md){
     const store=[]; let s=md||"";
+    // Pass 1 — collect \label{} from display math, assign sequential numbers
+    const eqN={};let eqI=0;
+    const _dr=/\$\$([\s\S]+?)\$\$/g; let _dm;
+    while((_dm=_dr.exec(s))!==null){
+      const lb=(_dm[1].match(/\\label\{([^}]+)\}/)||[])[1];
+      if(lb&&!(lb in eqN))eqN[lb]=++eqI;
+    }
+    // Pass 2 — replace \label{lbl} with \tag{n} inside $$...$$ blocks
+    if(eqI>0) s=s.replace(/\$\$([\s\S]+?)\$\$/g,(f,inner)=>{
+      const lb=(inner.match(/\\label\{([^}]+)\}/)||[])[1];
+      return lb&&eqN[lb]?"$$"+inner.replace(/\\label\{[^}]+\}/,"\\tag{"+eqN[lb]+"}") +"$$":f;
+    });
+    // Stash all math tokens so marked.js can't mangle them
     const stash=(re,display)=>{ s=s.replace(re,(m,p1)=>{ store.push({src:p1,display}); return `@@M${store.length-1}@@`; }); };
     stash(/\$\$([\s\S]+?)\$\$/g,true);
     stash(/\\\[([\s\S]+?)\\\]/g,true);
     stash(/\\\(([\s\S]+?)\\\)/g,false);
     stash(/\$([^\$\n]+?)\$/g,false);
+    // Pass 3 — replace \eqref{}/\ref{} in remaining (non-math) text
+    if(eqI>0){
+      s=s.replace(/\\eqref\{([^}]+)\}/g,(_,lb)=>`<span class="eq-ref">(${eqN[lb]||"?"})</span>`);
+      s=s.replace(/\\ref\{([^}]+)\}/g,(_,lb)=>`<span class="eq-ref">${eqN[lb]||"?"}</span>`);
+    }
     let html=marked.parse(s,{breaks:true});
     html=html.replace(/@@M(\d+)@@/g,(m,i)=>{ const it=store[+i];
       try{ return katex.renderToString(it.src,{displayMode:it.display,throwOnError:false}); }
@@ -267,8 +392,10 @@
   // ---------- state ----------
   const S = { user:null, model:null, view:"assets", bubble:null, chat:[],
     editor:null, page:null, pages:[], home:null, bubbleInstr:"", bubbleAssets:[],
-    sessionId:null,  // current chat session ID (auto-assigned on first message)
-    sessionTitle:null  // cute model-generated title for the current session (set once)
+    sessionId:null, sessionTitle:null,
+    chatCollapsed:false,  // persisted in li_chat
+    pollTimer:null, lastPageMtime:null, lastManifestMtime:null,
+    previewEl:null, remoteChangePending:false
   };
 
   // ================= AUTH =================
@@ -282,6 +409,19 @@
   $("#au_signup").onclick=()=>doAuth("signup");
   $("#au_pass").onkeydown=e=>{ if(e.key==="Enter")doAuth("login"); };
   $("#logout").onclick=async()=>{ await api("/api/logout",{method:"POST"}); location.reload(); };
+  $("#helpBtn").onclick=async()=>{
+    const modal=$("#helpModal"), body=$("#helpBody");
+    modal.classList.remove("hide");
+    if(!body.dataset.loaded){
+      try{
+        const r=await api("/api/help");
+        body.innerHTML=renderMarkdown(r.guide);
+        body.dataset.loaded="1";
+      }catch(e){ body.textContent="Could not load guide."; }
+    }
+  };
+  $("#helpClose").onclick=()=>$("#helpModal").classList.add("hide");
+  $("#helpModal").onclick=e=>{ if(e.target===e.currentTarget)$("#helpModal").classList.add("hide"); };
   $("#themeToggle").onclick=()=>{
     const light=document.body.classList.toggle("light");
     $("#themeToggle").textContent=light?"🌙":"☀️";
@@ -294,7 +434,8 @@
     S.user=me.user; S.model=me.model;
     $("#auth").style.display="none"; $("#app").style.display="grid";
     $("#who").textContent="@"+S.user;
-    renderModelTabs(); refreshHealth(); switchView("assets");
+    applySideCollapsed(localStorage.getItem("li_side")==="1");
+    renderModelTabs(); refreshHealth(); applyHash();
   }
 
   // ================= MODEL SWITCHER =================
@@ -392,10 +533,12 @@
 
   // ================= NAV =================
   document.querySelectorAll(".navbtn").forEach(b=>b.onclick=()=>switchView(b.dataset.view));
-  function switchView(v){
+  function switchView(v,{noRoute=false}={}){
     S.view=v; S.bubble=null;
+    stopPolling();
     document.getElementById("main").classList.remove("detailmode");
     document.querySelectorAll(".navbtn").forEach(b=>b.classList.toggle("active",b.dataset.view===v));
+    if(!noRoute)pushRoute(v==="assets"?"":v);
     if(v==="assets")viewAssets();
     else if(v==="bubbles")viewBubbles();
     else if(v==="attention")viewAttention();
@@ -536,18 +679,47 @@
     catch(e){ toast("Error: "+e.message); }
   }
 
+  function startBubbleRename(nameSpan, slug){
+    const current=nameSpan.textContent.replace(/\s*\(suggested\)$/,"").trim();
+    const inp=el("input",{value:current,style:"width:180px;flex-shrink:1"});
+    const save=el("button",{class:"primary small",onclick:async()=>{
+      const val=inp.value.trim(); if(!val||val===current){restore();return;}
+      try{
+        await api("/api/bubbles/"+slug,{method:"PATCH",body:JSON.stringify({name:val})});
+        nameSpan.textContent=val; restore(); toast("Renamed");
+      }catch(e){toast(e.message);}
+    }},"Save");
+    const cancel=el("button",{class:"ghost small",onclick:restore},"Cancel");
+    inp.onkeydown=e=>{if(e.key==="Enter")save.click();if(e.key==="Escape")restore();};
+    // swap span for the edit controls
+    nameSpan.replaceWith(inp,save,cancel);
+    inp.focus(); inp.select();
+    function restore(){[save,cancel].forEach(b=>b.remove()); inp.replaceWith(nameSpan);}
+  }
+
   // ================= BUBBLE DETAIL (Notion-like multi-page) =================
-  async function openBubble(slug){
+  async function openBubble(slug,{noRoute=false}={}){
+    if(!noRoute)pushRoute("bubble/"+slug);
     if(S.editor){ try{S.editor.destroy();}catch(e){} S.editor=null; }
+    stopPolling();
     S.bubble=slug; S.chat=[]; S.page=null; S.pages=[]; S.sessionId=null; S.sessionTitle=null;
+    S.previewEl=null; S.remoteChangePending=false;
     const m=$("#main"); m.innerHTML=""; m.classList.add("detailmode");
     const b=(await api("/api/bubbles/"+slug)).bubble;
     S.bubbleAssets=b.assets||[];
     m.append(el("button",{class:"ghost small",onclick:()=>switchView("bubbles")},"← Idea Bubbles"));
-    m.append(el("h2",{class:"section-title",style:"margin:10px 0 12px"},
-      "💡 "+b.name+(b.approved?"":" (suggested)")));
+    // Editable bubble title
+    const nameSpan=el("span",{class:"truncate",style:"max-width:60vw"},b.name+(b.approved?"":" (suggested)"));
+    const renameBtn=el("button",{class:"ghost small",title:"Rename bubble",
+      style:"opacity:.5;padding:4px 7px;flex-shrink:0",
+      onclick:()=>startBubbleRename(nameSpan,b.slug)
+    },"✏️");
+    m.append(el("div",{class:"row",style:"margin:10px 0 12px;align-items:center;gap:8px"},
+      el("h2",{class:"section-title",style:"margin:0"},"💡 "), nameSpan, renameBtn));
 
+    S.chatCollapsed = localStorage.getItem("li_chat")==="1";
     const wrap=el("div",{id:"detail"});
+    if(S.chatCollapsed) wrap.classList.add("chat-collapsed");
     const left=el("div",{class:"pane"}), right=el("div",{class:"pane"});
     wrap.append(left,right); m.append(wrap);
 
@@ -573,21 +745,26 @@
   function buildWorkspace(left,b){
     S.pages=b.pages||[]; S.home=b.home; S.bubbleInstr=b.instructions||"";
     const tabs=el("div",{class:"ptabs",id:"ptabs"});
+    const editorWrap=el("div",{id:"editorWrap"});
+    S.previewEl=el("div",{id:"previewWrap",class:"preview"});
+    if(localStorage.getItem("li_preview_off")==="1") S.previewEl.classList.add("hide");
     const host=el("div",{id:"editorHost"});
+    host.append(editorWrap, S.previewEl);
     left.append(tabs,host);
 
     // PDFs strip
     const pdfs=el("div",{class:"bd",style:"flex:0 0 auto;border-top:1px solid var(--line);max-height:120px"});
     pdfs.append(el("b",{},"Papers in this bubble"));
-    (b.assets||[]).forEach(a=>pdfs.append(el("div",{},
-      el("a",{href:"/api/assets/"+a.pdf_id+"/pdf",target:"_blank"},a.title||a.pdf_id))));
+    (b.assets||[]).forEach(a=>pdfs.append(el("div",{class:"truncate",style:"font-size:12px;margin-top:3px"},
+      el("a",{href:"/api/assets/"+a.pdf_id+"/pdf",target:"_blank",title:a.title||a.pdf_id},a.title||a.pdf_id))));
     if(!b.assets.length)pdfs.append(el("div",{class:"muted"},"None yet — tag a PDF with this bubble."));
     left.append(pdfs);
 
     // init editor with the home page content
-    initEditor(host, b.content||"");
+    initEditor(editorWrap, b.content||"");
     S.page=b.home;
     refreshTabs();
+    startPolling();
     // delegated internal-link navigation (page: scheme)
     left.addEventListener("click",e=>{ const a=e.target.closest('a[href^="page:"]');
       if(a){ e.preventDefault(); switchPage(decodeURIComponent(a.getAttribute("href").slice(5))); } });
@@ -596,30 +773,25 @@
   function initEditor(host, initialValue){
     S.editor=new toastui.Editor({
       el:host, height:"100%", theme:"dark", initialEditType:"markdown",
-      previewStyle:"vertical", initialValue, usageStatistics:false,
+      previewStyle:"tab", initialValue, usageStatistics:false,
       hooks:{ addImageBlobHook:(blob,cb)=>uploadImage(S.bubble,blob,cb) },
     });
     let deb;
     S.editor.on("change",()=>{ markStale(); clearTimeout(deb);
-      deb=setTimeout(renderPreviewExtras,300); });
-    setTimeout(renderPreviewExtras,200);
+      deb=setTimeout(updatePreview,300); });
+    setTimeout(updatePreview,200);
+  }
+
+  function updatePreview(){
+    if(!S.previewEl||!S.editor)return;
+    S.previewEl.innerHTML=renderMarkdown(S.editor.getMarkdown());
+    linkifyWikilinks(S.previewEl);
   }
 
   function uploadImage(slug,blob,cb){
     const fd=new FormData(); fd.append("file",blob,(blob.name||"figure.png"));
     fetch("/api/bubbles/"+slug+"/assets",{method:"POST",credentials:"include",body:fd})
       .then(r=>r.json()).then(d=>cb(d.url,"figure")).catch(()=>toast("Image upload failed"));
-  }
-
-  // render KaTeX + wiki-links into the live preview pane
-  function renderPreviewExtras(){
-    const prev=document.querySelector(".toastui-editor-md-preview .toastui-editor-contents")
-            || document.querySelector(".toastui-editor-contents");
-    if(!prev)return;
-    if(window.renderMathInElement){ try{ renderMathInElement(prev,{throwOnError:false,delimiters:[
-      {left:"$$",right:"$$",display:true},{left:"\\[",right:"\\]",display:true},
-      {left:"\\(",right:"\\)",display:false},{left:"$",right:"$",display:false}]});}catch(e){} }
-    linkifyWikilinks(prev);
   }
   function linkifyWikilinks(root){
     const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT,null);
@@ -648,26 +820,53 @@
     });
     tabs.append(el("button",{class:"small ghost",onclick:newPage},"+ Page"));
     tabs.append(el("span",{class:"spacer",style:"flex:1"}));
-    tabs.append(el("button",{class:"small ghost",title:"Open rendered preview in a new tab",onclick:()=>{
+    // synced badge lives here in the editor toolbar
+    const syncedStale=document.querySelector("#syncedBadge")?.classList.contains("stale");
+    tabs.append(el("span",{class:"synced"+(syncedStale?" stale":""),id:"syncedBadge",
+      title:"Click to save",style:"cursor:pointer",onclick:clickSave},
+      syncedStale?"⟳ unsynced":"⟳ synced"));
+    // preview-pane toggle
+    const previewOff=localStorage.getItem("li_preview_off")==="1";
+    tabs.append(el("button",{class:"small ghost",title:previewOff?"Show preview pane":"Hide preview pane",
+      onclick:togglePreview},previewOff?"⊞ preview":"⊟ preview"));
+    // chat-pane toggle
+    tabs.append(el("button",{class:"small ghost",title:S.chatCollapsed?"Show chat":"Hide chat",
+      onclick:toggleChat},S.chatCollapsed?"chat ❯":"chat ❮"));
+    tabs.append(el("button",{class:"small ghost",title:"Open full-page preview in a new tab",onclick:()=>{
       if(S.bubble&&S.page) window.open("/api/bubbles/"+S.bubble+"/preview/"+S.page,"_blank");
-    }},"🔍 Preview"));
-    tabs.append(el("button",{class:"small",onclick:savePage},"💾 Save"));
-    tabs.append(el("button",{class:"small primary",onclick:generatePage},"⚙ Generate"));
+    }},"🔍"));
   }
   async function savePage(){
     if(!S.editor||!S.page)return;
     await api("/api/bubbles/"+S.bubble+"/pages/"+S.page,
       {method:"PUT",body:JSON.stringify({content:S.editor.getMarkdown()})});
+    S.lastPageMtime=null; S.remoteChangePending=false;
     markSynced(); toast("Page saved");
+  }
+  async function clickSave(){
+    if(!S.editor||!S.page)return;
+    if(S.remoteChangePending){
+      const loadRemote=confirm(
+        "The file was changed externally.\n\nOK = Load the remote version (your unsaved edits will be lost)\nCancel = Overwrite with your current edits");
+      if(loadRemote){
+        const c=(await api("/api/bubbles/"+S.bubble+"/pages/"+S.page)).content;
+        S.editor.setMarkdown(c||"",false);
+        S.lastPageMtime=null; S.remoteChangePending=false;
+        markSynced(); setTimeout(updatePreview,150);
+        return;
+      }
+    }
+    await savePage();
   }
   async function switchPage(target){
     const match=S.pages.find(p=>p.page_slug===target)
       || S.pages.find(p=>p.title.toLowerCase()===String(target).toLowerCase());
-    if(!match){ toast("No page “"+target+"” in this bubble."); return; }
+    if(!match){ toast(`No page "${target}" in this bubble.`); return; }
     await savePage();
     const c=(await api("/api/bubbles/"+S.bubble+"/pages/"+match.page_slug)).content;
-    S.page=match.page_slug; S.editor.setMarkdown(c||""); refreshTabs();
-    setTimeout(renderPreviewExtras,150);
+    S.page=match.page_slug; S.lastPageMtime=null; S.remoteChangePending=false;
+    S.editor.setMarkdown(c||""); refreshTabs();
+    setTimeout(updatePreview,150);
   }
   async function newPage(){
     const title=prompt("New page title:"); if(!title)return;
@@ -683,26 +882,65 @@
     S.pages=S.pages.filter(p=>p.page_slug!==ps);
     if(S.page===ps){ S.page=S.home; const c=(await api("/api/bubbles/"+S.bubble+"/pages/"+S.home)).content;
       S.editor.setMarkdown(c||""); }
-    refreshTabs(); setTimeout(renderPreviewExtras,150);
+    refreshTabs(); setTimeout(updatePreview,150);
   }
-  function generatePage(){
-    let acc=""; toast("Generating…");
-    streamPost("/api/bubbles/"+S.bubble+"/generate",{page:S.page,instructions:S.bubbleInstr},
-      ev=>{ if(ev.type==="delta"){acc+=ev.text;S.editor.setMarkdown(acc,false);markStale();}
-            else if(ev.type==="done"){S.editor.setMarkdown(ev.content,false);markSynced();
-              setTimeout(renderPreviewExtras,150);toast("Page generated");}
-            else if(ev.type==="error"){toast(ev.detail);} });
-  }
-
   function markStale(){ const s=$("#syncedBadge"); if(s){s.classList.add("stale");s.textContent="⟳ unsynced";} }
   function markSynced(){ const s=$("#syncedBadge"); if(s){s.classList.remove("stale");s.textContent="⟳ synced";} }
 
-  // ---- unified chat pane: the model answers OR proposes edits seamlessly ----
+  // ---- auto-sync polling (detects external file edits, e.g. from dev-mode) ----
+  function stopPolling(){
+    if(S.pollTimer){ clearInterval(S.pollTimer); S.pollTimer=null; }
+    S.lastPageMtime=null; S.lastManifestMtime=null; S.remoteChangePending=false;
+  }
+  async function pollSync(){
+    if(!S.bubble||!S.page)return;
+    const bubble=S.bubble, page=S.page;
+    try{
+      const r=await api("/api/bubbles/"+bubble+"/poll?page="+page);
+      if(S.bubble!==bubble||S.page!==page)return; // navigated away during await
+      if(S.lastManifestMtime!==null&&r.manifest_mtime!==S.lastManifestMtime){
+        S.pages=r.pages||[]; refreshTabs();
+      }
+      S.lastManifestMtime=r.manifest_mtime;
+      if(S.lastPageMtime!==null&&r.page_mtime!==S.lastPageMtime){
+        const stale=document.querySelector("#syncedBadge")?.classList.contains("stale");
+        if(!stale&&S.editor){
+          const c=(await api("/api/bubbles/"+bubble+"/pages/"+page)).content;
+          if(S.bubble!==bubble||S.page!==page)return;
+          S.editor.setMarkdown(c||"",false);
+          S.remoteChangePending=false; setTimeout(updatePreview,150);
+        } else if(stale){
+          S.remoteChangePending=true;
+          toast("File changed on disk — click ⟳ to save (you'll be asked about the remote version).");
+        }
+      }
+      S.lastPageMtime=r.page_mtime;
+    }catch(e){}
+  }
+  function startPolling(){
+    stopPolling();
+    S.pollTimer=setInterval(pollSync,5000);
+  }
+
+  function toggleChat(){
+    const d=document.getElementById("detail"); if(!d)return;
+    S.chatCollapsed=d.classList.toggle("chat-collapsed");
+    localStorage.setItem("li_chat",S.chatCollapsed?"1":"0");
+    refreshTabs();
+  }
+  function togglePreview(){
+    if(!S.editor)return;
+    const next=localStorage.getItem("li_preview_off")!=="1";
+    localStorage.setItem("li_preview_off",next?"1":"0");
+    if(S.previewEl){ S.previewEl.classList.toggle("hide",next); if(!next)updatePreview(); }
+    refreshTabs();
+  }
+  // ---- read-only research chat pane ----
   function buildChatPane(right,b){
     right.append(el("div",{class:"hd"}, el("b",{},"Chat"),
       el("span",{class:"muted",style:"font-size:12px",id:"chatModelBadge"},S.model.active),
       el("span",{class:"spacer"}),
-      el("span",{class:"synced",id:"syncedBadge"},"⟳ synced")));
+      el("span",{class:"muted",style:"font-size:11px",title:"This chat discusses your reports and papers but never edits pages."},"💬 read-only")));
 
     // Session selector + management
     const sessionSel=el("select",{id:"sessionSel"});
@@ -837,184 +1075,27 @@
   }
 
   // Hide raw <EDIT>/<NEWPAGE> XML during streaming; show subtle badges
-  function renderChatDelta(raw){
-    return renderMarkdown(
-      raw.replace(/<NEWPAGE[\s\S]*?(?:<\/NEWPAGE>|$)/gi,'\n\n_📄 drafting new page…_')
-         .replace(/<EDIT[\s\S]*?(?:<\/EDIT>|$)/gi,'\n\n_✏️ drafting edit…_'));
-  }
-
-  const COMPACT_AT=20; // auto-compact when chat history exceeds this many messages
   async function sendChat(chatlog,input,right){
     const text=input.value.trim(); if(!text)return; input.value="";
-    // Auto-compact before sending if history is long
-    if(S.chat.length>=COMPACT_AT){
-      try{
-        const r=await api("/api/bubbles/"+S.bubble+"/compact",
-          {method:"POST",body:JSON.stringify({messages:S.chat})});
-        S.chat=r.messages;
-        chatlog.innerHTML="";
-        S.chat.forEach(m=>pushMsg(chatlog,m.role,m.content));
-        toast("💬 Chat history compacted");
-      }catch(e){/* non-fatal — proceed with full history */}
-    }
     S.chat.push({role:"user",content:text}); pushMsg(chatlog,"user",text);
     const page_context=S.editor?S.editor.getMarkdown():"";
     const deep=right._deepIds||[];
-    markSynced();
     const node=pushMsg(chatlog,"assistant",""); let acc="";
     streamPost("/api/bubbles/"+S.bubble+"/chat",
       {messages:S.chat,page:S.page,page_context,deep_read_ids:deep},
       ev=>{
         if(ev.type==="delta"){
           acc+=ev.text;
-          node.innerHTML=renderChatDelta(acc);
+          node.innerHTML=renderMarkdown(acc);
           chatlog.parentElement.scrollTop=1e9;
         } else if(ev.type==="done"){
-          // Push full raw text to history — includes <EDIT>/<NEWPAGE> for future context
           S.chat.push({role:"assistant",content:ev.full_response||acc});
-          const chatText=ev.chat_text||acc;
-
-          // 1. Render the assistant's prose into the message node FIRST.
-          node.innerHTML=renderMarkdown(chatText||(ev.edit_proposal?"_Proposing an edit…_":""));
-
-          // 2. Append each proposed new page as its OWN card in the chatlog (standalone, so
-          //    later node.innerHTML edits below can't wipe their button listeners).
-          (ev.new_page_proposals||[]).forEach(p=>proposeNewPage(p));
-
-          // 3. Show the diff overlay for an edit proposal (if any).
-          if(ev.edit_proposal){
-            const current=S.editor.getMarkdown();
-            const proposed=ev.edit_proposal.content;
-            if(proposed.trim()===current.trim()){
-              node.innerHTML+='<br><span style="color:var(--muted);font-size:12px">No changes needed.</span>';
-            } else {
-              showDiff(current,proposed,
-                async(finalText)=>{
-                  S.editor.setMarkdown(finalText,false);
-                  await savePage(); setTimeout(renderPreviewExtras,150);
-                  node.innerHTML+='<br><span style="color:var(--good);font-size:12px">✓ Edit applied.</span>';
-                },
-                ()=>{
-                  node.innerHTML+='<br><span style="color:var(--warn);font-size:12px">↩ Rejected — reply to refine.</span>';
-                });
-            }
-          }
+          node.innerHTML=renderMarkdown(ev.chat_text||acc);
           autoSave(chatlog);
         } else if(ev.type==="error"){
           node.innerHTML=renderMarkdown("⚠ "+ev.detail);
         }
       });
-  }
-
-  // ---- new-page proposal card (per-page confirm) ----
-  function proposeNewPage(p){
-    const chatlog=chatlog0(); if(!chatlog)return;
-    if(S.pages.find(pg=>pg.title.toLowerCase()===p.title.toLowerCase())){
-      // a page with this title already exists — skip silently
-      return;
-    }
-    const card=el("div",{class:"npcard"});
-    const head=el("div",{class:"nphead"},
-      el("span",{},"📄 New page: "), el("b",{},p.title));
-    const preview=el("div",{class:"npreview"},
-      (p.content||"").replace(/^#.*$/m,"").trim().slice(0,160)+((p.content||"").length>160?"…":""));
-    const actions=el("div",{class:"row",style:"gap:8px;margin-top:6px"});
-    const accept=el("button",{class:"primary small",onclick:async()=>{
-      accept.disabled=true; reject.disabled=true;
-      try{
-        const slug=(await api("/api/bubbles/"+S.bubble+"/pages",
-          {method:"POST",body:JSON.stringify({title:p.title})})).page_slug;
-        await api("/api/bubbles/"+S.bubble+"/pages/"+slug,
-          {method:"PUT",body:JSON.stringify({content:p.content})});
-        if(!S.pages.find(pg=>pg.page_slug===slug))S.pages.push({page_slug:slug,title:p.title});
-        refreshTabs();
-        card.innerHTML=`<span style="color:var(--good);font-size:12px">✓ Created page: <b>${p.title}</b></span>`;
-      }catch(e){ accept.disabled=false; reject.disabled=false; toast(e.message); }
-    }},"✓ Create");
-    const reject=el("button",{class:"ghost small",onclick:()=>{
-      card.innerHTML=`<span style="color:var(--warn);font-size:12px">↩ Skipped: <b>${p.title}</b></span>`;
-    }},"✕ Skip");
-    actions.append(accept,reject);
-    card.append(head,preview,actions);
-    chatlog.append(card);
-    if(chatlog.parentElement)chatlog.parentElement.scrollTop=1e9;
-  }
-  function chatlog0(){ return document.getElementById("chatlog"); }
-
-  // ---- diff review (accept / reject) ----
-  function lineDiff(a,b){
-    const A=a.split("\n"), B=b.split("\n"), n=A.length, m=B.length;
-    const dp=Array.from({length:n+1},()=>new Int32Array(m+1));
-    for(let i=n-1;i>=0;i--)for(let j=m-1;j>=0;j--)
-      dp[i][j]=A[i]===B[j]?dp[i+1][j+1]+1:Math.max(dp[i+1][j],dp[i][j+1]);
-    const out=[]; let i=0,j=0;
-    while(i<n&&j<m){
-      if(A[i]===B[j]){out.push({t:"ctx",line:A[i]});i++;j++;}
-      else if(dp[i+1][j]>=dp[i][j+1]){out.push({t:"del",line:A[i]});i++;}
-      else {out.push({t:"add",line:B[j]});j++;}
-    }
-    while(i<n)out.push({t:"del",line:A[i++]});
-    while(j<m)out.push({t:"add",line:B[j++]});
-    return out;
-  }
-  function renderDiffInto(body,diff){
-    let i=0;
-    while(i<diff.length){
-      if(diff[i].t==="ctx"){
-        let j=i; while(j<diff.length&&diff[j].t==="ctx")j++;
-        const run=diff.slice(i,j);
-        if(run.length>4){
-          body.append(el("div",{class:"dl ctx"},run[0].line||" "));
-          body.append(el("div",{class:"dl gap"},`⋯ ${run.length-2} unchanged lines ⋯`));
-          body.append(el("div",{class:"dl ctx"},run[run.length-1].line||" "));
-        } else run.forEach(r=>body.append(el("div",{class:"dl ctx"},r.line||" ")));
-        i=j;
-      } else {
-        body.append(el("div",{class:"dl "+diff[i].t},(diff[i].t==="add"?"+ ":"− ")+(diff[i].line||"")));
-        i++;
-      }
-    }
-  }
-  // Review overlay. The proposal is editable inline: toggle to an editor to tweak or delete
-  // lines before accepting. onAccept(finalText) receives the (possibly edited) text.
-  function showDiff(oldText,newText,onAccept,onReject){
-    let current=newText;        // mutable proposed text
-    let mode="diff";            // "diff" | "edit"
-    let textarea=null;
-    const ov=el("div",{class:"overlay"}), box=el("div",{class:"diffbox"});
-    const doReject=()=>{ ov.remove(); if(onReject)onReject(); };
-    const syncFromEditor=()=>{ if(mode==="edit"&&textarea)current=textarea.value; };
-    const counts=el("span",{class:"muted",style:"font-size:12px"});
-    const toggleBtn=el("button",{class:"ghost small",onclick:()=>{
-      syncFromEditor(); mode=mode==="diff"?"edit":"diff"; render(); }});
-    const body=el("div",{class:"diffbody"});
-    function render(){
-      body.innerHTML="";
-      if(mode==="diff"){
-        const diff=lineDiff(oldText,current);
-        const adds=diff.filter(d=>d.t==="add").length, dels=diff.filter(d=>d.t==="del").length;
-        counts.textContent=`+${adds}  −${dels}`;
-        renderDiffInto(body,diff);
-        toggleBtn.textContent="✏️ Edit";
-      } else {
-        counts.textContent="editing — change or delete lines, then View diff / Accept";
-        textarea=el("textarea",{class:"diffedit",spellcheck:"false"});
-        textarea.value=current; textarea.oninput=()=>{ current=textarea.value; };
-        body.append(textarea);
-        toggleBtn.textContent="👁 View diff";
-        setTimeout(()=>{ textarea.focus(); textarea.style.height=
-          Math.min(460,Math.max(180,textarea.scrollHeight))+"px"; },0);
-      }
-    }
-    box.append(el("div",{class:"hd"}, el("b",{},"Review proposed changes"),
-      el("span",{class:"spacer"}), counts, toggleBtn));
-    box.append(body);
-    box.append(el("div",{class:"hd"}, el("span",{class:"spacer"}),
-      el("button",{class:"ghost",onclick:doReject},"✕ Reject & give feedback"),
-      el("button",{class:"primary",onclick:()=>{ syncFromEditor(); ov.remove(); onAccept(current); }},"✓ Accept")));
-    ov.append(box); document.body.append(ov);
-    ov.onclick=e=>{ if(e.target===ov)doReject(); };
-    render();
   }
 
   // ================= ATTENTION =================

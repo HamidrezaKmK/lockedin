@@ -14,11 +14,45 @@ import json
 import logging
 import os
 import queue
+import re
 import threading
 from pathlib import Path
 from typing import Optional
 
 from . import auth, paths, service, tagger
+
+
+def _preprocess_equations(md: str) -> str:
+    """Number \\label{} equations in display math and resolve \\eqref{}/\\ref{} references.
+
+    Scans all $$...$$ blocks for \\label{name}, assigns sequential numbers, replaces
+    \\label{name} with \\tag{n} (so KaTeX renders the number), and replaces \\eqref{name}
+    / \\ref{name} in surrounding text with the corresponding number as a styled span.
+    Pure rendering transform — the source .md files are never modified.
+    """
+    eq_nums: dict[str, int] = {}
+    idx = 0
+    for m in re.finditer(r'\$\$([\s\S]+?)\$\$', md):
+        lm = re.search(r'\\label\{([^}]+)\}', m.group(1))
+        if lm and lm.group(1) not in eq_nums:
+            idx += 1
+            eq_nums[lm.group(1)] = idx
+    if not eq_nums:
+        return md
+
+    def _tag(m: re.Match) -> str:
+        inner = m.group(1)
+        lm = re.search(r'\\label\{([^}]+)\}', inner)
+        if lm and lm.group(1) in eq_nums:
+            return "$$" + inner.replace(lm.group(0), f'\\tag{{{eq_nums[lm.group(1)]}}}', 1) + "$$"
+        return m.group(0)
+
+    md = re.sub(r'\$\$([\s\S]+?)\$\$', _tag, md)
+    md = re.sub(r'\\eqref\{([^}]+)\}',
+                lambda m: f'<span class="eq-ref">({eq_nums.get(m.group(1), "?")})</span>', md)
+    md = re.sub(r'\\ref\{([^}]+)\}',
+                lambda m: f'<span class="eq-ref">{eq_nums.get(m.group(1), "?")}</span>', md)
+    return md
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +105,9 @@ def build_app():
     class ApproveIn(BaseModel):
         instructions: str = ""
 
+    class BubbleRenameIn(BaseModel):
+        name: str
+
     class PageContentIn(BaseModel):
         content: str
 
@@ -80,23 +117,11 @@ def build_app():
     class PageRenameIn(BaseModel):
         title: str
 
-    class GenerateIn(BaseModel):
-        page: str
-        instructions: str = ""
-
     class ChatIn(BaseModel):
         messages: list[dict]
         page: str
         page_context: str = ""
         deep_read_ids: list[str] = []
-
-    class EditIn(BaseModel):
-        page: str
-        mode: str                       # "page" | "section"
-        instruction: str
-        page_context: str
-        section: Optional[str] = None
-        rejected_proposal: Optional[str] = None  # previous attempt the user rejected
 
     class SaveSessionIn(BaseModel):
         session_id: str
@@ -163,6 +188,11 @@ def build_app():
     @app.get("/")
     def index():
         return FileResponse(WEB_DIR / "index.html")
+
+    @app.get("/api/help")
+    def get_help():
+        from . import reports as _r
+        return {"guide": _r.APP_USAGE_GUIDE}
 
     # ---- auth ----
     @app.post("/api/signup")
@@ -294,6 +324,13 @@ def build_app():
     def get_bubble(slug: str, user: str = Depends(current_user)):
         return {"bubble": service.bubble_detail(home_of(user), slug)}
 
+    @app.patch("/api/bubbles/{slug}")
+    def rename_bubble(slug: str, body: BubbleRenameIn, user: str = Depends(current_user)):
+        try:
+            return {"bubble": service.rename_bubble(home_of(user), slug, body.name)}
+        except (KeyError, ValueError) as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
     @app.post("/api/bubbles/{slug}/approve")
     def approve_bubble(slug: str, body: ApproveIn, user: str = Depends(current_user)):
         return {"bubble": service.approve_bubble(home_of(user), slug, body.instructions)}
@@ -321,7 +358,6 @@ def build_app():
             f'<a href="/api/bubbles/{slug}/preview/{p["page_slug"]}">{p["title"]}</a>'
             for p in all_pages)
         # replace [[page-slug]] and [[Page Title]] with real links
-        import re as _re
         def resolve_wikilink(m):
             target = m.group(1).strip()
             match = next((p for p in all_pages
@@ -329,7 +365,7 @@ def build_app():
             if match:
                 return f'[{match["title"]}](/api/bubbles/{slug}/preview/{match["page_slug"]})'
             return m.group(0)
-        md = _re.sub(r'\[\[([^\]]+)\]\]', resolve_wikilink, content)
+        md = _preprocess_equations(re.sub(r'\[\[([^\]]+)\]\]', resolve_wikilink, content))
         html = f"""<!DOCTYPE html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -349,10 +385,20 @@ h1{{font-size:28px}} h2{{font-size:21px;border-bottom:1px solid var(--line);padd
 code{{background:var(--panel);padding:2px 6px;border-radius:4px}}
 pre{{background:var(--panel);padding:14px;border-radius:8px;overflow:auto}}
 a{{color:var(--accent)}} img{{max-width:100%;border-radius:8px}}
+table{{display:block;width:max-content;max-width:100%;overflow-x:auto;border-collapse:collapse;margin:12px 0}}
+th,td{{border:1px solid var(--line);padding:6px 10px;text-align:left}}
+thead th{{background:var(--panel)}}
+blockquote{{margin:12px 0;padding:6px 14px;border-left:3px solid var(--accent);color:var(--muted);
+            background:var(--panel);border-radius:0 8px 8px 0}}
+blockquote p{{margin:6px 0}}
 .katex-display{{overflow-x:auto}}
+.eq-ref{{color:var(--accent);font-weight:500}}
 #theme-toggle{{position:fixed;top:14px;right:16px;background:var(--panel);border:1px solid var(--line);
                color:var(--ink);border-radius:8px;padding:5px 10px;cursor:pointer;font-size:13px;z-index:10}}
+#back-btn{{position:fixed;top:14px;left:16px;background:var(--panel);border:1px solid var(--line);
+           color:var(--ink);border-radius:8px;padding:5px 10px;cursor:pointer;font-size:13px;z-index:10}}
 </style></head><body>
+<button id="back-btn" onclick="window.history.length>1?window.history.back():window.close()">← Back</button>
 <button id="theme-toggle" onclick="toggleTheme()">☀️ Light</button>
 <nav><b>{name}</b> &nbsp;|&nbsp; {nav_links}</nav>
 <div id="content"></div>
@@ -383,6 +429,10 @@ renderMathInElement(document.body,{{throwOnError:false,delimiters:[
     def put_page(slug: str, page: str, body: PageContentIn, user: str = Depends(current_user)):
         service.save_page(home_of(user), slug, page, body.content)
         return {"ok": True}
+
+    @app.get("/api/bubbles/{slug}/poll")
+    def bubble_poll(slug: str, page: str, user: str = Depends(current_user)):
+        return service.page_poll(home_of(user), slug, page)
 
     @app.patch("/api/bubbles/{slug}/pages/{page}")
     def patch_page(slug: str, page: str, body: PageRenameIn, user: str = Depends(current_user)):
@@ -450,23 +500,7 @@ renderMathInElement(document.body,{{throwOnError:false,delimiters:[
                    tok: str = Depends(claude_token)):
         return {"title": service.generate_chat_title(home_of(user), body.messages, claude_token=tok)}
 
-    # ---- chat compaction ----
-    class CompactIn(BaseModel):
-        messages: list[dict]
-
-    @app.post("/api/bubbles/{slug}/compact")
-    def compact_chat(slug: str, body: CompactIn, user: str = Depends(current_user),
-                     tok: str = Depends(claude_token)):
-        return {"messages": service.compact_chat(home_of(user), body.messages, claude_token=tok)}
-
-    # ---- streamed: generate / chat / edit ----
-    @app.post("/api/bubbles/{slug}/generate")
-    def generate_report(slug: str, body: GenerateIn, user: str = Depends(current_user),
-                        tok: str = Depends(claude_token)):
-        home = home_of(user)
-        return _stream(lambda: service.generate_report(home, slug, body.page, body.instructions,
-                                                       claude_token=tok))
-
+    # ---- streamed: read-only research chat ----
     @app.post("/api/bubbles/{slug}/chat")
     def bubble_chat(slug: str, body: ChatIn, user: str = Depends(current_user),
                     tok: str = Depends(claude_token)):
@@ -474,15 +508,6 @@ renderMathInElement(document.body,{{throwOnError:false,delimiters:[
         return _stream(lambda: service.chat(home, slug, body.page, body.messages,
                                             body.page_context, body.deep_read_ids,
                                             claude_token=tok))
-
-    @app.post("/api/bubbles/{slug}/edit")
-    def bubble_edit(slug: str, body: EditIn, user: str = Depends(current_user),
-                    tok: str = Depends(claude_token)):
-        home = home_of(user)
-        return _stream(lambda: service.edit_page(
-            home, slug, page_slug=body.page, mode=body.mode, instruction=body.instruction,
-            page_context=body.page_context, section=body.section,
-            rejected_proposal=body.rejected_proposal, claude_token=tok))
 
     return app
 

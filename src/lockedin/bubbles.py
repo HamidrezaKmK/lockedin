@@ -94,6 +94,19 @@ def approve_bubble(slug: str, instructions: str = "") -> dict:
     return entry
 
 
+def rename_bubble(slug: str, new_name: str) -> dict:
+    """Update the display name of a bubble (slug stays the same)."""
+    new_name = new_name.strip()
+    if not new_name:
+        raise ValueError("Bubble name cannot be empty.")
+    reg = load_registry()
+    if slug not in reg:
+        raise KeyError(f"Bubble {slug!r} not found.")
+    reg[slug]["name"] = new_name
+    save_registry(reg)
+    return reg[slug]
+
+
 def delete_bubble(slug: str) -> None:
     """Remove a bubble from the registry, delete its reports, and strip its tag from all PDFs."""
     import shutil

@@ -83,6 +83,11 @@ def register_user_tags(home: Path, tags: list[str]) -> None:
                 bubbles.create_bubble(t)
 
 
+def rename_bubble(home: Path, slug: str, new_name: str) -> dict:
+    with paths.use_root(home):
+        return bubbles.rename_bubble(slug, new_name)
+
+
 def approve_bubble(home: Path, slug: str, instructions: str = "") -> dict:
     with paths.use_root(home):
         return bubbles.approve_bubble(slug, instructions)
@@ -124,6 +129,21 @@ def delete_page(home: Path, slug: str, page_slug: str) -> bool:
         return bubbles.delete_page(slug, page_slug)
 
 
+def page_poll(home: Path, slug: str, page_slug: str) -> dict:
+    """Return file mtimes for the current page + manifest, plus the pages list.
+
+    Used by the frontend's auto-sync poller to detect external edits (e.g. from
+    dev-mode direct file edits) without a full page reload.
+    """
+    with paths.use_root(home):
+        page_path = paths.bubble_page_path(slug, page_slug)
+        manifest_path = paths.bubble_manifest_path(slug)
+        page_mtime = page_path.stat().st_mtime if page_path.exists() else 0
+        manifest_mtime = manifest_path.stat().st_mtime if manifest_path.exists() else 0
+        pages = bubbles.list_pages(slug) if manifest_path.exists() else []
+    return {"page_mtime": page_mtime, "manifest_mtime": manifest_mtime, "pages": pages}
+
+
 # ---- figures ----
 def save_bubble_image(home: Path, slug: str, filename: str, data: bytes) -> str:
     with paths.use_root(home):
@@ -136,19 +156,6 @@ def bubble_asset_path(home: Path, slug: str, filename: str) -> Path:
 
 
 # ---- streaming (generators manage their own root) ----
-def generate_report(home: Path, slug: str, page_slug: str, instructions: str = "",
-                    *, claude_token: str = ""):
-    return reports.generate_template(home, slug, page_slug, instructions, claude_token=claude_token)
-
-
-def edit_page(home: Path, slug: str, page_slug: str, mode: str, instruction: str,
-             page_context: str, section=None, rejected_proposal=None, *, claude_token: str = ""):
-    return reports.edit_page(home, slug, page_slug=page_slug, mode=mode,
-                             instruction=instruction, page_context=page_context,
-                             section=section, rejected_proposal=rejected_proposal,
-                             claude_token=claude_token)
-
-
 def chat(home: Path, slug: str, page_slug: str, messages: list[dict], page_context: str = "",
          deep_read_ids: list[str] | None = None, *, claude_token: str = ""):
     return reports.chat_stream(home, slug, page_slug, messages, page_context, deep_read_ids,
@@ -188,10 +195,6 @@ def save_model_config(home: Path, cfg: dict) -> dict:
 
 def set_active_provider(home: Path, provider: str) -> dict:
     return models.set_active_provider(home, provider)
-
-
-def compact_chat(home: Path, messages: list[dict], *, claude_token: str = "") -> list[dict]:
-    return models.compact_chat(home, messages, claude_token=claude_token)
 
 
 def generate_chat_title(home: Path, messages: list[dict], *, claude_token: str = "") -> str:

@@ -1,15 +1,20 @@
-"""Report generation + AI editing, all streamed (v2: page-targeted).
+"""Streamed research chat (read-only) + chat-title helper.
 
-Each public function is a generator that yields SSE-ready dicts::
+The web app no longer writes to report pages with the model — that proved too unreliable with
+small local models. Editing is done by the user directly in the Markdown editor (or by a strong
+model in DEV_MODE). What remains here is:
 
-    {"type": "delta",   "text": "..."}     # incremental model output
-    {"type": "done",    "content": "..."}  # final full page markdown
-    {"type": "error",   "detail": "..."}   # something went wrong
+* ``chat_stream`` — a knowledgeable, READ-ONLY research assistant grounded in the bubble's report
+  pages, every tagged paper's summary, and the full text of any "deep-read" papers. It never
+  edits anything; it just discusses. Context is bounded and the conversation is compacted
+  internally so it fits a local model's window.
+* ``generate_chat_title`` — a short, cute session name for the sidebar.
 
-The server forwards these straight to the client. Report generation is *gated*: it refuses
-to run on an unapproved bubble, and writes the target page. Edits return a *proposal* the user
-reviews as a diff (NOT saved server-side). Everything is grounded in cached per-PDF summaries
-(cheap); chat can deep-read a PDF on demand for detail.
+Each public generator yields SSE-ready dicts::
+
+    {"type": "delta", "text": "..."}                         # incremental model output
+    {"type": "done",  "full_response": "...", "chat_text": "..."}
+    {"type": "error", "detail": "..."}
 """
 from __future__ import annotations
 
@@ -19,110 +24,140 @@ from typing import Iterator, Optional
 
 from . import assets, bubbles, models, paths
 
-GENERATE_SYSTEM = (
-    "You are helping a grad student maintain a living research report (an 'idea bubble' page). "
-    "Produce a well-structured Markdown page they can grow over time. Use '#' for the title and "
-    "'##' for sections. Suggested sections: Overview, Key Papers, Mathematical Foundations, "
-    "Open Questions, My Ideas. Render math with LaTeX using ONLY $...$ for inline and $$...$$ for "
-    "display math. NEVER use \\( \\) or \\[ \\] delimiters. To link to "
-    "another page in this bubble, write [[page-slug]]. Ground claims in the provided paper "
-    "summaries; where unsure, leave a clearly marked TODO rather than inventing detail."
-)
+APP_USAGE_GUIDE = """\
+# lockedin — User Guide
 
-PAGE_EDIT_SYSTEM = (
-    "You rewrite an entire Markdown research page per the user's instruction. Return ONLY the "
-    "full replacement Markdown for the page (keep a leading '# ' title). No code fences, and no "
-    "meta-commentary of ANY kind — no changelog lines, no 'Removed…/Updated…/Here is…/I have…' "
-    "notes. The output is the page exactly as a reader sees it. Preserve [[...]] links and LaTeX "
-    "math, using ONLY $...$ (inline) and $$...$$ (display) — NEVER \\( \\) or \\[ \\]."
-)
+## Overview
+lockedin is a local-first research assistant for grad students. Upload papers (PDFs), group them
+into **Idea Bubbles** (topic tags), and maintain multi-page Markdown reports per bubble, with a
+research chat sidebar and a switchable LLM backend.
 
-SECTION_EDIT_SYSTEM = (
-    "You edit one section of a Markdown research page. Return ONLY the replacement Markdown for "
-    "that section, and it MUST begin with the exact '## ' heading line being replaced. No code "
-    "fences, and no meta-commentary of ANY kind — no changelog lines, no 'Removed…/Updated…/Here "
-    "is…/I have…' notes. The output is the section exactly as a reader sees it. Preserve [[...]] "
-    "links and LaTeX math, using ONLY $...$ (inline) and $$...$$ (display) — NEVER \\( \\) or \\[ \\]."
+## Navigation
+The left sidebar has three views:
+- **Assets** — your uploaded PDFs
+- **Idea Bubbles** — topic groups with report wikis
+- **Attention** — papers that need manual tagging review
+
+## Assets (PDFs)
+- **Upload**: drag/select a PDF, optionally give a title, comma-separated bubble tags, and a
+  source URL. If you leave tags blank, the AI will auto-suggest them in the background.
+- **Edit**: click any asset card to edit its title, tags, notes, and source URL; clear the
+  attention flag; or open the PDF inline.
+- **Auto-tagging**: uploaded papers without tags are queued for background summarization and
+  tag suggestion. They appear in the **Attention** queue until reviewed.
+
+## Idea Bubbles
+- **Create**: click "+ New bubble" in the Bubbles view, or tag a PDF with a new name.
+- **Auto-suggested bubbles** (badge: "suggested") must be **Approved** to open their report.
+  Click into the bubble and hit "Approve this bubble".
+- **Rename**: click the ✏️ pencil next to the bubble title inside its detail view.
+- **Delete**: the 🗑 icon on the bubble card removes the bubble and all its pages.
+
+## Report Editor (multi-page wiki)
+Each approved bubble has a mini-wiki of Markdown pages. Open a bubble to enter the editor. You
+write the reports yourself — the chat assistant is read-only and does not edit pages for you.
+
+### Page tabs
+- **+ Page** — create a new page (give it a title)
+- Click a tab to switch pages (current page auto-saves first)
+- **✕** on a tab deletes that page (the home/overview page cannot be deleted)
+
+### Writing Markdown
+The left half is the editor (plain Markdown); the right half is the live preview.
+
+**Math** — use standard LaTeX delimiters:
+- Inline: `$E = mc^2$`
+- Display: `$$\\int_0^\\infty f(x)\\,dx$$`
+
+**Numbered equations with cross-references**: put `\\label{name}` inside a `$$` block to
+auto-number it, then reference it anywhere with `\\eqref{name}`, which renders as the matching
+number. Forward references work.
+
+**Wikilinks** — link between pages in the same bubble by title: `[[Overview]]`, `[[Key Papers]]`.
+The system resolves titles to real page slugs on save.
+
+### Toolbar buttons (top of the editor pane)
+| Button | Action |
+|--------|--------|
+| `+ Page` | Create a new page |
+| `⟳ synced` / `⟳ unsynced` | **Click to save.** Shows sync state. If an external edit was detected, confirms whether to load the remote version or overwrite with your edits. |
+| `⊞ preview` / `⊟ preview` | Toggle the live preview pane |
+| `chat ❮` / `chat ❯` | Collapse or expand the chat sidebar |
+| `🔍` | Open a full-page standalone preview in a new tab (with a ← Back button) |
+
+### Auto-sync
+If you edit a page's `.md` file directly on disk (e.g. from another tool or a DEV_MODE session),
+the browser detects the change within ~5 seconds and silently reloads the content — as long as
+you have no unsaved local edits. If you do have unsaved edits, a toast notifies you and the ⟳
+badge will prompt you to choose when you click to save.
+
+## Chat Sidebar
+The right pane is a **read-only** research assistant. It knows the full text of this bubble's
+report pages, a summary of every tagged paper, and — when you attach them — the full text of
+specific papers. Use it to ask questions, explain math, summarize, compare papers, and
+brainstorm. It does **not** edit your report; if you want wording for a page, ask it to draft the
+text and paste it into the editor yourself.
+
+### Deep-read
+Use the "📎 Add paper to deep-read…" dropdown at the bottom of the chat to attach specific PDFs.
+The assistant then reads the full paper text (or the PDF itself, with Claude) for the
+conversation, enabling detailed paper-specific questions.
+
+### Sessions
+Chat history is saved automatically. Use the session dropdown at the top of the chat pane to
+switch between saved conversations or start a new one. The 📋 icon opens a session management
+panel to delete old sessions.
+
+## Model Settings
+Click any model tab in the topbar (🖥 Qwen, OpenAI, Claude, Gemini) to switch the active model.
+Click the ⚙ gear icon on a tab to configure its API key or endpoint. Models:
+- **Qwen (local)** — runs via Ollama on your machine; private and free.
+- **OpenAI** — GPT-4o and others; requires an API key.
+- **Claude** — Anthropic models; API key or OAuth subscription token.
+- **Gemini** — Google models via AI Studio; requires an API key.
+Only the active model's health indicator (coloured dot) is checked on load.
+"""
+
+# A SHORT, model-safe summary for the chat system prompt — facts only, no fenced code blocks.
+APP_USAGE_BRIEF = (
+    "ABOUT THIS APP (use these facts to answer usage questions):\n"
+    "- Reports are multi-page Markdown wikis, one per idea bubble; the editor is on the left, a "
+    "live preview on the right. The user writes the reports themselves.\n"
+    "- Math: $...$ inline, $$...$$ display. Number a display equation by putting \\label{name} "
+    "inside its $$ block, then reference it anywhere with \\eqref{name} (renders as its number).\n"
+    "- Link to another page in the same bubble by its title in double brackets, e.g. [[Overview]].\n"
+    "- The synced/unsynced badge saves the current page; the preview toggle shows/hides the "
+    "preview; the chat pane can be collapsed; the magnifier opens a full-page preview.\n"
+    "- This chat is read-only: it discusses but cannot edit pages. Deep-read attaches a paper's "
+    "full text to the conversation.\n"
+    "For the complete step-by-step guide, tell the user to click the ? button in the top bar."
 )
 
 CHAT_SYSTEM = """\
-You are the research assistant embedded in a grad student's idea bubble. You answer questions,
-brainstorm, and — when it makes sense — propose edits to the report pages.
+You are a knowledgeable research assistant embedded in a grad student's idea bubble. You discuss
+the papers and the user's report notes: answer questions, explain the math, summarize, compare
+papers, surface open questions, and help the user think.
+
+This is a READ-ONLY conversation. You CANNOT edit the report and have no tools to do so. Never
+claim you changed a page and never emit XML-ish edit tags. If the user wants text for a page,
+draft it in your reply and remind them to paste it into the editor themselves.
+
+You are given the full text of this bubble's report pages, a summary of every tagged paper, and —
+when the user attaches them — the full text of specific "deep-read" papers. Ground every claim in
+that material; if the answer isn't there, say so rather than inventing. Cite papers by title.
 
 RESPONSE STYLE
 Be concise: 1-4 sentences or a short bullet list by default. Skip preamble. Don't restate the
 question. Only write at length when explicitly asked. For math use LaTeX with ONLY $...$ (inline)
-and $$...$$ (display) delimiters — NEVER \\( \\) or \\[ \\]. Cite papers when relevant.
+and $$...$$ (display) delimiters — NEVER \\( \\) or \\[ \\].
 
-PROPOSING EDITS
-If the user asks you to rewrite, add, remove, or improve part of a report page, respond with:
-1. One brief sentence explaining what you're changing (shown in chat).
-2. Immediately after, an <EDIT> block in exactly this format:
+APP REFERENCE
+If the user asks how to use the website, editor, buttons, or a feature, answer from the facts
+below. Do NOT show a fenced code block of these instructions — explain in prose.
+""" + APP_USAGE_BRIEF
 
-To edit one section:
-<EDIT section="## Exact Heading">
-replacement content for that section (include the ## heading line)
-</EDIT>
-
-To rewrite the entire page:
-<EDIT page="true">
-full replacement markdown
-</EDIT>
-
-CREATING NEW PAGES
-If the user asks you to create a new page (e.g. "add a page about X" or "write a dedicated
-page for Y"), respond with a <NEWPAGE> block per page. To also link the new page from the
-current page, add a separate <EDIT> block updating the relevant section.
-
-<NEWPAGE title="Page Title">
-# Page Title
-
-## Section
-Content here...
-</NEWPAGE>
-
-LINKING RULES (important — read carefully)
-- To link to a page, write [[Exact Page Title]] using the page's TITLE. The system resolves the
-  title to the correct page automatically — do NOT invent slugs, lowercase-dashed names, or
-  path-like targets such as [[Section/Title]]. Just the plain title in double brackets.
-- You may link a page you are creating in this same response by its title.
-
-EDIT RULES
-- Only propose an EDIT when the user clearly wants a change to the report. For questions,
-  brainstorming, or clarifications, just reply conversationally — no EDIT block.
-- ALWAYS close every block with its matching </NEWPAGE> or </EDIT> tag.
-- The text inside an <EDIT> block IS the report page itself. It must be PURE report content —
-  exactly what a reader should see. NEVER put meta-commentary inside it: no changelog notes, no
-  "Removed duplicate links", "Updated the section", "Here is the revised page", "I have…", "Note:",
-  etc. If you want to describe what you changed, write that as your ONE sentence BEFORE the
-  <EDIT> block (it shows in chat) — never inside the block.
-- Section edits: the block MUST begin with the exact '## Heading' line you are replacing, then
-  only that section's content (up to the next ##). Do NOT bleed into adjacent sections.
-- Preserve [[...]] links and LaTeX math. Math delimiters are ALWAYS $...$ or $$...$$, never \\( \\) or \\[ \\].
-- If a previous edit was rejected and the user gives feedback, propose a revised EDIT that
-  addresses the feedback.\
-"""
-
-# Matches <EDIT section="..."> or <EDIT page="true"> blocks. Tolerant of a MISSING closing
-# tag: a block runs until </EDIT>, the next <EDIT>/<NEWPAGE>, or end-of-text. Small local
-# models routinely drop closing tags — without this, the raw XML leaks into saved pages.
-# Groups: (1) section heading or None, (2) "true" if page="true" else None, (3) content.
-# A bare <EDIT> (neither attribute) is malformed — see chat_stream, where it's ignored rather
-# than treated as a whole-page replacement (that would let echoed garbage nuke the page).
-_EDIT_RE = re.compile(
-    r'<EDIT(?:\s+section="([^"]*)")?(?:\s+page="(true)")?\s*>'
-    r'(.*?)(?:</EDIT>|(?=<EDIT\b)|(?=<NEWPAGE\b)|$)',
-    re.DOTALL | re.IGNORECASE,
-)
-
-# Matches <NEWPAGE title="..."> blocks, equally tolerant of a missing </NEWPAGE>.
-_NEWPAGE_RE = re.compile(
-    r'<NEWPAGE\s+title="([^"]*)"\s*>'
-    r'(.*?)(?:</NEWPAGE>|(?=<NEWPAGE\b)|(?=<EDIT\b)|$)',
-    re.DOTALL | re.IGNORECASE,
-)
-
-# Leftover stray closing tags to scrub from displayed/saved text.
+# Defensive scrub: a small local model may still echo a stray <EDIT>/<NEWPAGE> tag despite the
+# read-only prompt. Strip any such tag from displayed text so raw XML never shows in chat.
 _STRAY_TAGS_RE = re.compile(r'</?(?:EDIT|NEWPAGE)\b[^>]*>', re.IGNORECASE)
 
 # Math delimiter normalization. The frontend renders $...$ / $$...$$ reliably; models (qwen
@@ -138,203 +173,59 @@ def _normalize_math(text: str) -> str:
     return text
 
 
-def _bubble_context(slug: str) -> str:
-    """Titles + cached summaries of the PDFs in a bubble, for grounding generation."""
-    pdfs = bubbles.pdfs_for_bubble(slug)
-    if not pdfs:
-        return "(No PDFs are tagged to this bubble yet.)"
-    blocks = []
-    for m in pdfs:
-        summary = assets.get_summary(m["pdf_id"]) or "(not yet summarized)"
-        blocks.append(f"### {m.get('title', m['pdf_id'])}\n{summary}")
-    return "\n\n".join(blocks)
-
-
-def _other_pages(slug: str, page_slug: str) -> str:
-    others = [p for p in bubbles.list_pages(slug) if p["page_slug"] != page_slug]
-    if not others:
-        return "(none)"
-    return ", ".join(f"[[{p['page_slug']}]] ({p['title']})" for p in others)
-
-
 # --------------------------------------------------------------------------- #
-# Generate (writes the target page)
+# Context budgeting — keep the assembled prompt within a local model's window
 # --------------------------------------------------------------------------- #
-def generate_template(home: Path, slug: str, page_slug: str,
-                      instructions: str = "", *, claude_token: str = "") -> Iterator[dict]:
-    with paths.use_root(home):
-        if not bubbles.is_approved(slug):
-            yield {"type": "error", "detail": "Approve this idea bubble before generating a report."}
-            return
-        bubbles.ensure_pages(slug)
-        name = bubbles.slug_to_name(slug)
-        context = _bubble_context(slug)
-        user = (f"Idea bubble: **{name}**\n\n"
-                f"User instructions: {instructions or '(none — use your best judgment)'}\n\n"
-                f"Other pages you can link to: {_other_pages(slug, page_slug)}\n\n"
-                f"Source paper summaries:\n{context}\n\n"
-                "Write the page now.")
-        acc = []
-        try:
-            for chunk in models.stream_chat(home, [{"role": "user", "content": user}],
-                                            system=GENERATE_SYSTEM, temperature=0.4,
-                                            claude_token=claude_token):
-                acc.append(chunk)
-                yield {"type": "delta", "text": chunk}
-        except Exception as e:  # noqa: BLE001
-            yield {"type": "error", "detail": str(e)}
-            return
-        content = _normalize_math("".join(acc).strip())
-        bubbles.save_page(slug, page_slug, content)
-        yield {"type": "done", "content": content}
+_REPORT_CTX_BUDGET = 16000   # chars for report pages injected into the system prompt
+_DEEPREAD_BUDGET = 14000     # chars of a single deep-read paper's full text (qwen/openai path)
+_COMPACT_AT = 16             # compact the conversation when it exceeds this many messages
 
 
-# --------------------------------------------------------------------------- #
-# Section splicing
-# --------------------------------------------------------------------------- #
-def list_sections(page: str) -> list[str]:
-    """Return the '## ' heading lines present in the page (edit units)."""
-    return [ln.strip() for ln in page.splitlines() if ln.strip().startswith("## ")]
+def _clip(text: str, budget: int, label: str = "content") -> str:
+    text = text or ""
+    if len(text) <= budget:
+        return text
+    return text[:budget] + f"\n\n…[{label} truncated — {len(text) - budget} more chars omitted]…"
 
 
-# A heading the model copied from the prompt framing, e.g. "## [Overview]" → "## Overview".
-_BRACKET_HEADING_RE = re.compile(r'^(#+)\s*\[\s*(.*?)\s*\]\s*$')
-
-
-def _clean_heading(h: str) -> str:
-    """Strip the prompt's ``[...]`` framing so '## [Overview]' becomes '## Overview'."""
-    h = h.strip()
-    m = _BRACKET_HEADING_RE.match(h)
-    return f"{m.group(1)} {m.group(2)}".strip() if m else h
-
-
-def _heading_key(h: str) -> str:
-    return _clean_heading(h).lower()
-
-
-def _find_heading(lines: list[str], heading: str) -> Optional[int]:
-    """Index of the line matching ``heading`` (bracket- and case-insensitive), else None."""
-    key = _heading_key(heading)
-    return next((i for i, ln in enumerate(lines)
-                 if ln.strip().startswith("## ") and _heading_key(ln) == key), None)
-
-
-def _splice_section(page: str, heading: str, new_block: str) -> str:
-    """Replace the block from ``heading`` up to the next '## ' (or EOF) with ``new_block``."""
-    block = new_block.strip()
-    first = block.split("\n", 1)[0].strip()
-
-    # The model frequently returns a WHOLE page (leading '# ' H1 title) under a section edit —
-    # especially when it mistakes the page title for the section. Treat that as a full-page
-    # replacement instead of appending, which is what caused edits to duplicate the page.
-    if first.startswith("# ") and not first.startswith("## "):
-        return block + ("" if block.endswith("\n") else "\n")
-
-    clean = _clean_heading(heading)
-    # Re-attach the heading if the model omitted it (avoids silently deleting the heading).
-    if _heading_key(first) != clean.lower():
-        block = f"{clean}\n\n{block}"
-
-    lines = page.splitlines(keepends=True)
-    start = _find_heading(lines, heading)
-    if start is None:
-        sep = "" if page.endswith("\n") or not page else "\n\n"
-        return page + sep + block.strip() + "\n"
-    end = len(lines)
-    for j in range(start + 1, len(lines)):
-        if lines[j].strip().startswith("## "):
-            end = j
+def _report_context(slug: str, page_slug: str, cur_content: str, cur_title: str) -> str:
+    """All report pages, current one in full first, others within the remaining char budget."""
+    cur_block = f"===== PAGE: {cur_title} (currently open) =====\n{cur_content.strip()}"
+    blocks = [cur_block]
+    remaining = _REPORT_CTX_BUDGET - len(cur_block)
+    for p in bubbles.list_pages(slug):
+        if p["page_slug"] == page_slug:
+            continue
+        c = bubbles.get_page(slug, p["page_slug"]).strip()
+        if not c:
+            continue
+        block = f"===== PAGE: {p['title']} =====\n{c}"
+        if len(block) > remaining:
+            block = _clip(block, max(remaining, 500), "page")
+        blocks.append(block)
+        remaining -= len(block)
+        if remaining <= 0:
             break
-    replacement = block.strip() + "\n"
-    if end < len(lines):
-        replacement += "\n"
-    return "".join(lines[:start]) + replacement + "".join(lines[end:])
-
-
-def _extract_section(page: str, heading: str) -> str:
-    lines = page.splitlines(keepends=True)
-    start = _find_heading(lines, heading)
-    if start is None:
-        return heading
-    end = len(lines)
-    for j in range(start + 1, len(lines)):
-        if lines[j].strip().startswith("## "):
-            end = j
-            break
-    return "".join(lines[start:end]).strip()
+    return "\n\n".join(blocks) or "(no report pages yet)"
 
 
 # --------------------------------------------------------------------------- #
-# Edit a page (whole page or one section) — returns a proposal, does NOT save
-# --------------------------------------------------------------------------- #
-def edit_page(home: Path, slug: str, page_slug: str, mode: str, instruction: str,
-              page_context: str, section: Optional[str] = None,
-              rejected_proposal: Optional[str] = None,
-              *, claude_token: str = "") -> Iterator[dict]:
-    with paths.use_root(home):
-        links = _other_pages(slug, page_slug)
-        refine = (f"\n\nIMPORTANT: A previous attempt was rejected by the user. "
-                  f"That rejected proposal was:\n{rejected_proposal}\n\n"
-                  f"The user's new instruction (what to change): {instruction}"
-                  if rejected_proposal else "")
-        if mode == "section":
-            if not section:
-                yield {"type": "error", "detail": "No section selected."}
-                return
-            block = _extract_section(page_context, section)
-            system = SECTION_EDIT_SYSTEM
-            user = (f"Instruction: {instruction}{refine}\n\nLinkable pages: {links}\n\n"
-                    f"Current section to rewrite:\n{block}\n\nReturn the replacement section now.")
-        elif mode == "page":
-            system = PAGE_EDIT_SYSTEM
-            user = (f"Instruction: {instruction}{refine}\n\nLinkable pages: {links}\n\n"
-                    f"Current page:\n{page_context}\n\nReturn the full replacement page now.")
-        else:
-            yield {"type": "error", "detail": f"Unknown edit mode {mode!r}."}
-            return
-
-        acc = []
-        try:
-            for chunk in models.stream_chat(home, [{"role": "user", "content": user}],
-                                            system=system, temperature=0.3,
-                                            claude_token=claude_token):
-                acc.append(chunk)
-                yield {"type": "delta", "text": chunk}
-        except Exception as e:  # noqa: BLE001
-            yield {"type": "error", "detail": str(e)}
-            return
-
-        new_text = _normalize_math("".join(acc).strip())
-        content = new_text if mode == "page" else _splice_section(page_context, section, new_text)
-        # NOT saved here — the client reviews the proposal as a diff, then PUTs on accept.
-        yield {"type": "done", "content": content}
-
-
-# --------------------------------------------------------------------------- #
-# Unified chat (answers questions AND proposes structured edits when appropriate)
+# Read-only research chat
 # --------------------------------------------------------------------------- #
 def chat_stream(home: Path, slug: str, page_slug: str, messages: list[dict],
                 page_context: str = "", deep_read_ids: Optional[list[str]] = None,
                 *, claude_token: str = "") -> Iterator[dict]:
-    """Stream a unified chat+edit response.
+    """Stream a read-only research-assistant reply grounded in the bubble's reports + papers.
 
-    The model decides whether to reply conversationally or propose an edit by including an
-    ``<EDIT>`` block.  Deltas are streamed live; on completion the ``done`` event carries:
+    The model only discusses — it never edits a page. The ``done`` event carries
+    ``full_response`` (raw output, pushed to chat history) and ``chat_text`` (cleaned prose).
 
-    * ``full_response`` — the full raw model output (client should push to chat history so
-      rejected edits are visible in future context).
-    * ``chat_text`` — the prose before any ``<EDIT>`` block (cleaned for display).
-    * ``edit_proposal`` — present only when the model proposed an edit:
-        ``{"section": "## Heading" | None, "content": "<proposed full page markdown>"}``
-      The content is already spliced (section edits are applied via ``_splice_section``,
-      constraining the change to exactly that section — the rule-based boundary check).
-    * ``new_page_proposals`` — present only when the model proposed new pages:
-        ``[{"title": str, "content": str}]``. These are PROPOSALS, not created here — the
-      client gates each behind its own Accept/Reject card, then commits via POST+PUT (which
-      assigns the real slug and normalizes ``[[links]]`` on save). Deferring creation keeps
-      page-adds consistent with edits (both gated) and lets link targets resolve to the real
-      slug. Tag parsing tolerates a missing ``</NEWPAGE>``/``</EDIT>`` (small models drop them),
-      so raw XML can never leak into a saved page.
+    Context assembly (bounded so it fits a local model's window):
+    * every report page — current page in full, others within ``_REPORT_CTX_BUDGET``;
+    * a summary of every tagged paper;
+    * the full text of each deep-read PDF (Claude gets the PDF; others get clipped text);
+    * the conversation itself, compacted via ``models.compact_chat`` once it grows past
+      ``_COMPACT_AT`` turns.
     """
     with paths.use_root(home):
         name = bubbles.slug_to_name(slug)
@@ -342,55 +233,41 @@ def chat_stream(home: Path, slug: str, page_slug: str, messages: list[dict],
         cur_content = page_context or bubbles.get_page(slug, page_slug)
         cur_title = next((p["title"] for p in all_pages if p["page_slug"] == page_slug), page_slug)
 
-        # Present each page fenced by markers that are CLEARLY NOT markdown headings, so the
-        # model can't mistake the page framing for an editable '## ' section (which is exactly
-        # what made it copy "## [Overview]" into section= and append duplicate pages).
-        page_blocks = []
-        for p in all_pages:
-            is_current = p["page_slug"] == page_slug
-            content = cur_content if is_current else bubbles.get_page(slug, p["page_slug"])
-            if not is_current and not content.strip():
-                continue
-            tag = " (CURRENT PAGE — the one you edit)" if is_current else ""
-            page_blocks.append(
-                f"===== PAGE: {p['title']}{tag} =====\n{content.strip()}\n===== END PAGE =====")
-        all_pages_text = "\n\n".join(page_blocks) or "(no pages yet)"
-
-        cur_sections = list_sections(cur_content)
-        sections_hint = (", ".join(f'"{s}"' for s in cur_sections)
-                         if cur_sections else "(none yet — the page has only a # title)")
+        report_ctx = _report_context(slug, page_slug, cur_content, cur_title)
 
         pdfs = bubbles.pdfs_for_bubble(slug)
         summaries = "\n\n".join(
             f"### {m.get('title', m['pdf_id'])}\n{assets.get_summary(m['pdf_id']) or '(no summary)'}"
             for m in pdfs) or "(no PDFs tagged yet)"
-        system = (
-            f"{CHAT_SYSTEM}\n\nIdea bubble: **{name}**\n\n"
-            f"The bubble's pages are shown below, each fenced by `===== PAGE: … =====` markers. "
-            f"Those markers are NOT part of any page — never reproduce them in an edit.\n\n"
-            f"{all_pages_text}\n\n"
-            f"You are editing **{cur_title}**. Its editable sections (the exact '## ' headings "
-            f"in its markdown) are: {sections_hint}.\n"
-            f"- To change ONE section, use <EDIT section=\"## Exact Heading\"> with a heading "
-            f"copied EXACTLY from that list — no brackets, no page title — and start the block "
-            f"with that same '## ' line.\n"
-            f"- To restructure the WHOLE page, use <EDIT page=\"true\"> with the full markdown "
-            f"(starting with the '# ' title). Do this when the change spans multiple sections.\n"
-            f"- Refer to other pages by their title in [[double brackets]].\n\n"
-            f"Paper summaries:\n{summaries}")
 
+        system = (
+            f"{CHAT_SYSTEM}\n\nIdea bubble: **{name}** — the user is currently viewing the page "
+            f"**{cur_title}**.\n\n"
+            f"REPORT PAGES (the user's living notes; quote/cite them, never reproduce the "
+            f"`===== PAGE =====` markers):\n{report_ctx}\n\n"
+            f"PAPER SUMMARIES:\n{summaries}")
+
+        # Conversation, compacted internally when long so the window isn't blown.
         convo = list(messages)
+        if len(convo) > _COMPACT_AT:
+            try:
+                convo = models.compact_chat(home, convo, claude_token=claude_token)
+            except Exception:  # noqa: BLE001 — compaction is best-effort
+                pass
+
+        # Deep-read: attach the (budgeted) full text / PDF of each selected paper.
         for pid in (deep_read_ids or []):
             try:
-                convo = models.attach_pdf(home, convo, assets.pdf_path(pid),
-                                          fallback_text=assets.get_text(pid),
-                                          label=assets.load_meta(pid).get("title", pid))
+                convo = models.attach_pdf(
+                    home, convo, assets.pdf_path(pid),
+                    fallback_text=_clip(assets.get_text(pid), _DEEPREAD_BUDGET, "paper text"),
+                    label=assets.load_meta(pid).get("title", pid))
             except Exception:  # noqa: BLE001
                 continue
 
         acc: list[str] = []
         try:
-            for chunk in models.stream_chat(home, convo, system=system, temperature=0.5,
+            for chunk in models.stream_chat(home, convo, system=system, temperature=0.4,
                                             claude_token=claude_token):
                 acc.append(chunk)
                 yield {"type": "delta", "text": chunk}
@@ -399,39 +276,8 @@ def chat_stream(home: Path, slug: str, page_slug: str, messages: list[dict],
             return
 
         full = _normalize_math("".join(acc))
-
-        # --- parse <NEWPAGE> blocks into PROPOSALS (NOT created — the client gates each
-        #     one with its own Accept/Reject card, then commits via POST+PUT) ---
-        new_page_proposals: list[dict] = []
-        for np in _NEWPAGE_RE.finditer(full):
-            title = np.group(1).strip()
-            content = _STRAY_TAGS_RE.sub("", np.group(2)).strip()
-            if title and content:
-                new_page_proposals.append({"title": title, "content": content})
-
-        # Strip all <NEWPAGE> blocks from the displayed text
-        stripped = _NEWPAGE_RE.sub("", full).strip()
-
-        # --- process optional <EDIT> block ---
-        # Use the first VALID edit: it must declare section="…" or page="true". A bare <EDIT>
-        # is malformed (models sometimes echo the prompt scaffolding) — ignore it rather than
-        # treat it as a whole-page replacement, which would let garbage nuke the page on Accept.
-        em = next((m for m in _EDIT_RE.finditer(stripped)
-                   if m.group(1) or m.group(2) == "true"), None)
-        if em:
-            section = em.group(1)  # None → full-page edit (page="true")
-            new_content = _STRAY_TAGS_RE.sub("", em.group(3)).strip()
-            chat_text = _STRAY_TAGS_RE.sub("", _EDIT_RE.sub("", stripped[:em.start()])).strip()
-            current_page = page_context or bubbles.get_page(slug, page_slug)
-            proposed = _splice_section(current_page, section, new_content) if section else new_content
-            yield {"type": "done", "full_response": full, "chat_text": chat_text,
-                   "edit_proposal": {"section": section, "content": proposed},
-                   "new_page_proposals": new_page_proposals or None}
-        else:
-            # No valid edit. Scrub any bare/malformed <EDIT> scaffolding from the shown prose.
-            chat_text = _STRAY_TAGS_RE.sub("", _EDIT_RE.sub("", stripped)).strip()
-            yield {"type": "done", "full_response": full, "chat_text": chat_text,
-                   "new_page_proposals": new_page_proposals or None}
+        yield {"type": "done", "full_response": full,
+               "chat_text": _STRAY_TAGS_RE.sub("", full).strip()}
 
 
 # --------------------------------------------------------------------------- #
