@@ -10,21 +10,25 @@ reports per topic — with a chat sidebar and a switchable LLM backend.
 
 - **Per-user workspaces** — username/password auth; each user gets `ASSETS/` and `REPORTS/`.
 - **Global model switcher** — one active model at a time, switched from the top bar:
-  local **Qwen** (Ollama, free), **OpenAI**, or **Claude**. Every task (tagging, summarizing,
-  chat, editing) uses the active model.
-- **Summarize-once** — each PDF is read in full once (cached `summary.md`); chat & report
-  generation reuse the summary to stay fast. Deep-read a PDF on demand for detail.
+  local **Qwen** (Ollama, free), **OpenAI**, **Claude**, or **Gemini**. Every task (tagging,
+  summarizing, chat) uses the active model.
+- **Summarize-once** — each PDF is read in full once (cached `summary.md`); the chat reuses the
+  summary to stay fast. Deep-read a PDF on demand for full-text detail.
 - **Auto-tagging** — upload a PDF with no tags and Qwen suggests idea-bubble tags (reusing
   existing bubbles when they fit), flagging it in the **Attention Queue** for your review.
-- **Gated reports** — approve a bubble, add instructions, then generate a template. The AI
-  never writes reports unprompted.
-- **Notion-like reports** — each bubble is a mini-wiki: **multiple markdown pages** (tabs),
-  **internal links** between them (`[[page-slug]]`), and **drag/paste figures** (PNGs). Built on
-  the [Toast UI Editor](https://ui.toast.com/tui-editor) (markdown + live preview) with **KaTeX**
-  math. Markdown stays the source of truth.
-- **Chat-driven editing** — a scope toggle under the chat (`💬 Chat` · `✏️ Edit entire page` ·
-  `✏️ Edit a section`) routes your message to a normal reply or an AI edit. Edits are shown as an
-  **accept/reject diff** before anything is saved.
+- **Notion-like reports** — each bubble is a mini-wiki you write yourself: **multiple markdown
+  pages** (tabs), **internal links** between them (`[[page-slug]]`), and **drag/paste figures**
+  (PNGs). Built on the [Toast UI Editor](https://ui.toast.com/tui-editor) (markdown + live
+  preview) with **KaTeX** math. Markdown stays the source of truth.
+- **Read-only research chat** — the chat sidebar knows the full text of your report pages, a
+  summary of every tagged paper, and the full text of any **deep-read** papers you attach. Ask
+  questions, explain math, compare papers, brainstorm. It does **not** edit your reports — you
+  do that in the editor (or with a strong model in DEV_MODE).
+- **Share a bubble** — flip on an unlisted, read-only link for any bubble and send it to a
+  friend or manager (no login needed). They get a rendered preview of all its pages; headings
+  carry 🔗 anchors so you can deep-link to a specific section. Toggle it off anytime.
+- **Account settings** — change your username or password from the top bar (username changes
+  carry your whole workspace over).
 - **Standalone bubbles** — create a bubble/report for a nascent idea with no papers yet.
 
 ## Quick start

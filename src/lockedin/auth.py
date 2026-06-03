@@ -92,6 +92,47 @@ def verify_password(username: str, password: str) -> bool:
     return hmac.compare_digest(_hash_password(password, rec["salt"]), rec["hash"])
 
 
+def set_password(username: str, new_password: str) -> None:
+    """Replace a user's password (fresh salt). Raises ValueError on a too-short password."""
+    username = username.strip().lower()
+    if len(new_password) < MIN_PASSWORD_LEN:
+        raise ValueError(f"Password must be at least {MIN_PASSWORD_LEN} characters.")
+    users = load_accounts()
+    rec = users.get(username)
+    if rec is None:
+        raise ValueError("No such user.")
+    salt = secrets.token_hex(16)
+    rec["salt"] = salt
+    rec["hash"] = _hash_password(new_password, salt)
+    save_accounts(users)
+
+
+def rename_user(old: str, new: str) -> str:
+    """Rename the account record and repoint live sessions. Returns the normalized new name.
+
+    Does NOT move the user's workspace directory — the caller (service layer) does that, since
+    it spans modules. Raises ValueError if the new name is invalid or already taken.
+    """
+    old = old.strip().lower()
+    new = new.strip().lower()
+    if not valid_username(new):
+        raise ValueError("Username must be 1-32 chars: a-z, 0-9, '_' or '-'.")
+    users = load_accounts()
+    if old not in users:
+        raise ValueError("No such user.")
+    if new == old:
+        return old
+    if new in users:
+        raise ValueError("That username is already taken.")
+    users[new] = users.pop(old)
+    save_accounts(users)
+    # repoint any in-memory sessions to the new name so the user stays logged in
+    for token, name in list(_SESSIONS.items()):
+        if name == old:
+            _SESSIONS[token] = new
+    return new
+
+
 # --------------------------------------------------------------------------- #
 # Sessions
 # --------------------------------------------------------------------------- #

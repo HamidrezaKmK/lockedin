@@ -108,6 +108,20 @@ Chat history is saved automatically. Use the session dropdown at the top of the 
 switch between saved conversations or start a new one. The 📋 icon opens a session management
 panel to delete old sessions.
 
+## Sharing a bubble
+Open a bubble and click **🔗 Share** in its header to publish an unlisted, read-only link.
+While sharing is on the button shows **🟢 Sharing** and a **📋 Copy link** button appears —
+clicking it copies a link to the page you currently have open. Send that link to anyone (no
+login needed) and they see a rendered, read-only preview of the bubble, able to browse all its
+pages. On the shared page, hovering a heading reveals a 🔗 that copies a link straight to that
+section, so you can point someone at a specific part. Click **🟢 Sharing** again to turn it off;
+the link stops working immediately. Turning it back on restores the same link.
+
+## Account
+Click your **@username** in the top bar to change your username and/or password. You must enter
+your current password to confirm. Changing your username carries all your data over and keeps
+you logged in.
+
 ## Model Settings
 Click any model tab in the topbar (🖥 Qwen, OpenAI, Claude, Gemini) to switch the active model.
 Click the ⚙ gear icon on a tab to configure its API key or endpoint. Models:
@@ -130,6 +144,9 @@ APP_USAGE_BRIEF = (
     "preview; the chat pane can be collapsed; the magnifier opens a full-page preview.\n"
     "- This chat is read-only: it discusses but cannot edit pages. Deep-read attaches a paper's "
     "full text to the conversation.\n"
+    "- Click 🔗 Share in a bubble's header to publish an unlisted read-only link (a 📋 Copy-link "
+    "button then appears); headings on the shared page have 🔗 anchors for section links.\n"
+    "- Click your @username in the top bar to change your username or password.\n"
     "For the complete step-by-step guide, tell the user to click the ? button in the top bar."
 )
 

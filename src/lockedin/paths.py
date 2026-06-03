@@ -71,7 +71,8 @@ def _context_paths() -> dict[str, Path]:
 # Names resolved against the *base* root (the user registry, above any workspace).
 def _base_paths() -> dict[str, Path]:
     users = base_root() / "data" / "users"
-    return {"USERS_DIR": users, "ACCOUNTS_YAML": users / "accounts.yaml"}
+    return {"USERS_DIR": users, "ACCOUNTS_YAML": users / "accounts.yaml",
+            "SHARE_INDEX": users / "share_index.yaml"}
 
 
 def __getattr__(name: str) -> Path:  # PEP 562 — dynamic module attributes

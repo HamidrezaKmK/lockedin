@@ -245,7 +245,7 @@
     <div class="brand">🔒 <span class="lock">locked</span>in</div>
     <div class="row" id="modelTabs"></div>
     <div class="spacer"></div>
-    <span class="muted" id="who"></span>
+    <button class="ghost small" id="who" title="Account settings"></button>
     <button class="ghost small" id="helpBtn" title="User guide">?</button>
     <button class="ghost small" id="themeToggle" title="Toggle light/dark mode">☀️</button>
     <button class="ghost small" id="logout">Log out</button>
@@ -266,6 +266,21 @@
     <div class="hd"><b>User Guide</b><span class="spacer"></span>
       <button class="ghost small" id="helpClose">✕</button></div>
     <div class="diffbody preview" id="helpBody" style="font-family:inherit;font-size:14px;padding:16px 20px"></div>
+  </div>
+</div>
+<div id="acctModal" class="overlay hide">
+  <div class="diffbox col" style="width:min(420px,95vw);padding:18px;gap:10px">
+    <div class="row"><b>Account settings</b><span class="spacer"></span>
+      <button class="ghost small" id="acctClose">✕</button></div>
+    <label class="muted">New username (leave blank to keep)</label>
+    <input id="acct_user" autocomplete="username" placeholder="">
+    <label class="muted">New password (leave blank to keep)</label>
+    <input id="acct_pass" type="password" autocomplete="new-password" placeholder="">
+    <label class="muted">Current password (required to confirm)</label>
+    <input id="acct_cur" type="password" autocomplete="current-password">
+    <div class="err" id="acct_err"></div>
+    <div class="row"><span class="spacer"></span>
+      <button class="primary" id="acct_save">Save changes</button></div>
   </div>
 </div>
 <div id="toast" class="toast hide"></div>
@@ -395,7 +410,8 @@
     sessionId:null, sessionTitle:null,
     chatCollapsed:false,  // persisted in li_chat
     pollTimer:null, lastPageMtime:null, lastManifestMtime:null,
-    previewEl:null, remoteChangePending:false
+    previewEl:null, remoteChangePending:false,
+    shareActive:false, shareToken:""
   };
 
   // ================= AUTH =================
@@ -422,6 +438,30 @@
   };
   $("#helpClose").onclick=()=>$("#helpModal").classList.add("hide");
   $("#helpModal").onclick=e=>{ if(e.target===e.currentTarget)$("#helpModal").classList.add("hide"); };
+
+  // ---------- account settings ----------
+  function openAccount(){
+    $("#acct_user").value=""; $("#acct_pass").value=""; $("#acct_cur").value="";
+    $("#acct_err").textContent=""; $("#acct_user").setAttribute("placeholder",S.user||"");
+    $("#acctModal").classList.remove("hide"); $("#acct_cur").focus();
+  }
+  $("#who").onclick=openAccount;
+  $("#acctClose").onclick=()=>$("#acctModal").classList.add("hide");
+  $("#acctModal").onclick=e=>{ if(e.target===e.currentTarget)$("#acctModal").classList.add("hide"); };
+  $("#acct_save").onclick=async()=>{
+    const new_username=$("#acct_user").value.trim(), new_password=$("#acct_pass").value;
+    const current_password=$("#acct_cur").value;
+    $("#acct_err").textContent="";
+    if(!current_password){ $("#acct_err").textContent="Enter your current password to confirm."; return; }
+    if(!new_username && !new_password){ $("#acct_err").textContent="Nothing to change."; return; }
+    try{
+      const r=await api("/api/account",{method:"POST",
+        body:JSON.stringify({current_password,new_username:new_username||null,new_password:new_password||null})});
+      S.user=r.user; $("#who").textContent="@"+S.user;
+      $("#acctModal").classList.add("hide");
+      toast(new_username?("Account updated — you are now @"+S.user):"Password updated");
+    }catch(e){ $("#acct_err").textContent=e.message; }
+  };
   $("#themeToggle").onclick=()=>{
     const light=document.body.classList.toggle("light");
     $("#themeToggle").textContent=light?"🌙":"☀️";
@@ -559,6 +599,13 @@
     const file=el("input",{type:"file",accept:"application/pdf"});
     const title=el("input",{placeholder:"Title (optional)"});
     const tags=el("input",{placeholder:"Idea-bubble tags, comma-separated (leave blank to auto-tag)"});
+    // dropdown of existing bubbles — pick one instead of typing the tag at upload time
+    const bubbleSel=el("select");
+    bubbleSel.append(el("option",{value:""},"➕ Pick an existing bubble…"));
+    try{ (await api("/api/bubbles")).bubbles.forEach(b=>bubbleSel.append(el("option",{value:b.name},b.name))); }catch(e){}
+    bubbleSel.onchange=()=>{ const name=bubbleSel.value; bubbleSel.value=""; if(!name)return;
+      const cur=tags.value.split(",").map(s=>s.trim()).filter(Boolean);
+      if(!cur.some(t=>t.toLowerCase()===name.toLowerCase())){ cur.push(name); tags.value=cur.join(", "); } };
     const url=el("input",{placeholder:"Source URL (optional)"});
     const btn=el("button",{class:"primary"},"Upload PDF");
     btn.onclick=async()=>{
@@ -574,7 +621,7 @@
         viewAssets();
       }catch(e){toast(e.message);} finally{btn.disabled=false;btn.textContent="Upload PDF";}
     };
-    f.append(el("b",{},"Add a paper / blogpost"),file,title,tags,url,btn);
+    f.append(el("b",{},"Add a paper / blogpost"),file,title,tags,bubbleSel,url,btn);
     m.append(f, el("div",{style:"height:16px"}));
 
     const r=await api("/api/assets");
@@ -590,7 +637,9 @@
     c.append(head);
     const tagWrap=el("div",{});
     (a.tags||[]).forEach(t=>tagWrap.append(el("span",{class:"pill"},t)));
-    (a.suggested_tags||[]).forEach(t=>tagWrap.append(el("span",{class:"pill suggest"},"? "+t)));
+    // suggestions are only a hint for un-tagged papers — once bubbles are picked, drop them
+    if(!(a.tags||[]).length)
+      (a.suggested_tags||[]).forEach(t=>tagWrap.append(el("span",{class:"pill suggest"},"? "+t)));
     c.append(tagWrap);
     c.append(el("div",{class:"muted",style:"font-size:12px;margin-top:6px"},
       (a.summarized?"summarized • ":"") + (a.date_added||"").slice(0,10)));
@@ -605,12 +654,20 @@
     const tags=el("input",{value:(a.tags||[]).join(", ")});
     const notes=el("textarea",{rows:"4"}); notes.value=a.notes||"";
     const url=el("input",{value:a.url_source||""});
+    // dropdown of existing bubbles — pick one instead of retyping its name every time
+    const bubbleSel=el("select");
+    bubbleSel.append(el("option",{value:""},"➕ Pick an existing bubble…"));
+    try{ (await api("/api/bubbles")).bubbles.forEach(b=>bubbleSel.append(el("option",{value:b.name},b.name))); }catch(e){}
+    bubbleSel.onchange=()=>{ const name=bubbleSel.value; bubbleSel.value=""; if(!name)return;
+      const cur=tags.value.split(",").map(s=>s.trim()).filter(Boolean);
+      if(!cur.some(t=>t.toLowerCase()===name.toLowerCase())){ cur.push(name); tags.value=cur.join(", "); } };
     box.append(el("b",{},"Edit asset"),
       el("label",{class:"muted"},"Title"),title,
-      el("label",{class:"muted"},"Tags (comma-separated)"),tags,
+      el("label",{class:"muted"},"Tags (comma-separated)"),tags,bubbleSel,
       el("label",{class:"muted"},"Notes"),notes,
       el("label",{class:"muted"},"Source URL"),url);
-    if((a.suggested_tags||[]).length){
+    // suggestions are only a hint while a paper is still un-tagged
+    if(!(a.tags||[]).length && (a.suggested_tags||[]).length){
       const sg=el("div",{class:"row"},el("span",{class:"muted"},"Suggested:"));
       a.suggested_tags.forEach(t=>{ const p=el("span",{class:"pill suggest",style:"cursor:pointer"},"+ "+t);
         p.onclick=()=>{ tags.value=(tags.value?tags.value+", ":"")+t; }; sg.append(p); });
@@ -621,7 +678,7 @@
         const tagList=tags.value.split(",").map(s=>s.trim()).filter(Boolean);
         await api("/api/assets/"+a.pdf_id,{method:"PATCH",body:JSON.stringify({
           title:title.value,tags:tagList,notes:notes.value,url_source:url.value,
-          attention_flag:false})});
+          attention_flag:false,suggested_tags:[]})});
         for(const t of tagList){ await api("/api/bubbles",{method:"POST",body:JSON.stringify({name:t})}); }
         toast("Saved"); viewAssets();
       }},"Save & clear flag"),
@@ -697,6 +754,41 @@
     function restore(){[save,cancel].forEach(b=>b.remove()); inp.replaceWith(nameSpan);}
   }
 
+  // ---- public share controls (toggle + copy link to current page/section) ----
+  function shareUrl(){
+    // Link to the page currently open, so viewers land where you are (append #section there).
+    return location.origin+"/share/"+S.shareToken+"/"+(S.page||"overview");
+  }
+  function buildShareControls(slug){
+    const wrap=el("span",{class:"row",style:"gap:6px;align-items:center;flex-shrink:0"});
+    const btn=el("button",{class:"ghost small"});
+    const copy=el("button",{class:"ghost small",title:"Copy link to the current page",
+      style:"opacity:.8"},"📋 Copy link");
+    function render(){
+      btn.textContent=S.shareActive?"🟢 Sharing":"🔗 Share";
+      btn.title=S.shareActive?"Public link is live — click to stop sharing"
+                             :"Make this bubble viewable via an unlisted link";
+      btn.classList.toggle("primary",false);
+      copy.classList.toggle("hide",!S.shareActive);
+    }
+    btn.onclick=async()=>{
+      btn.disabled=true;
+      try{
+        const r=await api("/api/bubbles/"+slug+"/share",
+          {method:"POST",body:JSON.stringify({active:!S.shareActive})});
+        S.shareActive=r.share_active; S.shareToken=r.share_token; render();
+        toast(S.shareActive?"Sharing on — anyone with the link can view":"Sharing off");
+      }catch(e){ toast(e.message); } finally{ btn.disabled=false; }
+    };
+    copy.onclick=async()=>{
+      const url=shareUrl();
+      try{ await navigator.clipboard.writeText(url); toast("🔗 Link copied"); }
+      catch(e){ prompt("Copy this link:",url); }
+    };
+    wrap.append(btn,copy); render();
+    return wrap;
+  }
+
   // ================= BUBBLE DETAIL (Notion-like multi-page) =================
   async function openBubble(slug,{noRoute=false}={}){
     if(!noRoute)pushRoute("bubble/"+slug);
@@ -704,9 +796,11 @@
     stopPolling();
     S.bubble=slug; S.chat=[]; S.page=null; S.pages=[]; S.sessionId=null; S.sessionTitle=null;
     S.previewEl=null; S.remoteChangePending=false;
+    S.shareActive=false; S.shareToken="";
     const m=$("#main"); m.innerHTML=""; m.classList.add("detailmode");
     const b=(await api("/api/bubbles/"+slug)).bubble;
     S.bubbleAssets=b.assets||[];
+    S.shareActive=!!b.share_active; S.shareToken=b.share_token||"";
     m.append(el("button",{class:"ghost small",onclick:()=>switchView("bubbles")},"← Idea Bubbles"));
     // Editable bubble title
     const nameSpan=el("span",{class:"truncate",style:"max-width:60vw"},b.name+(b.approved?"":" (suggested)"));
@@ -714,8 +808,11 @@
       style:"opacity:.5;padding:4px 7px;flex-shrink:0",
       onclick:()=>startBubbleRename(nameSpan,b.slug)
     },"✏️");
-    m.append(el("div",{class:"row",style:"margin:10px 0 12px;align-items:center;gap:8px"},
-      el("h2",{class:"section-title",style:"margin:0"},"💡 "), nameSpan, renameBtn));
+    const titleRow=el("div",{class:"row",style:"margin:10px 0 12px;align-items:center;gap:8px"},
+      el("h2",{class:"section-title",style:"margin:0"},"💡 "), nameSpan, renameBtn,
+      el("span",{class:"spacer"}));
+    if(b.approved) titleRow.append(buildShareControls(slug));
+    m.append(titleRow);
 
     S.chatCollapsed = localStorage.getItem("li_chat")==="1";
     const wrap=el("div",{id:"detail"});
@@ -752,12 +849,9 @@
     host.append(editorWrap, S.previewEl);
     left.append(tabs,host);
 
-    // PDFs strip
-    const pdfs=el("div",{class:"bd",style:"flex:0 0 auto;border-top:1px solid var(--line);max-height:120px"});
-    pdfs.append(el("b",{},"Papers in this bubble"));
-    (b.assets||[]).forEach(a=>pdfs.append(el("div",{class:"truncate",style:"font-size:12px;margin-top:3px"},
-      el("a",{href:"/api/assets/"+a.pdf_id+"/pdf",target:"_blank",title:a.title||a.pdf_id},a.title||a.pdf_id))));
-    if(!b.assets.length)pdfs.append(el("div",{class:"muted"},"None yet — tag a PDF with this bubble."));
+    // PDFs strip (pencil toggles an edit mode for adding/removing papers)
+    const pdfs=el("div",{class:"bd",style:"flex:0 0 auto;border-top:1px solid var(--line);max-height:200px;overflow:auto"});
+    renderBubblePdfs(pdfs,b,false);
     left.append(pdfs);
 
     // init editor with the home page content
@@ -768,6 +862,70 @@
     // delegated internal-link navigation (page: scheme)
     left.addEventListener("click",e=>{ const a=e.target.closest('a[href^="page:"]');
       if(a){ e.preventDefault(); switchPage(decodeURIComponent(a.getAttribute("href").slice(5))); } });
+  }
+
+  // Render the "Papers in this bubble" strip. editMode shows a remove ✕ per paper plus a
+  // picker of papers from other bubbles to add. Mutates b.assets in place on change so the
+  // chat pane's deep-read selector (which closes over the same b.assets) stays in sync.
+  async function renderBubblePdfs(container, b, editMode){
+    if(!Array.isArray(b.assets)) b.assets=[];
+    container.innerHTML="";
+    const editBtn=el("button",{class:"ghost small",style:"padding:2px 9px;line-height:1",
+      title:editMode?"Done editing papers":"Add or remove papers",
+      onclick:()=>renderBubblePdfs(container,b,!editMode)}, editMode?"✓ Done":"✏️");
+    container.append(el("div",{class:"row",style:"align-items:center;gap:6px"},
+      el("b",{},"Papers in this bubble"),el("span",{class:"spacer"}),editBtn));
+
+    const applied=(fresh)=>{ // sync b.assets in place, then re-render staying in edit mode
+      b.assets.length=0; (fresh.assets||[]).forEach(a=>b.assets.push(a));
+      renderBubblePdfs(container,b,true);
+    };
+
+    const list=el("div",{});
+    b.assets.forEach(a=>{
+      const row=el("div",{class:"row",style:"align-items:center;gap:6px;margin-top:3px"});
+      row.append(el("a",{class:"truncate",style:"font-size:12px;flex:1",
+        href:"/api/assets/"+a.pdf_id+"/pdf",target:"_blank",title:a.title||a.pdf_id},a.title||a.pdf_id));
+      if(editMode){
+        row.append(el("button",{class:"ghost small",style:"padding:0 7px;line-height:1.4;opacity:.6",
+          title:"Remove from this bubble",
+          onclick:async()=>{
+            if(!confirm('Remove "'+(a.title||a.pdf_id)+'" from this bubble?\n\nThe paper stays in your Assets and any other bubbles — it is only un-tagged here.'))return;
+            try{ const r=await api("/api/bubbles/"+b.slug+"/remove-pdf",{method:"POST",body:JSON.stringify({pdf_id:a.pdf_id})});
+              toast("Removed"); applied(r.bubble); }
+            catch(e){ toast("Error: "+e.message); }
+          }},"✕"));
+      }
+      list.append(row);
+    });
+    if(!b.assets.length)list.append(el("div",{class:"muted"},"None yet — tag a PDF with this bubble."));
+    container.append(list);
+
+    if(!editMode)return;
+    // add picker: papers from your other bubbles not already here
+    const picker=el("div",{class:"col",
+      style:"margin-top:8px;border-top:1px dashed var(--line);padding-top:8px;gap:2px"});
+    picker.append(el("div",{class:"muted",style:"font-size:12px"},"Loading other papers…"));
+    container.append(picker);
+    let all=[];
+    try{ all=(await api("/api/assets")).assets||[]; }
+    catch(e){ picker.innerHTML=""; picker.append(el("div",{class:"muted"},"Failed to load papers.")); return; }
+    const have=new Set(b.assets.map(a=>a.pdf_id));
+    const avail=all.filter(a=>!have.has(a.pdf_id));
+    picker.innerHTML="";
+    picker.append(el("div",{class:"muted",style:"font-size:12px"},
+      avail.length?"Add a paper from your other bubbles:":"No other papers available to add."));
+    avail.forEach(a=>{
+      const hint=(a.tags||[]).length?"  ·  "+a.tags.join(", "):"";
+      const row=el("div",{class:"truncate",style:"font-size:12px;cursor:pointer;padding:2px 0",
+        title:(a.title||a.pdf_id)+hint},"＋ "+(a.title||a.pdf_id)+hint);
+      row.onclick=async()=>{
+        try{ const r=await api("/api/bubbles/"+b.slug+"/add-pdf",{method:"POST",body:JSON.stringify({pdf_id:a.pdf_id})});
+          toast("Added to bubble"); applied(r.bubble); }
+        catch(e){ toast("Error: "+e.message); }
+      };
+      picker.append(row);
+    });
   }
 
   function initEditor(host, initialValue){

@@ -6,9 +6,10 @@ internally (they must keep it open across yields), so those are thin pass-throug
 """
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
-from . import assets, bubbles, models, paths, reports
+from . import assets, auth, bubbles, models, paths, reports, sharing
 
 
 def ensure_workspace(home: Path) -> None:
@@ -96,6 +97,79 @@ def approve_bubble(home: Path, slug: str, instructions: str = "") -> dict:
 def delete_bubble(home: Path, slug: str) -> None:
     with paths.use_root(home):
         bubbles.delete_bubble(slug)
+    sharing.drop_bubble(home.name, slug)  # revoke any public share link for the gone bubble
+
+
+def add_pdf_to_bubble(home: Path, slug: str, pdf_id: str) -> dict:
+    """Tag an existing PDF so it joins this bubble; returns the refreshed bubble detail."""
+    with paths.use_root(home):
+        bubbles.add_pdf_to_bubble(slug, pdf_id)
+        return bubbles.bubble_detail(slug)
+
+
+def remove_pdf_from_bubble(home: Path, slug: str, pdf_id: str) -> dict:
+    """Untag a PDF so it leaves this bubble; returns the refreshed bubble detail."""
+    with paths.use_root(home):
+        bubbles.remove_pdf_from_bubble(slug, pdf_id)
+        return bubbles.bubble_detail(slug)
+
+
+# ---- public sharing ----
+def set_bubble_share(home: Path, slug: str, active: bool) -> dict:
+    """Toggle a bubble's unlisted public share and register its token in the global index."""
+    with paths.use_root(home):
+        res = bubbles.set_share_active(slug, active)
+    if res.get("share_token"):
+        sharing.register(res["share_token"], home.name, slug)
+    return res
+
+
+def share_target(token: str) -> tuple[Path, str] | None:
+    """Resolve a share token to ``(home, slug)`` IF the bubble is currently shared, else None."""
+    ent = sharing.resolve(token)
+    if not ent:
+        return None
+    home = paths.user_home(ent["user"])
+    with paths.use_root(home):
+        entry = bubbles.load_registry().get(ent["slug"])
+        if not entry or not entry.get("share_active"):
+            return None
+    return home, ent["slug"]
+
+
+# ---- account ----
+def update_account(username: str, *, current_password: str,
+                   new_username: str = "", new_password: str = "") -> str:
+    """Change a user's password and/or username. Returns the final (normalized) username.
+
+    Verifies the current password first. A username change moves the whole workspace directory
+    and repoints the account record, live sessions, and any public-share index entries.
+    """
+    if not auth.verify_password(username, current_password):
+        raise ValueError("Current password is incorrect.")
+    new_username = (new_username or "").strip().lower()
+
+    if new_password:
+        auth.set_password(username, new_password)
+
+    if not new_username or new_username == username:
+        return username
+
+    if not auth.valid_username(new_username):
+        raise ValueError("Username must be 1-32 chars: a-z, 0-9, '_' or '-'.")
+    if auth.user_exists(new_username):
+        raise ValueError("That username is already taken.")
+    src, dst = paths.user_home(username), paths.user_home(new_username)
+    if dst.exists():
+        raise ValueError("That username is already taken.")
+    shutil.move(str(src), str(dst))           # carry the whole workspace over
+    try:
+        final = auth.rename_user(username, new_username)
+    except Exception:
+        shutil.move(str(dst), str(src))       # roll back the move if the record rename fails
+        raise
+    sharing.rename_user(username, new_username)
+    return final
 
 
 # ---- pages (per-bubble mini-wiki) ----

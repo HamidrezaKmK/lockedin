@@ -169,6 +169,31 @@ def pdfs_for_bubble(slug: str) -> list[dict]:
     return [m for m in assets.list_assets() if slug in m.get("idea_bubbles", [])]
 
 
+def add_pdf_to_bubble(slug: str, pdf_id: str) -> dict:
+    """Make an existing PDF a member of this bubble by tagging it with the bubble's name.
+
+    Membership is derived from a PDF's ``idea_bubbles`` (slugs of its tags), so we append
+    the bubble's display name to the PDF's tags and let ``assets.update_asset`` re-sync the
+    slug list. Idempotent: a no-op if the PDF is already a member.
+    """
+    meta = assets.load_meta(pdf_id)
+    if slug in meta.get("idea_bubbles", []):
+        return meta
+    tags = list(meta.get("tags", []))
+    tags.append(slug_to_name(slug))
+    return assets.update_asset(pdf_id, tags=tags)
+
+
+def remove_pdf_from_bubble(slug: str, pdf_id: str) -> dict:
+    """Drop this bubble's tag from a PDF so it leaves the bubble (stays in Assets / other
+    bubbles). ``update_asset`` re-syncs ``idea_bubbles`` from the trimmed tag list. Idempotent."""
+    meta = assets.load_meta(pdf_id)
+    if slug not in meta.get("idea_bubbles", []):
+        return meta
+    tags = [t for t in meta.get("tags", []) if assets.slug_of(t) != slug]
+    return assets.update_asset(pdf_id, tags=tags)
+
+
 def all_bubbles() -> list[dict]:
     """Union of registry bubbles and PDF-derived bubbles."""
     reg = load_registry()
@@ -220,7 +245,32 @@ def bubble_detail(slug: str) -> dict:
         "home": home,
         "page": home,
         "content": content,
+        "share_active": bool(entry.get("share_active", False)),
+        "share_token": entry.get("share_token", ""),
     }
+
+
+# --------------------------------------------------------------------------- #
+# Public sharing — an unlisted, read-only link per bubble
+# --------------------------------------------------------------------------- #
+def set_share_active(slug: str, active: bool) -> dict:
+    """Toggle a bubble's public share. Mints a permanent token on first activation.
+
+    Returns ``{"share_active", "share_token"}``. The token is stable: turning sharing off then
+    back on restores the same link. Auto-suggested bubbles are materialized into the registry so
+    the share state has somewhere to live.
+    """
+    reg = load_registry()
+    entry = reg.get(slug)
+    if entry is None:
+        entry = {"name": slug_to_name(slug), "approved": True, "instructions": "",
+                 "created_at": _now_iso()}
+    token = entry.get("share_token") or secrets.token_urlsafe(16)
+    entry["share_token"] = token
+    entry["share_active"] = bool(active)
+    reg[slug] = entry
+    save_registry(reg)
+    return {"share_active": bool(active), "share_token": token}
 
 
 # --------------------------------------------------------------------------- #

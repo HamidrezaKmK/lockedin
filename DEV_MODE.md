@@ -1,12 +1,12 @@
-# DEV MODE — Claude as your research-report assistant (no server)
+# DEV MODE — Research-report assistant (no server)
 
-Run `./claude_scientist.sh` to launch Claude Code as your report assistant: it manages your
-reports directly on disk — summarize new papers, write and edit report pages, reorganize
-bubbles, answer questions about your library — the same job as the in-app chat sidebar, but
-through the CLI, using your Claude subscription (no API keys, no rate-limited token path).
+Run `./claude_scientist.sh` (for Claude Code) or `./gemini_scientist.sh` (for Gemini CLI) to
+launch your report assistant: it manages your reports directly on disk — summarize new
+papers, write and edit report pages, reorganize bubbles, answer questions about your
+library — the same job as the in-app chat sidebar, but through the CLI.
 
-The plain `claude` command is **not** repurposed — `claude_scientist.sh` injects the role for
-that one session via `--append-system-prompt`.
+The plain commands are **not** repurposed — these wrappers inject the report-assistant role
+for that one session and authenticate against your `.env` first.
 
 ## Setup (once)
 
@@ -17,8 +17,8 @@ cp .env.example .env          # then edit: DEV_USERNAME / DEV_PASSWORD = your lo
 `.env` is git-ignored. Then:
 
 ```bash
-./claude_scientist.sh                 # interactive — authenticates, then greets with your bubbles
-./claude_scientist.sh "summarize the new FLIPD paper into my diffusion report"   # one-shot kickoff
+./gemini_scientist.sh                 # interactive — authenticates, then greets with your bubbles
+./gemini_scientist.sh "summarize the new FLIPD paper into my diffusion report"   # one-shot kickoff
 ```
 
 The script verifies your `.env` credentials (via `uv run lockedin devmode`) before launching and

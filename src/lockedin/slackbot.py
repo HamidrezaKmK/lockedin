@@ -27,6 +27,7 @@ _HELP = (
     "• `select` — choose your active idea bubble\n"
     "• `list` — show all bubbles\n"
     "• Attach a PDF — uploads it to your assets queue\n"
+    "• Send a PDF link — downloads it into your assets queue\n"
     "• Anything else — asks Qwen about your active bubble"
 )
 
@@ -41,6 +42,47 @@ def _login(username: str, password: str) -> httpx.Client:
     http = httpx.Client(timeout=60, follow_redirects=True)
     http.post(f"{URL}/api/login", json={"username": username, "password": password}).raise_for_status()
     return http
+
+
+def _sole_url(text: str) -> str | None:
+    """If the whole message is a single link, return it — else None.
+
+    Slack renders bare links as ``<https://x>`` or ``<https://x|label>``, so unwrap that
+    form too. Mirrors the web chat's bare-link → PDF-attach behavior.
+    """
+    t = text.strip()
+    m = re.fullmatch(r"<(https?://[^>|]+)(?:\|[^>]*)?>", t)
+    if m:
+        return m.group(1)
+    return t if re.fullmatch(r"https?://\S+", t) else None
+
+
+_MAX_PDF_BYTES = 50 * 1024 * 1024  # 50 MB
+
+
+def _fetch_pdf(url: str) -> tuple[bytes, str] | None:
+    """Download ``url`` and return ``(bytes, filename)`` if it is a PDF, else ``None``.
+
+    Uses a fresh client (NOT the per-user lockedin session) so the lockedin cookie is never
+    sent to an external host. Raises on an unreachable/oversized URL; returns ``None`` when
+    the link is reachable but isn't a PDF (caller falls back to normal Q&A).
+    """
+    from urllib.parse import unquote, urlparse
+
+    resp = httpx.get(url, follow_redirects=True, timeout=30,
+                     headers={"User-Agent": "lockedin-slackbot"})
+    resp.raise_for_status()
+    data = resp.content
+    if len(data) > _MAX_PDF_BYTES:
+        raise ValueError("file is larger than the 50 MB limit")
+    ctype = resp.headers.get("content-type", "").split(";")[0].strip().lower()
+    # Trust the magic bytes over the header — servers often mislabel PDFs.
+    if not (ctype == "application/pdf" or data[:5] == b"%PDF-"):
+        return None
+    name = unquote(urlparse(url).path.rsplit("/", 1)[-1]) or "download.pdf"
+    if not name.lower().endswith(".pdf"):
+        name += ".pdf"
+    return data, name
 
 
 def _ask_qwen(question: str, context: str) -> str:
@@ -129,6 +171,28 @@ def handle(event: dict, say) -> None:
             say(f"Upload failed: {e}")
     if files and not text:
         return
+
+    # ── bare PDF link → download + add to assets queue ────────────────────────
+    link = _sole_url(text)
+    if link:
+        try:
+            pdf = _fetch_pdf(link)
+        except Exception as e:
+            say(f"Couldn't fetch that link: {e}")
+            return
+        if pdf is not None:
+            data, name = pdf
+            try:
+                http.post(
+                    f"{URL}/api/assets/upload",
+                    files={"file": (name, data, "application/pdf")},
+                    data={"url_source": link},
+                ).raise_for_status()
+                say(f"📎 Added *{name}* to your assets — it's in the attention queue for tagging.")
+            except Exception as e:
+                say(f"Upload failed: {e}")
+            return
+        # reachable but not a PDF → fall through to normal Q&A handling
 
     # ── waiting for bubble number selection ───────────────────────────────────
     if uid in _selecting:

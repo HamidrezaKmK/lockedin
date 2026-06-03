@@ -54,6 +54,119 @@ def _preprocess_equations(md: str) -> str:
                 lambda m: f'<span class="eq-ref">{eq_nums.get(m.group(1), "?")}</span>', md)
     return md
 
+
+def _render_preview_html(*, name: str, page: str, all_pages: list, content: str, slug: str,
+                         link_base: str, asset_base: str, show_back: bool) -> str:
+    """Build the standalone rendered-page HTML shared by the owner preview and public share pages.
+
+    ``link_base``  — prefix for intra-bubble nav + wikilinks (e.g. ``/api/bubbles/<slug>/preview``
+                     or ``/share/<token>``).
+    ``asset_base`` — prefix images resolve to (``/share/<token>/assets`` rewrites the stored
+                     ``/api/bubbles/<slug>/assets`` URLs so figures load without a login).
+    """
+    nav_links = " &nbsp;|&nbsp; ".join(
+        f'<a href="{link_base}/{p["page_slug"]}">{p["title"]}</a>' for p in all_pages)
+
+    def resolve_wikilink(m):
+        target = m.group(1).strip()
+        match = next((p for p in all_pages
+                      if p["page_slug"] == target or p["title"].lower() == target.lower()), None)
+        return f'[{match["title"]}]({link_base}/{match["page_slug"]})' if match else m.group(0)
+
+    md = _preprocess_equations(re.sub(r'\[\[([^\]]+)\]\]', resolve_wikilink, content))
+    # point figure URLs at the right (possibly public) asset route
+    md = md.replace(f"/api/bubbles/{slug}/assets/", f"{asset_base}/")
+
+    back_btn = ('<button id="back-btn" onclick="window.history.length>1?window.history.back():window.close()">← Back</button>'
+                if show_back else "")
+    return f"""<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{name} — {page}</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@11/marked.min.js"></script>
+<style>
+:root{{font:16px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+      --bg:#0f1115;--ink:#e6e9ef;--muted:#9aa3b2;--line:#2a2f3a;--panel:#1e222b;--accent:#7c9cff}}
+body.light{{--bg:#f4f6fb;--ink:#1a1d24;--muted:#6b7280;--line:#d0d7e3;--panel:#eef1f7;--accent:#3b5bdb}}
+body{{background:var(--bg);color:var(--ink);max-width:860px;margin:0 auto;padding:24px 32px}}
+nav{{font-size:13px;margin-bottom:24px;padding-bottom:12px;border-bottom:1px solid var(--line);color:var(--muted)}}
+nav a{{color:var(--accent);text-decoration:none}} nav a:hover{{text-decoration:underline}}
+h1,h2,h3,h4{{position:relative}}
+h1:hover .anchor,h2:hover .anchor,h3:hover .anchor,h4:hover .anchor{{opacity:.55}}
+.anchor{{position:absolute;left:-1.1em;opacity:0;text-decoration:none;color:var(--accent);
+         cursor:pointer;font-size:.8em;padding-right:.3em}}
+.anchor:hover{{opacity:1!important}}
+h1{{font-size:28px}} h2{{font-size:21px;border-bottom:1px solid var(--line);padding-bottom:4px}}
+code{{background:var(--panel);padding:2px 6px;border-radius:4px}}
+pre{{background:var(--panel);padding:14px;border-radius:8px;overflow:auto}}
+a{{color:var(--accent)}} img{{max-width:100%;border-radius:8px}}
+table{{display:block;width:max-content;max-width:100%;overflow-x:auto;border-collapse:collapse;margin:12px 0}}
+th,td{{border:1px solid var(--line);padding:6px 10px;text-align:left}}
+thead th{{background:var(--panel)}}
+blockquote{{margin:12px 0;padding:6px 14px;border-left:3px solid var(--accent);color:var(--muted);
+            background:var(--panel);border-radius:0 8px 8px 0}}
+blockquote p{{margin:6px 0}}
+.katex-display{{overflow-x:auto}}
+.eq-ref{{color:var(--accent);font-weight:500}}
+#copied{{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--panel);
+         border:1px solid var(--line);padding:8px 14px;border-radius:8px;font-size:13px;opacity:0;
+         transition:opacity .2s;pointer-events:none}}
+#copied.show{{opacity:1}}
+#theme-toggle{{position:fixed;top:14px;right:16px;background:var(--panel);border:1px solid var(--line);
+               color:var(--ink);border-radius:8px;padding:5px 10px;cursor:pointer;font-size:13px;z-index:10}}
+#back-btn{{position:fixed;top:14px;left:16px;background:var(--panel);border:1px solid var(--line);
+           color:var(--ink);border-radius:8px;padding:5px 10px;cursor:pointer;font-size:13px;z-index:10}}
+</style></head><body>
+{back_btn}
+<button id="theme-toggle" onclick="toggleTheme()">☀️ Light</button>
+<nav><b>{name}</b> &nbsp;|&nbsp; {nav_links}</nav>
+<div id="content"></div>
+<div id="copied">🔗 Link copied</div>
+<script>
+(function(){{
+  const t=localStorage.getItem("preview_theme");
+  if(t==="light"){{document.body.classList.add("light");document.getElementById("theme-toggle").textContent="🌙 Dark";}}
+}})();
+function toggleTheme(){{
+  const light=document.body.classList.toggle("light");
+  document.getElementById("theme-toggle").textContent=light?"🌙 Dark":"☀️ Light";
+  localStorage.setItem("preview_theme",light?"light":"dark");
+}}
+document.getElementById("content").innerHTML=marked.parse({repr(md)});
+renderMathInElement(document.body,{{throwOnError:false,delimiters:[
+  {{left:"$$",right:"$$",display:true}},{{left:"\\\\[",right:"\\\\]",display:true}},
+  {{left:"\\\\(",right:"\\\\)",display:false}},{{left:"$",right:"$",display:false}}]}});
+// Give every heading a stable id + a click-to-copy section anchor; deep-link via #id.
+(function(){{
+  const seen={{}};
+  function slugify(s){{
+    let base=(s||"").toLowerCase().trim().replace(/[^\\w\\s-]/g,"").replace(/\\s+/g,"-").replace(/-+/g,"-")||"section";
+    let id=base, n=2; while(seen[id]) id=base+"-"+(n++); seen[id]=1; return id;
+  }}
+  function flash(){{ const c=document.getElementById("copied"); c.classList.add("show");
+    clearTimeout(c._t); c._t=setTimeout(()=>c.classList.remove("show"),1600); }}
+  document.querySelectorAll("#content h1,#content h2,#content h3,#content h4").forEach(h=>{{
+    if(!h.id) h.id=slugify(h.textContent);
+    const a=document.createElement("a"); a.className="anchor"; a.textContent="🔗";
+    a.href="#"+h.id; a.title="Copy link to this section";
+    a.onclick=e=>{{ e.preventDefault();
+      const url=location.origin+location.pathname+"#"+h.id;
+      history.replaceState(null,"","#"+h.id);
+      (navigator.clipboard?navigator.clipboard.writeText(url):Promise.reject()).then(flash,()=>{{
+        const t=document.createElement("textarea"); t.value=url; document.body.appendChild(t);
+        t.select(); try{{document.execCommand("copy");flash();}}catch(_){{}} t.remove(); }});
+    }};
+    h.prepend(a);
+  }});
+  if(location.hash){{ const el=document.getElementById(decodeURIComponent(location.hash.slice(1)));
+    if(el) setTimeout(()=>el.scrollIntoView({{behavior:"smooth",block:"start"}}),60); }}
+}})();
+</script></body></html>"""
+
+
 logger = logging.getLogger(__name__)
 
 WEB_DIR = Path(__file__).with_name("web")
@@ -92,12 +205,21 @@ def build_app():
         username: str
         password: str
 
+    class AccountIn(BaseModel):
+        current_password: str
+        new_username: Optional[str] = None
+        new_password: Optional[str] = None
+
+    class ShareIn(BaseModel):
+        active: bool
+
     class AssetPatch(BaseModel):
         title: Optional[str] = None
         tags: Optional[list[str]] = None
         notes: Optional[str] = None
         url_source: Optional[str] = None
         attention_flag: Optional[bool] = None
+        suggested_tags: Optional[list[str]] = None
 
     class BubbleIn(BaseModel):
         name: str
@@ -107,6 +229,9 @@ def build_app():
 
     class BubbleRenameIn(BaseModel):
         name: str
+
+    class AddPdfIn(BaseModel):
+        pdf_id: str
 
     class PageContentIn(BaseModel):
         content: str
@@ -194,6 +319,48 @@ def build_app():
         from . import reports as _r
         return {"guide": _r.APP_USAGE_GUIDE}
 
+    # ---- public share (NO auth — gated only by the unlisted token + the bubble's active flag) ----
+    @app.get("/share/{token}")
+    def share_root(token: str):
+        from fastapi.responses import RedirectResponse
+        tgt = service.share_target(token)
+        if not tgt:
+            raise HTTPException(status_code=404, detail="This share link is not active.")
+        home, slug = tgt
+        home_page = service.bubble_detail(home, slug)["home"] or "overview"
+        return RedirectResponse(url=f"/share/{token}/{home_page}")
+
+    @app.get("/share/{token}/{page}")
+    def share_page(token: str, page: str):
+        from fastapi.responses import HTMLResponse
+        tgt = service.share_target(token)
+        if not tgt:
+            raise HTTPException(status_code=404, detail="This share link is not active.")
+        home, slug = tgt
+        all_pages = service.list_pages(home, slug)
+        if not any(p["page_slug"] == page for p in all_pages):
+            raise HTTPException(status_code=404, detail="No such page.")
+        html = _render_preview_html(
+            name=service.bubble_detail(home, slug)["name"], page=page,
+            all_pages=all_pages, content=service.get_page(home, slug, page),
+            slug=slug, link_base=f"/share/{token}",
+            asset_base=f"/share/{token}/assets", show_back=False)
+        return HTMLResponse(html)
+
+    @app.get("/share/{token}/assets/{filename}")
+    def share_asset(token: str, filename: str):
+        tgt = service.share_target(token)
+        if not tgt:
+            raise HTTPException(status_code=404, detail="This share link is not active.")
+        home, slug = tgt
+        safe = Path(filename).name
+        if safe != filename or not safe:
+            raise HTTPException(status_code=400, detail="Bad filename.")
+        p = service.bubble_asset_path(home, slug, safe)
+        if not p.exists():
+            raise HTTPException(status_code=404, detail="No such image.")
+        return FileResponse(p, headers={"Content-Disposition": "inline"})
+
     # ---- auth ----
     @app.post("/api/signup")
     def signup(creds: Credentials):
@@ -221,6 +388,19 @@ def build_app():
     @app.get("/api/me")
     def me(user: str = Depends(current_user)):
         return {"user": user, "model": service.get_model_config(home_of(user))}
+
+    @app.post("/api/account")
+    def update_account(body: AccountIn, user: str = Depends(current_user)):
+        """Change username and/or password. Requires the current password."""
+        try:
+            final = service.update_account(
+                user, current_password=body.current_password,
+                new_username=(body.new_username or "").strip(),
+                new_password=body.new_password or "")
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        # Sessions were repointed to the new name in-memory, so the existing cookie still works.
+        return {"user": final}
 
     @app.get("/api/health")
     def health(user: str = Depends(current_user), tok: str = Depends(claude_token)):
@@ -335,10 +515,29 @@ def build_app():
     def approve_bubble(slug: str, body: ApproveIn, user: str = Depends(current_user)):
         return {"bubble": service.approve_bubble(home_of(user), slug, body.instructions)}
 
+    @app.post("/api/bubbles/{slug}/add-pdf")
+    def add_pdf_to_bubble(slug: str, body: AddPdfIn, user: str = Depends(current_user)):
+        try:
+            return {"bubble": service.add_pdf_to_bubble(home_of(user), slug, body.pdf_id)}
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail="No such asset.")
+
+    @app.post("/api/bubbles/{slug}/remove-pdf")
+    def remove_pdf_from_bubble(slug: str, body: AddPdfIn, user: str = Depends(current_user)):
+        try:
+            return {"bubble": service.remove_pdf_from_bubble(home_of(user), slug, body.pdf_id)}
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail="No such asset.")
+
     @app.delete("/api/bubbles/{slug}")
     def delete_bubble(slug: str, user: str = Depends(current_user)):
         service.delete_bubble(home_of(user), slug)
         return {"ok": True}
+
+    @app.post("/api/bubbles/{slug}/share")
+    def set_share(slug: str, body: ShareIn, user: str = Depends(current_user)):
+        """Toggle the bubble's unlisted public share link (stable token)."""
+        return service.set_bubble_share(home_of(user), slug, body.active)
 
     # ---- pages (per-bubble mini-wiki) ----
     @app.get("/api/bubbles/{slug}/pages/{page}")
@@ -351,72 +550,11 @@ def build_app():
         from fastapi.responses import HTMLResponse
 
         home = home_of(user)
-        content = service.get_page(home, slug, page)
-        all_pages = service.list_pages(home, slug)
-        name = service.bubble_detail(home, slug)["name"]
-        nav_links = " &nbsp;|&nbsp; ".join(
-            f'<a href="/api/bubbles/{slug}/preview/{p["page_slug"]}">{p["title"]}</a>'
-            for p in all_pages)
-        # replace [[page-slug]] and [[Page Title]] with real links
-        def resolve_wikilink(m):
-            target = m.group(1).strip()
-            match = next((p for p in all_pages
-                          if p["page_slug"] == target or p["title"].lower() == target.lower()), None)
-            if match:
-                return f'[{match["title"]}](/api/bubbles/{slug}/preview/{match["page_slug"]})'
-            return m.group(0)
-        md = _preprocess_equations(re.sub(r'\[\[([^\]]+)\]\]', resolve_wikilink, content))
-        html = f"""<!DOCTYPE html>
-<html lang="en"><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{name} — {page}</title>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
-<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/marked@11/marked.min.js"></script>
-<style>
-:root{{font:16px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-      --bg:#0f1115;--ink:#e6e9ef;--muted:#9aa3b2;--line:#2a2f3a;--panel:#1e222b;--accent:#7c9cff}}
-body.light{{--bg:#f4f6fb;--ink:#1a1d24;--muted:#6b7280;--line:#d0d7e3;--panel:#eef1f7;--accent:#3b5bdb}}
-body{{background:var(--bg);color:var(--ink);max-width:860px;margin:0 auto;padding:24px 32px}}
-nav{{font-size:13px;margin-bottom:24px;padding-bottom:12px;border-bottom:1px solid var(--line);color:var(--muted)}}
-nav a{{color:var(--accent);text-decoration:none}} nav a:hover{{text-decoration:underline}}
-h1{{font-size:28px}} h2{{font-size:21px;border-bottom:1px solid var(--line);padding-bottom:4px}}
-code{{background:var(--panel);padding:2px 6px;border-radius:4px}}
-pre{{background:var(--panel);padding:14px;border-radius:8px;overflow:auto}}
-a{{color:var(--accent)}} img{{max-width:100%;border-radius:8px}}
-table{{display:block;width:max-content;max-width:100%;overflow-x:auto;border-collapse:collapse;margin:12px 0}}
-th,td{{border:1px solid var(--line);padding:6px 10px;text-align:left}}
-thead th{{background:var(--panel)}}
-blockquote{{margin:12px 0;padding:6px 14px;border-left:3px solid var(--accent);color:var(--muted);
-            background:var(--panel);border-radius:0 8px 8px 0}}
-blockquote p{{margin:6px 0}}
-.katex-display{{overflow-x:auto}}
-.eq-ref{{color:var(--accent);font-weight:500}}
-#theme-toggle{{position:fixed;top:14px;right:16px;background:var(--panel);border:1px solid var(--line);
-               color:var(--ink);border-radius:8px;padding:5px 10px;cursor:pointer;font-size:13px;z-index:10}}
-#back-btn{{position:fixed;top:14px;left:16px;background:var(--panel);border:1px solid var(--line);
-           color:var(--ink);border-radius:8px;padding:5px 10px;cursor:pointer;font-size:13px;z-index:10}}
-</style></head><body>
-<button id="back-btn" onclick="window.history.length>1?window.history.back():window.close()">← Back</button>
-<button id="theme-toggle" onclick="toggleTheme()">☀️ Light</button>
-<nav><b>{name}</b> &nbsp;|&nbsp; {nav_links}</nav>
-<div id="content"></div>
-<script>
-(function(){{
-  const t=localStorage.getItem("preview_theme");
-  if(t==="light"){{document.body.classList.add("light");document.getElementById("theme-toggle").textContent="🌙 Dark";}}
-}})();
-function toggleTheme(){{
-  const light=document.body.classList.toggle("light");
-  document.getElementById("theme-toggle").textContent=light?"🌙 Dark":"☀️ Light";
-  localStorage.setItem("preview_theme",light?"light":"dark");
-}}
-document.getElementById("content").innerHTML=marked.parse({repr(md)});
-renderMathInElement(document.body,{{throwOnError:false,delimiters:[
-  {{left:"$$",right:"$$",display:true}},{{left:"\\\\[",right:"\\\\]",display:true}},
-  {{left:"\\\\(",right:"\\\\)",display:false}},{{left:"$",right:"$",display:false}}]}});
-</script></body></html>"""
+        html = _render_preview_html(
+            name=service.bubble_detail(home, slug)["name"], page=page,
+            all_pages=service.list_pages(home, slug), content=service.get_page(home, slug, page),
+            slug=slug, link_base=f"/api/bubbles/{slug}/preview",
+            asset_base=f"/api/bubbles/{slug}/assets", show_back=True)
         return HTMLResponse(html)
 
     @app.post("/api/bubbles/{slug}/pages")
