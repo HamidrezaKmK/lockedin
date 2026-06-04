@@ -21,7 +21,7 @@ import unittest
 from contextlib import contextmanager
 from pathlib import Path
 
-from lockedin import bubbles, models, paths, reports
+from lockedin import bubbles, models, paths, reports, server
 
 from tests._fixtures import make_bubble
 
@@ -180,6 +180,34 @@ class MathNormalization(unittest.TestCase):
                 done = run_chat(home, slug, "explain the score", PAGE)
         self.assertIn(r"$\nabla_x \log p(x)$", done["chat_text"])
         self.assertNotIn(r"\(", done["chat_text"])
+
+
+class PreviewMathRendering(unittest.TestCase):
+    """Guard: preview/share pages stash math BEFORE marked.js, mirroring the editor side
+    pane. Running marked.parse first lets markdown mangle LaTeX (e.g. the two `_` in a line
+    of display math become an <em> pair, dropping the subscripts) before KaTeX ever sees it."""
+
+    EQ = (r"$$\delta E = \frac{1}{2} \int_0^1 dt \bigg|_{s=0} = "
+          r"\langle V'(t), \gamma'(t) \rangle \bigg|_{s=0}$$")
+
+    def _render(self):
+        return server._render_preview_html(
+            name="B", page="P", all_pages=[{"page_slug": "p", "title": "P"}],
+            content=self.EQ, slug="s", link_base="/x", asset_base="/x/assets",
+            show_back=False)
+
+    def test_raw_latex_embedded_untouched(self):
+        # The exact LaTeX source (underscores intact) must reach the client verbatim.
+        self.assertIn(r"\bigg|_{s=0}", self._render())
+
+    def test_stashes_before_marked_not_autorender(self):
+        html = self._render()
+        # Correct path: stash → marked.parse(s) → katex.renderToString from raw source.
+        self.assertIn("katex.renderToString", html)
+        self.assertIn("@@M", html)
+        self.assertIn("marked.parse(s)", html)
+        # Buggy path (marked first, then auto-render over the DOM) must be gone.
+        self.assertNotIn("renderMathInElement", html)
 
 
 if __name__ == "__main__":

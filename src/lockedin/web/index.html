@@ -255,6 +255,7 @@
     <button class="navbtn active" data-view="assets">📚 Assets</button>
     <button class="navbtn" data-view="bubbles">💡 Idea Bubbles</button>
     <button class="navbtn" data-view="attention">🔔 Attention <span id="attnCount" class="muted"></span></button>
+    <button class="navbtn" data-view="news" id="newsNav" style="display:none">📰 News <span id="newsCount" class="muted"></span></button>
   </div>
 
   <div id="main"></div>
@@ -336,6 +337,7 @@
     if(!h||h==="assets"){switchView("assets",{noRoute:true});return;}
     if(h==="bubbles"){switchView("bubbles",{noRoute:true});return;}
     if(h==="attention"){switchView("attention",{noRoute:true});return;}
+    if(h==="news"){switchView("news",{noRoute:true});return;}
     const m=h.match(/^bubble\/([^/]+)$/);
     if(m){openBubble(m[1],{noRoute:true});return;}
     switchView("assets",{noRoute:true});
@@ -471,9 +473,10 @@
 
   async function boot(){
     let me; try{ me=await api("/api/me"); }catch(e){ return; }
-    S.user=me.user; S.model=me.model;
+    S.user=me.user; S.model=me.model; S.newsEnabled=!!me.news_enabled;
     $("#auth").style.display="none"; $("#app").style.display="grid";
     $("#who").textContent="@"+S.user;
+    if(S.newsEnabled){ $("#newsNav").style.display=""; refreshNewsCount(); }
     applySideCollapsed(localStorage.getItem("li_side")==="1");
     renderModelTabs(); refreshHealth(); applyHash();
   }
@@ -575,14 +578,16 @@
   document.querySelectorAll(".navbtn").forEach(b=>b.onclick=()=>switchView(b.dataset.view));
   function switchView(v,{noRoute=false}={}){
     S.view=v; S.bubble=null;
-    stopPolling();
+    stopPolling(); stopNewsLive();
     document.getElementById("main").classList.remove("detailmode");
     document.querySelectorAll(".navbtn").forEach(b=>b.classList.toggle("active",b.dataset.view===v));
     if(!noRoute)pushRoute(v==="assets"?"":v);
     if(v==="assets")viewAssets();
     else if(v==="bubbles")viewBubbles();
     else if(v==="attention")viewAttention();
+    else if(v==="news")viewNews();
     refreshAttnCount();
+    if(S.newsEnabled)refreshNewsCount();
   }
   async function refreshAttnCount(){
     try{ const r=await api("/api/attention"); $("#attnCount").textContent=r.assets.length?`(${r.assets.length})`:""; }
@@ -1283,6 +1288,315 @@
       grid.append(c);
     });
     m.append(grid);
+  }
+
+  // ================= NEWS (premium) =================
+  async function refreshNewsCount(){
+    try{ const s=await api("/api/news/status"); $("#newsCount").textContent=s.new_count?`(${s.new_count})`:""; }
+    catch(e){}
+  }
+  function newsCard(it){
+    const c=el("div",{class:"acard"});
+    c.append(el("h4",{style:"margin:0 0 4px"},it.title||it.url||"(untitled)"));
+    const meta=[it.source,it.published].filter(Boolean).join(" • ");
+    if(meta)c.append(el("div",{class:"muted",style:"font-size:12px"},meta));
+    if(it.reason)c.append(el("div",{style:"font-size:13px;margin-top:6px"},it.reason));
+    c.append(el("div",{class:"row",style:"margin-top:10px;gap:8px"},
+      it.url?el("a",{href:it.url,target:"_blank",rel:"noopener"},el("button",{class:"small"},"Open ↗")):null,
+      el("span",{class:"spacer"}),
+      el("button",{class:"ghost small",onclick:async()=>{
+        try{ await api("/api/news/"+it.id+"/dismiss",{method:"POST"});
+          toast("Dismissed"); refreshNewsCount(); c.remove(); pruneEmptyNewsGroups(); updateNewsTitle(); }
+        catch(e){ toast("Error: "+e.message); }
+      }},"Dismiss")));
+    return c;
+  }
+  function updateNewsTitle(){
+    if(!S.newsTitle)return;
+    const n=S.newsFeed?S.newsFeed.querySelectorAll(".acard").length:0;
+    S.newsTitle.textContent="📰 News ("+n+")";
+  }
+  // drop a bubble's heading + grid once its last paper is gone (zero ≠ shown)
+  function pruneEmptyNewsGroups(){
+    Object.keys(S.newsGroups||{}).forEach(slug=>{
+      const grid=S.newsGroups[slug];
+      if(grid && !grid.querySelector(".acard")){
+        const h=grid.previousElementSibling; if(h)h.remove(); grid.remove(); delete S.newsGroups[slug];
+      }
+    });
+  }
+  // ---- top section: the paper feed (grouped by bubble; supports live inserts) ----
+  function renderNewsFeed(feed, r){
+    feed.innerHTML=""; S.newsFeed=feed; S.newsGroups={};
+    S.newsBubbleNames={}; (r.bubbles||[]).forEach(b=>S.newsBubbleNames[b.slug]=b.name);
+    const items=r.items||[];
+    S.newsEmpty=el("div",{class:"muted"},
+      "No papers yet. Start a crawl below — found papers appear here, grouped by bubble.");
+    if(!items.length){ feed.append(S.newsEmpty); return; }
+    const groups={}; items.forEach(it=>{ const k=it.bubble_slug||""; (groups[k]=groups[k]||[]).push(it); });
+    Object.keys(groups).sort((a,b)=> a===""?1 : b===""?-1 :
+      (S.newsBubbleNames[a]||a).localeCompare(S.newsBubbleNames[b]||b))
+      .forEach(slug=>{ const grid=_newsGroupGrid(slug); groups[slug].forEach(it=>grid.append(newsCard(it))); });
+  }
+  function _newsGroupGrid(slug){
+    if(S.newsGroups[slug]) return S.newsGroups[slug];
+    if(S.newsEmpty){ S.newsEmpty.remove(); S.newsEmpty=null; }
+    const label=slug?(S.newsBubbleNames[slug]||slug):"Other / unmatched";
+    const grid=el("div",{class:"grid"});
+    S.newsFeed.append(el("h3",{class:"section-title",style:"font-size:15px;margin:14px 0 8px"},"💡 "+label), grid);
+    S.newsGroups[slug]=grid; return grid;
+  }
+  function newsFeedInsert(it){ _newsGroupGrid(it.bubble_slug||"").prepend(newsCard(it)); updateNewsTitle(); }
+
+  // tear down any in-page crawl stream/poller (the server crawl keeps running + persisting)
+  function stopNewsLive(){
+    if(S.newsAbort){ try{S.newsAbort.abort();}catch(e){} S.newsAbort=null; }
+    if(S.newsPoll){ clearTimeout(S.newsPoll); S.newsPoll=null; }
+    S.newsStreaming=false; S.newsBusy=false;
+  }
+  async function viewNews(){
+    stopNewsLive();
+    const m=$("#main"); m.innerHTML=""; S._nf=0; S.newsBusy=false;
+    const title=el("h2",{class:"section-title",style:"margin:0"},"📰 News"); S.newsTitle=title;
+    m.append(el("div",{class:"row"}, title,
+      el("span",{class:"spacer"}),
+      el("button",{class:"ghost small",onclick:openNewsHistory},"🕘 History"),
+      el("button",{class:"ghost small",onclick:openNewsSettings},"⚙ Instructions")));
+    const feed=el("div",{style:"max-height:42vh;overflow:auto;border:1px solid var(--line);"+
+      "border-radius:10px;padding:10px 12px;margin-top:10px"});
+    const chatWrap=el("div",{class:"col",style:"margin-top:12px;border:1px solid var(--line);"+
+      "border-radius:10px;padding:10px 12px;gap:8px"});
+    m.append(feed, chatWrap);
+    let r={items:[],bubbles:[]}, st={};
+    try{ r=await api("/api/news"); }catch(e){}
+    try{ st=await api("/api/news/status"); }catch(e){}
+    renderNewsFeed(feed, r);
+    updateNewsTitle();
+    buildNewsChat(chatWrap, st);
+  }
+
+  // render one transcript entry; "activity" = a muted step line, else a normal chat bubble
+  function pushNewsMsg(log, role, text){
+    if(role==="activity"){
+      const d=el("div",{class:"muted",style:"font-size:12px;font-style:italic;margin:1px 0"},text);
+      log.append(d); log.parentElement.scrollTop=1e9; return d;
+    }
+    return pushMsg(log, role, text);
+  }
+  function newsSend(chatlog, message, opts, onActive){
+    if(S.newsBusy)return;
+    if(message)pushMsg(chatlog,"user",message);
+    S.newsBusy=true; S.newsStreaming=true;
+    let node=null, acc="";                 // current assistant bubble; reset after each step
+    S.newsAbort=streamPost("/api/news/chat", {message:message||"", ...(opts||{})}, ev=>{
+      if(ev.type==="activity"){ pushNewsMsg(chatlog,"activity",ev.text); node=null; acc=""; }
+      else if(ev.type==="delta"){
+        if(!node){ node=pushMsg(chatlog,"assistant",""); acc=""; }
+        acc+=ev.text; node.innerHTML=renderMarkdown(acc); chatlog.parentElement.scrollTop=1e9;
+      }
+      else if(ev.type==="item"){
+        newsFeedInsert(ev.item);
+        pushNewsMsg(chatlog,"activity","➕ added: "+(ev.item.title||ev.item.url||"")); node=null; acc="";
+        S._nf=(S._nf||0)+1; if(S.newsFoundLabel)S.newsFoundLabel.textContent="+"+S._nf+" found";
+        refreshNewsCount();
+      }
+      else if(ev.type==="done"){
+        S.newsBusy=false; S.newsStreaming=false; S.newsAbort=null;
+        let summary="";
+        if(ev.text) summary=ev.text;
+        else if(ev.stopped==="timeout") summary="⏱ Stopped (timed out) — found "+ev.added+
+          " this turn; there may be more. Type “continue” or hit ▶ Continue.";
+        else if(ev.stopped==="max_turns") summary="⏱ Hit the step limit — found "+ev.added+
+          "; there may be more. Type “continue”.";
+        if(summary)pushMsg(chatlog,"assistant",summary);
+        if(!ev.accepted && (ev.tokens||ev.cost_usd))
+          pushNewsMsg(chatlog,"activity","≈ "+(ev.tokens||0).toLocaleString()+" tokens · ~$"+
+            (ev.cost_usd||0).toFixed(4)+" this turn");
+        refreshNewsCount();
+        if(ev.accepted){ onActive&&onActive(false,0,0); }
+        else { onActive&&onActive(true, ev.cost_usd||0, ev.tokens||0); }
+      }
+      else if(ev.type==="error"){ S.newsBusy=false; S.newsStreaming=false; S.newsAbort=null;
+        pushMsg(chatlog,"assistant","⚠ "+ev.detail); }
+    });
+  }
+
+  async function buildNewsChat(wrap, st){
+    wrap.innerHTML="";
+    const sess=st.session||null; let active=!!sess;
+    // a crawl is running server-side but this page isn't the one streaming it → reconnect by polling
+    let reconnecting=active && !!sess.running && !S.newsStreaming;
+    let sessionCost=active?(sess.cost_usd||0):0;
+    let sessionTokens=active?(sess.tokens||0):0;
+    let models=[]; try{ models=(await api("/api/news/models")).models||[]; }catch(e){}
+    const estById={}; const modelSel=el("select",{style:"width:auto"});
+    models.forEach(mo=>{ estById[mo.id]=mo.est_usd; modelSel.append(el("option",{value:mo.id},mo.label)); });
+    if(active&&sess.model)modelSel.value=sess.model;
+    const est=el("span",{class:"muted",style:"font-size:12px"});
+    const since=el("input",{type:"date",style:"width:auto"});
+    const until=el("input",{type:"date",style:"width:auto"});
+    since.value=(active?sess.since:st.default_since)||""; until.value=(active?sess.until:st.today)||"";
+    const found=el("span",{class:"muted",style:"font-size:12px"}); S.newsFoundLabel=found;
+    if(S._nf)found.textContent="+"+S._nf+" found";
+    wrap.append(el("div",{class:"row",style:"flex-wrap:wrap;gap:8px;align-items:center"},
+      el("span",{class:"muted",style:"font-size:12px"},"Model"),modelSel,est,
+      el("span",{class:"muted",style:"font-size:12px;margin-left:6px"},"Range"),since,
+      el("span",{class:"muted",style:"font-size:12px"},"→"),until,
+      el("span",{class:"spacer"}),found));
+    const scroller=el("div",{style:"min-height:200px;max-height:34vh;overflow:auto;"+
+      "border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:8px 0"});
+    const chatlog=el("div",{class:"col",style:"gap:8px"}); scroller.append(chatlog); wrap.append(scroller);
+    if(active&&(sess.messages||[]).length) sess.messages.forEach(mm=>pushNewsMsg(chatlog,mm.role,mm.text));
+    else if(!active) pushMsg(chatlog,"assistant","Hit **🚀 Go!** to crawl using your saved "+
+      "instructions — I’ll stream papers into the feed above as I find them. Then say "+
+      "**continue** for more, steer me (e.g. *“focus on diffusion”*), or **✓ I’m happy** to "+
+      "save and move your date pointer. (You can also type guidance before starting.)");
+    const ta=el("textarea",{rows:"2",style:"flex:1"});
+    const send=()=>{ const t=ta.value.trim(); if(!t)return; ta.value="";
+      newsSend(chatlog,t, active?{}:{model:modelSel.value,since:since.value,until:until.value}, onActive); };
+    ta.onkeydown=e=>{ if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send();} };
+    wrap.append(el("div",{class:"row",style:"gap:8px;align-items:flex-end"},ta,
+      el("button",{class:"primary",onclick:send},"Send")));
+    const go=el("button",{class:"primary",onclick:()=>{ if(S.newsBusy)return;
+      newsSend(chatlog,"",{model:modelSel.value,since:since.value,until:until.value},onActive); }},"🚀 Go!");
+    const cont=el("button",{class:"small",onclick:()=>newsSend(chatlog,"continue",{},onActive)},"▶ Continue");
+    const happy=el("button",{class:"small",onclick:async()=>{ if(S.newsBusy)return;
+      try{ const res=await api("/api/news/accept",{method:"POST"});
+        pushMsg(chatlog,"assistant","Saved — moved your date pointer to "+(res.pointer||"today")+" ✓");
+        toast("Saved & advanced"); onActive(false,0,0); refreshNewsCount(); }
+      catch(e){ toast("Error: "+e.message); } }},"✓ I'm happy");
+    const discard=el("button",{class:"ghost small",onclick:async()=>{ if(S.newsStreaming)return;
+      if(!confirm("Discard this crawl batch? Papers found this session are removed; the date pointer stays put."))return;
+      try{ await api("/api/news/discard",{method:"POST"}); toast("Discarded"); viewNews(); }
+      catch(e){ toast("Error: "+e.message); } }},"✕ Discard");
+    const idleHint=el("span",{class:"muted",style:"font-size:12px"},
+      "Uses your saved instructions — no need to type. Or add guidance above first.");
+    const spinner=el("span",{class:"muted",style:"font-size:12px;font-style:italic"},
+      "⏳ crawl in progress… (you can leave this page — it keeps running)");
+    const actions=el("div",{class:"row",style:"gap:8px;align-items:center"}); wrap.append(actions);
+    function refreshControls(){
+      modelSel.disabled=active; since.disabled=active; until.disabled=active;
+      ta.disabled=reconnecting;
+      est.textContent = active
+        ? (modelSel.value+" · $"+sessionCost.toFixed(2)+" · "+sessionTokens.toLocaleString()+" tok so far")
+        : (estById[modelSel.value]!=null?("~$"+estById[modelSel.value].toFixed(2)+"/turn"):"");
+      ta.placeholder = reconnecting?"Crawling… please wait"
+        : (active?"Reply… (e.g. “continue”, “focus on diffusion”)":"Optional guidance, then 🚀 Go! (or Send)");
+      actions.innerHTML="";
+      if(reconnecting) actions.append(spinner, el("span",{class:"spacer"}), discard);
+      else if(active) actions.append(cont,happy,el("span",{class:"spacer"}),discard);
+      else actions.append(go, idleHint);
+    }
+    function onActive(isActive, costDelta, tokensDelta){ active=isActive; reconnecting=false;
+      sessionCost+=(costDelta||0); sessionTokens+=(tokensDelta||0);
+      if(!isActive){ sessionCost=0; sessionTokens=0; } refreshControls(); }
+    refreshControls();
+
+    // reconnect: poll for new transcript lines + items until the running turn ends
+    if(reconnecting){
+      S.newsBusy=true;
+      let shown=(sess.messages||[]).length;
+      const poll=async()=>{
+        if(S.view!=="news"){ return; }
+        let s=null; try{ s=(await api("/api/news/status")).session; }catch(e){}
+        try{ const rr=await api("/api/news"); renderNewsFeed(S.newsFeed, rr); updateNewsTitle(); }catch(e){}
+        if(!s || !s.running){ viewNews(); return; }   // finished → rebuild shows final state + controls
+        const msgs=s.messages||[];
+        for(let i=shown;i<msgs.length;i++) pushNewsMsg(chatlog,msgs[i].role,msgs[i].text);
+        shown=msgs.length;
+        S.newsPoll=setTimeout(poll,4000);
+      };
+      S.newsPoll=setTimeout(poll,3000);
+    }
+  }
+  async function openNewsHistory(){
+    let list; try{ list=(await api("/api/news/chats")).chats||[]; }
+    catch(e){ toast("Error: "+e.message); return; }
+    const overlay=el("div",{class:"overlay"}); const close=()=>overlay.remove();
+    const box=el("div",{class:"diffbox col",
+      style:"width:min(640px,95vw);padding:18px;gap:10px;max-height:88vh;overflow:auto"});
+    function showList(){
+      box.innerHTML="";
+      box.append(el("div",{class:"row"},el("b",{},"🕘 Past crawls"),el("span",{class:"spacer"}),
+        el("button",{class:"ghost small",onclick:close},"✕")));
+      if(!list.length){ box.append(el("div",{class:"muted",style:"font-size:12px"},
+        "No past crawls yet. Conversations are saved here when you Save or Discard a crawl.")); return; }
+      list.forEach(s=>{
+        const meta=`${(s.created_at||"").slice(0,10)} · ${s.model||""} · ${s.n_items||0} paper(s)`;
+        const info=el("div",{class:"col",style:"flex:1;gap:2px;cursor:pointer;min-width:0",
+          onclick:()=>showOne(s.id)},
+          el("div",{class:"truncate"},s.title||"Crawl"),
+          el("div",{class:"muted",style:"font-size:11px"},meta));
+        const del=el("button",{class:"ghost small",title:"Delete",onclick:async()=>{
+          if(!confirm("Delete this saved crawl chat?"))return;
+          try{ await api("/api/news/chats/"+s.id,{method:"DELETE"});
+            list=list.filter(x=>x.id!==s.id); showList(); }catch(e){ toast("Error: "+e.message); } }},"🗑");
+        box.append(el("div",{class:"row",style:"align-items:center;gap:8px;border-top:1px solid var(--line);padding-top:8px"},
+          info, el("button",{class:"small",onclick:()=>showOne(s.id)},"View"), del));
+      });
+    }
+    async function showOne(id){
+      let rec; try{ rec=(await api("/api/news/chats/"+id)).chat; }
+      catch(e){ toast("Error: "+e.message); return; }
+      box.innerHTML="";
+      box.append(el("div",{class:"row"},el("button",{class:"ghost small",onclick:showList},"← Back"),
+        el("span",{class:"spacer"}),el("button",{class:"ghost small",onclick:close},"✕")));
+      box.append(el("div",{class:"muted",style:"font-size:12px"},
+        `${rec.title||"Crawl"} · ${(rec.created_at||"").slice(0,10)} · ${rec.model||""} · `+
+        `range ${rec.since||"?"}→${rec.until||"?"} · ${rec.n_items||0} paper(s) · `+
+        `~$${(rec.cost_usd||0).toFixed(4)} · ${(rec.tokens||0).toLocaleString()} tok`));
+      const log=el("div",{class:"col",style:"gap:8px;max-height:62vh;overflow:auto"});
+      (rec.messages||[]).forEach(mm=>pushNewsMsg(log,mm.role,mm.text||""));
+      box.append(log);
+    }
+    showList(); overlay.append(box);
+    overlay.onclick=e=>{ if(e.target===overlay)close(); }; document.body.append(overlay);
+  }
+  async function openNewsSettings(){
+    let list; try{ list=(await api("/api/news/instructions")).instructions||[]; }
+    catch(e){ toast("Error: "+e.message); return; }
+    const data=list.map(i=>({id:i.id,text:i.text,enabled:i.enabled!==false}));
+    const overlay=el("div",{class:"overlay"});
+    const close=()=>overlay.remove();
+    const rows=el("div",{class:"col",style:"gap:8px"});
+    function renderRows(){
+      rows.innerHTML="";
+      data.forEach((it,idx)=>{
+        const cb=el("input",{type:"checkbox",style:"width:auto;flex:0 0 auto;margin:0"}); cb.checked=it.enabled!==false;
+        cb.onchange=()=>{ it.enabled=cb.checked; };
+        const txt=el("input",{value:it.text||"",placeholder:"monitor …",style:"flex:1"});
+        txt.oninput=()=>{ it.text=txt.value; };
+        const del=el("button",{class:"ghost small",title:"Remove",
+          onclick:()=>{ data.splice(idx,1); renderRows(); }},"🗑");
+        rows.append(el("div",{class:"row",style:"align-items:center;gap:8px"},cb,txt,del));
+      });
+      if(!data.length)rows.append(el("div",{class:"muted",style:"font-size:12px"},"No instructions yet."));
+    }
+    renderRows();
+    const box=el("div",{class:"diffbox col",
+      style:"width:min(560px,95vw);padding:18px;gap:10px;max-height:88vh;overflow:auto"},
+      el("div",{class:"row"},el("b",{},"📰 News instructions"),el("span",{class:"spacer"}),
+        el("button",{class:"ghost small",onclick:close},"✕")),
+      el("div",{class:"muted",style:"font-size:12px"},
+        "Plain-English things to monitor — e.g. “monitor arXiv cs.LG for diffusion papers” or "+
+        "“watch <person>’s blog”. These are just text; the date range for a crawl is set in the "+
+        "chat (it defaults to your last saved point → today)."),
+      rows,
+      el("div",{class:"row",style:"margin-top:4px"},
+        el("button",{class:"ghost small",
+          onclick:()=>{ data.push({text:"",enabled:true}); renderRows(); }},"+ Add instruction"),
+        el("span",{class:"spacer"}),
+        el("button",{class:"primary",onclick:async()=>{
+          const payload=data.map(it=>({id:it.id,text:(it.text||"").trim(),
+            enabled:it.enabled!==false}))
+            .filter(it=>it.text);
+          try{ await api("/api/news/instructions",{method:"PUT",body:JSON.stringify({instructions:payload})});
+            toast("Saved"); close(); }
+          catch(e){ toast("Error: "+e.message); }
+        }},"Save")));
+    overlay.append(box);
+    overlay.onclick=e=>{ if(e.target===overlay)close(); };
+    document.body.append(overlay);
   }
 
   // go

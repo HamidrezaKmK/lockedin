@@ -65,6 +65,9 @@ def _context_paths() -> dict[str, Path]:
         "REPORTS_DIR": root / "REPORTS",
         "ACTIVE_MODEL_YAML": root / "config" / "active_model.yaml",
         "BUBBLES_YAML": root / "bubbles.yaml",
+        "NEWS_CONFIG_YAML": root / "config" / "news.yaml",
+        "NEWS_ITEMS_YAML": root / "news_items.yaml",
+        "BUBBLE_SUMMARIES_YAML": root / "bubble_summaries.yaml",
     }
 
 
@@ -119,6 +122,11 @@ def bubble_assets_dir(slug: str) -> Path:
 
 def bubble_chats_dir(slug: str) -> Path:
     return bubble_dir(slug) / "chats"
+
+
+def news_chats_dir() -> Path:
+    """Per-user archive of ended crawl conversations (one JSON per session)."""
+    return _context_paths()["ROOT"] / "news_chats"
 
 
 def ensure_user_dirs(user: str) -> None:

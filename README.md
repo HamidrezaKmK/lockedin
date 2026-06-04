@@ -24,6 +24,13 @@ reports per topic — with a chat sidebar and a switchable LLM backend.
   summary of every tagged paper, and the full text of any **deep-read** papers you attach. Ask
   questions, explain math, compare papers, brainstorm. It does **not** edit your reports — you
   do that in the editor (or with a strong model in DEV_MODE).
+- **News feed (premium)** — authorized users write plain-English monitoring instructions
+  ("monitor arXiv cs.LG", "watch <person>'s blog") and **chat with a Claude Code crawl agent**
+  that browses the web and streams in relevant papers as it finds them, grouped per bubble in a
+  dismissible feed. Say "continue" for more, steer it ("focus on diffusion"), pick a model + date
+  range, and hit **✓ I'm happy** to save and advance your date pointer. Times out gracefully
+  (keeps what it found). Runs entirely inside the server — no separate process.
+  See [enabling it](#news-feed-premium-1).
 - **Share a bubble** — flip on an unlisted, read-only link for any bubble and send it to a
   friend or manager (no login needed). They get a rendered preview of all its pages; headings
   carry 🔗 anchors so you can deep-link to a specific section. Toggle it off anytime.
@@ -55,6 +62,31 @@ Sign up, then:
 2. **Attention** → approve the suggested tags.
 3. **Idea Bubbles** → open a bubble, **Generate** a report, edit it, and chat in the sidebar.
 4. Top bar → switch to **OpenAI**/**Claude** (click ⚙ to enter an API key).
+
+## News feed (premium)
+
+The News crawler is opt-in and off by default (it spends *your* Claude tokens via the host
+`claude` CLI). To enable it:
+
+```bash
+# 1. Log the host `claude` CLI into your Claude subscription (one-time): `claude` then sign in.
+# 2. Authorize a user (writes news_enabled into accounts.yaml):
+uv run lockedin news-grant <username>
+# 3. Start the server with the news switch on:
+LOCKEDIN_NEWS_ENABLED=1 uv run lockedin serve
+```
+
+Granted users now see a **📰 News** tab, split into a paper feed (top) and a crawl chat
+(bottom). They add monitoring instructions (⚙), pick a model + date range, and chat with the
+agent ("crawl cs.LG for my bubbles"); papers stream into the feed as they're found. Say
+**continue** for more, steer it in plain English, then **✓ I'm happy** to save and move the date
+pointer. Matching is driven by a per-bubble **scope summary** (auto-built from each bubble's
+report + papers, refreshed when it changes), not just titles. Past crawl conversations are saved
+and viewable under **🕘 History**. Revoke with `uv run lockedin news-revoke <username>`.
+
+Notes: the switch is read from the **server's** environment, so set `LOCKEDIN_NEWS_ENABLED=1`
+on the `serve` command (it isn't loaded from `.env`). On a Claude Max subscription, crawling is
+flat-rate — the cost estimate is an approximate API-metered figure for comparison.
 
 ## Share a temporary public URL
 

@@ -85,6 +85,26 @@ def create_user(username: str, password: str) -> str:
     return username
 
 
+def is_news_enabled(username: str) -> bool:
+    """Whether the account is entitled to the premium background news crawler."""
+    rec = load_accounts().get(username.strip().lower())
+    return bool(rec and rec.get("news_enabled"))
+
+
+def set_news_enabled(username: str, on: bool) -> None:
+    """Grant/revoke the premium news entitlement; preserves credential fields. Raises ValueError."""
+    username = username.strip().lower()
+    users = load_accounts()
+    rec = users.get(username)
+    if rec is None:
+        raise ValueError("No such user.")
+    if on:
+        rec["news_enabled"] = True
+    else:
+        rec.pop("news_enabled", None)
+    save_accounts(users)
+
+
 def verify_password(username: str, password: str) -> bool:
     rec = load_accounts().get(username.strip().lower())
     if not rec:

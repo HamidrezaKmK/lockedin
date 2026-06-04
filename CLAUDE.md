@@ -32,6 +32,20 @@ temporary public HTTPS URL with no domain/account — see README. For agent-driv
 user's reports without running the server, see [`DEV_MODE.md`](DEV_MODE.md) +
 `uv run lockedin devmode`.
 
+News crawler (premium, opt-in): grant a user, then run the server with the switch on. Crawling
+happens entirely in-app via the **Crawl now** button (no daemon). Uses the host `claude` CLI's
+own login — log it into your Claude subscription first.
+
+```bash
+uv run lockedin news-grant <user>                  # accounts.yaml: news_enabled=true
+LOCKEDIN_NEWS_ENABLED=1 uv run lockedin serve       # News chat works for granted users
+uv run lockedin news-revoke <user>                  # remove entitlement
+```
+
+Without `LOCKEDIN_NEWS_ENABLED=1` (the default), `POST /api/news/crawl` → 503. The switch is
+read from the **server's** environment, so set it on the `serve` command. `serve` does not load
+`.env`.
+
 ### Tests
 
 Stdlib `unittest` (no pytest dependency). Two layers under `tests/`:
@@ -57,6 +71,10 @@ LOCKEDIN_HOME=/tmp/li_test uv run python -m unittest discover -s tests -t . -v
 - `tests/test_live_qwen.py` — runs a realistic chat through qwen and asserts the read-only
   *invariants*: a content question gets a non-empty reply with no raw `<EDIT>`/`<NEWPAGE>` tags,
   and the chat never creates/removes/mutates a page. qwen is non-deterministic, so it retries.
+- `tests/test_news.py` — deterministic guard for the news crawl chat: monkeypatches
+  `news._agent_events` with canned Claude Code NDJSON and pins the stream→`@@ITEM`-parse→
+  live-save→dedup→session→accept/discard flow, the date range/pointer, and premium/kill-switch
+  gating. No network/LLM.
 - `tests/_fixtures.py` — builds throwaway qwen workspaces seeded with the two diffusion papers
   (copies `meta.yaml`/`summary.md`/`text.txt` from a local user, not the 50 MB `paper.pdf`).
 - `tests/setup_unittest_user.py` — (re)creates the persistent `unittest`/`unittest` fixture user
@@ -94,6 +112,7 @@ Layered; the server is thin HTTP/SSE glue over `service.py`.
 | `tagger.py` | Background ingest after upload: extract text → summarize (cached) → suggest reuse-first tags. Fail-safe. |
 | `bubbles.py` | Bubble registry (`bubbles.yaml`) + the per-bubble **mini-wiki**: pages manifest, page CRUD, image storage, legacy-`report.md` migration, chat-session CRUD (`chats/` dir). |
 | `reports.py` | `chat_stream` — a **read-only** streamed research chat grounded in the bubble's report pages + paper summaries + deep-read PDFs (bounded context, internal compaction). Also `generate_chat_title`. It does NOT edit pages. |
+| `news.py` | **Premium interactive crawl chat** (no daemon — all in `serve`). The user converses with the *operator's* Claude Code agent (headless **streaming** `claude -p --output-format stream-json --verbose --allowedTools WebSearch WebFetch`, web tools only, host login). `chat_stream` spawns the agent via `_agent_events` (the NDJSON Popen seam tests monkeypatch), parses a one-line `@@ITEM {json}` protocol to **save each paper the instant it's found** (`add_item`, dedup vs `seen`), and yields SSE `delta`/`activity`/`item`/`done` (with `stopped:"timeout"\|"max_turns"`, real `cost_usd`). "continue" resumes the same agent session (`--resume <uuid>`). Instructions are **plain text** (no per-instruction date); a single **global pointer** (`last_checked` in `config/news.yaml`) seeds the default crawl range and advances **only on `accept_session`** (typed "I'm happy" or the button) to the range's `until`. Matching is against a **persistent per-bubble scope summary** (not titles): on the first turn of a crawl, `refresh_bubble_summaries` regenerates each approved bubble's 2–4-sentence summary via the user's active model **only if its content changed** (sha256 fingerprint over name + instructions + report pages + paper summaries), caches it in `bubble_summaries.yaml`, and feeds those summaries to the agent. A **hard date-range rule** in the prompt ([since..until], plus a guaranteed closing ```json``` block) keeps old papers out. The whole interaction (tool-use **activities** + item markers + prose) is recorded to the session transcript **live** so history replays it exactly. A crawl turn sets a `running` flag on the session; the SSE worker runs to completion server-side even if the browser disconnects, so leaving the News page mid-crawl is safe — on return the SPA sees `running` and **reconnects by polling** `status`/feed until the turn ends (no live SSE re-attach). `discard_session` drops the batch. An end-of-turn **reconciliation pass** (`_extract_items_from_text`) re-scans the agent's full output + the final `result` payload for any `@@ITEM` line or fenced `{"items":[…]}` block, so every structured result reaches the feed even if streaming missed it (dedup prevents doubles). Ended conversations are **archived** to `news_chats/<uuid>.json` (`list/get/delete_chat_session`, like bubble chats). Stores in `news_items.yaml` (`items`/`seen`/active `session`). Gated by the kill switch (env `LOCKEDIN_NEWS_ENABLED`, default OFF — set on `serve`) + per-account `news_enabled`. Also surfaced in the Slack bot (`slackbot.py`) for entitled users via the `news` (list items + reasons) and `crawl` commands. `crawl` is an interactive wizard — it prompts for the from/to date range (showing defaults to confirm or replace), runs the turn, then enters a **steering** mode where free-text follow-ups (`continue`, refinements, `accept`, `stop`) drive the open session; both call `/api/news` and stream `/api/news/chat`. |
 | `service.py` | Orchestration; wraps non-streaming ops in `use_root`. Streaming generators manage their own root. |
 | `server.py` | FastAPI app + routes + SSE. |
 | `web/index.html` | The entire SPA — vanilla JS IIFE, no build step, CDN deps. |

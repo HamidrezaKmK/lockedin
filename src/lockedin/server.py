@@ -19,7 +19,7 @@ import threading
 from pathlib import Path
 from typing import Optional
 
-from . import auth, paths, service, tagger
+from . import auth, news, paths, service, tagger
 
 
 def _preprocess_equations(md: str) -> str:
@@ -85,7 +85,6 @@ def _render_preview_html(*, name: str, page: str, all_pages: list, content: str,
 <title>{name} — {page}</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
 <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/marked@11/marked.min.js"></script>
 <style>
 :root{{font:16px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
@@ -135,10 +134,22 @@ function toggleTheme(){{
   document.getElementById("theme-toggle").textContent=light?"🌙 Dark":"☀️ Light";
   localStorage.setItem("preview_theme",light?"light":"dark");
 }}
-document.getElementById("content").innerHTML=marked.parse({repr(md)});
-renderMathInElement(document.body,{{throwOnError:false,delimiters:[
-  {{left:"$$",right:"$$",display:true}},{{left:"\\\\[",right:"\\\\]",display:true}},
-  {{left:"\\\\(",right:"\\\\)",display:false}},{{left:"$",right:"$",display:false}}]}});
+// Stash every math span before marked.js runs so it can't mangle the LaTeX
+// (e.g. underscores → <em>), then render KaTeX from the untouched source.
+// Mirrors the editor side pane's renderMarkdown() so preview/share match it exactly.
+(function(){{
+  const store=[]; let s={repr(md)};
+  const stash=(re,display)=>{{ s=s.replace(re,(m,p1)=>{{ store.push({{src:p1,display}}); return "@@M"+(store.length-1)+"@@"; }}); }};
+  stash(/\\$\\$([\\s\\S]+?)\\$\\$/g,true);
+  stash(/\\\\\\[([\\s\\S]+?)\\\\\\]/g,true);
+  stash(/\\\\\\(([\\s\\S]+?)\\\\\\)/g,false);
+  stash(/\\$([^\\$\\n]+?)\\$/g,false);
+  let html=marked.parse(s);
+  html=html.replace(/@@M(\\d+)@@/g,(m,i)=>{{ const it=store[+i];
+    try{{ return katex.renderToString(it.src,{{displayMode:it.display,throwOnError:false}}); }}
+    catch(e){{ return '<span style="color:#ff7a7a">'+it.src+'</span>'; }} }});
+  document.getElementById("content").innerHTML=html;
+}})();
 // Give every heading a stable id + a click-to-copy section anchor; deep-link via #id.
 (function(){{
   const seen={{}};
@@ -259,6 +270,15 @@ def build_app():
     class ActiveIn(BaseModel):
         active: str
 
+    class NewsInstructionsIn(BaseModel):
+        instructions: list[dict]
+
+    class NewsChatIn(BaseModel):
+        message: str = ""
+        model: Optional[str] = None
+        since: Optional[str] = None
+        until: Optional[str] = None
+
     # ---- auth plumbing ----
     def current_user(lockedin_session: Optional[str] = Cookie(default=None)) -> str:
         user = auth.session_user(lockedin_session)
@@ -273,6 +293,13 @@ def build_app():
 
     def home_of(user: str) -> Path:
         return paths.user_home(user)
+
+    def require_news(user: str = Depends(current_user)) -> str:
+        """Gate the premium news feature; viewing is allowed, crawling additionally needs the switch."""
+        if not auth.is_news_enabled(user):
+            raise HTTPException(status_code=403,
+                                detail="News is a premium feature not enabled for this account.")
+        return user
 
     def _auth_response(user: str):
         token = auth.new_session(user)
@@ -387,7 +414,8 @@ def build_app():
 
     @app.get("/api/me")
     def me(user: str = Depends(current_user)):
-        return {"user": user, "model": service.get_model_config(home_of(user))}
+        return {"user": user, "model": service.get_model_config(home_of(user)),
+                "news_enabled": auth.is_news_enabled(user)}
 
     @app.post("/api/account")
     def update_account(body: AccountIn, user: str = Depends(current_user)):
@@ -421,6 +449,71 @@ def build_app():
             return {"config": service.set_active_provider(home_of(user), body.active)}
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
+
+    # ---- news (premium background crawler) ----
+    @app.get("/api/news")
+    def get_news(user: str = Depends(require_news)):
+        return service.list_news(home_of(user))
+
+    @app.get("/api/news/status")
+    def news_status(user: str = Depends(require_news)):
+        return service.news_status(home_of(user))
+
+    @app.get("/api/news/models")
+    def news_models(user: str = Depends(require_news)):
+        return {"models": service.news_models()}
+
+    @app.get("/api/news/instructions")
+    def get_news_instructions(user: str = Depends(require_news)):
+        return {"instructions": service.get_news_instructions(home_of(user))}
+
+    @app.put("/api/news/instructions")
+    def put_news_instructions(body: NewsInstructionsIn, user: str = Depends(require_news)):
+        return {"instructions": service.save_news_instructions(home_of(user), body.instructions)}
+
+    @app.get("/api/news/session")
+    def news_session(user: str = Depends(require_news)):
+        return {"session": service.news_session(home_of(user))}
+
+    @app.get("/api/news/chats")
+    def news_chats_list(user: str = Depends(require_news)):
+        return {"chats": service.list_news_chats(home_of(user))}
+
+    @app.get("/api/news/chats/{sid}")
+    def news_chat_get(sid: str, user: str = Depends(require_news)):
+        rec = service.get_news_chat(home_of(user), sid)
+        if not rec:
+            raise HTTPException(status_code=404, detail="No such crawl chat.")
+        return {"chat": rec}
+
+    @app.delete("/api/news/chats/{sid}")
+    def news_chat_delete(sid: str, user: str = Depends(require_news)):
+        service.delete_news_chat(home_of(user), sid)
+        return {"ok": True}
+
+    @app.post("/api/news/chat")
+    def news_chat(body: NewsChatIn, user: str = Depends(require_news),
+                  tok: str = Depends(claude_token)):
+        if not news.news_globally_enabled():
+            raise HTTPException(status_code=503,
+                                detail="News is off. Start the server with LOCKEDIN_NEWS_ENABLED=1.")
+        home = home_of(user)
+        return _stream(lambda: service.news_chat(home, body.message, body.model,
+                                                 body.since, body.until, claude_token=tok))
+
+    @app.post("/api/news/accept")
+    def news_accept(user: str = Depends(require_news)):
+        return service.accept_news(home_of(user))
+
+    @app.post("/api/news/discard")
+    def news_discard(user: str = Depends(require_news)):
+        return service.discard_news(home_of(user))
+
+    @app.post("/api/news/{item_id}/dismiss")
+    def dismiss_news(item_id: str, user: str = Depends(require_news)):
+        if not service.dismiss_news(home_of(user), item_id):
+            raise HTTPException(status_code=404, detail="No such news item.")
+        return {"ok": True}
 
     # ---- assets ----
     @app.get("/api/assets")
