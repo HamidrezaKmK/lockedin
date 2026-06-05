@@ -367,8 +367,37 @@ def normalize_wikilinks(slug: str, content: str) -> str:
     return _WIKILINK_RE.sub(repl, content)
 
 
-def save_page(slug: str, page_slug: str, content: str) -> None:
-    _atomic_write(paths.bubble_page_path(slug, page_slug), normalize_wikilinks(slug, content))
+class PageConflict(Exception):
+    """Page changed on disk since the editor loaded it.
+
+    Raised by :func:`save_page` when an optimistic ``base_mtime`` no longer matches the
+    file's current mtime — i.e. something edited the page out-of-band (e.g. a dev-mode
+    direct file edit) since the content the caller is about to write was loaded. The
+    caller (the autosave path) surfaces this as an "unsynced" conflict the user resolves
+    by hand, rather than silently clobbering the external edit.
+    """
+
+    def __init__(self, disk_mtime: float):
+        super().__init__("page changed on disk")
+        self.disk_mtime = disk_mtime
+
+
+def save_page(slug: str, page_slug: str, content: str,
+              base_mtime: "float | None" = None) -> float:
+    """Write a page atomically (after wikilink normalization); return its new mtime.
+
+    If ``base_mtime`` is given, it's an optimistic-concurrency guard: when the file's
+    current mtime differs (an external edit happened since it was loaded), raise
+    :class:`PageConflict` instead of overwriting. ``None`` (the default) skips the check
+    and always writes — preserving every existing caller.
+    """
+    path = paths.bubble_page_path(slug, page_slug)
+    if base_mtime is not None and path.exists():
+        disk_mtime = path.stat().st_mtime
+        if abs(disk_mtime - base_mtime) > 1e-6:
+            raise PageConflict(disk_mtime)
+    _atomic_write(path, normalize_wikilinks(slug, content))
+    return path.stat().st_mtime
 
 
 def create_page(slug: str, title: str) -> str:

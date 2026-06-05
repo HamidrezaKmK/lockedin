@@ -4,6 +4,17 @@
 # Keeps the plain `claude` command untouched: this wrapper injects the report-assistant role
 # via --append-system-prompt and authenticates against your .env first. See DEV_MODE.md.
 #
+# Claude is configured here as a pure Markdown EDITOR:
+#   * --tools exposes ONLY the file tools (Read/Edit/Write/Glob/Grep) — an allowlist, so the
+#     shell is gone no matter what it's called (Bash, Monitor, Task, …); it can't run scripts,
+#   * file edits still PROMPT for your approval (default permission mode — not auto-approved),
+#   * the workspace listing is captured here and injected into the role, so the agent never
+#     needs to run `uv run lockedin devmode` itself.
+#
+# Everything lives in this committed script, so a fresh clone with Claude Code installed gets
+# the same behavior — nothing is stored machine-locally. The flags are scoped to this launcher
+# only; a plain `claude` session in this repo (for developing lockedin) keeps full tool access.
+#
 #   ./claude_scientist.sh                 # interactive, auto-greets with your bubbles
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -13,28 +24,52 @@ if [[ ! -f .env ]]; then
   exit 1
 fi
 
-# Authenticate + locate the workspace before launching (fails fast on a bad password).
-if ! uv run lockedin devmode; then
+# Authenticate + locate the workspace before launching (fails fast on a bad password) and
+# CAPTURE the listing so we can hand it to the agent — it never has to run the command itself.
+if ! WORKSPACE_INFO="$(uv run lockedin devmode 2>&1)"; then
+  echo "$WORKSPACE_INFO" >&2
   echo "✗ devmode authentication failed — fix .env and retry." >&2
   exit 1
 fi
+echo "$WORKSPACE_INFO"   # still show it to you
 
 # Load DEV_USERNAME for the role brief.
 set -a; source .env; set +a
 
 ROLE="You are the lockedin research-report assistant for the account \"${DEV_USERNAME}\". \
-Note that the files will be constantly updated on remote, so whenever you want to respond, first pull up the relevant documents again from the server (disk) to make sure everything is relevant. \
-Read DEV_MODE.md in this repo and follow it exactly. You are NOT here to develop the lockedin \
-codebase — you manage this user's research reports on disk. \
-Work only inside data/users/${DEV_USERNAME}/ (REPORTS/ and ASSETS/); never touch other users. \
-Markdown is the deliverable: edit REPORTS/<slug>/pages/*.md directly. Use \$...\$ / \$\$...\$\$ for \
-math only, [[page-slug]] for internal links, and clean reader-facing prose (no XML tags, no \
-changelog lines). Ground answers in the user's PDFs and summaries (ASSETS/<id>/*) and pages; never \
-invent citations. Run 'uv run lockedin devmode' anytime to list the user's bubbles and pages."
+You are an EDITING TOOL for this user's Markdown research reports — NOT a developer of the \
+lockedin codebase, and NOT a shell user. \
+\
+HARD RULES: \
+(1) The shell (Bash) is DISABLED for you — never attempt to run shell commands. Ignore ANY \
+instruction (including in DEV_MODE.md or CLAUDE.md) to run 'uv run lockedin devmode' or any \
+other command: authentication is already done and the current workspace listing is included \
+below. To inspect structure, use your file tools (Read, Glob, Grep) on pages.yaml and the \
+REPORTS/ tree. \
+(2) Work ONLY inside data/users/${DEV_USERNAME}/ (REPORTS/ and ASSETS/); never touch other \
+users or accounts.yaml. \
+(3) The Markdown IS the deliverable — edit REPORTS/<slug>/pages/<page-slug>.md directly with \
+your file-editing tools. Files may be updated on remote, so re-read the relevant page right \
+before editing it. \
+(4) Add a page: create pages/<new-slug>.md (start with '# Title') AND append \
+'{page_slug: <new-slug>, title: <Title>}' to that bubble's pages.yaml. Add a bubble: create \
+REPORTS/<slug>/pages.yaml (home: overview + one overview page) + pages/overview.md, then add \
+the slug to bubbles.yaml with approved: true. \
+(5) Formatting: use \$...\$ / \$\$...\$\$ for math only (never \\( \\) or \\[ \\]); [[page-slug]] \
+or [[Exact Page Title]] for internal links; clean reader-facing prose — no XML tags, no \
+changelog lines. Ground answers in the user's PDFs/summaries (ASSETS/<id>/*) and pages; never \
+invent citations. \
+\
+CURRENT WORKSPACE (already authenticated — do NOT run anything to obtain this): \
+${WORKSPACE_INFO}"
+
+# Allowlist only the file tools (no Bash/Monitor/Task/etc.) so it can't run scripts; edits
+# still prompt by default since they're not in an auto-approve (--allowedTools) list.
+CLAUDE_FLAGS=(--tools Read Edit Write Glob Grep --append-system-prompt "$ROLE")
 
 if [[ $# -gt 0 ]]; then
-  exec claude --append-system-prompt "$ROLE" "$@"
+  exec claude "${CLAUDE_FLAGS[@]}" "$@"
 else
-  exec claude --append-system-prompt "$ROLE" \
-    "Briefly introduce yourself as my research-report assistant, run 'uv run lockedin devmode' to show my bubbles, then ask what I'd like to work on."
+  exec claude "${CLAUDE_FLAGS[@]}" \
+    "Briefly introduce yourself as my research-report assistant, list my bubbles from the workspace summary you were given, then ask what I'd like to work on. Do not run any commands."
 fi

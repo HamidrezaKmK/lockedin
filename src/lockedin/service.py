@@ -25,6 +25,20 @@ def save_asset(home: Path, pdf_bytes: bytes, filename: str, title: str = "",
         return assets.save_asset(pdf_bytes, filename, title=title, tags=tags, url_source=url_source)
 
 
+def fetch_and_save_asset(home: Path, url: str, title: str = "",
+                         tags: list[str] | None = None) -> str:
+    """Download a PDF from ``url`` and store it as a new asset. Returns the new pdf_id.
+
+    Shares ``assets.fetch_pdf_from_url`` with the Slack bot. Raises ``ValueError`` if the link
+    is reachable but isn't a PDF (the download itself may raise on network errors / oversize).
+    """
+    fetched = assets.fetch_pdf_from_url(url)
+    if fetched is None:
+        raise ValueError("That link doesn't point to a PDF.")
+    pdf_bytes, filename = fetched
+    return save_asset(home, pdf_bytes, filename, title=title, tags=tags, url_source=url)
+
+
 def list_assets(home: Path) -> list[dict]:
     with paths.use_root(home):
         return assets.list_assets()
@@ -183,9 +197,10 @@ def get_page(home: Path, slug: str, page_slug: str) -> str:
         return bubbles.get_page(slug, page_slug)
 
 
-def save_page(home: Path, slug: str, page_slug: str, content: str) -> None:
+def save_page(home: Path, slug: str, page_slug: str, content: str,
+              base_mtime: "float | None" = None) -> float:
     with paths.use_root(home):
-        bubbles.save_page(slug, page_slug, content)
+        return bubbles.save_page(slug, page_slug, content, base_mtime)
 
 
 def create_page(home: Path, slug: str, title: str) -> str:

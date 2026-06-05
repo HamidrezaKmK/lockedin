@@ -16,6 +16,7 @@ Run: ``uv run python -m unittest discover -s tests -t .``
 """
 from __future__ import annotations
 
+import os
 import tempfile
 import unittest
 from contextlib import contextmanager
@@ -134,6 +135,46 @@ class WikilinkNormalization(unittest.TestCase):
                 bubbles.save_page(slug, "overview", "# T\n\n[[Nonexistent Page]]\n")
                 stored = bubbles.get_page(slug, "overview")
         self.assertIn("[[Nonexistent Page]]", stored)
+
+
+# --------------------------------------------------------------------------- #
+# Autosave optimistic-concurrency guard (bubbles.save_page base_mtime)
+# --------------------------------------------------------------------------- #
+class SaveConflictDetection(unittest.TestCase):
+    def test_save_returns_new_mtime_and_no_base_always_writes(self):
+        with temp_home() as home:
+            slug = make_bubble(home)
+            with paths.use_root(home):
+                m1 = bubbles.save_page(slug, "overview", "# A\n")
+                # No base_mtime -> unconditional write (every existing caller relies on this).
+                m2 = bubbles.save_page(slug, "overview", "# B\n")
+                self.assertEqual(bubbles.get_page(slug, "overview"), "# B\n")
+        self.assertIsInstance(m1, float)
+        self.assertIsInstance(m2, float)
+
+    def test_matching_base_mtime_saves(self):
+        with temp_home() as home:
+            slug = make_bubble(home)
+            with paths.use_root(home):
+                base = bubbles.save_page(slug, "overview", "# A\n")
+                # Editor's base matches disk -> save goes through.
+                bubbles.save_page(slug, "overview", "# edited\n", base_mtime=base)
+                self.assertEqual(bubbles.get_page(slug, "overview"), "# edited\n")
+
+    def test_stale_base_mtime_raises_conflict_and_preserves_disk(self):
+        with temp_home() as home:
+            slug = make_bubble(home)
+            with paths.use_root(home):
+                base = bubbles.save_page(slug, "overview", "# A\n")
+                # Something else (e.g. dev-mode) writes the file out-of-band. Force a
+                # distinct mtime so the guard is exercised regardless of fs resolution.
+                bubbles.save_page(slug, "overview", "# external edit\n")
+                page = paths.bubble_page_path(slug, "overview")
+                os.utime(page, (base + 5, base + 5))
+                # The editor still thinks it's based on the old mtime -> conflict, no clobber.
+                with self.assertRaises(bubbles.PageConflict):
+                    bubbles.save_page(slug, "overview", "# my stale edit\n", base_mtime=base)
+                self.assertEqual(bubbles.get_page(slug, "overview"), "# external edit\n")
 
 
 # --------------------------------------------------------------------------- #

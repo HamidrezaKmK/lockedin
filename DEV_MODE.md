@@ -8,6 +8,17 @@ library — the same job as the in-app chat sidebar, but through the CLI.
 The plain commands are **not** repurposed — these wrappers inject the report-assistant role
 for that one session and authenticate against your `.env` first.
 
+> **Both wrappers run shell-free.** `gemini_scientist.sh` and `claude_scientist.sh` launch the
+> agent as a pure Markdown editor: the shell tool is removed (Gemini via
+> `gemini_scientist.policy.toml`; Claude via a `--tools Read Edit Write Glob Grep` allowlist),
+> file edits still **prompt** for your approval, and the launcher authenticates + captures the
+> bubble/page listing itself and injects it into the session — so the agent ignores the "run
+> `uv run lockedin devmode`" steps below (it can't run shell anyway). Because the agent edits
+> with file tools instead of `cat`/`sed`, Gemini needs to reach the **git-ignored** `data/`
+> dir: `.gemini/settings.json` sets `context.fileFiltering.respectGitIgnore=false` for that.
+> All of this is committed to the repo, so a fresh clone behaves identically — nothing is
+> stored machine-locally (only your `.env` credentials are per-machine).
+
 ## Setup (once)
 
 ```bash

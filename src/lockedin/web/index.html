@@ -137,6 +137,8 @@
   .msg.assistant{align-self:flex-start;background:#13202b;border:1px solid var(--line)}
   .synced{font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid var(--good);color:var(--good)}
   .synced.stale{border-color:var(--warn);color:var(--warn)}
+  .synced.saving{border-color:var(--warn);color:var(--warn);opacity:.7}
+  .synced.conflict{border-color:var(--bad);color:var(--bad);font-weight:600}
   .toolbar{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
   .small{font-size:12px;padding:5px 9px}
   .deepitem{display:flex;align-items:center;gap:8px;padding:5px 0;border-top:1px solid var(--line)}
@@ -339,8 +341,8 @@
     if(h==="bubbles"){switchView("bubbles",{noRoute:true});return;}
     if(h==="attention"){switchView("attention",{noRoute:true});return;}
     if(h==="news"){switchView("news",{noRoute:true});return;}
-    const m=h.match(/^bubble\/([^/]+)$/);
-    if(m){openBubble(m[1],{noRoute:true});return;}
+    const m=h.match(/^bubble\/([^/]+)(?:\/([^/]+))?$/);
+    if(m){openBubble(m[1],{noRoute:true,page:m[2]||null});return;}
     switchView("assets",{noRoute:true});
   }
   window.onpopstate=()=>applyHash();
@@ -352,7 +354,7 @@
   }
   async function api(path, opts={}){
     const r = await fetch(path, {credentials:"include", headers:{"Content-Type":"application/json",...claudeHeaders()}, ...opts});
-    if(!r.ok){ let d; try{d=(await r.json()).detail;}catch(e){d=r.statusText;} throw new Error(d||"Error"); }
+    if(!r.ok){ let d; try{d=(await r.json()).detail;}catch(e){d=r.statusText;} const err=new Error(d||"Error"); err.status=r.status; throw err; }
     const ct=r.headers.get("content-type")||""; return ct.includes("json")?r.json():r.text();
   }
   // SSE over POST; returns AbortController. onEvent({type,...}).
@@ -413,6 +415,7 @@
     sessionId:null, sessionTitle:null,
     chatCollapsed:false,  // persisted in li_chat
     pollTimer:null, lastPageMtime:null, lastManifestMtime:null,
+    baseMtime:null, autosaveTimer:null, saving:false, syncState:"synced", applyingRemote:false,
     previewEl:null, remoteChangePending:false,
     shareActive:false, shareToken:""
   };
@@ -612,20 +615,27 @@
     bubbleSel.onchange=()=>{ const name=bubbleSel.value; bubbleSel.value=""; if(!name)return;
       const cur=tags.value.split(",").map(s=>s.trim()).filter(Boolean);
       if(!cur.some(t=>t.toLowerCase()===name.toLowerCase())){ cur.push(name); tags.value=cur.join(", "); } };
-    const url=el("input",{placeholder:"Source URL (optional)"});
-    const btn=el("button",{class:"primary"},"Upload PDF");
+    const url=el("input",{placeholder:"…or paste a PDF link to fetch it automatically (no file needed)"});
+    const btn=el("button",{class:"primary"},"Add paper");
     btn.onclick=async()=>{
-      if(!file.files[0]){toast("Choose a PDF first.");return;}
-      const fd=new FormData(); fd.append("file",file.files[0]);
-      fd.append("title",title.value); fd.append("tags",tags.value); fd.append("url_source",url.value);
-      btn.disabled=true; btn.textContent="Uploading…";
-      try{ const r=await fetch("/api/assets/upload",{method:"POST",credentials:"include",body:fd});
-        if(!r.ok)throw new Error((await r.json()).detail);
-        const d=await r.json();
-        toast(d.attention_flag?"Uploaded — auto-tagging in background…":"Uploaded — summarizing in background…");
+      const hasFile=!!file.files[0], link=url.value.trim();
+      if(!hasFile && !link){toast("Choose a PDF or paste a PDF link.");return;}
+      btn.disabled=true; btn.textContent=hasFile?"Uploading…":"Fetching…";
+      try{
+        let d;
+        if(hasFile){
+          const fd=new FormData(); fd.append("file",file.files[0]);
+          fd.append("title",title.value); fd.append("tags",tags.value); fd.append("url_source",link);
+          const r=await fetch("/api/assets/upload",{method:"POST",credentials:"include",body:fd});
+          if(!r.ok)throw new Error((await r.json()).detail);
+          d=await r.json();
+        }else{
+          d=await api("/api/assets/upload-url",{method:"POST",body:JSON.stringify({url:link,title:title.value,tags:tags.value})});
+        }
+        toast(d.attention_flag?"Added — auto-tagging in background…":"Added — summarizing in background…");
         file.value="";title.value="";tags.value="";url.value="";
         viewAssets();
-      }catch(e){toast(e.message);} finally{btn.disabled=false;btn.textContent="Upload PDF";}
+      }catch(e){toast(e.message);} finally{btn.disabled=false;btn.textContent="Add paper";}
     };
     f.append(el("b",{},"Add a paper / blogpost"),file,title,tags,bubbleSel,url,btn);
     m.append(f, el("div",{style:"height:16px"}));
@@ -796,12 +806,13 @@
   }
 
   // ================= BUBBLE DETAIL (Notion-like multi-page) =================
-  async function openBubble(slug,{noRoute=false}={}){
+  async function openBubble(slug,{noRoute=false,page=null}={}){
     if(!noRoute)pushRoute("bubble/"+slug);
     if(S.editor){ try{S.editor.destroy();}catch(e){} S.editor=null; }
     stopPolling();
     S.bubble=slug; S.chat=[]; S.page=null; S.pages=[]; S.sessionId=null; S.sessionTitle=null;
     S.previewEl=null; S.remoteChangePending=false;
+    S.baseMtime=null; S.saving=false; S.syncState="synced";
     S.shareActive=false; S.shareToken="";
     const m=$("#main"); m.innerHTML=""; m.classList.add("detailmode");
     const b=(await api("/api/bubbles/"+slug)).bubble;
@@ -829,6 +840,10 @@
     if(!b.approved){ buildApprovalPane(left,b); }
     else { buildWorkspace(left,b); }
     buildChatPane(right,b);
+    // Deep-link: restore a specific page (e.g. after a refresh) without clobbering history.
+    if(b.approved && page && page!==S.home && S.pages.some(p=>p.page_slug===page)){
+      switchPage(page,{noRoute:true});
+    }
   }
 
   function buildApprovalPane(left,b){
@@ -862,9 +877,10 @@
 
     // init editor with the home page content
     initEditor(editorWrap, b.content||"");
-    S.page=b.home;
+    S.page=b.home; S.syncState="synced";
     refreshTabs();
     startPolling();
+    primeSync();          // capture the home page's base mtime for conflict detection
     // delegated internal-link navigation (page: scheme)
     left.addEventListener("click",e=>{ const a=e.target.closest('a[href^="page:"]');
       if(a){ e.preventDefault(); switchPage(decodeURIComponent(a.getAttribute("href").slice(5))); } });
@@ -941,8 +957,10 @@
       hooks:{ addImageBlobHook:(blob,cb)=>uploadImage(S.bubble,blob,cb) },
     });
     let deb;
-    S.editor.on("change",()=>{ markStale(); clearTimeout(deb);
-      deb=setTimeout(updatePreview,300); });
+    S.editor.on("change",()=>{
+      if(S.applyingRemote)return;            // programmatic setMarkdown — not a user edit
+      markStale(); scheduleAutosave();
+      clearTimeout(deb); deb=setTimeout(updatePreview,300); });
     setTimeout(updatePreview,200);
   }
 
@@ -984,11 +1002,11 @@
     });
     tabs.append(el("button",{class:"small ghost",onclick:newPage},"+ Page"));
     tabs.append(el("span",{class:"spacer",style:"flex:1"}));
-    // synced badge lives here in the editor toolbar
-    const syncedStale=document.querySelector("#syncedBadge")?.classList.contains("stale");
-    tabs.append(el("span",{class:"synced"+(syncedStale?" stale":""),id:"syncedBadge",
-      title:"Click to save",style:"cursor:pointer",onclick:clickSave},
-      syncedStale?"⟳ unsynced":"⟳ synced"));
+    // sync badge lives here in the editor toolbar (state in S.syncState; autosaves on idle)
+    const st=S.syncState||"synced";
+    tabs.append(el("span",{class:"synced "+st,id:"syncedBadge",
+      title:st==="conflict"?"Changed on disk — click to resolve":"Saved automatically; click to save now",
+      style:"cursor:pointer",onclick:clickSave},SYNC_LABEL[st]));
     // preview-pane toggle
     const previewOff=localStorage.getItem("li_preview_off")==="1";
     tabs.append(el("button",{class:"small ghost",title:previewOff?"Show preview pane":"Hide preview pane",
@@ -1000,43 +1018,103 @@
       if(S.bubble&&S.page) window.open("/api/bubbles/"+S.bubble+"/preview/"+S.page,"_blank");
     }},"🔍"));
   }
-  async function savePage(){
+  // ---- autosave (debounced) + optimistic-concurrency save ----
+  const AUTOSAVE_MS=2500;
+  function scheduleAutosave(){
+    clearTimeout(S.autosaveTimer);
+    S.autosaveTimer=setTimeout(()=>autosave(),AUTOSAVE_MS);
+  }
+  async function autosave(){
     if(!S.editor||!S.page)return;
-    await api("/api/bubbles/"+S.bubble+"/pages/"+S.page,
-      {method:"PUT",body:JSON.stringify({content:S.editor.getMarkdown()})});
-    S.lastPageMtime=null; S.remoteChangePending=false;
-    markSynced(); toast("Page saved");
+    // Don't clobber an external edit: when a remote change is pending, stay in the
+    // conflict state and wait for the user to resolve it by hand (click the badge).
+    if(S.remoteChangePending){ markConflict(); return; }
+    if(S.saving){ scheduleAutosave(); return; }       // a save is in flight; retry shortly
+    await doSave({auto:true});
+  }
+  // The single write path. Sends the editor's content with the base mtime it was loaded
+  // from; a 409 means the file changed underneath us -> flag a conflict, don't overwrite.
+  async function doSave(opts={}){
+    if(!S.editor||!S.page||S.saving)return false;
+    const bubble=S.bubble, page=S.page, content=S.editor.getMarkdown();
+    S.saving=true; markSaving();
+    try{
+      const r=await api("/api/bubbles/"+bubble+"/pages/"+page,
+        {method:"PUT",body:JSON.stringify({content,base_mtime:S.baseMtime})});
+      if(S.bubble!==bubble||S.page!==page)return true;   // navigated away mid-save
+      S.baseMtime=r.page_mtime; S.lastPageMtime=r.page_mtime; S.remoteChangePending=false;
+      // Only declare "synced" if nothing was typed while the request was in flight.
+      if(content===S.editor.getMarkdown())markSynced(); else scheduleAutosave();
+      if(!opts.auto)toast("Page saved");
+      return true;
+    }catch(e){
+      if(S.bubble===bubble&&S.page===page){
+        if(e.status===409){
+          S.remoteChangePending=true; markConflict();
+          if(!opts.auto)toast("File changed on disk — click ⟳ to resolve.");
+        } else { markStale(); if(!opts.auto)toast("Save failed: "+e.message); }
+      }
+      return false;
+    }finally{ S.saving=false; }
+  }
+  // Flush any pending edits synchronously-ish (used before navigating to another page).
+  async function savePage(){
+    clearTimeout(S.autosaveTimer);
+    if(S.editor&&S.page&&S.syncState!=="synced"&&!S.remoteChangePending) await doSave({});
   }
   async function clickSave(){
     if(!S.editor||!S.page)return;
+    clearTimeout(S.autosaveTimer);
     if(S.remoteChangePending){
       const loadRemote=confirm(
         "The file was changed externally.\n\nOK = Load the remote version (your unsaved edits will be lost)\nCancel = Overwrite with your current edits");
       if(loadRemote){
         const c=(await api("/api/bubbles/"+S.bubble+"/pages/"+S.page)).content;
-        S.editor.setMarkdown(c||"",false);
-        S.lastPageMtime=null; S.remoteChangePending=false;
-        markSynced(); setTimeout(updatePreview,150);
+        applyRemote(c||""); await primeSync();
+        S.remoteChangePending=false; markSynced();
         return;
       }
+      // Overwrite: drop the stale base so the precondition passes, then write.
+      S.baseMtime=null; S.remoteChangePending=false;
     }
-    await savePage();
+    await doSave({});
   }
-  async function switchPage(target){
+  // Capture the current on-disk mtime as our base, without diffing (used after a load).
+  async function primeSync(){
+    if(!S.bubble||!S.page)return;
+    const bubble=S.bubble, page=S.page;
+    try{
+      const r=await api("/api/bubbles/"+bubble+"/poll?page="+page);
+      if(S.bubble!==bubble||S.page!==page)return;
+      S.baseMtime=r.page_mtime; S.lastPageMtime=r.page_mtime; S.lastManifestMtime=r.manifest_mtime;
+    }catch(e){}
+  }
+  // Set editor content without it counting as a user edit (suppresses the change hook).
+  function applyRemote(md){
+    S.applyingRemote=true;
+    try{ S.editor.setMarkdown(md||"",false); }
+    finally{ setTimeout(()=>{ S.applyingRemote=false; },0); }
+    setTimeout(updatePreview,150);
+  }
+  async function switchPage(target,{noRoute=false}={}){
     const match=S.pages.find(p=>p.page_slug===target)
       || S.pages.find(p=>p.title.toLowerCase()===String(target).toLowerCase());
     if(!match){ toast(`No page "${target}" in this bubble.`); return; }
     await savePage();
     const c=(await api("/api/bubbles/"+S.bubble+"/pages/"+match.page_slug)).content;
-    S.page=match.page_slug; S.lastPageMtime=null; S.remoteChangePending=false;
-    S.editor.setMarkdown(c||""); refreshTabs();
-    setTimeout(updatePreview,150);
+    S.page=match.page_slug; S.remoteChangePending=false;
+    if(!noRoute)pushRoute("bubble/"+S.bubble+"/"+S.page);   // keep the page across refresh
+    applyRemote(c||""); markSynced(); refreshTabs();
+    primeSync();
   }
   async function newPage(){
     const title=prompt("New page title:"); if(!title)return;
     await savePage();
     const ps=(await api("/api/bubbles/"+S.bubble+"/pages",{method:"POST",body:JSON.stringify({title})})).page_slug;
-    S.pages.push({page_slug:ps,title}); S.page=ps; S.editor.setMarkdown("# "+title+"\n\n");
+    S.pages.push({page_slug:ps,title}); S.page=ps; S.remoteChangePending=false;
+    pushRoute("bubble/"+S.bubble+"/"+S.page);
+    await primeSync();                          // base off the just-created file
+    S.editor.setMarkdown("# "+title+"\n\n");    // a real edit -> autosaves on idle
     refreshTabs();
   }
   async function deletePage(ps){
@@ -1044,17 +1122,30 @@
     try{ await api("/api/bubbles/"+S.bubble+"/pages/"+ps,{method:"DELETE"}); }
     catch(e){ toast(e.message); return; }
     S.pages=S.pages.filter(p=>p.page_slug!==ps);
-    if(S.page===ps){ S.page=S.home; const c=(await api("/api/bubbles/"+S.bubble+"/pages/"+S.home)).content;
-      S.editor.setMarkdown(c||""); }
-    refreshTabs(); setTimeout(updatePreview,150);
+    if(S.page===ps){ S.page=S.home; S.remoteChangePending=false;
+      pushRoute("bubble/"+S.bubble);
+      const c=(await api("/api/bubbles/"+S.bubble+"/pages/"+S.home)).content;
+      applyRemote(c||""); markSynced(); primeSync(); }
+    refreshTabs();
   }
-  function markStale(){ const s=$("#syncedBadge"); if(s){s.classList.add("stale");s.textContent="⟳ unsynced";} }
-  function markSynced(){ const s=$("#syncedBadge"); if(s){s.classList.remove("stale");s.textContent="⟳ synced";} }
+  const SYNC_LABEL={synced:"⟳ synced",stale:"✎ unsaved",saving:"⟳ saving…",conflict:"⚠ unsynced"};
+  function setSync(state){
+    S.syncState=state;
+    const s=$("#syncedBadge");
+    if(s){ s.className="synced "+state; s.textContent=SYNC_LABEL[state];
+      s.title=state==="conflict"?"Changed on disk — click to resolve":"Saved automatically; click to save now"; }
+  }
+  function markStale(){ if(S.syncState!=="conflict")setSync("stale"); }  // keep conflict sticky
+  function markSaving(){ setSync("saving"); }
+  function markSynced(){ setSync("synced"); }
+  function markConflict(){ setSync("conflict"); }
 
   // ---- auto-sync polling (detects external file edits, e.g. from dev-mode) ----
   function stopPolling(){
     if(S.pollTimer){ clearInterval(S.pollTimer); S.pollTimer=null; }
+    clearTimeout(S.autosaveTimer); S.autosaveTimer=null;
     S.lastPageMtime=null; S.lastManifestMtime=null; S.remoteChangePending=false;
+    S.baseMtime=null; S.saving=false; S.syncState="synced";
   }
   async function pollSync(){
     if(!S.bubble||!S.page)return;
@@ -1067,14 +1158,16 @@
       }
       S.lastManifestMtime=r.manifest_mtime;
       if(S.lastPageMtime!==null&&r.page_mtime!==S.lastPageMtime){
-        const stale=document.querySelector("#syncedBadge")?.classList.contains("stale");
-        if(!stale&&S.editor){
+        if(S.saving){
+          /* our own write is in flight — not an external edit; doSave reconciles mtime */
+        } else if(S.syncState==="synced"&&S.editor){
+          // editor is clean — safe to pull the external edit in automatically
           const c=(await api("/api/bubbles/"+bubble+"/pages/"+page)).content;
           if(S.bubble!==bubble||S.page!==page)return;
-          S.editor.setMarkdown(c||"",false);
-          S.remoteChangePending=false; setTimeout(updatePreview,150);
-        } else if(stale){
-          S.remoteChangePending=true;
+          applyRemote(c||""); S.baseMtime=r.page_mtime; S.remoteChangePending=false;
+        } else {
+          // unsaved local edits + an external edit -> conflict; user resolves by hand
+          S.remoteChangePending=true; markConflict();
           toast("File changed on disk — click ⟳ to save (you'll be asked about the remote version).");
         }
       }

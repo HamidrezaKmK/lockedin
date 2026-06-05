@@ -16,6 +16,8 @@ from openai import OpenAI
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 
+from . import assets
+
 logger = logging.getLogger(__name__)
 
 # Read lazily inside run() so .env is always loaded first.
@@ -67,34 +69,6 @@ def _sole_url(text: str) -> str | None:
     if m:
         return m.group(1)
     return t if re.fullmatch(r"https?://\S+", t) else None
-
-
-_MAX_PDF_BYTES = 50 * 1024 * 1024  # 50 MB
-
-
-def _fetch_pdf(url: str) -> tuple[bytes, str] | None:
-    """Download ``url`` and return ``(bytes, filename)`` if it is a PDF, else ``None``.
-
-    Uses a fresh client (NOT the per-user lockedin session) so the lockedin cookie is never
-    sent to an external host. Raises on an unreachable/oversized URL; returns ``None`` when
-    the link is reachable but isn't a PDF (caller falls back to normal Q&A).
-    """
-    from urllib.parse import unquote, urlparse
-
-    resp = httpx.get(url, follow_redirects=True, timeout=30,
-                     headers={"User-Agent": "lockedin-slackbot"})
-    resp.raise_for_status()
-    data = resp.content
-    if len(data) > _MAX_PDF_BYTES:
-        raise ValueError("file is larger than the 50 MB limit")
-    ctype = resp.headers.get("content-type", "").split(";")[0].strip().lower()
-    # Trust the magic bytes over the header — servers often mislabel PDFs.
-    if not (ctype == "application/pdf" or data[:5] == b"%PDF-"):
-        return None
-    name = unquote(urlparse(url).path.rsplit("/", 1)[-1]) or "download.pdf"
-    if not name.lower().endswith(".pdf"):
-        name += ".pdf"
-    return data, name
 
 
 def _ask_qwen(question: str, context: str) -> str:
@@ -294,7 +268,7 @@ def handle(event: dict, say) -> None:
     link = _sole_url(text)
     if link:
         try:
-            pdf = _fetch_pdf(link)
+            pdf = assets.fetch_pdf_from_url(link)
         except Exception as e:
             say(f"Couldn't fetch that link: {e}")
             return

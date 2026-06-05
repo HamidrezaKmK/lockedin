@@ -1,0 +1,18 @@
+# Policy Engine rules for the lockedin research-report assistant (gemini_scientist.sh).
+#
+# The assistant is purely a Markdown EDITOR — it reads/writes report files and never needs a
+# shell. Denying run_shell_command stops it from running scripts (e.g. `uv run lockedin
+# devmode`) and the permission prompts that came with them. Authentication and the bubble/page
+# listing are done by the launcher *before* Gemini starts and injected into the session, so the
+# agent has everything it needs without a shell.
+#
+# Loaded explicitly via `gemini --policy ./gemini_scientist.policy.toml` so it ONLY applies to
+# the scientist session — a plain `gemini` (dev) invocation in this repo is unaffected.
+#
+# Priority must beat the built-in `run_shell_command -> ask_user` rule (default tier, prio 10).
+# `deny` always wins / is honored (policies may only strengthen security, never weaken it).
+
+[[rule]]
+toolName = "run_shell_command"
+decision = "deny"
+priority = 200

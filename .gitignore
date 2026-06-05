@@ -221,3 +221,7 @@ __marimo__/
 data/
 
 .claude/*
+# lockedin ops monitor — secrets, logs, runtime state (keep healthcheck.sh + README.md tracked)
+ops/tunnel.env
+ops/monitor.log
+ops/.state/

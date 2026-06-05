@@ -19,7 +19,7 @@ import threading
 from pathlib import Path
 from typing import Optional
 
-from . import auth, news, paths, service, tagger
+from . import auth, bubbles, news, paths, service, tagger
 
 
 def _preprocess_equations(md: str) -> str:
@@ -233,6 +233,11 @@ def build_app():
         attention_flag: Optional[bool] = None
         suggested_tags: Optional[list[str]] = None
 
+    class AssetUrlIn(BaseModel):
+        url: str
+        title: str = ""
+        tags: str = ""
+
     class BubbleIn(BaseModel):
         name: str
 
@@ -247,6 +252,10 @@ def build_app():
 
     class PageContentIn(BaseModel):
         content: str
+        # Optimistic-concurrency token: the page mtime the editor's content was loaded
+        # from. When present and stale, the save is rejected (409) instead of clobbering
+        # an external edit. Omitted (None) on first save / forced overwrite.
+        base_mtime: float | None = None
 
     class PageCreateIn(BaseModel):
         title: str
@@ -543,6 +552,29 @@ def build_app():
         background_tasks.add_task(tagger.run_ingest, home, pdf_id, bool(tag_list))
         return {"pdf_id": pdf_id, "attention_flag": not bool(tag_list)}
 
+    @app.post("/api/assets/upload-url")
+    def upload_asset_url(
+        body: AssetUrlIn,
+        background_tasks: BackgroundTasks,
+        user: str = Depends(current_user),
+    ):
+        url = body.url.strip()
+        if not url:
+            raise HTTPException(status_code=400, detail="No URL provided.")
+        tag_list = [t.strip() for t in body.tags.split(",") if t.strip()]
+        home = home_of(user)
+        try:
+            pdf_id = service.fetch_and_save_asset(home, url, title=body.title, tags=tag_list)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Couldn't fetch that link: {e}")
+        # any user-supplied tag becomes an approved bubble immediately
+        if tag_list:
+            service.register_user_tags(home, tag_list)
+        background_tasks.add_task(tagger.run_ingest, home, pdf_id, bool(tag_list))
+        return {"pdf_id": pdf_id, "attention_flag": not bool(tag_list)}
+
     @app.get("/api/assets/{pdf_id}")
     def get_asset(pdf_id: str, user: str = Depends(current_user)):
         try:
@@ -659,8 +691,13 @@ def build_app():
 
     @app.put("/api/bubbles/{slug}/pages/{page}")
     def put_page(slug: str, page: str, body: PageContentIn, user: str = Depends(current_user)):
-        service.save_page(home_of(user), slug, page, body.content)
-        return {"ok": True}
+        try:
+            mtime = service.save_page(home_of(user), slug, page, body.content, body.base_mtime)
+        except bubbles.PageConflict as e:
+            # 409: the editor's base mtime is stale — an external edit landed first.
+            raise HTTPException(status_code=409, detail="Page changed on disk",
+                                headers={"X-Disk-Mtime": repr(e.disk_mtime)})
+        return {"ok": True, "page_mtime": mtime}
 
     @app.get("/api/bubbles/{slug}/poll")
     def bubble_poll(slug: str, page: str, user: str = Depends(current_user)):

@@ -14,15 +14,45 @@ from __future__ import annotations
 import os
 import secrets
 from datetime import datetime, timezone
+from urllib.parse import unquote, urlparse
 
+import httpx
 import yaml
 from slugify import slugify
 
 from . import paths
 
+MAX_PDF_BYTES = 50 * 1024 * 1024  # 50 MB
+
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def fetch_pdf_from_url(url: str) -> tuple[bytes, str] | None:
+    """Download ``url`` and return ``(pdf_bytes, filename)`` if it points to a PDF, else ``None``.
+
+    Uses a fresh client (NOT any caller's per-user session) so no session cookie is ever sent to
+    an external host. Raises on an unreachable/oversized URL; returns ``None`` when the link is
+    reachable but isn't a PDF, so callers can fall back (Slack → Q&A; web → error message).
+
+    Shared by the web asset upload (``service.fetch_and_save_asset``) and the Slack bot's
+    bare-link handler so the download/validation logic lives in exactly one place.
+    """
+    resp = httpx.get(url, follow_redirects=True, timeout=30,
+                     headers={"User-Agent": "lockedin"})
+    resp.raise_for_status()
+    data = resp.content
+    if len(data) > MAX_PDF_BYTES:
+        raise ValueError("file is larger than the 50 MB limit")
+    ctype = resp.headers.get("content-type", "").split(";")[0].strip().lower()
+    # Trust the magic bytes over the header — servers often mislabel PDFs.
+    if not (ctype == "application/pdf" or data[:5] == b"%PDF-"):
+        return None
+    name = unquote(urlparse(url).path.rsplit("/", 1)[-1]) or "download.pdf"
+    if not name.lower().endswith(".pdf"):
+        name += ".pdf"
+    return data, name
 
 
 def slug_of(tag: str) -> str:
