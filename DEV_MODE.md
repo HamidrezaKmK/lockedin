@@ -1,14 +1,14 @@
 # DEV MODE — Research-report assistant (no server)
 
-Run `./claude_scientist.sh` (for Claude Code) or `./gemini_scientist.sh` (for Gemini CLI) to
-launch your report assistant: it manages your reports directly on disk — summarize new
+Run `./claude_scientist.sh` (for Claude Code), `./gemini_scientist.sh` (for Gemini CLI), or
+`./codex_scientist.sh` (for Codex CLI) to launch your report assistant: it manages your reports directly on disk — summarize new
 papers, write and edit report pages, reorganize bubbles, answer questions about your
 library — the same job as the in-app chat sidebar, but through the CLI.
 
 The plain commands are **not** repurposed — these wrappers inject the report-assistant role
 for that one session and authenticate against your `.env` first.
 
-> **Both wrappers run shell-free.** `gemini_scientist.sh` and `claude_scientist.sh` launch the
+> **The Claude and Gemini wrappers run shell-free.** `gemini_scientist.sh` and `claude_scientist.sh` launch the
 > agent as a pure Markdown editor: the shell tool is removed (Gemini via
 > `gemini_scientist.policy.toml`; Claude via a `--tools Read Edit Write Glob Grep` allowlist),
 > file edits still **prompt** for your approval, and the launcher authenticates + captures the
@@ -18,6 +18,13 @@ for that one session and authenticate against your `.env` first.
 > dir: `.gemini/settings.json` sets `context.fileFiltering.respectGitIgnore=false` for that.
 > All of this is committed to the repo, so a fresh clone behaves identically — nothing is
 > stored machine-locally (only your `.env` credentials are per-machine).
+>
+> `codex_scientist.sh` follows the same launcher pattern and starts Codex with a read-only
+> sandbox, approval prompts, web search disabled, multi-agent disabled, and the Codex shell
+> tool disabled when supported by your installed CLI. If that local Codex build cannot
+> inspect/edit report files with the shell tool disabled, retry with
+> `CODEX_SCIENTIST_SHELL=enabled ./codex_scientist.sh`; the role still forbids shell use, and
+> the read-only sandbox keeps writes behind approval prompts.
 
 ## Setup (once)
 
@@ -30,6 +37,7 @@ cp .env.example .env          # then edit: DEV_USERNAME / DEV_PASSWORD = your lo
 ```bash
 ./gemini_scientist.sh                 # interactive — authenticates, then greets with your bubbles
 ./gemini_scientist.sh "summarize the new FLIPD paper into my diffusion report"   # one-shot kickoff
+./codex_scientist.sh                  # Codex CLI version
 ```
 
 The script verifies your `.env` credentials (via `uv run lockedin devmode`) before launching and

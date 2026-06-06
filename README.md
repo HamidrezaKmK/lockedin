@@ -6,6 +6,10 @@ A local-first FastAPI app to keep up with research in your field: upload papers/
 group them into **idea bubbles** (topic tags), and maintain AI-assisted, math-aware Markdown
 reports per topic — with a chat sidebar and a switchable LLM backend.
 
+The app is built for trusted local/LAN use by default; public tunnels should be treated as
+convenient access, not as a statement that the app is production-hardened. See
+[Security checklist](#security-checklist) before exposing signup/login to the internet.
+
 ## Features
 
 - **Per-user workspaces** — username/password auth; each user gets `ASSETS/` and `REPORTS/`.
@@ -60,7 +64,7 @@ uv run lockedin doctor                     # check the active model is reachable
 Sign up, then:
 1. **Assets** → upload a PDF (leave tags blank to auto-tag).
 2. **Attention** → approve the suggested tags.
-3. **Idea Bubbles** → open a bubble, **Generate** a report, edit it, and chat in the sidebar.
+3. **Idea Bubbles** → open a bubble, write or edit its Markdown pages, and chat in the sidebar.
 4. Top bar → switch to **OpenAI**/**Claude** (click ⚙ to enter an API key).
 
 ## News feed (premium)
@@ -90,6 +94,10 @@ flat-rate — the cost estimate is an approximate API-metered figure for compari
 
 ## Share a temporary public URL
 
+Before exposing the app through any public URL, read the [Security checklist](#security-checklist).
+The current auth and signup flows are intended for trusted/local deployments unless you add the
+hardening called out there.
+
 To let someone reach your local instance over HTTPS, use a Cloudflare quick tunnel
 ([`cloudflared`](https://github.com/cloudflare/cloudflared)) — no domain or account needed:
 
@@ -104,6 +112,19 @@ as long as `cloudflared` runs and changes each restart — fine for ad-hoc shari
 bound to localhost; only the tunnel reaches it.
 
 For hands-on editing without running the server at all, see [DEV_MODE.md](DEV_MODE.md).
+
+## Security checklist
+
+`lockedin` was originally designed for trusted local/LAN use. HTTPS tunnels protect transport,
+but public exposure also needs application-layer hardening:
+
+- Raise the minimum password length.
+- Add rate limiting or lockout for `/api/login` and `/api/signup`.
+- Gate signup with an invite code, allowlist, or disable-signup switch.
+- Audit public share links, upload/file-serving paths, and model-key handling.
+
+Track the detailed checklist in [TODO.md](TODO.md#security--hardening-for-public-exposure)
+before treating a tunneled deployment as safe for public use.
 
 ## Layout
 
@@ -122,8 +143,10 @@ data/users/<username>/
 `server.py` is thin HTTP/SSE glue over `service.py`; per-user isolation uses a contextvar
 root (`paths.use_root`). `models.py` exposes one active-model interface (`stream_chat`,
 `complete`, `attach_pdf`) across Ollama/OpenAI/Anthropic. `tagger.py` runs the
-extract→summarize→suggest-tags ingest as a background task. `reports.py` streams report
-generation and section/selection edits. The frontend is a single dependency-free
-`web/index.html` (marked.js + KaTeX from CDN).
+extract→summarize→suggest-tags ingest as a background task. `reports.py` stores and renders
+per-bubble Markdown pages; normal report editing happens manually in the Toast UI Markdown
+editor, while the chat surface is read-only and uses report text plus paper summaries for
+context. DEV_MODE keeps an optional direct-edit workflow for local hands-on editing. The
+frontend is a single dependency-free `web/index.html` (marked.js + KaTeX from CDN).
 
 > Lightweight auth for local/LAN use — put it behind HTTPS before exposing it.

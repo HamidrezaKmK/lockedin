@@ -347,6 +347,17 @@
   }
   window.onpopstate=()=>applyHash();
 
+  // The SPA is a fixed 100vh layout — every view scrolls inside its own container, so the
+  // *document* itself should never scroll. A focused editor on a long page can nonetheless
+  // scroll the viewport (which pushes the whole fixed-height app off-screen, leaving a blank
+  // void). Snap the document back to the top whenever that happens. Guarded against the
+  // scrollTo→scroll feedback loop.
+  let _snapping=false;
+  window.addEventListener("scroll",()=>{
+    if(_snapping)return;
+    if(window.scrollX||window.scrollY){ _snapping=true; window.scrollTo(0,0); _snapping=false; }
+  },{passive:true});
+
   // ---------- api ----------
   function claudeHeaders(){
     const tok=localStorage.getItem("claude_oauth_token");
@@ -807,6 +818,10 @@
 
   // ================= BUBBLE DETAIL (Notion-like multi-page) =================
   async function openBubble(slug,{noRoute=false,page=null}={}){
+    // Re-entrancy guard: if two openBubble calls race (e.g. a quick click then another nav),
+    // a superseded in-flight call could still build a stale workspace/editor over the new one.
+    // A newer call bumps the token so the older one bails after its await.
+    const token=S.openToken=(S.openToken||0)+1;
     if(!noRoute)pushRoute("bubble/"+slug);
     if(S.editor){ try{S.editor.destroy();}catch(e){} S.editor=null; }
     stopPolling();
@@ -816,6 +831,7 @@
     S.shareActive=false; S.shareToken="";
     const m=$("#main"); m.innerHTML=""; m.classList.add("detailmode");
     const b=(await api("/api/bubbles/"+slug)).bubble;
+    if(S.openToken!==token) return;   // a newer navigation started while we awaited — bail
     S.bubbleAssets=b.assets||[];
     S.shareActive=!!b.share_active; S.shareToken=b.share_token||"";
     m.append(el("button",{class:"ghost small",onclick:()=>switchView("bubbles")},"← Idea Bubbles"));
@@ -954,14 +970,77 @@
     S.editor=new toastui.Editor({
       el:host, height:"100%", theme:"dark", initialEditType:"markdown",
       previewStyle:"tab", initialValue, usageStatistics:false,
+      autofocus:false,   // don't grab focus on load: it scrolls a long page's editor into
+                         // view, which can scroll the whole document and hide the app
       hooks:{ addImageBlobHook:(blob,cb)=>uploadImage(S.bubble,blob,cb) },
     });
+    // Undo/redo toolbar buttons (the editor only ships keyboard shortcuts for these).
+    const histBtn=(label,title,redo)=>{
+      const b=document.createElement("button");
+      b.type="button"; b.textContent=label; b.title=title;
+      b.style.cssText="font:inherit;font-size:16px;line-height:1;background:none;border:none;color:inherit;cursor:pointer;margin:0;padding:0 2px";
+      b.addEventListener("mousedown",e=>e.preventDefault());   // keep editor selection
+      b.addEventListener("click",e=>{ e.preventDefault(); editorHistoryCmd(redo); });
+      return b;
+    };
+    try{
+      S.editor.insertToolbarItem({groupIndex:0,itemIndex:0},
+        {name:"redo",tooltip:"Redo (Ctrl+Shift+Z)",el:histBtn("↷","Redo",true)});
+      S.editor.insertToolbarItem({groupIndex:0,itemIndex:0},
+        {name:"undo",tooltip:"Undo (Ctrl+Z)",el:histBtn("↶","Undo",false)});
+    }catch(e){}
+    // Ctrl/Cmd+S should save the page. The editor maps Mod-s to strikethrough, so we
+    // catch the key in the capture phase (before it reaches the editor's keymap) and
+    // save instead. Bound once on document; acts only while a report page is open.
+    if(!S.ctrlSBound){
+      S.ctrlSBound=true;
+      document.addEventListener("keydown",e=>{
+        if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&!e.altKey&&(e.key==="s"||e.key==="S")){
+          if(S.editor&&S.page){ e.preventDefault(); e.stopPropagation(); clickSave(); }
+        }
+      },true);
+    }
     let deb;
     S.editor.on("change",()=>{
       if(S.applyingRemote)return;            // programmatic setMarkdown — not a user edit
       markStale(); scheduleAutosave();
       clearTimeout(deb); deb=setTimeout(updatePreview,300); });
     setTimeout(updatePreview,200);
+    // The editor records the initial content load as an undoable step, so a stray
+    // Ctrl+Z would wipe the whole page (and then autosave the wipe). Drop that step
+    // once the content settles so undo can only reach back to the loaded baseline.
+    setTimeout(resetEditorHistory,250);
+  }
+
+  // Trigger the editor's own undo/redo via its keymap (no public API for it otherwise).
+  function editorHistoryCmd(redo){
+    if(!S.editor)return;
+    try{
+      const me=S.editor.getCurrentModeEditor&&S.editor.getCurrentModeEditor();
+      const dom=me&&me.view&&me.view.dom; if(!dom)return;
+      try{ dom.focus({preventScroll:true}); }catch(e){ dom.focus(); }
+      const MAC=/Mac|iPhone|iPad/.test(navigator.platform||navigator.userAgent||"");
+      dom.dispatchEvent(new KeyboardEvent("keydown",{key:"z",code:"KeyZ",
+        ctrlKey:!MAC, metaKey:MAC, shiftKey:!!redo, bubbles:true, cancelable:true}));
+    }catch(e){}
+  }
+
+  // Clear the editor's undo history, keeping the current document as the new baseline.
+  // Rebuilds the ProseMirror state with fresh plugins (its history plugin starts empty)
+  // so there is nothing to undo past the loaded content.
+  function resetEditorHistory(){
+    if(!S.editor)return;
+    try{
+      const me=S.editor.getCurrentModeEditor&&S.editor.getCurrentModeEditor();
+      const view=me&&me.view; if(!view)return;
+      const state=view.state;
+      const plugins=state.plugins.map(pl=>{
+        const s=pl.getState&&pl.getState(state);
+        return (s&&typeof s==="object"&&"done"in s&&"undone"in s) ? new pl.constructor(pl.spec) : pl;
+      });
+      view.updateState(state.constructor.create(
+        {doc:state.doc, selection:state.selection, storedMarks:state.storedMarks, plugins}));
+    }catch(e){}
   }
 
   function updatePreview(){
@@ -1030,6 +1109,10 @@
     // conflict state and wait for the user to resolve it by hand (click the badge).
     if(S.remoteChangePending){ markConflict(); return; }
     if(S.saving){ scheduleAutosave(); return; }       // a save is in flight; retry shortly
+    // Safety net: never auto-persist a blank page. This is the last line of defense
+    // against an accidental Ctrl+Z wiping content and the wipe being saved over it.
+    // Emptying a page on purpose still works via an explicit Save (click the badge).
+    if((S.editor.getMarkdown()||"").trim()===""){ markStale(); return; }
     await doSave({auto:true});
   }
   // The single write path. Sends the editor's content with the base mtime it was loaded
@@ -1089,12 +1172,31 @@
       S.baseMtime=r.page_mtime; S.lastPageMtime=r.page_mtime; S.lastManifestMtime=r.manifest_mtime;
     }catch(e){}
   }
+  // Scroll the editor and preview panes back to the top. Called on page navigation so a
+  // new page never inherits the previous page's scroll offset (which would otherwise leave
+  // a short page scrolled past its content, showing blank). Heavy pages (lots of KaTeX) can
+  // finish laying out — and Toast UI's editor/preview scroll-sync can re-fire — well after the
+  // switch, so we re-apply across several frames and a long tail rather than just once.
+  function scrollContentTop(){
+    const apply=()=>{
+      try{ if(S.editor&&S.editor.setScrollTop) S.editor.setScrollTop(0); }catch(e){}
+      if(S.previewEl) S.previewEl.scrollTop=0;
+      // If the editor grabbed focus on a long page it can scroll the whole document, pushing
+      // the fixed-height app off the top of the viewport (a black void). Force the page back.
+      if(window.scrollX||window.scrollY) window.scrollTo(0,0);
+      if(document.scrollingElement) document.scrollingElement.scrollTop=0;
+    };
+    apply();
+    requestAnimationFrame(apply);
+    [120,300,600].forEach(ms=>setTimeout(apply,ms));
+  }
   // Set editor content without it counting as a user edit (suppresses the change hook).
   function applyRemote(md){
     S.applyingRemote=true;
     try{ S.editor.setMarkdown(md||"",false); }
     finally{ setTimeout(()=>{ S.applyingRemote=false; },0); }
     setTimeout(updatePreview,150);
+    setTimeout(resetEditorHistory,200);   // loaded content is the undo baseline (see initEditor)
   }
   async function switchPage(target,{noRoute=false}={}){
     const match=S.pages.find(p=>p.page_slug===target)
@@ -1105,6 +1207,7 @@
     S.page=match.page_slug; S.remoteChangePending=false;
     if(!noRoute)pushRoute("bubble/"+S.bubble+"/"+S.page);   // keep the page across refresh
     applyRemote(c||""); markSynced(); refreshTabs();
+    scrollContentTop();                                     // start the new page at the top
     primeSync();
   }
   async function newPage(){
@@ -1115,6 +1218,7 @@
     pushRoute("bubble/"+S.bubble+"/"+S.page);
     await primeSync();                          // base off the just-created file
     S.editor.setMarkdown("# "+title+"\n\n");    // a real edit -> autosaves on idle
+    setTimeout(resetEditorHistory,200);         // don't let Ctrl+Z wipe the new page
     refreshTabs();
   }
   async function deletePage(ps){
@@ -1125,7 +1229,7 @@
     if(S.page===ps){ S.page=S.home; S.remoteChangePending=false;
       pushRoute("bubble/"+S.bubble);
       const c=(await api("/api/bubbles/"+S.bubble+"/pages/"+S.home)).content;
-      applyRemote(c||""); markSynced(); primeSync(); }
+      applyRemote(c||""); markSynced(); scrollContentTop(); primeSync(); }
     refreshTabs();
   }
   const SYNC_LABEL={synced:"⟳ synced",stale:"✎ unsaved",saving:"⟳ saving…",conflict:"⚠ unsynced"};

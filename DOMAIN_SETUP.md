@@ -2,6 +2,11 @@
 
 Follow these instructions to replace temporary `trycloudflare.com` URLs with a permanent, static domain (e.g., `yourproject.codes`) for your MIT project.
 
+> Public exposure note: a Cloudflare tunnel gives you HTTPS reachability, but it does not harden
+> the app's signup/login, sharing, upload, or model-key flows. Review the security checklist in
+> [TODO.md](TODO.md#security--hardening-for-public-exposure) before treating this as safe for
+> public internet use.
+
 ---
 
 ## 1. Get a Free Domain

@@ -349,7 +349,10 @@ def build_app():
     # ---- static ----
     @app.get("/")
     def index():
-        return FileResponse(WEB_DIR / "index.html")
+        # no-cache: the browser must revalidate before reusing a cached copy, so SPA
+        # updates land immediately (it can still 304 when unchanged). Without this,
+        # FileResponse sets no Cache-Control and browsers may serve a stale SPA.
+        return FileResponse(WEB_DIR / "index.html", headers={"Cache-Control": "no-cache"})
 
     @app.get("/api/help")
     def get_help():

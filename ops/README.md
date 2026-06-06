@@ -4,6 +4,11 @@ The four lockedin processes run as **systemd *user* units**, supervised by a tin
 monitor that auto-restarts anything that goes down and only spends LLM tokens when an automatic
 restart *fails*. Lingering is enabled, so everything starts at boot and survives logout.
 
+This setup can expose the app publicly through Cloudflare. That does not by itself make the
+application production-hardened: review the public-exposure checklist in
+[`../TODO.md`](../TODO.md#security--hardening-for-public-exposure) before relying on it outside a
+trusted user group.
+
 ## Units (`~/.config/systemd/user/`)
 
 | Unit | What it runs | Health check | Auto-restart |
@@ -55,6 +60,37 @@ systemctl --user stop lockedin-monitor.timer    # pause monitoring
 # After editing a unit file
 systemctl --user daemon-reload && systemctl --user restart <unit>
 ```
+
+## Restarting the server after a code change
+
+Whether you need to restart depends on **what** you changed:
+
+| You changed… | Restart needed? | How users get it |
+|--------------|-----------------|------------------|
+| `web/index.html` (the SPA) | **No** — `index.html` is served fresh from disk on every request (`FileResponse`) | A browser refresh. The server sends `Cache-Control: no-cache`, so a normal reload always revalidates and picks up the new file. (A *one-time* hard reload — `Ctrl/Cmd+Shift+R` — clears any copy cached before that header existed.) |
+| Python (`server.py`, `service.py`, `reports.py`, …) | **Yes** — the process holds the imported modules in memory | Restart the service (below) |
+| A systemd unit file | **Yes**, with a daemon-reload first | `systemctl --user daemon-reload && systemctl --user restart <unit>` |
+
+### Restart the web server
+
+```bash
+systemctl --user restart lockedin-serve.service        # respawns with the unit's env/cwd
+systemctl --user is-active lockedin-serve.service      # -> active
+# Verify the new code is live (e.g. confirm a header your change added):
+curl -sD - -o /dev/null http://127.0.0.1:8080/ | grep -i cache-control   # -> cache-control: no-cache
+journalctl --user -u lockedin-serve -n 30 --no-pager   # check startup logs if it didn't come up
+```
+
+Always restart **through systemd** (not by killing the process): the unit supplies the working
+directory (`/home/hamid/projects/lockedin`) and `LOCKEDIN_NEWS_ENABLED=1`, and the health monitor
+won't fight a clean `systemctl` restart. The Cloudflare tunnel and Slack bot are separate units —
+restarting `lockedin-serve` does **not** touch `lockedin.codes` routing.
+
+> **Side effect:** sessions are in-memory, so a restart **logs everyone out** — they'll need to
+> sign in again. There's no data loss (user content lives on disk), just re-authentication.
+
+If a restart fails to bring it healthy, the monitor will retry once on its next tick and escalate
+to a bounded `claude -p` diagnosis in `ops/monitor.log` (see above).
 
 ## Notes / gotchas
 
