@@ -68,3 +68,13 @@ def drop_bubble(user: str, slug: str) -> None:
         for t in dead:
             index.pop(t, None)
         _save(index)
+
+
+def drop_user(user: str) -> None:
+    """Remove any public-share tokens owned by a deleted user."""
+    index = _load()
+    dead = [t for t, e in index.items() if e.get("user") == user]
+    if dead:
+        for t in dead:
+            index.pop(t, None)
+        _save(index)

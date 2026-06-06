@@ -18,6 +18,7 @@
     --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --line:#2a2f3a;
     --ink:#e6e9ef; --muted:#9aa3b2; --accent:#7c9cff; --accent2:#5ce6c4;
     --warn:#ffcc66; --bad:#ff7a7a; --good:#5ce6a0; --radius:12px;
+    --vvh:100vh;
   }
   /* Light mode */
   body.light{
@@ -39,6 +40,8 @@
   button:hover{border-color:var(--accent)}
   button.primary{background:var(--accent);color:#0b0e14;border-color:var(--accent);font-weight:600}
   button.ghost{background:transparent}
+  button.danger{background:transparent;border-color:var(--bad);color:var(--bad)}
+  button.danger:hover{background:rgba(255,122,122,.08);border-color:var(--bad)}
   input,textarea,select{font:inherit;background:var(--panel);color:var(--ink);
          border:1px solid var(--line);border-radius:8px;padding:8px 10px;width:100%}
   textarea{resize:vertical}
@@ -67,7 +70,7 @@
        grid-template-areas:"top top" "side main"}
   #topbar{grid-area:top;display:flex;align-items:center;gap:14px;padding:10px 16px;
           border-bottom:1px solid var(--line);background:var(--panel);min-width:0}
-  #topbar #modelTabs{min-width:0;overflow:hidden}
+  #topbar #modelTabs{display:none;min-width:0;overflow:hidden}
   #side{grid-area:side;border-right:1px solid var(--line);background:var(--panel);padding:14px 10px;
         overflow:hidden;transition:width .2s ease,padding .15s ease}
   /* min-height/min-width:0 let the grid track govern size (no hardcoded topbar height,
@@ -88,16 +91,22 @@
   .mtab .gear{opacity:.6}
   #modelCfg{position:absolute;top:52px;right:16px;width:340px;max-width:calc(100vw - 32px);
             max-height:calc(100vh - 70px);overflow:auto;z-index:30}
+  .model-card{cursor:default}
+  .model-card.active{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+  .model-card .model-title{display:flex;gap:8px;align-items:center;min-width:0}
+  .model-card .model-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px}
 
   /* grids */
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px}
   .acard{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
          padding:14px;cursor:pointer;transition:border-color .15s}
   .acard:hover{border-color:var(--accent)}
-  .acard h4{margin:0 0 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
+  /* min-width:0 lets the title shrink + ellipsize inside its flex .row instead of forcing the
+     card (and the whole page) wider than the viewport on narrow screens. */
+  .acard h4{margin:0 0 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
   .truncate{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .badge{font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid var(--warn);
-         color:var(--warn)}
+         color:var(--warn);flex-shrink:0;white-space:nowrap}
 
   /* bubble detail */
   #detail{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(0,1fr);gap:16px;flex:1;
@@ -194,30 +203,63 @@
   .session-row{display:flex;align-items:center;gap:6px;padding:5px 10px;border-top:1px solid var(--line);font-size:12px}
   .session-row:first-child{border-top:none}
   .session-row .session-title{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink)}
+  .mobile-bubble-actions,.mobile-sheet{display:none}
 
   /* ── Mobile ── */
   @media (max-width:700px){
-    /* On phones the whole page scrolls naturally instead of a locked app shell. */
-    html,body{height:auto;overflow:visible}
-    #app{height:auto;min-height:100vh;overflow:visible;grid-template-columns:0 minmax(0,1fr)!important}
+    /* On phones the whole page scrolls naturally instead of a locked app shell.
+       overflow-x:clip is a safety net: it kills any horizontal page scroll (which would
+       otherwise let a too-wide child shift content left and clip the left edge) without
+       turning the body into a vertical scroll container the way overflow-x:hidden would. */
+    html,body{height:auto;overflow-y:visible;overflow-x:clip}
+    body.mobile-sheet-open{overflow:hidden}
+    #app{height:auto;min-height:var(--vvh);overflow:visible;grid-template-columns:0 minmax(0,1fr)!important}
     /* keep the topbar pinned while the page scrolls */
-    #topbar{position:sticky;top:0;z-index:25;padding:8px 10px;gap:8px}
+    #topbar{position:sticky;top:0;z-index:25;padding:calc(8px + env(safe-area-inset-top)) 10px 8px;gap:6px}
+    /* The brand is the one flexible item: it truncates first so the controls on the right
+       (account / help / theme / log out) always stay visible and never wrap. */
+    #topbar .brand{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    #topbar button{flex-shrink:0;white-space:nowrap}
+    #topbar #who{max-width:96px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     /* always collapse sidebar — hamburger still toggles it as a narrow overlay */
     #side{width:0!important;min-width:0!important;padding:0!important;border-right:none!important;
-          position:fixed;top:49px;bottom:0;left:0;z-index:20;box-shadow:2px 0 12px rgba(0,0,0,.4)}
+          position:fixed;top:calc(49px + env(safe-area-inset-top));bottom:0;left:0;z-index:20;box-shadow:2px 0 12px rgba(0,0,0,.4)}
     #app.side-open #side{width:220px!important;padding:14px 10px!important;border-right:1px solid var(--line)!important}
     #app.side-open::after{content:'';position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:19}
     /* main scrolls with the page */
     #main{height:auto;overflow:visible}
-    #main.detailmode{height:auto;overflow:visible;min-height:0}
-    /* stack bubble detail panes; each pane gets a usable fixed height + internal scroll */
-    #detail{grid-template-columns:1fr;min-height:0}
-    .pane{height:78vh;min-height:320px}
-    /* stack editor over preview rather than a cramped side-by-side split */
+    #main.detailmode{height:auto;overflow:visible;min-height:0;padding:12px 10px 84px}
+    #detail{display:block;min-height:0}
+    .pane{height:auto;min-height:0}
+    #detail>.editor-pane{height:calc(var(--vvh) - 154px - env(safe-area-inset-top));min-height:min(380px, calc(var(--vvh) - 154px))}
+    #detail>.chat-pane,.bubble-papers-inline,.desktop-only-tool{display:none!important}
+    /* editor-only on mobile; full-page preview is still available through the magnifier */
     #editorHost{flex-direction:column}
-    #previewWrap{border-left:none;border-top:1px solid var(--line)}
-    /* hide model tabs — too wide for mobile */
-    #modelTabs{display:none}
+    #previewWrap{display:none!important}
+    .mobile-bubble-actions{position:fixed;left:14px;right:14px;bottom:calc(env(safe-area-inset-bottom) + 14px);
+      display:flex;justify-content:space-between;gap:12px;z-index:45;pointer-events:none}
+    .mobile-bubble-actions button{pointer-events:auto;border-radius:999px;padding:10px 14px;
+      box-shadow:0 8px 26px rgba(0,0,0,.45)}
+    .mobile-sheet{display:block;position:fixed;inset:0;z-index:70;pointer-events:none}
+    .mobile-sheet.open{pointer-events:auto}
+    .mobile-sheet-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.48);opacity:0;transition:opacity .16s ease}
+    .mobile-sheet.open .mobile-sheet-backdrop{opacity:1}
+    .mobile-sheet-panel{position:absolute;left:0;right:0;bottom:0;max-height:calc(var(--vvh) - 12px);
+      background:var(--panel);border:1px solid var(--line);border-bottom:none;border-radius:14px 14px 0 0;
+      display:flex;flex-direction:column;transform:translateY(100%);transition:transform .18s ease;
+      padding-bottom:env(safe-area-inset-bottom)}
+    .mobile-sheet.open .mobile-sheet-panel{transform:translateY(0)}
+    .mobile-sheet-hd{padding:10px 12px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px}
+    .mobile-sheet-body{overflow:auto;min-height:0;display:flex;flex-direction:column}
+    .mobile-sheet-body>.pane{height:calc(var(--vvh) - 90px);min-height:0;border:none;border-radius:0;background:transparent}
+    .mobile-sheet-body>.bd{padding:12px;overflow:auto}
+    .mobile-sheet-body .chat-pane{display:flex!important}
+    .mobile-sheet-body .chat-titlebar{display:none!important}
+    .mobile-sheet-body .chat-pane:not(.chat-controls-open) .sessionbar,
+    .mobile-sheet-body .chat-pane:not(.chat-controls-open) .sessions-panel,
+    .mobile-sheet-body .chat-pane:not(.chat-controls-open) .drwrap{display:none!important}
+    #modelCfg{position:fixed;top:calc(58px + env(safe-area-inset-top));left:12px;right:12px;
+      width:auto;max-width:none;max-height:calc(var(--vvh) - 82px)}
     /* single-column cards */
     .grid{grid-template-columns:1fr}
     .brand{font-size:18px}
@@ -259,6 +301,7 @@
     <button class="navbtn" data-view="bubbles">💡 Idea Bubbles</button>
     <button class="navbtn" data-view="attention">🔔 Attention <span id="attnCount" class="muted"></span></button>
     <button class="navbtn" data-view="news" id="newsNav" style="display:none">📰 News <span id="newsCount" class="muted"></span></button>
+    <button class="navbtn" data-view="settings">⚙️ Settings</button>
   </div>
 
   <div id="main"></div>
@@ -300,6 +343,13 @@
     return e;};
   const toast = (m)=>{const t=$("#toast"); t.textContent=m; t.classList.remove("hide");
     clearTimeout(t._t); t._t=setTimeout(()=>t.classList.add("hide"),2600);};
+  function updateViewportVars(){
+    const h=(window.visualViewport&&window.visualViewport.height)||window.innerHeight;
+    document.documentElement.style.setProperty("--vvh", Math.max(320,Math.round(h))+"px");
+  }
+  updateViewportVars();
+  window.addEventListener("resize",updateViewportVars,{passive:true});
+  if(window.visualViewport) window.visualViewport.addEventListener("resize",updateViewportVars,{passive:true});
 
   // ---------- sidebar toggle ----------
   function applySideCollapsed(collapsed){
@@ -341,6 +391,7 @@
     if(h==="bubbles"){switchView("bubbles",{noRoute:true});return;}
     if(h==="attention"){switchView("attention",{noRoute:true});return;}
     if(h==="news"){switchView("news",{noRoute:true});return;}
+    if(h==="settings"){switchView("settings",{noRoute:true});return;}
     const m=h.match(/^bubble\/([^/]+)(?:\/([^/]+))?$/);
     if(m){openBubble(m[1],{noRoute:true,page:m[2]||null});return;}
     switchView("assets",{noRoute:true});
@@ -355,16 +406,14 @@
   let _snapping=false;
   window.addEventListener("scroll",()=>{
     if(_snapping)return;
+    const main=document.getElementById("main");
+    if(window.innerWidth<=700 || !main || !main.classList.contains("detailmode")) return;
     if(window.scrollX||window.scrollY){ _snapping=true; window.scrollTo(0,0); _snapping=false; }
   },{passive:true});
 
   // ---------- api ----------
-  function claudeHeaders(){
-    const tok=localStorage.getItem("claude_oauth_token");
-    return tok?{"X-Claude-Token":tok}:{};
-  }
   async function api(path, opts={}){
-    const r = await fetch(path, {credentials:"include", headers:{"Content-Type":"application/json",...claudeHeaders()}, ...opts});
+    const r = await fetch(path, {credentials:"include", headers:{"Content-Type":"application/json"}, ...opts});
     if(!r.ok){ let d; try{d=(await r.json()).detail;}catch(e){d=r.statusText;} const err=new Error(d||"Error"); err.status=r.status; throw err; }
     const ct=r.headers.get("content-type")||""; return ct.includes("json")?r.json():r.text();
   }
@@ -373,7 +422,7 @@
     const ac = new AbortController();
     (async()=>{
       const r = await fetch(path,{method:"POST",credentials:"include",signal:ac.signal,
-        headers:{"Content-Type":"application/json",...claudeHeaders()},body:JSON.stringify(body)});
+        headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
       const reader=r.body.getReader(); const dec=new TextDecoder(); let buf="";
       while(true){
         const {value,done}=await reader.read(); if(done)break;
@@ -427,7 +476,9 @@
     chatCollapsed:false,  // persisted in li_chat
     pollTimer:null, lastPageMtime:null, lastManifestMtime:null,
     baseMtime:null, autosaveTimer:null, saving:false, syncState:"synced", applyingRemote:false,
-    previewEl:null, remoteChangePending:false,
+    previewEl:null, remoteChangePending:false, papersPane:null, chatPane:null,
+    detailWrap:null,
+    healthTimer:null, healthSeq:0, verifiedActive:null,
     shareActive:false, shareToken:""
   };
 
@@ -435,7 +486,11 @@
   async function doAuth(kind){
     const username=$("#au_user").value.trim(), password=$("#au_pass").value;
     $("#au_err").textContent="";
-    try{ await api("/api/"+kind,{method:"POST",body:JSON.stringify({username,password})}); await boot(); }
+    try{
+      const r=await api("/api/"+kind,{method:"POST",body:JSON.stringify({username,password})});
+      if(r&&r.pending){ $("#au_err").textContent=r.message||"Account created. Waiting for approval."; return; }
+      await boot();
+    }
     catch(e){ $("#au_err").textContent=e.message; }
   }
   $("#au_login").onclick=()=>doAuth("login");
@@ -488,7 +543,7 @@
 
   async function boot(){
     let me; try{ me=await api("/api/me"); }catch(e){ return; }
-    S.user=me.user; S.model=me.model; S.newsEnabled=!!me.news_enabled;
+    S.user=me.user; S.model=me.model; S.newsEnabled=!!me.news_enabled; S.admin=!!me.admin;
     $("#auth").style.display="none"; $("#app").style.display="grid";
     $("#who").textContent="@"+S.user;
     if(S.newsEnabled){ $("#newsNav").style.display=""; refreshNewsCount(); }
@@ -502,13 +557,13 @@
     qwen:["qwen2.5:7b-instruct","qwen2.5:14b-instruct","qwen2.5:32b-instruct","qwen2.5:72b-instruct"],
     openai:["gpt-4o","gpt-4o-mini","o3-mini","o1","o1-mini"],
     claude:["claude-opus-4-8","claude-sonnet-4-6","claude-haiku-4-5-20251001"],
-    gemini:["gemini-2.5-pro","gemini-2.5-flash-preview-05-20","gemini-2.0-flash","gemini-1.5-pro"],
+    gemini:["gemini-3.5-flash","gemini-3-flash-preview","gemini-2.5-pro","gemini-2.5-flash","gemini-2.0-flash"],
   };
   function renderModelTabs(){
     const wrap=$("#modelTabs"); wrap.innerHTML="";
     PROV.forEach(p=>{
       const active=S.model.active===p.k;
-      const dot=el("span",{class:"dot",id:"dot_"+p.k});
+      const dot=el("span",{class:"dot","data-dot-provider":p.k});
       const tab=el("div",{class:"mtab"+(active?" active":"")},
         dot, el("span",{},p.label),
         el("span",{class:"gear",title:"Configure",onclick:(ev)=>{ev.stopPropagation();openCfg(p.k);}},"⚙"));
@@ -518,7 +573,8 @@
   }
   async function setActive(k){
     try{ const r=await api("/api/settings/model/active",{method:"PUT",body:JSON.stringify({active:k})});
-      S.model=r.config; renderModelTabs(); refreshHealth(); toast("Active model: "+k);
+      S.model=r.config; S.verifiedActive=null; renderModelTabs(); if(S.view==="settings")viewSettings({checkHealth:false});
+      scheduleLiveHealth(k); toast("Testing model: "+k);
       const badge=$("#chatModelBadge"); if(badge)badge.textContent=k; }
     catch(e){ toast(e.message); }
   }
@@ -549,44 +605,152 @@
     } else if(k==="gemini"){
       field("model","Model name",cfg.model||"gemini-2.5-flash-preview-05-20",null,MODEL_SUGGESTIONS.gemini);
       field("api_key","API key (from aistudio.google.com/apikey)",cfg.api_key,"password");
-    } else { // claude — API key OR subscription (OAuth token)
+    } else { // claude
       field("model","Model name",cfg.model||"claude-sonnet-4-6",null,MODEL_SUGGESTIONS.claude);
-      box.append(el("label",{class:"muted"},"Authentication"));
-      const sel=el("select");
-      [["api_key","API key (pay-per-token)"],["subscription","Claude subscription (OAuth token)"]]
-        .forEach(([v,t])=>sel.append(el("option",{value:v},t)));
-      sel.value=cfg.auth_method||"api_key"; inputs.auth_method=sel; box.append(sel);
-      const keyWrap=el("div",{class:"col"}), tokWrap=el("div",{class:"col"});
-      const keyInp=el("input",{type:"password",value:cfg.api_key||""}); inputs.api_key=keyInp;
-      keyWrap.append(el("label",{class:"muted"},"Anthropic API key"),keyInp);
-      const tokInp=el("input",{type:"password",value:localStorage.getItem("claude_oauth_token")||""}); inputs.oauth_token=tokInp;
-      tokWrap.append(el("label",{class:"muted"},"Subscription OAuth token"),tokInp,
-        el("div",{class:"muted",style:"font-size:11px"},
-          "Paste your Claude OAuth token. Stored only in your browser — never sent to the server."));
-      box.append(keyWrap,tokWrap);
-      const sync=()=>{ const sub=sel.value==="subscription";
-        keyWrap.classList.toggle("hide",sub); tokWrap.classList.toggle("hide",!sub); };
-      sel.onchange=sync; sync();
+      field("api_key","Anthropic API key",cfg.api_key,"password");
     }
     box.append(el("div",{class:"row"}, el("button",{class:"primary",onclick:async()=>{
         const patch={}; patch[k]={}; for(const key in inputs)patch[k][key]=inputs[key].value;
-        if(k==="claude"){
-          if(inputs.auth_method&&inputs.auth_method.value==="subscription"){
-            localStorage.setItem("claude_oauth_token", patch[k].oauth_token||"");
-          } else {
-            localStorage.removeItem("claude_oauth_token");
-          }
-          patch[k].oauth_token=""; // never persist the token server-side
-        }
         const r=await api("/api/settings/model",{method:"PUT",body:JSON.stringify({config:patch})});
-        S.model=r.config; box.classList.add("hide"); renderModelTabs(); refreshHealth(); toast("Saved "+k+" config");
+        S.model=r.config; if(S.model.active===k)S.verifiedActive=null;
+        box.classList.add("hide"); renderModelTabs(); if(S.view==="settings")viewSettings({checkHealth:false});
+        if(S.model.active===k)scheduleLiveHealth(k); else refreshHealth();
+        toast("Saved "+k+" config");
       }},"Save")));
     box.classList.remove("hide");
   }
-  async function refreshHealth(){
-    PROV.forEach(p=>{const d=$("#dot_"+p.k); if(d)d.className="dot";});
-    try{ const h=await api("/api/health"); const d=$("#dot_"+h.active);
-      if(d)d.className="dot "+(h.ok?"ok":"bad"); }catch(e){}
+  function markProviderHealth(provider,status){
+    document.querySelectorAll("[data-dot-provider]").forEach(d=>d.className="dot");
+    if(provider)document.querySelectorAll(`[data-dot-provider="${provider}"]`)
+      .forEach(d=>d.className="dot "+status);
+  }
+  function scheduleLiveHealth(provider){
+    clearTimeout(S.healthTimer);
+    const seq=++S.healthSeq;
+    S.verifiedActive=null;
+    markProviderHealth(provider,"bad");
+    let note=$("#settingsHealth");
+    if(note)note.textContent="Waiting 2 seconds before testing "+provider+"…";
+    const details=$("#settingsHealthDetails");
+    if(details)details.classList.add("hide");
+    S.healthTimer=setTimeout(()=>refreshHealth({live:true,seq,expect:provider}),2000);
+  }
+  function renderHealthStatus(ok,message){
+    const note=$("#settingsHealth"), details=$("#settingsHealthDetails");
+    const text=message||"No details returned.";
+    if(note)note.textContent=(ok?"Connected: ":"Not ready: ")+text;
+    if(details){
+      details.textContent=ok?"":text;
+      details.classList.toggle("hide",ok);
+    }
+  }
+  async function refreshHealth({live=false,seq=null,expect=null}={}){
+    const active=S.model&&S.model.active;
+    markProviderHealth(active,"bad");
+    let note=$("#settingsHealth");
+    if(note)note.textContent=live?"Sending a test message to "+active+"…":"Checking active model…";
+    const details=$("#settingsHealthDetails");
+    if(details)details.classList.add("hide");
+    try{ const h=await api("/api/health"+(live?"?live=1":""));
+      if(seq!==null && seq!==S.healthSeq)return;
+      if(expect && h.active!==expect)return;
+      if(live)S.verifiedActive=h.ok?h.active:null;
+      if(live && S.view==="settings")viewSettings({checkHealth:false});
+      markProviderHealth(h.active,h.ok?"ok":"bad");
+      renderHealthStatus(h.ok,h.message||h.active);
+    }catch(e){
+      S.verifiedActive=null;
+      markProviderHealth(active,"bad");
+      renderHealthStatus(false,e.message||String(e));
+    }
+  }
+
+  async function viewSettings({checkHealth=true}={}){
+    const m=$("#main"); m.innerHTML="";
+    m.append(el("h2",{class:"section-title"},"⚙️ Settings"));
+    const grid=el("div",{class:"grid"});
+    PROV.forEach(p=>{
+      const cfg=S.model[p.k]||{};
+      const active=S.model.active===p.k;
+      const verified=S.verifiedActive===p.k;
+      const card=el("div",{class:"acard model-card"+(active?" active":""),
+        ondblclick:()=>{ if(!active)setActive(p.k); }});
+      card.append(el("div",{class:"row"},
+        el("div",{class:"model-title"},
+          el("span",{class:"dot","data-dot-provider":p.k}),
+          el("h4",{style:"margin:0"},p.label)),
+        el("span",{class:"spacer"}),
+        verified?el("span",{class:"badge"},"active"):(active?el("span",{class:"badge"},"testing"):null)));
+      const modelName=cfg.model||MODEL_SUGGESTIONS[p.k][0]||"Not configured";
+      card.append(el("div",{class:"muted",style:"font-size:12px;margin-top:8px"},"Model: "+modelName));
+      if(p.k==="qwen"){
+        card.append(el("div",{class:"muted truncate",style:"font-size:12px;margin-top:4px"},cfg.base_url||"http://localhost:11434/v1"));
+      } else {
+        card.append(el("div",{class:"muted",style:"font-size:12px;margin-top:4px"},
+          cfg.api_key?"API key saved":"API key not set"));
+      }
+      const useBtn=el("button",{class:active?"ghost small":"primary small",
+        onclick:()=>{ if(!active)setActive(p.k); }},active?(verified?"Current":"Testing"):"Use this model");
+      if(active)useBtn.disabled=true;
+      card.append(el("div",{class:"model-actions"},
+        useBtn,
+        el("button",{class:"ghost small",onclick:()=>openCfg(p.k)},"Configure")));
+      grid.append(card);
+    });
+    m.append(grid,
+      el("div",{id:"settingsHealth",class:"muted",style:"margin-top:14px"}),
+      el("pre",{id:"settingsHealthDetails",class:"hide",
+        style:"white-space:pre-wrap;overflow:auto;margin-top:8px;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--panel);font-size:12px"}));
+    if(S.admin) renderUserAccess(m);
+    if(checkHealth)scheduleLiveHealth(S.model.active);
+  }
+
+  async function renderUserAccess(main){
+    const old=$("#userAccess");
+    if(old)old.remove();
+    const box=el("div",{id:"userAccess",class:"card col",style:"margin-top:20px"});
+    box.append(el("div",{class:"row"},
+      el("b",{},"User access"),
+      el("span",{class:"spacer"}),
+      el("button",{class:"ghost small",onclick:()=>renderUserAccess(main)},"Refresh")));
+    const body=el("div",{class:"col"});
+    box.append(body);
+    main.append(box);
+    try{
+      const r=await api("/api/admin/users");
+      body.innerHTML="";
+      r.users.forEach(u=>{
+        const row=el("div",{class:"row",style:"gap:8px;align-items:center;border-top:1px solid var(--line);padding-top:8px;flex-wrap:wrap"},
+          el("b",{}, "@"+u.username),
+          u.admin?el("span",{class:"badge"},"admin"):null,
+          el("span",{class:"pill"},u.approved?"approved":"pending"),
+          el("span",{class:"muted",style:"font-size:12px"},u.created_at?("created "+u.created_at.slice(0,10)):""),
+          el("span",{class:"spacer"}));
+        if(u.username!==S.user){
+          row.append(el("button",{class:u.approved?"ghost small":"primary small",onclick:async()=>{
+            try{
+              await api("/api/admin/users/"+encodeURIComponent(u.username)+"/approval",
+                {method:"PUT",body:JSON.stringify({approved:!u.approved})});
+              renderUserAccess(main);
+              toast((u.approved?"Revoked ":"Approved ")+u.username);
+            }catch(e){ toast(e.message); }
+          }},u.approved?"Revoke":"Approve"),
+          el("button",{class:"danger small",onclick:async()=>{
+            const ok=prompt("Delete @"+u.username+" permanently? Type the username to confirm.");
+            if(ok!==u.username)return;
+            try{
+              await api("/api/admin/users/"+encodeURIComponent(u.username),{method:"DELETE"});
+              renderUserAccess(main);
+              toast("Deleted "+u.username);
+            }catch(e){ toast(e.message); }
+          }},"Delete"));
+        }
+        body.append(row);
+      });
+    }catch(e){
+      body.innerHTML="";
+      body.append(el("div",{class:"err"},e.message));
+    }
   }
 
   // ================= NAV =================
@@ -601,6 +765,7 @@
     else if(v==="bubbles")viewBubbles();
     else if(v==="attention")viewAttention();
     else if(v==="news")viewNews();
+    else if(v==="settings")viewSettings();
     refreshAttnCount();
     if(S.newsEnabled)refreshNewsCount();
   }
@@ -737,7 +902,6 @@
     r.bubbles.forEach(b=>{
       const c=el("div",{class:"acard"});
       const h=el("div",{class:"row"}, el("h4",{style:"margin:0"},b.name));
-      if(!b.approved)h.append(el("span",{class:"badge"},"suggested"));
       // delete button — stopPropagation so it doesn't also open the bubble
       h.append(el("span",{class:"spacer"}));
       h.append(el("button",{class:"ghost small",style:"opacity:.5;padding:3px 7px",
@@ -826,7 +990,7 @@
     if(S.editor){ try{S.editor.destroy();}catch(e){} S.editor=null; }
     stopPolling();
     S.bubble=slug; S.chat=[]; S.page=null; S.pages=[]; S.sessionId=null; S.sessionTitle=null;
-    S.previewEl=null; S.remoteChangePending=false;
+    S.previewEl=null; S.remoteChangePending=false; S.papersPane=null; S.chatPane=null; S.detailWrap=null;
     S.baseMtime=null; S.saving=false; S.syncState="synced";
     S.shareActive=false; S.shareToken="";
     const m=$("#main"); m.innerHTML=""; m.classList.add("detailmode");
@@ -841,7 +1005,7 @@
       style:"opacity:.5;padding:4px 7px;flex-shrink:0",
       onclick:()=>startBubbleRename(nameSpan,b.slug)
     },"✏️");
-    const titleRow=el("div",{class:"row",style:"margin:10px 0 12px;align-items:center;gap:8px"},
+    const titleRow=el("div",{class:"row",style:"margin:10px 0 12px;align-items:center;gap:8px;flex-wrap:wrap"},
       el("h2",{class:"section-title",style:"margin:0"},"💡 "), nameSpan, renameBtn,
       el("span",{class:"spacer"}));
     if(b.approved) titleRow.append(buildShareControls(slug));
@@ -850,12 +1014,14 @@
     S.chatCollapsed = localStorage.getItem("li_chat")==="1";
     const wrap=el("div",{id:"detail"});
     if(S.chatCollapsed) wrap.classList.add("chat-collapsed");
-    const left=el("div",{class:"pane"}), right=el("div",{class:"pane"});
+    const left=el("div",{class:"pane editor-pane"}), right=el("div",{class:"pane chat-pane"});
+    S.detailWrap=wrap; S.chatPane=right;
     wrap.append(left,right); m.append(wrap);
 
     if(!b.approved){ buildApprovalPane(left,b); }
     else { buildWorkspace(left,b); }
     buildChatPane(right,b);
+    if(b.approved) buildMobileBubbleTools(m,b,wrap,right);
     // Deep-link: restore a specific page (e.g. after a refresh) without clobbering history.
     if(b.approved && page && page!==S.home && S.pages.some(p=>p.page_slug===page)){
       switchPage(page,{noRoute:true});
@@ -887,7 +1053,9 @@
     left.append(tabs,host);
 
     // PDFs strip (pencil toggles an edit mode for adding/removing papers)
-    const pdfs=el("div",{class:"bd",style:"flex:0 0 auto;border-top:1px solid var(--line);max-height:200px;overflow:auto"});
+    const pdfs=el("div",{class:"bd bubble-papers-inline",
+      style:"flex:0 0 auto;border-top:1px solid var(--line);max-height:200px;overflow:auto"});
+    S.papersPane=pdfs;
     renderBubblePdfs(pdfs,b,false);
     left.append(pdfs);
 
@@ -900,6 +1068,59 @@
     // delegated internal-link navigation (page: scheme)
     left.addEventListener("click",e=>{ const a=e.target.closest('a[href^="page:"]');
       if(a){ e.preventDefault(); switchPage(decodeURIComponent(a.getAttribute("href").slice(5))); } });
+  }
+
+  function buildMobileSheet(title){
+    const sheet=el("div",{class:"mobile-sheet"});
+    const body=el("div",{class:"mobile-sheet-body"});
+    const close=()=>{
+      sheet.classList.remove("open");
+      document.body.classList.remove("mobile-sheet-open");
+      if(sheet._onClose) sheet._onClose();
+    };
+    sheet.append(
+      el("div",{class:"mobile-sheet-backdrop",onclick:close}),
+      el("div",{class:"mobile-sheet-panel"},
+        sheet._header=el("div",{class:"mobile-sheet-hd"},el("b",{},title),el("span",{class:"spacer"}),
+          el("button",{class:"ghost small",onclick:close},"✕")),
+        body));
+    sheet._body=body; sheet._close=close;
+    sheet._open=()=>{
+      sheet.classList.add("open");
+      document.body.classList.add("mobile-sheet-open");
+    };
+    return sheet;
+  }
+
+  function buildMobileBubbleTools(main,b,wrap,chatPane){
+    const papersSheet=buildMobileSheet("Papers");
+    const papersBody=el("div",{class:"bd"});
+    papersSheet._body.append(papersBody);
+    renderBubblePdfs(papersBody,b,true);
+
+    const chatSheet=buildMobileSheet("Chat");
+    const controlsBtn=el("button",{class:"ghost small",title:"Chat history and deep-read papers",
+      onclick:()=>{
+        chatPane.classList.toggle("chat-controls-open");
+        controlsBtn.textContent=chatPane.classList.contains("chat-controls-open")?"✕ Controls":"☰ Controls";
+      }},"☰ Controls");
+    chatSheet._header.insertBefore(controlsBtn,chatSheet._header.lastChild);
+    chatSheet._onClose=()=>{ if(chatPane.parentElement!==wrap) wrap.append(chatPane); };
+    const openPapers=()=>{ chatSheet._close(); papersSheet._open(); };
+    const openChat=()=>{
+      papersSheet._close();
+      chatPane.classList.remove("chat-controls-open");
+      controlsBtn.textContent="☰ Controls";
+      chatSheet._body.append(chatPane);
+      chatSheet._open();
+      const input=document.getElementById("chatInput");
+      if(input) setTimeout(()=>input.focus({preventScroll:true}),120);
+    };
+
+    const actions=el("div",{class:"mobile-bubble-actions"},
+      el("button",{class:"primary small",title:"Papers",onclick:openPapers},"📚"),
+      el("button",{class:"primary small",title:"Chat",onclick:openChat},"💬"));
+    main.append(actions,papersSheet,chatSheet);
   }
 
   // Render the "Papers in this bubble" strip. editMode shows a remove ✕ per paper plus a
@@ -1088,11 +1309,11 @@
       style:"cursor:pointer",onclick:clickSave},SYNC_LABEL[st]));
     // preview-pane toggle
     const previewOff=localStorage.getItem("li_preview_off")==="1";
-    tabs.append(el("button",{class:"small ghost",title:previewOff?"Show preview pane":"Hide preview pane",
-      onclick:togglePreview},previewOff?"⊞ preview":"⊟ preview"));
+    tabs.append(el("button",{class:"small ghost desktop-only-tool",title:previewOff?"Show preview pane":"Hide preview pane",
+      onclick:togglePreview},previewOff?"□":"◧"));
     // chat-pane toggle
-    tabs.append(el("button",{class:"small ghost",title:S.chatCollapsed?"Show chat":"Hide chat",
-      onclick:toggleChat},S.chatCollapsed?"chat ❯":"chat ❮"));
+    tabs.append(el("button",{class:"small ghost desktop-only-tool",title:S.chatCollapsed?"Show chat":"Hide chat",
+      onclick:toggleChat},S.chatCollapsed?"💬 >":"💬 <"));
     tabs.append(el("button",{class:"small ghost",title:"Open full-page preview in a new tab",onclick:()=>{
       if(S.bubble&&S.page) window.open("/api/bubbles/"+S.bubble+"/preview/"+S.page,"_blank");
     }},"🔍"));
@@ -1298,7 +1519,7 @@
   }
   // ---- read-only research chat pane ----
   function buildChatPane(right,b){
-    right.append(el("div",{class:"hd"}, el("b",{},"Chat"),
+    right.append(el("div",{class:"hd chat-titlebar"}, el("b",{},"Chat"),
       el("span",{class:"muted",style:"font-size:12px",id:"chatModelBadge"},S.model.active),
       el("span",{class:"spacer"}),
       el("span",{class:"muted",style:"font-size:11px",title:"This chat discusses your reports and papers but never edits pages."},"💬 read-only")));
@@ -1472,12 +1693,8 @@
       if(!(a.suggested_tags||[]).length)tw.append(el("span",{class:"muted"},"No suggestions — tag manually."));
       c.append(tw);
       c.append(el("div",{class:"row",style:"margin-top:10px"},
-        el("button",{class:"primary small",onclick:async(e)=>{e.stopPropagation();
-          const tagList=a.suggested_tags||[];
-          await api("/api/assets/"+a.pdf_id,{method:"PATCH",body:JSON.stringify({tags:tagList,attention_flag:false})});
-          for(const t of tagList){ await api("/api/bubbles",{method:"POST",body:JSON.stringify({name:t})}); }
-          toast("Approved tags"); viewAttention(); refreshAttnCount();
-        }},"✓ Approve tags"),
+        el("a",{href:"/api/assets/"+a.pdf_id+"/pdf",target:"_blank",onclick:e=>e.stopPropagation()},
+          el("button",{class:"primary small"},"Open PDF")),
         el("button",{class:"small",onclick:(e)=>{e.stopPropagation();openAssetEditor(a);}},"Edit"),
         el("button",{class:"ghost small",onclick:async(e)=>{e.stopPropagation();
           await api("/api/assets/"+a.pdf_id,{method:"PATCH",body:JSON.stringify({attention_flag:false})});

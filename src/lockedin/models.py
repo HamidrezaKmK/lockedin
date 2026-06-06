@@ -6,7 +6,7 @@ the same active model. Four providers are supported:
 
   qwen    local Ollama via its OpenAI-compatible API (free, runs on the server)
   openai  OpenAI API (needs api_key)
-  claude  Anthropic API (needs api_key or OAuth subscription token)
+  claude  Anthropic API (needs api_key)
   gemini  Google Gemini via its OpenAI-compatible endpoint (needs api_key from AI Studio)
           https://generativelanguage.googleapis.com/v1beta/openai/
 
@@ -42,15 +42,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "active": "qwen",
     "qwen": {"base_url": "http://localhost:11434/v1", "model": "qwen2.5:7b-instruct"},
     "openai": {"model": "gpt-4o", "api_key": ""},
-    # auth_method: "api_key" (pay-per-token) or "subscription" (paste a Claude OAuth/Bearer token)
-    "claude": {"model": "claude-sonnet-4-6", "api_key": "",
-               "auth_method": "api_key", "oauth_token": ""},
+    "claude": {"model": "claude-sonnet-4-6", "api_key": ""},
     # Get a free API key at https://aistudio.google.com/apikey
     "gemini": {"model": "gemini-2.5-flash-preview-05-20", "api_key": ""},
 }
-
-# Beta header Claude expects when authenticating with a subscription OAuth token.
-OAUTH_BETA = "oauth-2025-04-20"
 
 DEFAULT_MAX_TOKENS = 4096
 
@@ -61,8 +56,6 @@ class ActiveModelConfig:
     base_url: str = "http://localhost:11434/v1"
     model: str = "qwen2.5:7b-instruct"
     api_key: str = ""
-    auth_method: str = "api_key"   # claude only: "api_key" | "subscription"
-    oauth_token: str = ""          # claude subscription Bearer/OAuth token
     raw: dict = field(default_factory=dict)
 
 
@@ -114,8 +107,6 @@ def get_active_config(home: Path) -> ActiveModelConfig:
         base_url=section.get("base_url", "http://localhost:11434/v1"),
         model=section.get("model", ""),
         api_key=section.get("api_key", "") or "",
-        auth_method=section.get("auth_method", "api_key") or "api_key",
-        oauth_token=section.get("oauth_token", "") or "",
         raw=cfg,
     )
 
@@ -200,24 +191,18 @@ def _openai_client(rc: ActiveModelConfig):
 def _anthropic_client(rc: ActiveModelConfig):
     from anthropic import Anthropic
 
-    if rc.auth_method == "subscription":
-        return Anthropic(auth_token=rc.oauth_token,
-                         default_headers={"anthropic-beta": OAUTH_BETA})
     return Anthropic(api_key=rc.api_key)
 
 
 def _claude_credential(rc: ActiveModelConfig) -> str:
-    """The active Claude credential (token or key) for the chosen auth method, or ''."""
-    return rc.oauth_token if rc.auth_method == "subscription" else rc.api_key
+    """The active Claude API key, or ''."""
+    return rc.api_key
 
 
 def stream_chat(home: Path, messages: list[dict], system: Optional[str] = None,
                 temperature: float = 0.3, *, claude_token: str = "") -> Iterator[str]:
     """Yield text deltas from the active model."""
     rc = get_active_config(home)
-    if claude_token and rc.active == "claude" and rc.auth_method == "subscription":
-        rc = copy.copy(rc)
-        rc.oauth_token = claude_token
     sys_text, rest = _split_system(messages, system)
 
     if rc.active == "claude":
@@ -285,28 +270,57 @@ def compact_chat(home: Path, messages: list[dict], *, claude_token: str = "") ->
     ]
 
 
-def health_check(home: Path, *, claude_token: str = "") -> dict:
+def health_check(home: Path, *, claude_token: str = "", live: bool = False) -> dict:
     """Check whether the active provider is ready to use.
 
-    For API-key/token providers (claude, openai) we only verify that credentials are
-    configured — we do NOT make a live API call, because that would consume quota on
-    every page load / model switch and risks triggering rate limits.
+    Without ``live`` API-key providers only verify that credentials are configured.
+    With ``live`` every provider receives a tiny prompt and must return text.
 
     For qwen (Ollama) we hit the local /models endpoint, which is free.
     """
     rc = get_active_config(home)
     try:
+        if live:
+            prompt = "Reply with exactly: OK"
+            if rc.active == "claude":
+                if not _claude_credential(rc):
+                    return {"ok": False, "active": rc.active, "model": rc.model,
+                            "message": "No Claude API key configured. Click ⚙ to add one."}
+                client = _anthropic_client(rc)
+                msg = client.messages.create(
+                    model=rc.model,
+                    max_tokens=8,
+                    temperature=0,
+                    messages=[{"role": "user", "content": prompt}],
+                )
+                text = "".join(
+                    block.text for block in msg.content
+                    if getattr(block, "type", "") == "text" and getattr(block, "text", "")
+                )
+            else:
+                if rc.active in {"openai", "gemini"} and not rc.api_key:
+                    return {"ok": False, "active": rc.active, "model": rc.model,
+                            "message": f"No {rc.active.title()} API key configured. Click ⚙ to add one."}
+                client = _openai_client(rc)
+                msg = client.chat.completions.create(
+                    model=rc.model,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0,
+                    max_tokens=32 if rc.active == "gemini" else 8,
+                )
+                text = msg.choices[0].message.content if msg.choices else ""
+            if (text or "").strip():
+                return {"ok": True, "active": rc.active, "model": rc.model,
+                        "message": f"{rc.active} '{rc.model}' responded"}
+            return {"ok": False, "active": rc.active, "model": rc.model,
+                    "message": f"{rc.active} '{rc.model}' returned an empty response"}
+
         if rc.active == "claude":
-            cred = (claude_token if (rc.auth_method == "subscription" and claude_token)
-                    else _claude_credential(rc))
-            if not cred:
-                need = ("subscription token" if rc.auth_method == "subscription"
-                        else "API key")
+            if not _claude_credential(rc):
                 return {"ok": False, "active": rc.active, "model": rc.model,
-                        "message": f"No Claude {need} configured. Click ⚙ to add one."}
-            via = "subscription" if rc.auth_method == "subscription" else "API key"
+                        "message": "No Claude API key configured. Click ⚙ to add one."}
             return {"ok": True, "active": rc.active, "model": rc.model,
-                    "message": f"claude '{rc.model}' configured ({via})"}
+                    "message": f"claude '{rc.model}' configured"}
 
         if rc.active == "openai":
             if not rc.api_key:

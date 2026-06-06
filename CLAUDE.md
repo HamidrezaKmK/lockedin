@@ -187,11 +187,9 @@ data/users/share_index.yaml         # {token: {user, slug}} — global lookup fo
   `bubbles.{list,get,save,delete}_chat_session` manage them. Auto-saved client-side after each
   assistant reply. The session dropdown above the chat lets you switch between or delete sessions.
   Session ID format: `YYYYMMDDHHMMSS-<4hex>` (sorts by creation time).
-- **Claude auth:** `auth_method` is `api_key` or `subscription`. Subscription uses the Anthropic
-  SDK `auth_token` (Bearer) + `anthropic-beta: oauth-2025-04-20`; the user pastes a token (no
-  full OAuth login flow). The server does NOT read `~/.claude/.credentials.json` — each user must
-  enter their own token. The subscription tier shares rate limits with the Claude Code CLI; only
-  Haiku reliably works under load. API-key path is the well-tested one.
+- **Claude auth:** the global Claude model uses an Anthropic API key stored in the user's model
+  settings. Browser-pasted Claude OAuth/subscription tokens are no longer supported. The News
+  crawler is separate: it runs through the host Claude CLI when the backend feature is enabled.
 - **Gemini** uses Google's OpenAI-compatible endpoint (`generativelanguage.googleapis.com/v1beta/openai/`).
   No new SDK needed — same code path as qwen/openai. API key from AI Studio (aistudio.google.com/apikey).
 - **Math + WYSIWYG:** math renders via KaTeX auto-render on the markdown **preview** pane. Toast

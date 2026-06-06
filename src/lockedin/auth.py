@@ -51,7 +51,23 @@ def load_accounts() -> dict[str, dict]:
     if not paths.ACCOUNTS_YAML.exists():
         return {}
     data = yaml.safe_load(paths.ACCOUNTS_YAML.read_text()) or {}
-    return dict(data.get("users", {}))
+    users = dict(data.get("users", {}))
+    changed = False
+    for rec in users.values():
+        if "approved" not in rec:
+            rec["approved"] = True
+            changed = True
+        if "admin" not in rec:
+            rec["admin"] = False
+            changed = True
+    if users and not any(rec.get("admin") for rec in users.values()):
+        owner = "shengdebao" if "shengdebao" in users else sorted(
+            users.items(), key=lambda kv: kv[1].get("created_at", ""))[0][0]
+        users[owner]["admin"] = True
+        changed = True
+    if changed:
+        save_accounts(users)
+    return users
 
 
 def save_accounts(users: dict[str, dict]) -> None:
@@ -77,12 +93,84 @@ def create_user(username: str, password: str) -> str:
     users = load_accounts()
     if username in users:
         raise ValueError("That username is already taken.")
+    first_user = not users
     salt = secrets.token_hex(16)
     users[username] = {"salt": salt, "hash": _hash_password(password, salt),
-                       "created_at": _now_iso()}
+                       "created_at": _now_iso(), "approved": first_user,
+                       "admin": first_user}
+    if not first_user:
+        users[username]["pending_at"] = _now_iso()
     save_accounts(users)
     paths.ensure_user_dirs(username)
     return username
+
+
+def is_approved(username: str) -> bool:
+    rec = load_accounts().get(username.strip().lower())
+    return bool(rec and rec.get("approved"))
+
+
+def is_admin(username: str) -> bool:
+    rec = load_accounts().get(username.strip().lower())
+    return bool(rec and rec.get("admin") and rec.get("approved"))
+
+
+def list_users() -> list[dict]:
+    users = load_accounts()
+    out = []
+    for username, rec in sorted(users.items()):
+        out.append({
+            "username": username,
+            "approved": bool(rec.get("approved")),
+            "admin": bool(rec.get("admin")),
+            "created_at": rec.get("created_at", ""),
+            "pending_at": rec.get("pending_at", ""),
+            "news_enabled": bool(rec.get("news_enabled")),
+        })
+    return out
+
+
+def set_approved(username: str, approved: bool) -> None:
+    username = username.strip().lower()
+    users = load_accounts()
+    rec = users.get(username)
+    if rec is None:
+        raise ValueError("No such user.")
+    if not approved and rec.get("admin"):
+        other_admins = [u for u, r in users.items()
+                        if u != username and r.get("admin") and r.get("approved")]
+        if not other_admins:
+            raise ValueError("Cannot revoke the last approved admin.")
+    rec["approved"] = bool(approved)
+    if approved:
+        rec.pop("pending_at", None)
+        rec["approved_at"] = _now_iso()
+    else:
+        rec["admin"] = False
+        rec["revoked_at"] = _now_iso()
+        for token, name in list(_SESSIONS.items()):
+            if name == username:
+                _SESSIONS.pop(token, None)
+    save_accounts(users)
+
+
+def delete_user(username: str) -> None:
+    """Delete an account record and revoke live sessions. Does not remove workspace files."""
+    username = username.strip().lower()
+    users = load_accounts()
+    rec = users.get(username)
+    if rec is None:
+        raise ValueError("No such user.")
+    if rec.get("admin") and rec.get("approved"):
+        other_admins = [u for u, r in users.items()
+                        if u != username and r.get("admin") and r.get("approved")]
+        if not other_admins:
+            raise ValueError("Cannot delete the last approved admin.")
+    users.pop(username)
+    for token, name in list(_SESSIONS.items()):
+        if name == username:
+            _SESSIONS.pop(token, None)
+    save_accounts(users)
 
 
 def is_news_enabled(username: str) -> bool:

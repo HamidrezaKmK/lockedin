@@ -48,8 +48,8 @@ The left sidebar has three views:
 
 ## Idea Bubbles
 - **Create**: click "+ New bubble" in the Bubbles view, or tag a PDF with a new name.
-- **Auto-suggested bubbles** (badge: "suggested") must be **Approved** to open their report.
-  Click into the bubble and hit "Approve this bubble".
+- **Suggestions**: auto-tagging suggestions stay in the Attention queue. They do not become
+  visible bubbles until you apply them by editing the asset's tags.
 - **Rename**: click the ✏️ pencil next to the bubble title inside its detail view.
 - **Delete**: the 🗑 icon on the bubble card removes the bubble and all its pages.
 
@@ -127,7 +127,7 @@ Click any model tab in the topbar (🖥 Qwen, OpenAI, Claude, Gemini) to switch 
 Click the ⚙ gear icon on a tab to configure its API key or endpoint. Models:
 - **Qwen (local)** — runs via Ollama on your machine; private and free.
 - **OpenAI** — GPT-4o and others; requires an API key.
-- **Claude** — Anthropic models; API key or OAuth subscription token.
+- **Claude** — Anthropic models; requires an API key.
 - **Gemini** — Google models via AI Studio; requires an API key.
 Only the active model's health indicator (coloured dot) is checked on load.
 """
@@ -230,8 +230,7 @@ def _report_context(slug: str, page_slug: str, cur_content: str, cur_title: str)
 # Read-only research chat
 # --------------------------------------------------------------------------- #
 def chat_stream(home: Path, slug: str, page_slug: str, messages: list[dict],
-                page_context: str = "", deep_read_ids: Optional[list[str]] = None,
-                *, claude_token: str = "") -> Iterator[dict]:
+                page_context: str = "", deep_read_ids: Optional[list[str]] = None) -> Iterator[dict]:
     """Stream a read-only research-assistant reply grounded in the bubble's reports + papers.
 
     The model only discusses — it never edits a page. The ``done`` event carries
@@ -268,7 +267,7 @@ def chat_stream(home: Path, slug: str, page_slug: str, messages: list[dict],
         convo = list(messages)
         if len(convo) > _COMPACT_AT:
             try:
-                convo = models.compact_chat(home, convo, claude_token=claude_token)
+                convo = models.compact_chat(home, convo)
             except Exception:  # noqa: BLE001 — compaction is best-effort
                 pass
 
@@ -284,8 +283,7 @@ def chat_stream(home: Path, slug: str, page_slug: str, messages: list[dict],
 
         acc: list[str] = []
         try:
-            for chunk in models.stream_chat(home, convo, system=system, temperature=0.4,
-                                            claude_token=claude_token):
+            for chunk in models.stream_chat(home, convo, system=system, temperature=0.4):
                 acc.append(chunk)
                 yield {"type": "delta", "text": chunk}
         except Exception as e:  # noqa: BLE001
@@ -321,7 +319,7 @@ def _clean_title(raw: str, fallback: str) -> str:
     return line[:48] or fallback
 
 
-def generate_chat_title(home: Path, messages: list[dict], *, claude_token: str = "") -> str:
+def generate_chat_title(home: Path, messages: list[dict]) -> str:
     """A short, cute title for a chat session, grounded in its first couple of turns.
 
     Cheap, single non-streaming call on the active model. Falls back to a trimmed first user
@@ -344,7 +342,7 @@ def generate_chat_title(home: Path, messages: list[dict], *, claude_token: str =
         return fallback
     try:
         raw = models.complete(home, [{"role": "user", "content": f"Conversation:\n{convo}\n\nTitle:"}],
-                              system=_TITLE_SYSTEM, temperature=0.7, claude_token=claude_token)
+                              system=_TITLE_SYSTEM, temperature=0.7)
     except Exception:  # noqa: BLE001 — title is cosmetic; never fail the chat over it
         return fallback
     return _clean_title(raw, fallback)

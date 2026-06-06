@@ -77,7 +77,7 @@ def attention_queue(home: Path) -> list[dict]:
 # ---- bubbles ----
 def list_bubbles(home: Path) -> list[dict]:
     with paths.use_root(home):
-        return bubbles.all_bubbles()
+        return [b for b in bubbles.all_bubbles() if b.get("approved")]
 
 
 def bubble_detail(home: Path, slug: str) -> dict:
@@ -186,6 +186,16 @@ def update_account(username: str, *, current_password: str,
     return final
 
 
+def delete_account(username: str) -> None:
+    """Permanently remove a user account, workspace files, and public-share references."""
+    username = username.strip().lower()
+    home = paths.user_home(username)
+    auth.delete_user(username)
+    sharing.drop_user(username)
+    if home.exists():
+        shutil.rmtree(home)
+
+
 # ---- pages (per-bubble mini-wiki) ----
 def list_pages(home: Path, slug: str) -> list[dict]:
     with paths.use_root(home):
@@ -246,9 +256,8 @@ def bubble_asset_path(home: Path, slug: str, filename: str) -> Path:
 
 # ---- streaming (generators manage their own root) ----
 def chat(home: Path, slug: str, page_slug: str, messages: list[dict], page_context: str = "",
-         deep_read_ids: list[str] | None = None, *, claude_token: str = ""):
-    return reports.chat_stream(home, slug, page_slug, messages, page_context, deep_read_ids,
-                               claude_token=claude_token)
+         deep_read_ids: list[str] | None = None):
+    return reports.chat_stream(home, slug, page_slug, messages, page_context, deep_read_ids)
 
 
 # ---- chat sessions ----
@@ -286,12 +295,12 @@ def set_active_provider(home: Path, provider: str) -> dict:
     return models.set_active_provider(home, provider)
 
 
-def generate_chat_title(home: Path, messages: list[dict], *, claude_token: str = "") -> str:
-    return reports.generate_chat_title(home, messages, claude_token=claude_token)
+def generate_chat_title(home: Path, messages: list[dict]) -> str:
+    return reports.generate_chat_title(home, messages)
 
 
-def model_health(home: Path, *, claude_token: str = "") -> dict:
-    return models.health_check(home, claude_token=claude_token)
+def model_health(home: Path, *, live: bool = False) -> dict:
+    return models.health_check(home, live=live)
 
 
 # ---- news (premium background crawler) ----
@@ -316,9 +325,9 @@ def save_news_instructions(home: Path, entries: list[dict]) -> list[dict]:
 
 
 def news_chat(home: Path, message: str, model: str | None = None,
-              since: str | None = None, until: str | None = None, *, claude_token: str = ""):
+              since: str | None = None, until: str | None = None):
     # generator manages its own use_root (it must survive across yields), like reports.chat_stream
-    return news.chat_stream(home, message, model, since, until, claude_token=claude_token)
+    return news.chat_stream(home, message, model, since, until)
 
 
 def accept_news(home: Path) -> dict:

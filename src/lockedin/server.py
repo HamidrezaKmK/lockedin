@@ -199,7 +199,7 @@ def _sse(obj: dict) -> str:
 
 def build_app():
     from fastapi import (BackgroundTasks, Cookie, Depends, FastAPI, File, Form,
-                         Header, HTTPException, UploadFile)
+                         HTTPException, UploadFile)
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
     from pydantic import BaseModel
@@ -221,6 +221,9 @@ def build_app():
         current_password: str
         new_username: Optional[str] = None
         new_password: Optional[str] = None
+
+    class ApprovalIn(BaseModel):
+        approved: bool
 
     class ShareIn(BaseModel):
         active: bool
@@ -294,12 +297,10 @@ def build_app():
         user = auth.session_user(lockedin_session)
         if not user:
             raise HTTPException(status_code=401, detail="Please log in.")
+        if not auth.is_approved(user):
+            auth.end_session(lockedin_session)
+            raise HTTPException(status_code=403, detail="Account is waiting for approval.")
         return user
-
-    # Per-request Claude token (browser-held; never stored server-side). One dependency so the
-    # AI endpoints don't each re-read the header.
-    def claude_token(x_claude_token: str = Header(default="")) -> str:
-        return x_claude_token
 
     def home_of(user: str) -> Path:
         return paths.user_home(user)
@@ -409,6 +410,10 @@ def build_app():
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
         service.ensure_workspace(home_of(user))
+        if not auth.is_approved(user):
+            return JSONResponse({"pending": True, "user": user,
+                                 "message": "Account created. An admin must approve it before login."},
+                                status_code=202)
         return _auth_response(user)
 
     @app.post("/api/login")
@@ -416,6 +421,8 @@ def build_app():
         username = creds.username.strip().lower()
         if not auth.verify_password(username, creds.password):
             raise HTTPException(status_code=401, detail="Invalid username or password.")
+        if not auth.is_approved(username):
+            raise HTTPException(status_code=403, detail="Account is waiting for admin approval.")
         return _auth_response(username)
 
     @app.post("/api/logout")
@@ -428,7 +435,7 @@ def build_app():
     @app.get("/api/me")
     def me(user: str = Depends(current_user)):
         return {"user": user, "model": service.get_model_config(home_of(user)),
-                "news_enabled": auth.is_news_enabled(user)}
+                "news_enabled": auth.is_news_enabled(user), "admin": auth.is_admin(user)}
 
     @app.post("/api/account")
     def update_account(body: AccountIn, user: str = Depends(current_user)):
@@ -443,9 +450,41 @@ def build_app():
         # Sessions were repointed to the new name in-memory, so the existing cookie still works.
         return {"user": final}
 
+    @app.get("/api/admin/users")
+    def admin_users(user: str = Depends(current_user)):
+        if not auth.is_admin(user):
+            raise HTTPException(status_code=403, detail="Admin access required.")
+        return {"users": auth.list_users()}
+
+    @app.put("/api/admin/users/{username}/approval")
+    def admin_user_approval(username: str, body: ApprovalIn, user: str = Depends(current_user)):
+        if not auth.is_admin(user):
+            raise HTTPException(status_code=403, detail="Admin access required.")
+        target = username.strip().lower()
+        if target == user and not body.approved:
+            raise HTTPException(status_code=400, detail="You cannot revoke your own access.")
+        try:
+            auth.set_approved(target, body.approved)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        return {"users": auth.list_users()}
+
+    @app.delete("/api/admin/users/{username}")
+    def admin_delete_user(username: str, user: str = Depends(current_user)):
+        if not auth.is_admin(user):
+            raise HTTPException(status_code=403, detail="Admin access required.")
+        target = username.strip().lower()
+        if target == user:
+            raise HTTPException(status_code=400, detail="You cannot delete your own account.")
+        try:
+            service.delete_account(target)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        return {"users": auth.list_users()}
+
     @app.get("/api/health")
-    def health(user: str = Depends(current_user), tok: str = Depends(claude_token)):
-        return service.model_health(home_of(user), claude_token=tok)
+    def health(live: bool = False, user: str = Depends(current_user)):
+        return service.model_health(home_of(user), live=live)
 
     # ---- model settings ----
     @app.get("/api/settings/model")
@@ -505,14 +544,13 @@ def build_app():
         return {"ok": True}
 
     @app.post("/api/news/chat")
-    def news_chat(body: NewsChatIn, user: str = Depends(require_news),
-                  tok: str = Depends(claude_token)):
+    def news_chat(body: NewsChatIn, user: str = Depends(require_news)):
         if not news.news_globally_enabled():
             raise HTTPException(status_code=503,
                                 detail="News is off. Start the server with LOCKEDIN_NEWS_ENABLED=1.")
         home = home_of(user)
         return _stream(lambda: service.news_chat(home, body.message, body.model,
-                                                 body.since, body.until, claude_token=tok))
+                                                 body.since, body.until))
 
     @app.post("/api/news/accept")
     def news_accept(user: str = Depends(require_news)):
@@ -768,18 +806,15 @@ def build_app():
         messages: list[dict]
 
     @app.post("/api/bubbles/{slug}/chats/title")
-    def chat_title(slug: str, body: ChatTitleIn, user: str = Depends(current_user),
-                   tok: str = Depends(claude_token)):
-        return {"title": service.generate_chat_title(home_of(user), body.messages, claude_token=tok)}
+    def chat_title(slug: str, body: ChatTitleIn, user: str = Depends(current_user)):
+        return {"title": service.generate_chat_title(home_of(user), body.messages)}
 
     # ---- streamed: read-only research chat ----
     @app.post("/api/bubbles/{slug}/chat")
-    def bubble_chat(slug: str, body: ChatIn, user: str = Depends(current_user),
-                    tok: str = Depends(claude_token)):
+    def bubble_chat(slug: str, body: ChatIn, user: str = Depends(current_user)):
         home = home_of(user)
         return _stream(lambda: service.chat(home, slug, body.page, body.messages,
-                                            body.page_context, body.deep_read_ids,
-                                            claude_token=tok))
+                                            body.page_context, body.deep_read_ids))
 
     return app
 
