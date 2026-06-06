@@ -1,0 +1,15 @@
+[Unit]
+Description=lockedin web server
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=__LOCKEDIN_ROOT__
+EnvironmentFile=__LOCKEDIN_ENV_FILE__
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/env uv run lockedin serve --host 127.0.0.1 --port ${LOCKEDIN_PORT}
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,16 @@
+[Unit]
+Description=lockedin Cloudflare tunnel
+After=network-online.target lockedin-serve.service
+
+[Service]
+Type=simple
+WorkingDirectory=__LOCKEDIN_ROOT__
+EnvironmentFile=__LOCKEDIN_ENV_FILE__
+EnvironmentFile=-__LOCKEDIN_ROOT__/ops/tunnel.env
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/env sh -lc 'TOKEN="$${CLOUDFLARE_TUNNEL_TOKEN:-$${TUNNEL_TOKEN:-}}"; if [ -n "$$TOKEN" ]; then exec cloudflared tunnel run --token "$$TOKEN"; fi; if [ -n "$${CLOUDFLARED_TUNNEL_ARGS:-}" ]; then exec cloudflared tunnel $$CLOUDFLARED_TUNNEL_ARGS; fi; echo "Set CLOUDFLARE_TUNNEL_TOKEN, TUNNEL_TOKEN, or CLOUDFLARED_TUNNEL_ARGS in ops/tunnel.env" >&2; exit 1'
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

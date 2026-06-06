@@ -1,6 +1,7 @@
 
 
-Goal: make this repo cloneable and deployable on a fresh server without relying on `/home/hamid`, `lockedin.codes`, or any machine-specific local state.
+Goal: make this repo cloneable and deployable on a fresh server without relying on a personal
+home directory, a project-specific domain, or any machine-specific local state.
 
 This is a portability/deployment cleanup. Do not refactor unrelated app logic.
 
@@ -12,23 +13,23 @@ Fix the setup path so a new user can:
 2. run the local server,
 3. optionally expose it through Cloudflare Tunnel,
 4. optionally install systemd user services for persistent operation,
-5. do all of that without editing hardcoded `/home/hamid/...` paths.
+5. do all of that without editing hardcoded personal home-directory paths.
 
 Do not vendor frontend CDN assets in this pass. Just document that the browser needs internet access for CDN-hosted frontend libraries.
 
 ## Important Current Problems
 
 - `ops/healthcheck.sh` hardcodes:
-- `/home/hamid/.local/bin`
-- `/home/hamid/.nvm/versions/node/v22.22.3/bin`
-- `/home/hamid/projects/lockedin`
-- `https://lockedin.codes/`
-- `ops/README.md` tells users to run `/home/hamid/projects/lockedin/ops/healthcheck.sh`.
-- `ops/README.md` describes systemd units, but the repo does not ship actual `.service` or `.timer` files.
+- a personal `~/.local/bin` path
+- a personal NVM version-specific Node path
+- a personal clone path
+- a project-specific public URL
+- `docs/OPS.md` should not tell users to run a healthcheck script from a personal clone path.
+- `docs/OPS.md` should describe the tracked `.service` and `.timer` templates.
 - README currently suggests `--host 0.0.0.0` / LAN access. We do not want to support or advertise LAN access. Supported modes should be:
 - local-only on `127.0.0.1`
 - public/web access through HTTPS, e.g. Cloudflare Tunnel
-- Domain docs use `lockedin.codes` as a concrete example. Make docs generic.
+- Domain docs use a project-specific domain as a concrete example. Make docs generic.
 
 ## Tasks
 
@@ -58,8 +59,8 @@ Behavior:
 - Always check local server via LOCKEDIN_LOCAL_URL.
 - Only check public webpage/tunnel if LOCKEDIN_PUBLIC_URL is non-empty.
 - If LOCKEDIN_PUBLIC_URL is empty, skip public URL check and log/summary as webpage=disabled or similar.
-- Do not hardcode lockedin.codes.
-- Do not hardcode /home/hamid.
+- Do not hardcode a project-specific public domain.
+- Do not hardcode a personal home-directory path.
 - Use a generic PATH such as:
 
 export PATH="${PATH:-/usr/local/bin:/usr/bin:/bin}:$HOME/.local/bin"
@@ -200,7 +201,7 @@ Mention frontend CDN dependency briefly:
 - The browser needs internet access to load CDN-hosted frontend libraries.
 - Do not vendor assets in this pass.
 
-### 6. Update ops/README.md
+### 6. Update ops docs
 
 Rewrite it so it no longer describes only Hamid’s current machine.
 
@@ -214,16 +215,16 @@ It should explain:
 - how to configure LOCKEDIN_PUBLIC_URL,
 - how to skip tunnel/public checks by leaving LOCKEDIN_PUBLIC_URL empty.
 
-Remove /home/hamid/....
+Remove personal home-directory paths.
 
 Avoid saying unit files are safe to commit unless they actually exist in the repo.
 
-### 7. Update DOMAIN_SETUP.md
+### 7. Update docs/DOMAIN_SETUP.md
 
 Make all examples generic:
 
 - use yourdomain.example or yourdomain.codes,
-- do not use lockedin.codes as the concrete configured domain,
+- do not use a project-specific domain as the concrete configured domain,
 - make it clear the Cloudflare route should point to localhost:8080 or whatever LOCKEDIN_PORT is.
 
 Mention that if using ops monitor, set:
@@ -256,13 +257,13 @@ Do not include secrets.
 
 Run these checks before finishing:
 
-git grep -n '/home/hamid' -- .
-git grep -n 'lockedin.codes' -- .
+git grep -n '<personal-home-path>' -- .
+git grep -n '<project-specific-domain>' -- .
 
 Expected:
 
-- no /home/hamid references in tracked files,
-- no operational hardcoded lockedin.codes; generic examples are okay only if clearly placeholder-style, but prefer removing it entirely.
+- no personal home-directory references in tracked files,
+- no operational hardcoded project-specific domain; generic examples are okay only if clearly placeholder-style, but prefer removing it entirely.
 
 Also verify:
 

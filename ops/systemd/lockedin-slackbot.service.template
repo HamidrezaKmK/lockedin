@@ -1,0 +1,15 @@
+[Unit]
+Description=lockedin Slack bot
+After=network-online.target lockedin-serve.service
+
+[Service]
+Type=simple
+WorkingDirectory=__LOCKEDIN_ROOT__
+EnvironmentFile=__LOCKEDIN_ENV_FILE__
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/env uv run lockedin slackbot
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

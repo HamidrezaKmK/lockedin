@@ -39,6 +39,7 @@ _HELP = (
 # Per-Slack-user state (in-memory; resets on bot restart)
 _sessions:       dict[str, httpx.Client] = {}   # uid → logged-in HTTP client
 _auth:           dict[str, str | None]   = {}   # uid → None (need username) | str (need password)
+_usernames:      dict[str, str]          = {}   # uid → lockedin username for reauth prompts
 _active_bubble:  dict[str, dict]         = {}   # uid → active bubble dict
 _selecting:      dict[str, list[dict]]   = {}   # uid → bubble list (awaiting number reply)
 _news_flow:      dict[str, dict]         = {}   # uid → {stage:'from'|'to', since, until} (crawl wizard)
@@ -56,6 +57,30 @@ def _login(username: str, password: str) -> httpx.Client:
     http = httpx.Client(timeout=60, follow_redirects=True)
     http.post(f"{URL}/api/login", json={"username": username, "password": password}).raise_for_status()
     return http
+
+
+def _is_unauthorized(exc: Exception) -> bool:
+    return isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 401
+
+
+def _forget_session(uid: str) -> None:
+    old = _sessions.pop(uid, None)
+    if old:
+        old.close()
+    _active_bubble.pop(uid, None)
+    _selecting.pop(uid, None)
+    _news_flow.pop(uid, None)
+    _news_steer.discard(uid)
+
+
+def _ask_reauth(uid: str, say) -> None:
+    _forget_session(uid)
+    if uid in _usernames:
+        _auth[uid] = _usernames[uid]
+        say("Your lockedin session expired. Send your password to log in again, then retry.")
+    else:
+        _auth[uid] = None
+        say("Your lockedin session expired. Send your username to log in again, then retry.")
 
 
 def _sole_url(text: str) -> str | None:
@@ -233,6 +258,7 @@ def handle(event: dict, say) -> None:
         username = _auth[uid]
         try:
             _sessions[uid] = _login(username, text)
+            _usernames[uid] = username
             del _auth[uid]
             say(f"Logged in as *{username}*.\n" + _HELP)
         except Exception:
@@ -260,6 +286,9 @@ def handle(event: dict, say) -> None:
             ).raise_for_status()
             say(f"Uploaded *{f.get('name', 'file')}* — auto-tagging in background.")
         except Exception as e:
+            if _is_unauthorized(e):
+                _ask_reauth(uid, say)
+                return
             say(f"Upload failed: {e}")
     if files and not text:
         return
@@ -282,6 +311,9 @@ def handle(event: dict, say) -> None:
                 ).raise_for_status()
                 say(f"📎 Added *{name}* to your assets — it's in the attention queue for tagging.")
             except Exception as e:
+                if _is_unauthorized(e):
+                    _ask_reauth(uid, say)
+                    return
                 say(f"Upload failed: {e}")
             return
         # reachable but not a PDF → fall through to normal Q&A handling

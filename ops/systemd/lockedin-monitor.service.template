@@ -1,0 +1,8 @@
+[Unit]
+Description=lockedin health monitor
+
+[Service]
+Type=oneshot
+WorkingDirectory=__LOCKEDIN_ROOT__
+EnvironmentFile=__LOCKEDIN_ENV_FILE__
+ExecStart=__LOCKEDIN_ROOT__/ops/healthcheck.sh

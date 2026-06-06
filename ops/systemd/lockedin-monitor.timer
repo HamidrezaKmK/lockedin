@@ -1,0 +1,10 @@
+[Unit]
+Description=Run lockedin health monitor every 2 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+Unit=lockedin-monitor.service
+
+[Install]
+WantedBy=timers.target

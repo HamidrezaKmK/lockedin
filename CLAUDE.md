@@ -12,7 +12,7 @@ no-build SPA).
 A plain `claude` session in this repo is for **developing lockedin**. Separately, the
 `./claude_scientist.sh` launcher runs Claude as a *report assistant* for one user (it injects
 that role via `--append-system-prompt`, so the base command is unaffected) — see
-[`DEV_MODE.md`](DEV_MODE.md).
+[`docs/DEV_MODE.md`](docs/DEV_MODE.md).
 
 ## Run / test
 
@@ -21,7 +21,7 @@ uv sync                          # manage deps + .venv (NOT pip)
 ollama serve && ollama pull qwen2.5:7b-instruct   # default model
 uv run lockedin serve [--port 8080] [--host 0.0.0.0]
 uv run lockedin doctor           # check the active model is reachable
-uv run lockedin devmode          # verify LOCKEDIN_USER/PASS, print that user's workspace (DEV_MODE.md)
+uv run lockedin devmode          # verify LOCKEDIN_USER/PASS, print that user's workspace (docs/DEV_MODE.md)
 ```
 
 Always run `uv run ...` **from the project root** — `cd`-ing elsewhere breaks uv's project
@@ -29,7 +29,7 @@ resolution and the `lockedin` entry point fails to spawn.
 
 Sharing: a Cloudflare quick tunnel (`cloudflared tunnel --url http://localhost:<port>`) gives a
 temporary public HTTPS URL with no domain/account — see README. For agent-driven editing of a
-user's reports without running the server, see [`DEV_MODE.md`](DEV_MODE.md) +
+user's reports without running the server, see [`docs/DEV_MODE.md`](docs/DEV_MODE.md) +
 `uv run lockedin devmode`.
 
 News crawler (premium, opt-in): grant a user, then run the server with the switch on. Crawling

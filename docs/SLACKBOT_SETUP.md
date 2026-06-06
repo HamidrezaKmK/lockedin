@@ -36,7 +36,7 @@ No public URL needed (uses socket mode).
 
 ---
 
-## 4. Set env vars and run
+## 4. Set env vars and run manually
 
 Add to your project-root `.env` file (create it if it doesn't exist):
 
@@ -44,8 +44,9 @@ Add to your project-root `.env` file (create it if it doesn't exist):
 SLACK_BOT_TOKEN=xoxb-...
 SLACK_APP_TOKEN=xapp-...
 
-# Optional overrides
-# LOCKEDIN_URL=http://localhost:8000
+# Optional overrides. Prefer an HTTPS URL unless the server has
+# LOCKEDIN_INSECURE_COOKIE=1.
+# LOCKEDIN_URL=https://yourdomain.example/
 # OLLAMA_BASE_URL=http://localhost:11434/v1
 # QWEN_MODEL=qwen2.5:7b-instruct
 ```
@@ -54,6 +55,22 @@ Then run:
 
 ```bash
 uv run lockedin slackbot
+```
+
+If the web server is running through systemd on port `8080`, put the same values in
+`ops/lockedin.env`. The server marks cookies `Secure` by default, so use your HTTPS tunnel URL
+for `LOCKEDIN_URL`. Only use a plain local HTTP URL if you also set
+`LOCKEDIN_INSECURE_COOKIE=1` for the server.
+
+```bash
+LOCKEDIN_URL=https://yourdomain.example/
+LOCKEDIN_SLACKBOT_ENABLED=1
+```
+
+Then start the persistent service:
+
+```bash
+systemctl --user enable --now lockedin-slackbot.service
 ```
 
 ---
@@ -69,4 +86,5 @@ DM the bot (or @-mention it in a channel). On first contact it asks for your loc
 | `ask diffusion models: what is the score function?` | Qwen answers using that bubble's content |
 | `list` | Lists your idea bubbles |
 
-Qwen must be running locally: `ollama serve && ollama pull qwen2.5:7b-instruct`
+Qwen must be running locally unless you change the bot model settings:
+`ollama serve && ollama pull qwen2.5:7b-instruct`
