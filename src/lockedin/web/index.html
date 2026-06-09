@@ -481,6 +481,7 @@
     });
     // Stash all math tokens so marked.js can't mangle them
     const stash=(re,display)=>{ s=s.replace(re,(m,p1)=>{ store.push({src:p1,display}); return `@@M${store.length-1}@@`; }); };
+    s=s.replace(/(\\begin\{(?:align\*?|alignat\*?|gather\*?|multline\*?|equation\*?)\}[\s\S]*?\\end\{(?:align\*?|alignat\*?|gather\*?|multline\*?|equation\*?)\})/g,(m,p1)=>{ store.push({src:p1,display:true}); return `@@M${store.length-1}@@`; });
     stash(/\$\$([\s\S]+?)\$\$/g,true);
     stash(/\\\[([\s\S]+?)\\\]/g,true);
     stash(/\\\(([\s\S]+?)\\\)/g,false);
@@ -492,13 +493,13 @@
     }
     let html=marked.parse(s,{breaks:true});
     html=html.replace(/@@M(\d+)@@/g,(m,i)=>{ const it=store[+i];
-      try{ return katex.renderToString(it.src,{displayMode:it.display,throwOnError:false}); }
+      try{ return katex.renderToString(it.src,{displayMode:it.display,macros:S.mathMacros,throwOnError:false}); }
       catch(e){ return `<span style="color:#ff7a7a">${it.src}</span>`; } });
     return html;
   }
 
   // ---------- state ----------
-  const S = { user:null, model:null, view:"assets", bubble:null, chat:[],
+  const S = { user:null, model:null, mathMacros:{}, view:"assets", bubble:null, chat:[],
     editor:null, page:null, pages:[], home:null, bubbleInstr:"", bubbleAssets:[],
     sessionId:null, sessionTitle:null,
     todos:[], todosById:{}, todoFilter:"open",
@@ -578,6 +579,8 @@
     if(S.newsEnabled){ $("#newsNav").style.display=""; refreshNewsCount(); }
     applySideCollapsed(localStorage.getItem("li_side")==="1");
     renderModelTabs(); refreshHealth(); applyHash();
+    fetch("/api/settings/math",{credentials:"include"})
+      .then(r=>r.json()).then(d=>{ S.mathMacros=d.macros||{}; }).catch(()=>{});
   }
 
   // ================= MODEL SWITCHER =================
@@ -730,8 +733,61 @@
       el("div",{id:"settingsHealth",class:"muted",style:"margin-top:14px"}),
       el("pre",{id:"settingsHealthDetails",class:"hide",
         style:"white-space:pre-wrap;overflow:auto;margin-top:8px;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--panel);font-size:12px"}));
+    renderMathMacros(m);
     if(S.admin) renderUserAccess(m);
     if(checkHealth)scheduleLiveHealth(S.model.active);
+  }
+
+  function renderMathMacros(main){
+    const old=$("#mathMacros"); if(old)old.remove();
+    const pending=Object.assign({},S.mathMacros); // editable copy
+    const box=el("div",{id:"mathMacros",class:"card col",style:"margin-top:20px"});
+    box.append(el("b",{},"Math Macros"));
+    box.append(el("div",{class:"muted",style:"font-size:12px;margin-top:4px;margin-bottom:10px"},
+      "Define shorthand LaTeX commands used in all report math environments (powered by KaTeX macros)."));
+    const tbody=el("tbody");
+    function addRow(key,val){
+      const kIn=el("input",{type:"text",value:key,placeholder:"\\E",
+        style:"width:120px;font-family:monospace;font-size:13px"});
+      const vIn=el("input",{type:"text",value:val,placeholder:"\\mathbb{E}",
+        style:"flex:1;font-family:monospace;font-size:13px"});
+      const del=el("button",{class:"ghost small",onclick:()=>{ row.remove(); }}, "✕");
+      const row=el("tr",{},
+        el("td",{style:"padding:4px 8px 4px 0"},kIn),
+        el("td",{style:"padding:4px 8px"},vIn),
+        el("td",{style:"padding:4px 0"},del));
+      tbody.append(row);
+    }
+    Object.entries(pending).forEach(([k,v])=>addRow(k,v));
+    const tbl=el("table",{style:"width:100%;border-collapse:collapse"},
+      el("thead",{},el("tr",{},
+        el("th",{style:"text-align:left;font-size:12px;color:var(--muted);padding-bottom:4px"},"Macro"),
+        el("th",{style:"text-align:left;font-size:12px;color:var(--muted);padding-bottom:4px"},"Expansion"),
+        el("th",{}))),
+      tbody);
+    box.append(tbl);
+    const status=el("span",{class:"muted",style:"font-size:12px"});
+    box.append(el("div",{class:"row",style:"margin-top:10px;gap:8px"},
+      el("button",{class:"ghost small",onclick:()=>addRow("","")},"+ Add macro"),
+      el("span",{class:"spacer"}),
+      status,
+      el("button",{class:"primary small",onclick:async ()=>{
+        const macros={};
+        tbody.querySelectorAll("tr").forEach(r=>{
+          const [kIn,vIn]=r.querySelectorAll("input");
+          const k=kIn.value.trim(), v=vIn.value.trim();
+          if(k) macros[k]=v;
+        });
+        try{
+          const r=await fetch("/api/settings/math",{method:"PUT",credentials:"include",
+            headers:{"Content-Type":"application/json"},body:JSON.stringify({macros})});
+          if(!r.ok) throw new Error(await r.text());
+          S.mathMacros=macros;
+          if(typeof updatePreview==="function") updatePreview();
+          status.textContent="Saved!"; setTimeout(()=>status.textContent="",2000);
+        }catch(e){ status.textContent="Error: "+e.message; }
+      }},"Save macros")));
+    main.append(box);
   }
 
   async function renderUserAccess(main){
@@ -1458,8 +1514,12 @@
       RE.lastIndex=0;
       while(mm=RE.exec(s)){ if(mm.index>last)frag.append(s.slice(last,mm.index));
         if(mm[1]!=null){
-          const a=document.createElement("a"); a.href="page:"+encodeURIComponent(mm[1].trim());
-          a.textContent=mm[1]; a.className="wikilink"; frag.append(a);
+          const raw=mm[1].trim();
+          const pipe=raw.indexOf("|");
+          const target=pipe===-1?raw:raw.slice(0,pipe).trim();
+          const label=pipe===-1?raw:raw.slice(pipe+1).trim();
+          const a=document.createElement("a"); a.href="page:"+encodeURIComponent(target);
+          a.textContent=label; a.className="wikilink"; frag.append(a);
         } else {
           const id=mm[2], todo=S.todosById[+id];
           if(!todo){ frag.append(mm[0]); }

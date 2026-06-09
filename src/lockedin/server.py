@@ -58,7 +58,8 @@ def _preprocess_equations(md: str) -> str:
 def _render_preview_html(*, name: str, page: str, all_pages: list, content: str, slug: str,
                          link_base: str, asset_base: str, show_back: bool,
                          todos: "dict | None" = None,
-                         todo_link_base: "str | None" = None) -> str:
+                         todo_link_base: "str | None" = None,
+                         macros: "dict | None" = None) -> str:
     """Build the standalone rendered-page HTML shared by the owner preview and public share pages.
 
     ``link_base``  — prefix for intra-bubble nav + wikilinks (e.g. ``/api/bubbles/<slug>/preview``
@@ -70,10 +71,20 @@ def _render_preview_html(*, name: str, page: str, all_pages: list, content: str,
         f'<a href="{link_base}/{p["page_slug"]}">{p["title"]}</a>' for p in all_pages)
 
     def resolve_wikilink(m):
-        target = m.group(1).strip()
+        raw = m.group(1).strip()
+        if "|" in raw:
+            target, display = raw.split("|", 1)
+            target = target.strip()
+            display = display.strip()
+        else:
+            target = raw
+            display = None
         match = next((p for p in all_pages
                       if p["page_slug"] == target or p["title"].lower() == target.lower()), None)
-        return f'[{match["title"]}]({link_base}/{match["page_slug"]})' if match else m.group(0)
+        if match:
+            label = display if display else match["title"]
+            return f'[{label}]({link_base}/{match["page_slug"]})'
+        return m.group(0)
 
     # Resolve @<id> TODO references to a label "@<id> <title>" (strikethrough if done). With a
     # todo_link_base (owner preview) it links to the SPA's TODO detail; in share mode (no base)
@@ -168,14 +179,16 @@ function toggleTheme(){{
 // Mirrors the editor side pane's renderMarkdown() so preview/share match it exactly.
 (function(){{
   const store=[]; let s={repr(md)};
+  const _macros={json.dumps(macros or {})};
   const stash=(re,display)=>{{ s=s.replace(re,(m,p1)=>{{ store.push({{src:p1,display}}); return "@@M"+(store.length-1)+"@@"; }}); }};
+  s=s.replace(/(\\\\begin\\{{(?:align\\*?|alignat\\*?|gather\\*?|multline\\*?|equation\\*?)\\}}[\\s\\S]*?\\\\end\\{{(?:align\\*?|alignat\\*?|gather\\*?|multline\\*?|equation\\*?)\\}})/g,(m,p1)=>{{ store.push({{src:p1,display:true}}); return "@@M"+(store.length-1)+"@@"; }});
   stash(/\\$\\$([\\s\\S]+?)\\$\\$/g,true);
   stash(/\\\\\\[([\\s\\S]+?)\\\\\\]/g,true);
   stash(/\\\\\\(([\\s\\S]+?)\\\\\\)/g,false);
   stash(/\\$([^\\$\\n]+?)\\$/g,false);
   let html=marked.parse(s);
   html=html.replace(/@@M(\\d+)@@/g,(m,i)=>{{ const it=store[+i];
-    try{{ return katex.renderToString(it.src,{{displayMode:it.display,throwOnError:false}}); }}
+    try{{ return katex.renderToString(it.src,{{displayMode:it.display,macros:_macros,throwOnError:false}}); }}
     catch(e){{ return '<span style="color:#ff7a7a">'+it.src+'</span>'; }} }});
   document.getElementById("content").innerHTML=html;
 }})();
@@ -311,6 +324,9 @@ def build_app():
     class ActiveIn(BaseModel):
         active: str
 
+    class MathConfigIn(BaseModel):
+        macros: dict
+
     class NewsInstructionsIn(BaseModel):
         instructions: list[dict]
 
@@ -423,7 +439,8 @@ def build_app():
             all_pages=all_pages, content=service.get_page(home, slug, page),
             slug=slug, link_base=f"/share/{token}",
             asset_base=f"/share/{token}/assets", show_back=False,
-            todos={t["id"]: t for t in service.list_todos(home)})  # share: styled text, no link
+            todos={t["id"]: t for t in service.list_todos(home)},  # share: styled text, no link
+            macros=service.load_math_config(home).get("macros", {}))
         return HTMLResponse(html)
 
     @app.get("/share/{token}/assets/{filename}")
@@ -539,6 +556,15 @@ def build_app():
             return {"config": service.set_active_provider(home_of(user), body.active)}
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
+
+    # ---- math settings ----
+    @app.get("/api/settings/math")
+    def get_math(user: str = Depends(current_user)):
+        return service.load_math_config(home_of(user))
+
+    @app.put("/api/settings/math")
+    def put_math(body: MathConfigIn, user: str = Depends(current_user)):
+        return service.save_math_config(home_of(user), {"macros": body.macros})
 
     # ---- news (premium background crawler) ----
     @app.get("/api/news")
@@ -792,7 +818,8 @@ def build_app():
             slug=slug, link_base=f"/api/bubbles/{slug}/preview",
             asset_base=f"/api/bubbles/{slug}/assets", show_back=True,
             todos={t["id"]: t for t in service.list_todos(home)},
-            todo_link_base="/#todos")  # owner is logged in → link opens the SPA TODO manager
+            todo_link_base="/#todos",  # owner is logged in → link opens the SPA TODO manager
+            macros=service.load_math_config(home).get("macros", {}))
         return HTMLResponse(html)
 
     @app.post("/api/bubbles/{slug}/pages")

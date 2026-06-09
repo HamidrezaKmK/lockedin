@@ -10,6 +10,8 @@ import re
 import shutil
 from pathlib import Path
 
+import yaml
+
 from . import assets, auth, bubbles, models, news, paths, reports, sharing, todos
 
 
@@ -405,6 +407,23 @@ def get_news_instructions(home: Path) -> list[dict]:
 def save_news_instructions(home: Path, entries: list[dict]) -> list[dict]:
     with paths.use_root(home):
         return news.set_instructions(entries)
+
+
+# ---- math config ----
+def load_math_config(home: Path) -> dict:
+    with paths.use_root(home):
+        p = paths.MATH_CONFIG_YAML
+        if not p.exists():
+            return {"macros": {}}
+        return yaml.safe_load(p.read_text()) or {"macros": {}}
+
+
+def save_math_config(home: Path, cfg: dict) -> dict:
+    with paths.use_root(home):
+        p = paths.MATH_CONFIG_YAML
+        p.parent.mkdir(parents=True, exist_ok=True)
+        bubbles._atomic_write(p, yaml.dump(cfg, allow_unicode=True))
+    return cfg
 
 
 def news_chat(home: Path, message: str, model: str | None = None,

@@ -387,13 +387,22 @@ def normalize_wikilinks(slug: str, content: str) -> str:
     by_title = {p["title"].strip().lower(): p["page_slug"] for p in pages}
 
     def repl(m: "re.Match") -> str:
-        target = m.group(1).strip()
+        raw = m.group(1).strip()
+        if "|" in raw:
+            target, label = raw.split("|", 1)
+            target = target.strip()
+            label = label.strip()
+        else:
+            target = raw
+            label = None
         if "/" in target:                      # drop invented "Section/Title" prefixes
             target = target.split("/")[-1].strip()
         if target in slugs:
-            return f"[[{target}]]"
-        hit = by_title.get(target.lower())
-        return f"[[{hit}]]" if hit else f"[[{target}]]"
+            normalized = target
+        else:
+            hit = by_title.get(target.lower())
+            normalized = hit if hit else target
+        return f"[[{normalized}|{label}]]" if label is not None else f"[[{normalized}]]"
 
     return _WIKILINK_RE.sub(repl, content)
 

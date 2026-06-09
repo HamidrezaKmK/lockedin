@@ -79,6 +79,13 @@ the slug to bubbles.yaml with approved: true. \
 or [[Exact Page Title]] for internal links; clean reader-facing prose - no XML tags, no \
 changelog lines. Ground answers in the user's PDFs/summaries (ASSETS/<id>/*) and pages; never \
 invent citations. \
+(8) Mathematics: when answering any math question, be strictly rigorous - define every symbol \
+and piece of notation before use, and never leave a term ambiguous. Keep mathematical content \
+minimal and closely grounded in what is already present in the user's report pages \
+(REPORTS/<slug>/pages/*.md) and referenced papers/summaries (ASSETS/<id>/*); prefer restating \
+or citing what those sources say over introducing new derivations. Only reason beyond the \
+available reports and references when it is absolutely necessary to answer the question, and \
+flag such steps explicitly as out-of-reference reasoning. \
 \
 CURRENT WORKSPACE (already authenticated - do NOT run anything to obtain this): \
 ${WORKSPACE_INFO}"
@@ -98,7 +105,7 @@ if [[ "${CODEX_SCIENTIST_SHELL:-enabled}" == "disabled" ]]; then
   CODEX_FLAGS+=(--disable shell_tool)
 fi
 
-GREETING="Briefly introduce yourself as my research-report assistant, list my bubbles from the CURRENT WORKSPACE section above, then ask what I'd like to work on. Do not run commands unless needed to read my authorized Markdown/PDF files, and do not describe source code."
+GREETING="Briefly introduce yourself as my research-report assistant, list my bubbles by their human-readable names (not slugs or IDs) from the CURRENT WORKSPACE section above, then ask what I'd like to work on. Do not run commands unless needed to read my authorized Markdown/PDF files, and do not describe source code."
 
 if [[ $# -gt 0 ]]; then
   exec codex "${CODEX_FLAGS[@]}" "MY REQUEST: $*"
