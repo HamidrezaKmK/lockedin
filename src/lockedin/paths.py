@@ -65,6 +65,7 @@ def _context_paths() -> dict[str, Path]:
         "REPORTS_DIR": root / "REPORTS",
         "ACTIVE_MODEL_YAML": root / "config" / "active_model.yaml",
         "BUBBLES_YAML": root / "bubbles.yaml",
+        "TODOS_YAML": root / "todos.yaml",
         "NEWS_CONFIG_YAML": root / "config" / "news.yaml",
         "NEWS_ITEMS_YAML": root / "news_items.yaml",
         "BUBBLE_SUMMARIES_YAML": root / "bubble_summaries.yaml",

@@ -6,10 +6,11 @@ internally (they must keep it open across yields), so those are thin pass-throug
 """
 from __future__ import annotations
 
+import re
 import shutil
 from pathlib import Path
 
-from . import assets, auth, bubbles, models, news, paths, reports, sharing
+from . import assets, auth, bubbles, models, news, paths, reports, sharing, todos
 
 
 def ensure_workspace(home: Path) -> None:
@@ -241,6 +242,88 @@ def page_poll(home: Path, slug: str, page_slug: str) -> dict:
         manifest_mtime = manifest_path.stat().st_mtime if manifest_path.exists() else 0
         pages = bubbles.list_pages(slug) if manifest_path.exists() else []
     return {"page_mtime": page_mtime, "manifest_mtime": manifest_mtime, "pages": pages}
+
+
+# ---- todos (global per-user, referenced from report pages as @<id>) ----
+_TODO_REF_RE = re.compile(r"@(\d+)")
+
+
+def _scan_references() -> tuple[dict, dict]:
+    """Scan every bubble report page for ``@<id>`` references (assumes an active use_root).
+
+    Returns ``(counts, locations)`` where ``counts`` maps ``todo_id -> int`` and ``locations``
+    maps ``todo_id -> [{bubble_slug, bubble_name, page_slug, page_title}, ...]``. References are
+    tallied by integer value, so ``@50`` never counts toward ``@5``. References inside code
+    fences are still counted — over-counting only ever blocks a delete, which is intended.
+    """
+    counts: dict[int, int] = {}
+    locations: dict[int, list[dict]] = {}
+    reg = bubbles.load_registry()
+    for slug, entry in reg.items():
+        name = entry.get("name", slug)
+        try:
+            # Read the manifest directly — NOT list_pages(), which calls ensure_pages() and
+            # would seed/clobber a default page. This scan must stay strictly read-only.
+            pages = bubbles.manifest(slug).get("pages", [])
+        except Exception:  # noqa: BLE001 — a broken bubble must not break the whole scan
+            continue
+        for p in pages:
+            md = bubbles.get_page(slug, p["page_slug"])
+            seen_on_page: set[int] = set()
+            for m in _TODO_REF_RE.finditer(md or ""):
+                tid = int(m.group(1))
+                counts[tid] = counts.get(tid, 0) + 1
+                if tid not in seen_on_page:
+                    seen_on_page.add(tid)
+                    locations.setdefault(tid, []).append(
+                        {"bubble_slug": slug, "bubble_name": name,
+                         "page_slug": p["page_slug"], "page_title": p["title"]})
+    return counts, locations
+
+
+def list_todos(home: Path) -> list[dict]:
+    with paths.use_root(home):
+        items = todos.list_todos()
+        counts, _ = _scan_references()
+    for t in items:
+        t["ref_count"] = counts.get(t["id"], 0)
+    return items
+
+
+def get_todo(home: Path, tid: int) -> dict | None:
+    with paths.use_root(home):
+        todo = todos.get_todo(tid)
+        if todo is None:
+            return None
+        _, locations = _scan_references()
+    todo = dict(todo)
+    refs = locations.get(int(tid), [])
+    todo["ref_count"] = len(refs)
+    todo["refs"] = refs
+    return todo
+
+
+def add_todo(home: Path, title: str, note: str = "") -> dict:
+    with paths.use_root(home):
+        return todos.add_todo(title, note)
+
+
+def update_todo(home: Path, tid: int, **fields) -> dict:
+    with paths.use_root(home):
+        return todos.update_todo(tid, **fields)
+
+
+def delete_todo(home: Path, tid: int) -> bool:
+    """Delete a TODO only if it has zero ``@<id>`` references. Raises ValueError otherwise."""
+    with paths.use_root(home):
+        _, locations = _scan_references()
+        refs = locations.get(int(tid), [])
+        if refs:
+            where = ", ".join(f"{r['bubble_name']} → {r['page_title']}" for r in refs)
+            raise ValueError(
+                f"Referenced in {len(refs)} place(s): {where}. "
+                f"Remove the @{int(tid)} references first.")
+        return todos.delete_todo(tid)
 
 
 # ---- figures ----

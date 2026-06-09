@@ -56,7 +56,9 @@ def _preprocess_equations(md: str) -> str:
 
 
 def _render_preview_html(*, name: str, page: str, all_pages: list, content: str, slug: str,
-                         link_base: str, asset_base: str, show_back: bool) -> str:
+                         link_base: str, asset_base: str, show_back: bool,
+                         todos: "dict | None" = None,
+                         todo_link_base: "str | None" = None) -> str:
     """Build the standalone rendered-page HTML shared by the owner preview and public share pages.
 
     ``link_base``  — prefix for intra-bubble nav + wikilinks (e.g. ``/api/bubbles/<slug>/preview``
@@ -73,6 +75,25 @@ def _render_preview_html(*, name: str, page: str, all_pages: list, content: str,
                       if p["page_slug"] == target or p["title"].lower() == target.lower()), None)
         return f'[{match["title"]}]({link_base}/{match["page_slug"]})' if match else m.group(0)
 
+    # Resolve @<id> TODO references to a label "@<id> <title>" (strikethrough if done). With a
+    # todo_link_base (owner preview) it links to the SPA's TODO detail; in share mode (no base)
+    # it renders as styled non-link text. Unknown ids are left literal. Tally is by integer, so
+    # @50 never matches @5.
+    todos_map = todos or {}
+
+    def resolve_todoref(m):
+        tid = int(m.group(1))
+        todo = todos_map.get(tid)
+        if not todo:
+            return m.group(0)
+        label = f"@{tid} {todo.get('title', '')}".rstrip()
+        if todo.get("done"):
+            label = f"~~{label}~~"
+        if todo_link_base:
+            return f'[{label}]({todo_link_base}/{tid})'
+        return f'<span class="todoref">{label}</span>'
+
+    content = re.sub(r'@(\d+)', resolve_todoref, content)
     md = _preprocess_equations(re.sub(r'\[\[([^\]]+)\]\]', resolve_wikilink, content))
     # point figure URLs at the right (possibly public) asset route
     md = md.replace(f"/api/bubbles/{slug}/assets/", f"{asset_base}/")
@@ -117,6 +138,7 @@ blockquote{{margin:12px 0;padding:6px 14px;border-left:3px solid var(--accent);c
 blockquote p{{margin:6px 0}}
 .katex-display{{overflow-x:auto}}
 .eq-ref{{color:var(--accent);font-weight:500}}
+.todoref{{color:var(--accent);font-weight:500;background:var(--panel);padding:1px 5px;border-radius:4px}}
 #copied{{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--panel);
          border:1px solid var(--line);padding:8px 14px;border-radius:8px;font-size:13px;opacity:0;
          transition:opacity .2s;pointer-events:none}}
@@ -298,6 +320,15 @@ def build_app():
         since: Optional[str] = None
         until: Optional[str] = None
 
+    class TodoIn(BaseModel):
+        title: str
+        note: str = ""
+
+    class TodoUpdateIn(BaseModel):
+        title: Optional[str] = None
+        note: Optional[str] = None
+        done: Optional[bool] = None
+
     # ---- auth plumbing ----
     def current_user(lockedin_session: Optional[str] = Cookie(default=None)) -> str:
         user = auth.session_user(lockedin_session)
@@ -391,7 +422,8 @@ def build_app():
             name=service.bubble_detail(home, slug)["name"], page=page,
             all_pages=all_pages, content=service.get_page(home, slug, page),
             slug=slug, link_base=f"/share/{token}",
-            asset_base=f"/share/{token}/assets", show_back=False)
+            asset_base=f"/share/{token}/assets", show_back=False,
+            todos={t["id"]: t for t in service.list_todos(home)})  # share: styled text, no link
         return HTMLResponse(html)
 
     @app.get("/share/{token}/assets/{filename}")
@@ -712,6 +744,37 @@ def build_app():
         """Toggle the bubble's unlisted public share link (stable token)."""
         return service.set_bubble_share(home_of(user), slug, body.active)
 
+    # ---- todos (global per-user; referenced from report pages as @<id>) ----
+    @app.get("/api/todos")
+    def list_todos(user: str = Depends(current_user)):
+        return {"todos": service.list_todos(home_of(user))}
+
+    @app.post("/api/todos")
+    def create_todo(body: TodoIn, user: str = Depends(current_user)):
+        return {"todo": service.add_todo(home_of(user), body.title, body.note)}
+
+    @app.get("/api/todos/{tid}")
+    def get_todo(tid: int, user: str = Depends(current_user)):
+        todo = service.get_todo(home_of(user), tid)
+        if todo is None:
+            raise HTTPException(status_code=404, detail="No such TODO.")
+        return {"todo": todo}
+
+    @app.patch("/api/todos/{tid}")
+    def update_todo(tid: int, body: TodoUpdateIn, user: str = Depends(current_user)):
+        try:
+            return {"todo": service.update_todo(home_of(user), tid,
+                                                **body.model_dump(exclude_none=True))}
+        except KeyError:
+            raise HTTPException(status_code=404, detail="No such TODO.")
+
+    @app.delete("/api/todos/{tid}")
+    def delete_todo(tid: int, user: str = Depends(current_user)):
+        try:
+            return {"deleted": service.delete_todo(home_of(user), tid)}
+        except ValueError as e:
+            raise HTTPException(status_code=409, detail=str(e))
+
     # ---- pages (per-bubble mini-wiki) ----
     @app.get("/api/bubbles/{slug}/pages/{page}")
     def get_page(slug: str, page: str, user: str = Depends(current_user)):
@@ -727,7 +790,9 @@ def build_app():
             name=service.bubble_detail(home, slug)["name"], page=page,
             all_pages=service.list_pages(home, slug), content=service.get_page(home, slug, page),
             slug=slug, link_base=f"/api/bubbles/{slug}/preview",
-            asset_base=f"/api/bubbles/{slug}/assets", show_back=True)
+            asset_base=f"/api/bubbles/{slug}/assets", show_back=True,
+            todos={t["id"]: t for t in service.list_todos(home)},
+            todo_link_base="/#todos")  # owner is logged in → link opens the SPA TODO manager
         return HTMLResponse(html)
 
     @app.post("/api/bubbles/{slug}/pages")

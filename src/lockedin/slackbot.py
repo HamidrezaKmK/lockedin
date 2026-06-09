@@ -31,6 +31,7 @@ _HELP = (
     "• `list` — show all bubbles\n"
     "• `news` — list retrieved news + why each is relevant (premium)\n"
     "• `crawl` — search the web for new papers for your bubbles (premium)\n"
+    "• `todos` — list your open TODOs and add / edit / complete / remove them\n"
     "• Attach a PDF — uploads it to your assets queue\n"
     "• Send a PDF link — downloads it into your assets queue\n"
     "• Anything else — asks Qwen about your active bubble"
@@ -44,6 +45,7 @@ _active_bubble:  dict[str, dict]         = {}   # uid → active bubble dict
 _selecting:      dict[str, list[dict]]   = {}   # uid → bubble list (awaiting number reply)
 _news_flow:      dict[str, dict]         = {}   # uid → {stage:'from'|'to', since, until} (crawl wizard)
 _news_steer:     set[str]                = set()  # uids steering an open crawl session
+_todo_flow:      dict[str, dict]         = {}   # uid → {stage, id, title, ...} (todos wizard)
 
 _CONFIRM_RE = re.compile(r"^(ok|okay|yes|y|confirm|keep|default|same)$", re.IGNORECASE)
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -71,6 +73,7 @@ def _forget_session(uid: str) -> None:
     _selecting.pop(uid, None)
     _news_flow.pop(uid, None)
     _news_steer.discard(uid)
+    _todo_flow.pop(uid, None)
 
 
 def _ask_reauth(uid: str, say) -> None:
@@ -240,6 +243,127 @@ def _news_crawl(http: httpx.Client, say, *, since: str | None = None,
     say("\n".join(lines) + tail)
 
 
+# ── todos: a minimal add/edit/done/remove wizard (done items are managed in the web app) ──────
+_TODO_MENU = ("Reply `add`, `done <id>`, `edit <id>`, `remove <id>`, or `exit`. "
+              "_(Reopen or browse completed TODOs in the web app.)_")
+
+
+def _todo_list_and_menu(http, say, uid: str) -> None:
+    """List the user's OPEN todos and arm the menu. Done todos are intentionally hidden here."""
+    try:
+        r = http.get(f"{URL}/api/todos"); r.raise_for_status()
+        todos = r.json()["todos"]
+    except Exception as e:
+        if _is_unauthorized(e):
+            _ask_reauth(uid, say)
+            return
+        say(f"Couldn't load TODOs: {e}")
+        return
+    open_todos = [t for t in todos if not t.get("done")]
+    if open_todos:
+        lines = [f"#{t['id']}  {t['title']}" + (f"  🔗{t['ref_count']}" if t.get("ref_count") else "")
+                 for t in open_todos]
+        say("*Your open TODOs:*\n" + "\n".join(lines) + "\n\n" + _TODO_MENU)
+    else:
+        say("You have no open TODOs. Reply `add` to create one, or `exit`. "
+            "_(Completed TODOs live in the web app.)_")
+    _todo_flow[uid] = {"stage": "menu"}
+
+
+def _todo_menu_action(http, say, uid: str, text: str) -> None:
+    """Handle a reply while the todo menu is armed."""
+    low = text.strip().lower()
+    if low == "add":
+        _todo_flow[uid] = {"stage": "add_title"}
+        say("Title for the new TODO?")
+        return
+    m = re.match(r"^(done|edit|remove|rm|delete|del)\s+#?(\d+)$", low)
+    if not m:
+        say("Didn't catch that. " + _TODO_MENU)
+        return
+    action, tid = m.group(1), int(m.group(2))
+    try:
+        if action == "done":
+            http.patch(f"{URL}/api/todos/{tid}", json={"done": True}).raise_for_status()
+            say(f"✅ @{tid} marked done.")
+            _todo_flow.pop(uid, None)
+        elif action == "edit":
+            r = http.get(f"{URL}/api/todos/{tid}"); r.raise_for_status()
+            todo = r.json()["todo"]
+            _todo_flow[uid] = {"stage": "edit_title", "id": tid}
+            say(f"Editing @{tid} — \"{todo['title']}\".\nNew title? (send text, or `ok` to keep it)")
+        else:  # remove / rm / delete / del
+            resp = http.delete(f"{URL}/api/todos/{tid}")
+            if resp.status_code == 409:
+                say(f"Can't remove @{tid}: {resp.json().get('detail', 'it is still referenced.')}\n"
+                    "Pick another, or `exit`.")
+                return  # keep the menu armed
+            resp.raise_for_status()
+            say(f"🗑 Removed @{tid}.")
+            _todo_flow.pop(uid, None)
+    except Exception as e:
+        if _is_unauthorized(e):
+            _ask_reauth(uid, say)
+            _todo_flow.pop(uid, None)
+            return
+        say(f"That didn't work: {e}")
+
+
+def _todo_flow_step(http, say, uid: str, text: str) -> None:
+    """Drive the multi-turn add/edit sub-stages."""
+    flow = _todo_flow[uid]
+    if _CANCEL_RE.match(text):
+        _todo_flow.pop(uid, None)
+        say("Left the TODO manager.")
+        return
+    stage = flow["stage"]
+    if stage == "menu":
+        _todo_menu_action(http, say, uid, text)
+        return
+    if stage == "add_title":
+        flow["title"] = text.strip()
+        flow["stage"] = "add_note"
+        say("A note? (send text — supports the same math/markdown as reports — or `ok` to skip)")
+        return
+    if stage == "add_note":
+        note = "" if _CONFIRM_RE.match(text) else text
+        try:
+            r = http.post(f"{URL}/api/todos", json={"title": flow["title"], "note": note})
+            r.raise_for_status()
+            say(f"Added @{r.json()['todo']['id']} — \"{flow['title']}\". Send `todos` for the list.")
+        except Exception as e:
+            if _is_unauthorized(e):
+                _ask_reauth(uid, say)
+            else:
+                say(f"Couldn't add: {e}")
+        _todo_flow.pop(uid, None)
+        return
+    if stage == "edit_title":
+        if not _CONFIRM_RE.match(text):
+            flow["new_title"] = text.strip()
+        flow["stage"] = "edit_note"
+        say("New note? (send text, or `ok` to keep the current one)")
+        return
+    if stage == "edit_note":
+        payload: dict = {}
+        if "new_title" in flow:
+            payload["title"] = flow["new_title"]
+        if not _CONFIRM_RE.match(text):
+            payload["note"] = text
+        try:
+            if payload:
+                http.patch(f"{URL}/api/todos/{flow['id']}", json=payload).raise_for_status()
+            say(f"Updated @{flow['id']}.")
+        except Exception as e:
+            if _is_unauthorized(e):
+                _ask_reauth(uid, say)
+            else:
+                say(f"Couldn't update: {e}")
+        _todo_flow.pop(uid, None)
+        return
+    _todo_flow.pop(uid, None)  # unknown stage — reset
+
+
 def handle(event: dict, say) -> None:
     uid   = event.get("user") or ""
     text  = re.sub(r"<@[^>]+>", "", event.get("text") or "").strip()
@@ -385,6 +509,16 @@ def handle(event: dict, say) -> None:
             _news_steer.discard(uid)
             return
         _news_crawl(http, say, message=text)
+        return
+
+    # ── todos wizard: drive add/edit/done/remove sub-stages ───────────────────
+    if uid in _todo_flow:
+        _todo_flow_step(http, say, uid, text)
+        return
+
+    # ── todos: list open TODOs + arm the add/edit/done/remove menu ────────────
+    if re.match(r"^todos?$", text, re.IGNORECASE):
+        _todo_list_and_menu(http, say, uid)
         return
 
     # ── select / switch ───────────────────────────────────────────────────────

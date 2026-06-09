@@ -192,6 +192,8 @@
   .toastui-editor-mode-switch{display:none!important}
   .toastui-editor-tabs{display:none!important}
   .wikilink{color:var(--accent2);border-bottom:1px dashed var(--accent2);cursor:pointer}
+  .todoref{color:var(--accent);font-weight:500;cursor:pointer;text-decoration:none;
+    background:rgba(124,156,255,.12);padding:0 4px;border-radius:4px}
   .scopebar{display:flex;gap:6px;align-items:center;padding:6px 10px;border-top:1px solid var(--line)}
   .scopebar select{width:auto;max-width:230px}
   .sessionbar{display:flex;gap:6px;align-items:center;padding:5px 10px;
@@ -322,6 +324,7 @@
     <button class="navbtn active" data-view="assets">📚 Assets</button>
     <button class="navbtn" data-view="bubbles">🫧 Idea Bubbles</button>
     <button class="navbtn" data-view="attention">🔔 Attention <span id="attnCount" class="muted"></span></button>
+    <button class="navbtn" data-view="todos">✅ TODOs</button>
     <button class="navbtn" data-view="news" id="newsNav" style="display:none">📰 News <span id="newsCount" class="muted"></span></button>
     <button class="navbtn" data-view="settings">⚙️ Settings</button>
   </div>
@@ -414,6 +417,9 @@
     if(h==="attention"){switchView("attention",{noRoute:true});return;}
     if(h==="news"){switchView("news",{noRoute:true});return;}
     if(h==="settings"){switchView("settings",{noRoute:true});return;}
+    if(h==="todos"){switchView("todos",{noRoute:true});return;}
+    const tm=h.match(/^todos\/(\d+)$/);
+    if(tm){viewTodo(+tm[1]);return;}
     const m=h.match(/^bubble\/([^/]+)(?:\/([^/]+))?$/);
     if(m){openBubble(m[1],{noRoute:true,page:m[2]||null});return;}
     switchView("assets",{noRoute:true});
@@ -495,6 +501,7 @@
   const S = { user:null, model:null, view:"assets", bubble:null, chat:[],
     editor:null, page:null, pages:[], home:null, bubbleInstr:"", bubbleAssets:[],
     sessionId:null, sessionTitle:null,
+    todos:[], todosById:{}, todoFilter:"open",
     chatCollapsed:false,  // persisted in li_chat
     pollTimer:null, lastPageMtime:null, lastManifestMtime:null,
     baseMtime:null, autosaveTimer:null, saving:false, syncState:"synced", applyingRemote:false,
@@ -786,6 +793,7 @@
     if(v==="assets")viewAssets();
     else if(v==="bubbles")viewBubbles();
     else if(v==="attention")viewAttention();
+    else if(v==="todos")viewTodos();
     else if(v==="news")viewNews();
     else if(v==="settings")viewSettings();
     refreshAttnCount();
@@ -971,6 +979,122 @@
     function restore(){[save,cancel].forEach(b=>b.remove()); inp.replaceWith(nameSpan);}
   }
 
+  // ================= TODOS =================
+  // Global per-user task items, referenced from report pages as @<id>. S.todosById feeds the
+  // @<id> linkifier; the list defaults to open items with an Open⇄Done toggle.
+  async function loadTodos(){
+    try{ S.todos=(await api("/api/todos")).todos||[]; }
+    catch(e){ S.todos=[]; }
+    S.todosById={}; S.todos.forEach(t=>S.todosById[t.id]=t);
+    return S.todos;
+  }
+  async function viewTodos(){
+    const m=$("#main"); m.innerHTML="";
+    await loadTodos();
+    const filter=S.todoFilter||"open";
+    const head=el("div",{class:"row"},
+      el("h2",{class:"section-title",style:"margin:0"},"✅ TODOs"),
+      el("span",{class:"spacer"}),
+      el("button",{class:"ghost small",onclick:()=>{ S.todoFilter=filter==="open"?"done":"open"; viewTodos(); }},
+        filter==="open"?"Show done":"Show open"),
+      el("button",{class:"primary small",onclick:newTodo},"+ New TODO"));
+    m.append(head, el("div",{style:"height:14px"}));
+    const items=S.todos.filter(t=>filter==="done"?t.done:!t.done);
+    if(!items.length){ m.append(el("div",{class:"muted"},
+      filter==="done"?"No completed TODOs.":"No open TODOs. Create one with + New TODO.")); return; }
+    const grid=el("div",{class:"grid"});
+    items.forEach(t=>{
+      const c=el("div",{class:"acard",style:"cursor:pointer"});
+      c.append(el("span",{style:"font-weight:600"+(t.done?";text-decoration:line-through;opacity:.6":"")},
+        "@"+t.id+"  "+t.title));
+      c.onclick=()=>viewTodo(t.id);
+      grid.append(c);
+    });
+    m.append(grid);
+  }
+  async function newTodo(){
+    const title=prompt("Title for the new TODO:"); if(!title)return;
+    try{ const r=await api("/api/todos",{method:"POST",body:JSON.stringify({title,note:""})});
+      await loadTodos(); viewTodo(r.todo.id); }
+    catch(e){ toast(e.message); }
+  }
+  // Detail view — the shared landing for both an @<id> click and a TODO-list card click.
+  async function viewTodo(id){
+    S.view="todos"; S.bubble=null; stopPolling(); if(typeof stopNewsLive==="function")stopNewsLive();
+    document.getElementById("main").classList.remove("detailmode");
+    document.querySelectorAll(".navbtn").forEach(b=>b.classList.toggle("active",b.dataset.view==="todos"));
+    pushRoute("todos/"+id);
+    const m=$("#main"); m.innerHTML="";
+    let t;
+    try{ t=(await api("/api/todos/"+id)).todo; }
+    catch(e){ m.append(el("div",{class:"err"},"TODO not found.")); return; }
+    S.todosById[t.id]=t;
+    m.append(el("a",{class:"wikilink",style:"font-size:13px",onclick:()=>{S.todoFilter="open";viewTodos();}},"← All TODOs"));
+
+    // title row: done toggle + (inline-editable) title
+    const titleWrap=el("div",{class:"row",style:"margin-top:10px;align-items:center;gap:10px"});
+    const doneBtn=el("button",{class:"ghost small",style:"padding:4px 12px;font-size:13px",
+      title:t.done?"Mark open":"Mark done",
+      onclick:async()=>{ try{ await api("/api/todos/"+t.id,{method:"PATCH",body:JSON.stringify({done:!t.done})}); }
+        catch(e){ toast(e.message); } viewTodo(id); }},
+      t.done?"↩ Reopen":"✓ Mark done");
+    const titleSpan=el("h2",{style:"margin:0"+(t.done?";text-decoration:line-through;opacity:.6":"")},"@"+t.id+"  "+t.title);
+    const editTitle=el("button",{class:"ghost small",title:"Edit title",onclick:()=>{
+      const inp=el("input",{value:t.title,style:"font-size:20px;font-weight:600;width:auto;min-width:240px"});
+      const save=async()=>{ const v=inp.value.trim();
+        if(v&&v!==t.title){ try{ await api("/api/todos/"+t.id,{method:"PATCH",body:JSON.stringify({title:v})}); }catch(e){toast(e.message);} }
+        viewTodo(id); };
+      inp.onkeydown=e=>{ if(e.key==="Enter")save(); if(e.key==="Escape")viewTodo(id); };
+      titleSpan.replaceWith(inp); inp.focus(); inp.select();
+    }},"✏️");
+    titleWrap.append(doneBtn,titleSpan,editTitle);
+    m.append(titleWrap);
+
+    // note — rendered with the SAME renderMarkdown the reports use, so $…$ / $$…$$ math works
+    const noteWrap=el("div",{class:"card",style:"margin-top:14px"});
+    const noteBody=el("div",{});
+    function renderNote(){ noteBody.innerHTML = (t.note&&t.note.trim())
+      ? renderMarkdown(t.note)
+      : '<span class="muted">No note yet. Click Edit to add one (supports the same math/markdown as reports).</span>'; }
+    function editNote(){
+      noteBody.innerHTML="";
+      const ta=el("textarea",{style:"width:100%;min-height:160px;font-family:ui-monospace,monospace"}); ta.value=t.note||"";
+      const save=el("button",{class:"primary small",onclick:async()=>{
+        try{ await api("/api/todos/"+t.id,{method:"PATCH",body:JSON.stringify({note:ta.value})}); t.note=ta.value; }
+        catch(e){ toast(e.message); } renderNote(); }},"Save");
+      const cancel=el("button",{class:"ghost small",onclick:renderNote},"Cancel");
+      noteBody.append(ta, el("div",{class:"row",style:"margin-top:8px;gap:8px"},save,cancel));
+      ta.focus();
+    }
+    const noteHead=el("div",{class:"row"}, el("b",{},"Note"), el("span",{class:"spacer"}),
+      el("button",{class:"ghost small",onclick:editNote},"Edit"));
+    renderNote();
+    noteWrap.append(noteHead,noteBody); m.append(noteWrap);
+
+    // references — where this TODO is mentioned (@id), each a jump-link to that page
+    const refs=t.refs||[];
+    const refWrap=el("div",{style:"margin-top:14px"});
+    refWrap.append(el("b",{},"References ("+refs.length+")"));
+    if(refs.length){
+      const ul=el("div",{style:"margin-top:6px"});
+      refs.forEach(r=>ul.append(el("a",{class:"wikilink",style:"display:block;margin:3px 0",
+        onclick:()=>openBubble(r.bubble_slug,{page:r.page_slug})}, r.bubble_name+" → "+r.page_title)));
+      refWrap.append(ul);
+    } else {
+      refWrap.append(el("div",{class:"muted",style:"margin-top:6px"},
+        "Not referenced yet. Type @"+t.id+" in a report page to link it here."));
+    }
+    m.append(refWrap);
+
+    // delete — blocked while referenced (server enforces this too)
+    const del=el("button",{class:"ghost small",style:"margin-top:18px"},"🗑 Delete TODO");
+    if(refs.length){ del.disabled=true; del.title="Referenced — remove the @"+t.id+" references first."; }
+    else del.onclick=async()=>{ if(!confirm("Delete TODO @"+t.id+"?"))return;
+      try{ await api("/api/todos/"+t.id,{method:"DELETE"}); toast("TODO deleted"); S.todoFilter="open"; viewTodos(); }
+      catch(e){ toast(e.message); } };
+    m.append(del);
+  }
+
   // ---- public share controls (toggle + copy link to current page/section) ----
   function shareUrl(){
     // Link to the page currently open, so viewers land where you are (append #section there).
@@ -1022,6 +1146,8 @@
     const m=$("#main"); m.innerHTML=""; m.classList.add("detailmode");
     const b=(await api("/api/bubbles/"+slug)).bubble;
     if(S.openToken!==token) return;   // a newer navigation started while we awaited — bail
+    // Load TODOs so the preview can resolve @<id> refs; re-render once they're in.
+    loadTodos().then(()=>{ if(S.bubble===slug && S.editor) updatePreview(); });
     S.bubbleAssets=b.assets||[];
     S.shareActive=!!b.share_active; S.shareToken=b.share_token||"";
     // Editable bubble title. For approved bubbles the rename lives in the "✏️ Edit titles"
@@ -1104,9 +1230,12 @@
     refreshTabs();
     startPolling();
     primeSync();          // capture the home page's base mtime for conflict detection
-    // delegated internal-link navigation (page: scheme)
-    left.addEventListener("click",e=>{ const a=e.target.closest('a[href^="page:"]');
-      if(a){ e.preventDefault(); switchPage(decodeURIComponent(a.getAttribute("href").slice(5))); } });
+    // delegated internal-link navigation (page: and todo: schemes)
+    left.addEventListener("click",e=>{
+      const p=e.target.closest('a[href^="page:"]');
+      if(p){ e.preventDefault(); switchPage(decodeURIComponent(p.getAttribute("href").slice(5))); return; }
+      const t=e.target.closest('a[href^="todo:"]');
+      if(t){ e.preventDefault(); viewTodo(+t.getAttribute("href").slice(5)); } });
   }
 
   function buildMobileSheet(title){
@@ -1316,16 +1445,32 @@
     fetch("/api/bubbles/"+slug+"/assets",{method:"POST",credentials:"include",body:fd})
       .then(r=>r.json()).then(d=>cb(d.url,"figure")).catch(()=>toast("Image upload failed"));
   }
+  // Linkify both [[wikilinks]] (page nav) and @<id> TODO references (digits only, so @50 never
+  // matches @5). A known @id renders as "@id title" linking to the TODO detail view; an unknown
+  // id is left as literal text.
   function linkifyWikilinks(root){
+    const RE=/\[\[([^\]]+)\]\]|@(\d+)/g;
     const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT,null);
-    const targets=[]; let n; while(n=walker.nextNode()){ if(/\[\[[^\]]+\]\]/.test(n.nodeValue)
-      && !n.parentElement.closest("a")) targets.push(n); }
+    const targets=[]; let n; while(n=walker.nextNode()){ RE.lastIndex=0;
+      if(RE.test(n.nodeValue) && !n.parentElement.closest("a")) targets.push(n); }
     targets.forEach(node=>{
       const s=node.nodeValue, frag=document.createDocumentFragment(); let last=0,mm;
-      const re=/\[\[([^\]]+)\]\]/g;
-      while(mm=re.exec(s)){ if(mm.index>last)frag.append(s.slice(last,mm.index));
-        const a=document.createElement("a"); a.href="page:"+encodeURIComponent(mm[1].trim());
-        a.textContent=mm[1]; a.className="wikilink"; frag.append(a); last=re.lastIndex; }
+      RE.lastIndex=0;
+      while(mm=RE.exec(s)){ if(mm.index>last)frag.append(s.slice(last,mm.index));
+        if(mm[1]!=null){
+          const a=document.createElement("a"); a.href="page:"+encodeURIComponent(mm[1].trim());
+          a.textContent=mm[1]; a.className="wikilink"; frag.append(a);
+        } else {
+          const id=mm[2], todo=S.todosById[+id];
+          if(!todo){ frag.append(mm[0]); }
+          else {
+            const a=document.createElement("a"); a.href="todo:"+id; a.className="todoref";
+            a.textContent="@"+id+" "+todo.title;
+            if(todo.done) a.style.textDecoration="line-through";
+            frag.append(a);
+          }
+        }
+        last=RE.lastIndex; }
       if(last<s.length)frag.append(s.slice(last));
       node.parentNode.replaceChild(frag,node);
     });

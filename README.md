@@ -16,6 +16,10 @@ Public exposure still needs application-layer hardening; see [Security](#securit
 - Paper upload, extraction, one-time summaries, and cached report context.
 - Auto-tagging into idea bubbles.
 - Multi-page Markdown reports with internal links, figures, KaTeX, and live preview.
+- TODOs: GitHub-issue-style task items with a dedicated manager pane. Reference one from any
+  report page as `@id` (a clickable link to its detail view); notes support the same
+  math/markdown as reports. A TODO can only be deleted once it has no remaining `@id`
+  references. Manage them in the web app or via the Slack bot's `todos` command.
 - Read-only research chat grounded in report pages and paper summaries.
 - Model switcher for local Qwen through Ollama, OpenAI, Claude, and Gemini.
 - Optional Slack bot in socket mode.

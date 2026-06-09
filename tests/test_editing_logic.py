@@ -22,7 +22,7 @@ import unittest
 from contextlib import contextmanager
 from pathlib import Path
 
-from lockedin import bubbles, models, paths, reports, server
+from lockedin import bubbles, models, paths, reports, server, service
 
 from tests._fixtures import make_bubble
 
@@ -279,6 +279,78 @@ class PreviewMathRendering(unittest.TestCase):
         self.assertIn("marked.parse(s)", html)
         # Buggy path (marked first, then auto-render over the DOM) must be gone.
         self.assertNotIn("renderMathInElement", html)
+
+
+# --------------------------------------------------------------------------- #
+# TODOs — CRUD, reference counting, the delete-when-unreferenced guard, and the
+# @<id> resolution baked into the shared preview/share renderer.
+# --------------------------------------------------------------------------- #
+class TodosCrud(unittest.TestCase):
+    def test_ids_autoincrement_and_crud_round_trips(self):
+        with temp_home() as home:
+            t1 = service.add_todo(home, "First", "n1")
+            t2 = service.add_todo(home, "Second")
+            self.assertEqual((t1["id"], t2["id"]), (1, 2))
+            self.assertEqual([t["id"] for t in service.list_todos(home)], [1, 2])
+            self.assertEqual(service.list_todos(home)[0]["ref_count"], 0)
+            service.update_todo(home, 1, title="First!", done=True)
+            got = service.get_todo(home, 1)
+            self.assertEqual(got["title"], "First!")
+            self.assertTrue(got["done"])
+            self.assertTrue(service.delete_todo(home, 2))
+            self.assertIsNone(service.get_todo(home, 2))
+            self.assertFalse(service.delete_todo(home, 999))  # missing id → no-op
+
+
+class TodoReferenceGuard(unittest.TestCase):
+    def test_ref_count_and_delete_guard(self):
+        with temp_home() as home:
+            slug = make_bubble(home)
+            for i in range(5):  # ids 1..5
+                service.add_todo(home, f"todo {i+1}")
+            with paths.use_root(home):
+                # @1 referenced once; @50 must NOT count toward @5.
+                bubbles.save_page(slug, "overview", "# T\n\nTrack @1 here. Unrelated @50.\n")
+            by_id = {t["id"]: t for t in service.list_todos(home)}
+            self.assertEqual(by_id[1]["ref_count"], 1)
+            self.assertEqual(by_id[5]["ref_count"], 0)   # @50 didn't bleed into @5
+            # Referenced TODO can't be deleted; unreferenced one can.
+            with self.assertRaises(ValueError):
+                service.delete_todo(home, 1)
+            self.assertTrue(service.delete_todo(home, 2))
+
+    def test_get_todo_lists_reference_locations(self):
+        with temp_home() as home:
+            slug = make_bubble(home)
+            service.add_todo(home, "Referenced")
+            with paths.use_root(home):
+                bubbles.save_page(slug, "overview", "# T\n\nSee @1.\n")
+            got = service.get_todo(home, 1)
+            self.assertEqual(got["ref_count"], 1)
+            self.assertEqual(got["refs"][0]["page_slug"], "overview")
+
+
+class TodoRefRendering(unittest.TestCase):
+    TODOS = {1: {"id": 1, "title": "Fix bug", "done": False},
+             2: {"id": 2, "title": "Done one", "done": True}}
+
+    def _render(self, **kw):
+        return server._render_preview_html(
+            name="B", page="P", all_pages=[{"page_slug": "p", "title": "P"}],
+            content="See @1 and @2 and @99.", slug="s",
+            link_base="/x", asset_base="/x/assets", show_back=False, todos=self.TODOS, **kw)
+
+    def test_linked_in_owner_preview(self):
+        html = self._render(todo_link_base="/#todos")
+        self.assertIn("/#todos/1", html)       # known id links to the SPA detail view
+        self.assertIn("Fix bug", html)
+        self.assertIn("~~", html)              # done todo rendered struck-through
+        self.assertIn("@99", html)             # unknown id left literal
+
+    def test_styled_text_in_share_mode(self):
+        html = self._render(todo_link_base=None)
+        self.assertIn("todoref", html)         # styled non-link span
+        self.assertNotIn("/#todos/1", html)    # no login-gated link on the public page
 
 
 if __name__ == "__main__":
