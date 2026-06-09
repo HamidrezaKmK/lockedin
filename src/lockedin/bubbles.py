@@ -65,15 +65,22 @@ def propose_bubble(name: str) -> str:
 
 
 def create_bubble(name: str) -> str:
-    """User-created standalone bubble (approved=True)."""
+    """User-created standalone bubble (approved=True).
+
+    If the slug already exists, keep its existing entry untouched except to ensure it's approved —
+    do NOT overwrite the display ``name`` (a rename) or share state. The ``name`` here is only the
+    seed for a *new* bubble; for an existing one, identity is the slug and the name is display-only.
+    """
     slug = slugify(name)
     if not slug:
         raise ValueError("Bubble name must contain letters or numbers.")
     reg = load_registry()
-    entry = reg.get(slug, {})
-    reg[slug] = {"name": name.strip(), "approved": True,
-                 "instructions": entry.get("instructions", ""),
-                 "created_at": entry.get("created_at", _now_iso())}
+    entry = reg.get(slug)
+    if entry is None:
+        reg[slug] = {"name": name.strip(), "approved": True, "instructions": "",
+                     "created_at": _now_iso()}
+    else:
+        entry["approved"] = True
     save_registry(reg)
     return slug
 
@@ -165,6 +172,26 @@ def slug_to_name(slug: str) -> str:
     return _pdf_slug_names().get(slug, slug)
 
 
+def tag_for_slug(slug: str) -> str:
+    """A display tag string guaranteed to slugify back to ``slug`` (the bubble's membership key).
+
+    A bubble's display ``name`` is cosmetic and may be renamed freely, but membership is keyed by
+    the immutable slug (``idea_bubbles`` = slugified tags). So when we tag a PDF into a bubble we
+    must use a tag that *slugifies to the slug* — never the (possibly-renamed) display name, which
+    would slugify to a different, phantom slug and split the bubble's papers. Prefer an existing
+    member's tag (keeps a bubble's tag display consistent), then the registry name if it still maps
+    to this slug, else a readable de-slugified form of the slug.
+    """
+    existing = _pdf_slug_names().get(slug)
+    if existing and assets.slug_of(existing) == slug:
+        return existing
+    name = (load_registry().get(slug) or {}).get("name", "")
+    if name and assets.slug_of(name) == slug:
+        return name
+    readable = slug.replace("-", " ")
+    return readable if assets.slug_of(readable) == slug else slug
+
+
 def pdfs_for_bubble(slug: str) -> list[dict]:
     return [m for m in assets.list_assets() if slug in m.get("idea_bubbles", [])]
 
@@ -172,15 +199,17 @@ def pdfs_for_bubble(slug: str) -> list[dict]:
 def add_pdf_to_bubble(slug: str, pdf_id: str) -> dict:
     """Make an existing PDF a member of this bubble by tagging it with the bubble's name.
 
-    Membership is derived from a PDF's ``idea_bubbles`` (slugs of its tags), so we append
-    the bubble's display name to the PDF's tags and let ``assets.update_asset`` re-sync the
-    slug list. Idempotent: a no-op if the PDF is already a member.
+    Membership is derived from a PDF's ``idea_bubbles`` (slugs of its tags), so we append a tag
+    that slugifies back to this bubble's slug (``tag_for_slug``) and let ``assets.update_asset``
+    re-sync the slug list. We deliberately do NOT use the display name: if the bubble was renamed,
+    its name slugifies to a different slug and the PDF would join a phantom bubble. Idempotent: a
+    no-op if the PDF is already a member.
     """
     meta = assets.load_meta(pdf_id)
     if slug in meta.get("idea_bubbles", []):
         return meta
     tags = list(meta.get("tags", []))
-    tags.append(slug_to_name(slug))
+    tags.append(tag_for_slug(slug))
     return assets.update_asset(pdf_id, tags=tags)
 
 
@@ -211,6 +240,7 @@ def all_bubbles() -> list[dict]:
         out.append({
             "slug": slug,
             "name": name,
+            "tag": tag_for_slug(slug),
             "approved": bool(entry.get("approved", False)),
             "in_registry": slug in reg,
             "pdf_count": counts.get(slug, 0),
@@ -234,6 +264,7 @@ def bubble_detail(slug: str) -> dict:
     return {
         "slug": slug,
         "name": entry.get("name") or slug_to_name(slug),
+        "tag": tag_for_slug(slug),
         "approved": approved,
         "in_registry": slug in reg,
         "instructions": entry.get("instructions", ""),

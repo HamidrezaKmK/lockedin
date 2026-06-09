@@ -70,18 +70,20 @@ def devmode():
     typer.secho(f"✓ Authenticated as '{user}'.", fg="green")
     with paths.use_root(home):
         model = models.get_active_config(home).active
-        bubs = bubbles.all_bubbles()
+        # Only approved bubbles have a materialized report workspace to edit; suggested ones
+        # are still waiting in the UI and have no pages, so the report assistant ignores them.
+        bubs = [b for b in bubbles.all_bubbles() if b.get("approved")]
         n_assets = len(assets.list_assets())
         rows = [(b["slug"], len(bubbles.list_pages(b["slug"]))) for b in bubs]
     typer.echo(f"  workspace:    {home}")
     typer.echo(f"  reports dir:  {home / 'REPORTS'}")
     typer.echo(f"  assets dir:   {home / 'ASSETS'}  ({n_assets} PDFs)")
     typer.echo(f"  active model: {model}")
-    typer.echo("  bubbles (edit the .md files under REPORTS/<slug>/pages/):")
+    typer.echo("  approved bubbles (edit the .md files under REPORTS/<slug>/pages/):")
     for slug, n in rows:
         typer.echo(f"    - {slug}  ({n} pages)")
     if not rows:
-        typer.echo("    (none yet)")
+        typer.echo("    (none approved yet — approve a bubble in the app first)")
 
 
 @app.command()

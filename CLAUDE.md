@@ -105,7 +105,7 @@ Layered; the server is thin HTTP/SSE glue over `service.py`.
 | Module | Responsibility |
 |--------|----------------|
 | `paths.py` | All filesystem paths. **Per-user isolation via a `contextvars` root** pushed with `paths.use_root(home)`. Per-user paths (`ASSETS_DIR`, `REPORTS_DIR`, bubble/page/asset paths) resolve against the active context root; account-registry paths resolve against the base root. |
-| `auth.py` | PBKDF2-HMAC-SHA256, `accounts.yaml`, in-memory sessions (lost on restart). `set_password`/`rename_user` back the account-settings endpoint. |
+| `auth.py` | PBKDF2-HMAC-SHA256, `accounts.yaml`, in-memory sessions (lost on restart). `set_password`/`rename_user` back the account-settings endpoint. **Account approval:** the first account created is `approved=true`+`admin=true`; later sign-ups are `approved=false` (with `pending_at`) and **cannot log in** until an admin flips them via the `/api/admin/users*` endpoints (surfaced in the Settings → *User access* panel). `is_approved`/`is_admin`/`set_approved`/`delete_user` enforce this; `MIN_PASSWORD_LEN=4`. |
 | `sharing.py` | Global (base-root) `share_index.yaml` mapping an unlisted token → `{user, slug}` for the public `/share/<token>` routes (which run with no session). |
 | `models.py` | **One global active model** (`qwen`/`openai`/`claude`/`gemini`) per user. `stream_chat`/`complete`/`attach_pdf`/`health_check`. Branches: OpenAI-compatible (qwen via Ollama, openai, gemini via its OpenAI-compat endpoint) vs Anthropic SDK (claude). Health check does NOT ping API for cloud providers — only checks credentials are present. |
 | `assets.py` | PDF storage: `ASSETS/<pdf_id>/{paper.pdf,text.txt,summary.md,meta.yaml}`. Atomic writes. |
@@ -152,6 +152,14 @@ data/users/share_index.yaml         # {token: {user, slug}} — global lookup fo
   it can't guess server-assigned slugs, so it writes `[[Exact Title]]` and the save fixes it.
 - **Bubble approval gates the report workspace.** Auto-suggested bubbles start `approved=false`
   and show an approval pane; approving materializes the pages (`ensure_pages`) so the editor opens.
+- **A bubble's identity is its immutable `slug`; its `name` is display-only.** Membership is
+  `idea_bubbles` = `[slug_of(tag) for tag in tags]`, so a PDF belongs to a bubble iff one of its
+  tags slugifies to that slug. Renaming only changes the registry `name`; it must NOT change any
+  paper's tag/slug. When tagging a PDF into a bubble, always use `bubbles.tag_for_slug(slug)`
+  (a tag guaranteed to slugify back to the slug), never the display name — using the (possibly
+  renamed) name slugifies to a *different* slug and splits the bubble into a phantom. The API
+  exposes both `name` (display) and `tag` (stable membership tag) per bubble; the frontend's
+  "pick a bubble" dropdowns insert `tag`.
 - **Public sharing is unlisted + token-gated, no login.** A bubble carries a permanent
   `share_token` and a `share_active` flag; `sharing.py` holds the base-root `token → {user, slug}`
   index. The `/share/<token>[/<page>]` routes have **no auth** — access is gated only by the token

@@ -77,14 +77,22 @@ systemctl --user enable --now lockedin-slackbot.service
 
 ## What the bot can do
 
-DM the bot (or @-mention it in a channel). On first contact it asks for your lockedin username and password — after that it remembers your session.
+DM the bot (or @-mention it in a channel). On first contact it asks for your lockedin username
+and password — after that it remembers your session. The lockedin account you log in with must be
+**approved** (see the approval flow in the README), or login fails. Sessions live in memory, so
+they reset when the bot **or** the web server restarts; the bot will simply ask you to log in
+again on your next message.
 
 | Message | Action |
 |---|---|
 | *(first message)* | Bot asks for username, then password |
-| Attach a PDF | Uploads it to your Assets queue |
-| `ask diffusion models: what is the score function?` | Qwen answers using that bubble's content |
+| Attach a PDF / send a PDF link | Uploads it to your Assets queue |
+| `select` (or `switch`) | Lists your bubbles, reply with a number to set the active one |
 | `list` | Lists your idea bubbles |
+| `news` | Lists crawled news items + why each is relevant (premium) |
+| `crawl` | Searches the web for new papers for your bubbles (premium) |
+| `help` | Shows the command list |
+| anything else | Qwen answers using your **active** bubble's content (`select` one first) |
 
 Qwen must be running locally unless you change the bot model settings:
 `ollama serve && ollama pull qwen2.5:7b-instruct`

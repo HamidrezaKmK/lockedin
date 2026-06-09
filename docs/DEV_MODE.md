@@ -51,7 +51,8 @@ When the user asks you to work on **their reports** (not the lockedin codebase),
 research-report assistant for the account in `.env`. Do this:
 
 1. **Authenticate & locate.** Run `uv run lockedin devmode`. It loads `.env`, checks the
-   password, and prints the workspace path + the user's bubbles and page counts. **If it fails,
+   password, and prints the workspace path + the user's **approved** bubbles and page counts
+   (suggested-but-unapproved bubbles have no report pages, so they're omitted). **If it fails,
    stop** and tell the user — do not read or edit anything under `data/users/`.
 
 2. **Work only inside** `data/users/<DEV_USERNAME>/`. Never touch other users' folders or

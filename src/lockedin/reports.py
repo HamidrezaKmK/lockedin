@@ -32,11 +32,19 @@ lockedin is a local-first research assistant for grad students. Upload papers (P
 into **Idea Bubbles** (topic tags), and maintain multi-page Markdown reports per bubble, with a
 research chat sidebar and a switchable LLM backend.
 
+## Signing in
+New accounts must be **approved by an admin** before they can log in — the very first account
+created on a fresh install becomes that admin automatically. Until you're approved, sign-up
+confirms "Account created. An admin must approve it before login," and login replies "Account is
+waiting for admin approval." On phones, tap the **☰** button (top-left) to open the sidebar.
+
 ## Navigation
-The left sidebar has three views:
+The left sidebar has these views:
 - **Assets** — your uploaded PDFs
 - **Idea Bubbles** — topic groups with report wikis
 - **Attention** — papers that need manual tagging review
+- **News** — papers surfaced by the web crawler (premium; only shown if it's enabled for you)
+- **Settings** — model configuration, plus a user-access panel for admins
 
 ## Assets (PDFs)
 - **Upload**: drag/select a PDF, optionally give a title, comma-separated bubble tags, and a
@@ -54,8 +62,10 @@ The left sidebar has three views:
 - **Delete**: the 🗑 icon on the bubble card removes the bubble and all its pages.
 
 ## Report Editor (multi-page wiki)
-Each approved bubble has a mini-wiki of Markdown pages. Open a bubble to enter the editor. You
-write the reports yourself — the chat assistant is read-only and does not edit pages for you.
+Each approved bubble has a mini-wiki of Markdown pages. Opening a bubble shows the **rendered
+page** (reading view) by default; use the view dropdown in the toolbar to switch to the editor or
+a side-by-side layout. You write the reports yourself — the chat assistant is read-only and does
+not edit pages for you.
 
 ### Page tabs
 - **+ Page** — create a new page (give it a title)
@@ -63,7 +73,8 @@ write the reports yourself — the chat assistant is read-only and does not edit
 - **✕** on a tab deletes that page (the home/overview page cannot be deleted)
 
 ### Writing Markdown
-The left half is the editor (plain Markdown); the right half is the live preview.
+Switch the view dropdown to **✏️ Edit** for the plain-Markdown editor, or **◧ Split** to see the
+editor and live preview side-by-side. **👁 Read** shows just the rendered page.
 
 **Math** — use standard LaTeX delimiters:
 - Inline: `$E = mc^2$`
@@ -81,9 +92,9 @@ The system resolves titles to real page slugs on save.
 |--------|--------|
 | `+ Page` | Create a new page |
 | `⟳ synced` / `⟳ unsynced` | **Click to save.** Shows sync state. If an external edit was detected, confirms whether to load the remote version or overwrite with your edits. |
-| `⊞ preview` / `⊟ preview` | Toggle the live preview pane |
-| `chat ❮` / `chat ❯` | Collapse or expand the chat sidebar |
-| `🔍` | Open a full-page standalone preview in a new tab (with a ← Back button) |
+| view dropdown (`👁 Read` / `✏️ Edit` / `◧ Split`) | Switch the page between rendered reading view, the Markdown editor, and side-by-side |
+| `💬 <` / `💬 >` | Collapse or expand the chat sidebar |
+| `👁 Preview` (next to Share) | Open the read-only page exactly as share viewers see it, in a new tab |
 
 ### Auto-sync
 If you edit a page's `.md` file directly on disk (e.g. from another tool or a DEV_MODE session),
@@ -117,10 +128,21 @@ pages. On the shared page, hovering a heading reveals a 🔗 that copies a link 
 section, so you can point someone at a specific part. Click **🟢 Sharing** again to turn it off;
 the link stops working immediately. Turning it back on restores the same link.
 
+## News (premium)
+If the News crawler is enabled for your account, a **News** view appears in the sidebar. Click
+**Crawl now** to have it search the web for recent papers relevant to your approved bubbles,
+matched against each bubble's scope (not just its title). Found papers stream into the feed with
+the reason they're relevant; you can steer the crawl with follow-up messages, then **accept** the
+batch (which advances the date pointer so the next crawl picks up where this one left off) or
+discard it. The same commands are available in the Slack bot via `news` and `crawl`.
+
 ## Account
 Click your **@username** in the top bar to change your username and/or password. You must enter
 your current password to confirm. Changing your username carries all your data over and keeps
 you logged in.
+
+**Admins** also get a **User access** panel in **Settings**: approve or revoke pending accounts
+and delete users.
 
 ## Model Settings
 Click any model tab in the topbar (🖥 Qwen, OpenAI, Claude, Gemini) to switch the active model.

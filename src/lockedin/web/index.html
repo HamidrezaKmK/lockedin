@@ -176,11 +176,18 @@
   .ptab.active{border-color:var(--accent);color:var(--ink);background:var(--bg)}
   .ptab .x{opacity:.5;font-size:11px}
   .ptab .x:hover{opacity:1;color:var(--bad)}
+  .ptab-edit{font-size:13px;padding:2px 6px;width:130px;border-radius:5px}
   #editorHost{flex:1;min-height:0;min-width:0;display:flex;overflow:hidden;overflow:clip}
   #editorWrap{flex:1;min-height:0;min-width:0;overflow:hidden;overflow:clip}
   #editorWrap .toastui-editor-defaultUI{height:100%}
-  #previewWrap{flex:1;overflow:auto;padding:12px 16px;border-left:1px solid var(--line);
-               min-width:0;min-height:0;line-height:1.6}
+  #previewWrap{flex:1;overflow:auto;padding:12px 16px;min-width:0;min-height:0;line-height:1.6}
+  /* The editor pane has three view modes, chosen from the toolbar dropdown:
+     view  = rendered page only (default reading view),
+     edit  = Markdown editor only,
+     split = editor + live preview side-by-side (the classic layout). */
+  #editorHost.mode-view #editorWrap{display:none}
+  #editorHost.mode-edit #previewWrap{display:none}
+  #editorHost.mode-split #previewWrap{border-left:1px solid var(--line)}
   /* Hide Toast UI's built-in preview controls — we use our own custom renderer */
   .toastui-editor-mode-switch{display:none!important}
   .toastui-editor-tabs{display:none!important}
@@ -203,6 +210,19 @@
   .session-row{display:flex;align-items:center;gap:6px;padding:5px 10px;border-top:1px solid var(--line);font-size:12px}
   .session-row:first-child{border-top:none}
   .session-row .session-title{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink)}
+  /* "Papers in this bubble": papers render as wrapped, pressable pills (same look as the
+     chat's deep-read pills) — each links to the PDF; a remove ✕ only appears in edit mode. */
+  .bubble-pdf-list{display:flex;flex-wrap:wrap;gap:5px}
+  .paperchip{display:inline-flex;align-items:center;gap:5px;max-width:220px;
+             background:var(--panel2);border:1px solid var(--accent2);border-radius:999px;
+             padding:2px 9px;font-size:12px;color:var(--accent2);text-decoration:none}
+  .paperchip:hover{border-color:var(--accent);color:var(--accent)}
+  .paperchip .lbl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+  .paperchip .x{opacity:.6;cursor:pointer;flex:0 0 auto}
+  .paperchip .x:hover{opacity:1;color:var(--bad)}
+  /* In the editor's inline strip, show ~2 rows of pills then scroll
+     (the mobile Papers sheet reuses the same list but isn't capped — it has room). */
+  .bubble-papers-inline .bubble-pdf-list{max-height:60px;overflow:auto}
   .mobile-bubble-actions,.mobile-sheet{display:none}
 
   /* ── Mobile ── */
@@ -233,9 +253,11 @@
     .pane{height:auto;min-height:0}
     #detail>.editor-pane{height:calc(var(--vvh) - 154px - env(safe-area-inset-top));min-height:min(380px, calc(var(--vvh) - 154px))}
     #detail>.chat-pane,.bubble-papers-inline,.desktop-only-tool{display:none!important}
-    /* editor-only on mobile; full-page preview is still available through the magnifier */
+    /* editor-only on mobile; the read-only render is still available via the 👁 Preview button.
+       The View/Edit toggle is desktop-only, so force the editor visible regardless of mode. */
     #editorHost{flex-direction:column}
     #previewWrap{display:none!important}
+    #editorHost #editorWrap{display:block!important}
     .mobile-bubble-actions{position:fixed;left:14px;right:14px;bottom:calc(env(safe-area-inset-bottom) + 14px);
       display:flex;justify-content:space-between;gap:12px;z-index:45;pointer-events:none}
     .mobile-bubble-actions button{pointer-events:auto;border-radius:999px;padding:10px 14px;
@@ -298,7 +320,7 @@
 
   <div id="side">
     <button class="navbtn active" data-view="assets">📚 Assets</button>
-    <button class="navbtn" data-view="bubbles">💡 Idea Bubbles</button>
+    <button class="navbtn" data-view="bubbles">🫧 Idea Bubbles</button>
     <button class="navbtn" data-view="attention">🔔 Attention <span id="attnCount" class="muted"></span></button>
     <button class="navbtn" data-view="news" id="newsNav" style="display:none">📰 News <span id="newsCount" class="muted"></span></button>
     <button class="navbtn" data-view="settings">⚙️ Settings</button>
@@ -787,7 +809,9 @@
     // dropdown of existing bubbles — pick one instead of typing the tag at upload time
     const bubbleSel=el("select");
     bubbleSel.append(el("option",{value:""},"➕ Pick an existing bubble…"));
-    try{ (await api("/api/bubbles")).bubbles.forEach(b=>bubbleSel.append(el("option",{value:b.name},b.name))); }catch(e){}
+    // option label = display name; value = the bubble's stable membership tag (slugifies to its
+    // slug) so picking a *renamed* bubble still tags the paper into that same bubble, not a phantom.
+    try{ (await api("/api/bubbles")).bubbles.forEach(b=>bubbleSel.append(el("option",{value:b.tag||b.name},b.name))); }catch(e){}
     bubbleSel.onchange=()=>{ const name=bubbleSel.value; bubbleSel.value=""; if(!name)return;
       const cur=tags.value.split(",").map(s=>s.trim()).filter(Boolean);
       if(!cur.some(t=>t.toLowerCase()===name.toLowerCase())){ cur.push(name); tags.value=cur.join(", "); } };
@@ -849,7 +873,9 @@
     // dropdown of existing bubbles — pick one instead of retyping its name every time
     const bubbleSel=el("select");
     bubbleSel.append(el("option",{value:""},"➕ Pick an existing bubble…"));
-    try{ (await api("/api/bubbles")).bubbles.forEach(b=>bubbleSel.append(el("option",{value:b.name},b.name))); }catch(e){}
+    // option label = display name; value = the bubble's stable membership tag (slugifies to its
+    // slug) so picking a *renamed* bubble still tags the paper into that same bubble, not a phantom.
+    try{ (await api("/api/bubbles")).bubbles.forEach(b=>bubbleSel.append(el("option",{value:b.tag||b.name},b.name))); }catch(e){}
     bubbleSel.onchange=()=>{ const name=bubbleSel.value; bubbleSel.value=""; if(!name)return;
       const cur=tags.value.split(",").map(s=>s.trim()).filter(Boolean);
       if(!cur.some(t=>t.toLowerCase()===name.toLowerCase())){ cur.push(name); tags.value=cur.join(", "); } };
@@ -892,7 +918,7 @@
   // ================= IDEA BUBBLES =================
   async function viewBubbles(){
     const m=$("#main"); m.innerHTML="";
-    const head=el("div",{class:"row"}, el("h2",{class:"section-title",style:"margin:0"},"💡 Idea Bubbles"),
+    const head=el("div",{class:"row"}, el("h2",{class:"section-title",style:"margin:0"},"🫧 Idea Bubbles"),
       el("span",{class:"spacer"}),
       el("button",{class:"primary small",onclick:newBubble},"+ New bubble"));
     m.append(head, el("div",{style:"height:14px"}));
@@ -992,23 +1018,32 @@
     S.bubble=slug; S.chat=[]; S.page=null; S.pages=[]; S.sessionId=null; S.sessionTitle=null;
     S.previewEl=null; S.remoteChangePending=false; S.papersPane=null; S.chatPane=null; S.detailWrap=null;
     S.baseMtime=null; S.saving=false; S.syncState="synced";
-    S.shareActive=false; S.shareToken="";
+    S.shareActive=false; S.shareToken=""; S.editingTitles=false; S.nameInput=null;
     const m=$("#main"); m.innerHTML=""; m.classList.add("detailmode");
     const b=(await api("/api/bubbles/"+slug)).bubble;
     if(S.openToken!==token) return;   // a newer navigation started while we awaited — bail
     S.bubbleAssets=b.assets||[];
     S.shareActive=!!b.share_active; S.shareToken=b.share_token||"";
-    m.append(el("button",{class:"ghost small",onclick:()=>switchView("bubbles")},"← Idea Bubbles"));
-    // Editable bubble title
+    // Editable bubble title. For approved bubbles the rename lives in the "✏️ Edit titles"
+    // toggle by the sync badge (alongside page-title editing); unapproved bubbles have no
+    // page tabs, so they keep an inline rename pencil here.
     const nameSpan=el("span",{class:"truncate",style:"max-width:60vw"},b.name+(b.approved?"":" (suggested)"));
-    const renameBtn=el("button",{class:"ghost small",title:"Rename bubble",
-      style:"opacity:.5;padding:4px 7px;flex-shrink:0",
-      onclick:()=>startBubbleRename(nameSpan,b.slug)
-    },"✏️");
+    S.nameSpan=nameSpan;
     const titleRow=el("div",{class:"row",style:"margin:10px 0 12px;align-items:center;gap:8px;flex-wrap:wrap"},
-      el("h2",{class:"section-title",style:"margin:0"},"💡 "), nameSpan, renameBtn,
-      el("span",{class:"spacer"}));
-    if(b.approved) titleRow.append(buildShareControls(slug));
+      el("h2",{class:"section-title",style:"margin:0"},"🫧 "), nameSpan);
+    if(!b.approved){
+      titleRow.append(el("button",{class:"ghost small",title:"Rename bubble",
+        style:"opacity:.5;padding:4px 7px;flex-shrink:0",
+        onclick:()=>startBubbleRename(nameSpan,b.slug)},"✏️"));
+    }
+    titleRow.append(el("span",{class:"spacer"}));
+    if(b.approved){
+      // "👁 Preview" opens the server-rendered, read-only page — exactly what a share viewer
+      // sees — for whatever page is currently open. Sits next to the share controls.
+      titleRow.append(el("button",{class:"ghost small",title:"Preview the read-only page your share viewers see",
+        onclick:()=>window.open("/api/bubbles/"+slug+"/preview/"+(S.page||S.home||"overview"),"_blank")},"👁 Preview"));
+      titleRow.append(buildShareControls(slug));
+    }
     m.append(titleRow);
 
     S.chatCollapsed = localStorage.getItem("li_chat")==="1";
@@ -1047,15 +1082,19 @@
     const tabs=el("div",{class:"ptabs",id:"ptabs"});
     const editorWrap=el("div",{id:"editorWrap"});
     S.previewEl=el("div",{id:"previewWrap",class:"preview"});
-    if(localStorage.getItem("li_preview_off")==="1") S.previewEl.classList.add("hide");
-    const host=el("div",{id:"editorHost"});
+    // Open in the user's last-used view mode for this bubble (persisted across refreshes),
+    // defaulting to reading view. The toolbar dropdown switches to editor / side-by-side.
+    S.viewMode=loadViewMode(b.slug);
+    const host=el("div",{id:"editorHost",class:"mode-"+S.viewMode});
     host.append(editorWrap, S.previewEl);
     left.append(tabs,host);
 
-    // PDFs strip (pencil toggles an edit mode for adding/removing papers)
+    // PDFs strip (pencil toggles an edit mode for adding/removing papers). Only relevant when
+    // editing, so it's hidden in pure reading view and shown in edit / split.
     const pdfs=el("div",{class:"bd bubble-papers-inline",
       style:"flex:0 0 auto;border-top:1px solid var(--line);max-height:200px;overflow:auto"});
     S.papersPane=pdfs;
+    pdfs.classList.toggle("hide", S.viewMode==="view");
     renderBubblePdfs(pdfs,b,false);
     left.append(pdfs);
 
@@ -1140,22 +1179,24 @@
       renderBubblePdfs(container,b,true);
     };
 
-    const list=el("div",{});
+    const list=el("div",{class:"bubble-pdf-list"});
     b.assets.forEach(a=>{
-      const row=el("div",{class:"row",style:"align-items:center;gap:6px;margin-top:3px"});
-      row.append(el("a",{class:"truncate",style:"font-size:12px;flex:1",
-        href:"/api/assets/"+a.pdf_id+"/pdf",target:"_blank",title:a.title||a.pdf_id},a.title||a.pdf_id));
+      // Each paper is a pressable pill linking to the PDF. The remove ✕ only shows in edit
+      // mode so a stray click on the pill never accidentally un-tags the paper.
+      const chip=el("a",{class:"paperchip",href:"/api/assets/"+a.pdf_id+"/pdf",
+        target:"_blank",title:a.title||a.pdf_id},
+        el("span",{class:"lbl"},a.title||a.pdf_id));
       if(editMode){
-        row.append(el("button",{class:"ghost small",style:"padding:0 7px;line-height:1.4;opacity:.6",
-          title:"Remove from this bubble",
-          onclick:async()=>{
+        chip.append(el("span",{class:"x",title:"Remove from this bubble",
+          onclick:async(e)=>{
+            e.preventDefault(); e.stopPropagation();   // don't open the PDF when removing
             if(!confirm('Remove "'+(a.title||a.pdf_id)+'" from this bubble?\n\nThe paper stays in your Assets and any other bubbles — it is only un-tagged here.'))return;
             try{ const r=await api("/api/bubbles/"+b.slug+"/remove-pdf",{method:"POST",body:JSON.stringify({pdf_id:a.pdf_id})});
               toast("Removed"); applied(r.bubble); }
-            catch(e){ toast("Error: "+e.message); }
+            catch(e2){ toast("Error: "+e2.message); }
           }},"✕"));
       }
-      list.append(row);
+      list.append(chip);
     });
     if(!b.assets.length)list.append(el("div",{class:"muted"},"None yet — tag a PDF with this bubble."));
     container.append(list);
@@ -1293,30 +1334,90 @@
   // ---- page tabs ----
   function refreshTabs(){
     const tabs=$("#ptabs"); if(!tabs)return; tabs.innerHTML="";
+    S.titleInputs={};
     S.pages.forEach(p=>{
       const t=el("div",{class:"ptab"+(p.page_slug===S.page?" active":"")});
-      t.append(el("span",{onclick:()=>switchPage(p.page_slug)},p.title));
-      if(p.page_slug!==S.home)
-        t.append(el("span",{class:"x",title:"Delete page",onclick:(e)=>{e.stopPropagation();deletePage(p.page_slug);}},"✕"));
+      if(S.editingTitles){
+        // In edit-titles mode each tab title becomes an input; "✓ Save titles" persists them.
+        const inp=el("input",{value:p.title,class:"ptab-edit",
+          onkeydown:e=>{if(e.key==="Enter")toggleEditTitles();if(e.key==="Escape")cancelEditTitles();}});
+        S.titleInputs[p.page_slug]=inp;
+        t.append(inp);
+      } else {
+        t.append(el("span",{onclick:()=>switchPage(p.page_slug)},p.title));
+        if(p.page_slug!==S.home)
+          t.append(el("span",{class:"x",title:"Delete page",onclick:(e)=>{e.stopPropagation();deletePage(p.page_slug);}},"✕"));
+      }
       tabs.append(t);
     });
-    tabs.append(el("button",{class:"small ghost",onclick:newPage},"+ Page"));
+    if(!S.editingTitles) tabs.append(el("button",{class:"small ghost",onclick:newPage},"+ Page"));
     tabs.append(el("span",{class:"spacer",style:"flex:1"}));
     // sync badge lives here in the editor toolbar (state in S.syncState; autosaves on idle)
     const st=S.syncState||"synced";
     tabs.append(el("span",{class:"synced "+st,id:"syncedBadge",
       title:st==="conflict"?"Changed on disk — click to resolve":"Saved automatically; click to save now",
       style:"cursor:pointer",onclick:clickSave},SYNC_LABEL[st]));
-    // preview-pane toggle
-    const previewOff=localStorage.getItem("li_preview_off")==="1";
-    tabs.append(el("button",{class:"small ghost desktop-only-tool",title:previewOff?"Show preview pane":"Hide preview pane",
-      onclick:togglePreview},previewOff?"□":"◧"));
+    // edit-titles toggle: sits right of the sync badge; renames pages + the bubble inline
+    tabs.append(el("button",{class:"small ghost",id:"editTitlesBtn",
+      title:S.editingTitles?"Save title edits":"Edit page titles and the bubble title",
+      style:S.editingTitles?"color:var(--accent);border-color:var(--accent)":"",
+      onclick:toggleEditTitles},S.editingTitles?"✓ Save titles":"✏️ Edit titles"));
+    // view-mode selector: reading view / editor only / side-by-side
+    const vm=el("select",{class:"small ghost desktop-only-tool",title:"Page view mode",
+      style:"width:auto;padding:4px 8px"});
+    [["view","👁 Read"],["edit","✏️ Edit"],["split","◧ Split"]].forEach(([v,lbl])=>{
+      const o=el("option",{value:v},lbl); if(v===S.viewMode)o.selected=true; vm.append(o); });
+    vm.onchange=()=>setViewMode(vm.value);
+    tabs.append(vm);
     // chat-pane toggle
     tabs.append(el("button",{class:"small ghost desktop-only-tool",title:S.chatCollapsed?"Show chat":"Hide chat",
       onclick:toggleChat},S.chatCollapsed?"💬 >":"💬 <"));
-    tabs.append(el("button",{class:"small ghost",title:"Open full-page preview in a new tab",onclick:()=>{
-      if(S.bubble&&S.page) window.open("/api/bubbles/"+S.bubble+"/preview/"+S.page,"_blank");
-    }},"🔍"));
+  }
+  // ---- inline title editing: toggle page-title + bubble-name inputs from the sync-badge row ----
+  function enterNameEdit(){
+    if(!S.nameSpan)return;
+    S.bubbleNameCurrent=S.nameSpan.textContent.replace(/\s*\(suggested\)$/,"").trim();
+    S.nameInput=el("input",{value:S.bubbleNameCurrent,class:"ptab-edit",
+      style:"font-size:18px;font-weight:600;width:auto;min-width:200px",
+      onkeydown:e=>{if(e.key==="Enter")toggleEditTitles();if(e.key==="Escape")cancelEditTitles();}});
+    S.nameSpan.replaceWith(S.nameInput);
+  }
+  function restoreName(){
+    if(S.nameInput&&S.nameSpan){
+      S.nameSpan.textContent=S.bubbleNameCurrent;
+      S.nameInput.replaceWith(S.nameSpan); S.nameInput=null;
+    }
+  }
+  function cancelEditTitles(){ S.editingTitles=false; restoreName(); refreshTabs(); }
+  async function toggleEditTitles(){
+    if(!S.editingTitles){
+      S.editingTitles=true; enterNameEdit(); refreshTabs();
+      const first=S.nameInput||Object.values(S.titleInputs)[0];
+      if(first){ first.focus(); first.select(); }
+      return;
+    }
+    // Exit edit mode: persist any changed bubble name + page titles, then re-render.
+    S.editingTitles=false;
+    if(S.nameInput){
+      const val=S.nameInput.value.trim();
+      if(val&&val!==S.bubbleNameCurrent){
+        try{ await api("/api/bubbles/"+S.bubble,{method:"PATCH",body:JSON.stringify({name:val})});
+          S.bubbleNameCurrent=val; toast("Renamed bubble"); }
+        catch(e){ toast(e.message); }
+      }
+    }
+    restoreName();
+    for(const p of S.pages){
+      const inp=S.titleInputs[p.page_slug]; if(!inp)continue;
+      const val=inp.value.trim();
+      if(val&&val!==p.title){
+        try{ await api("/api/bubbles/"+S.bubble+"/pages/"+p.page_slug,
+            {method:"PATCH",body:JSON.stringify({title:val})});
+          p.title=val; }
+        catch(e){ toast(e.message); }
+      }
+    }
+    refreshTabs();
   }
   // ---- autosave (debounced) + optimistic-concurrency save ----
   const AUTOSAVE_MS=2500;
@@ -1474,6 +1575,7 @@
   }
   async function pollSync(){
     if(!S.bubble||!S.page)return;
+    if(S.editingTitles)return;   // don't re-render tabs (wiping title inputs) mid-edit
     const bubble=S.bubble, page=S.page;
     try{
       const r=await api("/api/bubbles/"+bubble+"/poll?page="+page);
@@ -1510,12 +1612,33 @@
     localStorage.setItem("li_chat",S.chatCollapsed?"1":"0");
     refreshTabs();
   }
-  function togglePreview(){
-    if(!S.editor)return;
-    const next=localStorage.getItem("li_preview_off")!=="1";
-    localStorage.setItem("li_preview_off",next?"1":"0");
-    if(S.previewEl){ S.previewEl.classList.toggle("hide",next); if(!next)updatePreview(); }
+  // Per-bubble view mode, remembered across page refreshes (localStorage). Falls back to the
+  // reading view for unknown/legacy values or when storage is unavailable.
+  function loadViewMode(slug){
+    try{ const m=localStorage.getItem("lockedin:viewMode:"+slug);
+      return (m==="edit"||m==="split")?m:"view"; }catch(e){ return "view"; }
+  }
+  function saveViewMode(slug,mode){
+    try{ localStorage.setItem("lockedin:viewMode:"+slug,mode); }catch(e){}
+  }
+  async function setViewMode(mode){
+    const host=$("#editorHost"); if(!host||!S.editor)return;
+    // entering pure reading view from an editing mode -> persist first
+    if(mode==="view" && S.viewMode!=="view") await savePage();
+    S.viewMode=mode;
+    saveViewMode(S.bubble,mode);
+    host.classList.remove("mode-view","mode-edit","mode-split");
+    host.classList.add("mode-"+mode);
+    // papers strip is only relevant while editing
+    if(S.papersPane) S.papersPane.classList.toggle("hide", mode==="view");
+    updatePreview();                       // keep the rendered side current (view + split)
+    if(mode!=="view"){
+      // the editor may have been laid out while hidden; nudge CodeMirror to recompute, then focus
+      window.dispatchEvent(new Event("resize"));
+      try{ S.editor.focus(); }catch(e){}
+    }
     refreshTabs();
+    scrollContentTop();
   }
   // ---- read-only research chat pane ----
   function buildChatPane(right,b){
@@ -1758,7 +1881,7 @@
     if(S.newsEmpty){ S.newsEmpty.remove(); S.newsEmpty=null; }
     const label=slug?(S.newsBubbleNames[slug]||slug):"Other / unmatched";
     const grid=el("div",{class:"grid"});
-    S.newsFeed.append(el("h3",{class:"section-title",style:"font-size:15px;margin:14px 0 8px"},"💡 "+label), grid);
+    S.newsFeed.append(el("h3",{class:"section-title",style:"font-size:15px;margin:14px 0 8px"},"🫧 "+label), grid);
     S.newsGroups[slug]=grid; return grid;
   }
   function newsFeedInsert(it){ _newsGroupGrid(it.bubble_slug||"").prepend(newsCard(it)); updateNewsTitle(); }

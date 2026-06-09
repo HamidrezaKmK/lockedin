@@ -138,6 +138,36 @@ class WikilinkNormalization(unittest.TestCase):
 
 
 # --------------------------------------------------------------------------- #
+# Bubble identity: the slug is identity, the display name is cosmetic. Re-tagging
+# a PDF into an existing bubble (register_user_tags -> create_bubble on upload) must
+# NOT clobber a rename or its share state, and membership must follow the slug.
+# --------------------------------------------------------------------------- #
+class BubbleIdentity(unittest.TestCase):
+    def test_retagging_preserves_rename_and_share(self):
+        with temp_home() as home:
+            with paths.use_root(home):
+                slug = bubbles.create_bubble("diffusion models")
+                bubbles.set_share_active(slug, True)
+                bubbles.rename_bubble(slug, "Diffusion & Flow Models")
+                # Uploading a file tagged with the bubble re-runs create_bubble for that slug.
+                bubbles.create_bubble(bubbles.tag_for_slug(slug))
+                entry = bubbles.load_registry()[slug]
+        self.assertEqual(entry["name"], "Diffusion & Flow Models")   # rename survives
+        self.assertTrue(entry.get("share_active"))                   # share survives
+        self.assertTrue(entry["approved"])
+
+    def test_tag_for_slug_round_trips_after_rename(self):
+        with temp_home() as home:
+            with paths.use_root(home):
+                slug = bubbles.create_bubble("diffusion models")
+                bubbles.rename_bubble(slug, "Totally Different Name")
+                tag = bubbles.tag_for_slug(slug)
+        # The membership tag must still slugify back to the original slug, never the new name.
+        from lockedin import assets
+        self.assertEqual(assets.slug_of(tag), slug)
+
+
+# --------------------------------------------------------------------------- #
 # Autosave optimistic-concurrency guard (bubbles.save_page base_mtime)
 # --------------------------------------------------------------------------- #
 class SaveConflictDetection(unittest.TestCase):

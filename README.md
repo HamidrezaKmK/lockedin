@@ -11,7 +11,8 @@ Public exposure still needs application-layer hardening; see [Security](#securit
 
 ## What It Does
 
-- Per-user workspaces with username/password auth.
+- Per-user workspaces with username/password auth. The first account is the admin; later
+  sign-ups stay pending until an admin approves them in-app.
 - Paper upload, extraction, one-time summaries, and cached report context.
 - Auto-tagging into idea bubbles.
 - Multi-page Markdown reports with internal links, figures, KaTeX, and live preview.
@@ -69,7 +70,9 @@ uv run lockedin serve
 ```
 
 Open `http://127.0.0.1:8000/`, sign up the first user, upload a paper, approve suggested tags,
-and start editing reports.
+and start editing reports. The first account you create becomes the admin and is approved
+automatically; any later sign-ups stay pending until you approve them from **Settings → User
+access**.
 
 For a server that should keep running, use systemd instead of manually starting `uv run lockedin
 serve`. The systemd setup below starts the same server on `127.0.0.1:8080`.
@@ -208,12 +211,11 @@ See [docs/DEV_MODE.md](docs/DEV_MODE.md).
 `lockedin` was designed for trusted local use. HTTPS tunnels protect transport, but public
 exposure also needs application-layer hardening:
 
-- Raise the minimum password length.
+- Raise the minimum password length (currently 4 characters).
 - Add rate limiting or lockout for `/api/login` and `/api/signup`.
-- Gate signup with an invite code, allowlist, or disable-signup switch.
+- Sign-up is already gated by admin approval (new accounts are pending until approved), but
+  consider also disabling self-signup entirely for a fully private deployment.
 - Audit public share links, upload/file-serving paths, and model-key handling.
-
-Track portability and hardening notes in [docs/TODO.md](docs/TODO.md).
 
 ## Data Layout
 

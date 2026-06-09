@@ -157,7 +157,7 @@ def _news_list(http: httpx.Client, say) -> None:
     blocks = []
     for slug in sorted(groups, key=lambda s: (s == "", (names.get(s, s) or "").lower())):
         label = (names.get(slug, slug) if slug else "Other / unmatched")
-        lines = [f"*💡 {label}*"]
+        lines = [f"*🫧 {label}*"]
         for it in groups[slug]:
             title = it.get("title") or it.get("url") or "(untitled)"
             url = it.get("url") or ""
@@ -467,6 +467,11 @@ def handle(event: dict, say) -> None:
         try:
             say(_ask_qwen(text, _context(http, bubble["slug"])))
         except Exception as e:
+            # A stale login (e.g. the server restarted, wiping its in-memory sessions) surfaces
+            # as a 401 here — prompt a re-login instead of a confusing "Qwen error".
+            if _is_unauthorized(e):
+                _ask_reauth(uid, say)
+                return
             say(f"Qwen error: {e}")
 
 
