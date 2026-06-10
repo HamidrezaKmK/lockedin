@@ -24,135 +24,339 @@ from typing import Iterator, Optional
 
 from . import assets, bubbles, models, paths
 
-APP_USAGE_GUIDE = """\
-# lockedin — User Guide
-
-## Overview
-lockedin is a local-first research assistant for grad students. Upload papers (PDFs), group them
-into **Idea Bubbles** (topic tags), and maintain multi-page Markdown reports per bubble, with a
-research chat sidebar and a switchable LLM backend.
-
+APP_USAGE_GUIDE_SECTIONS = [
+    {
+        "title": "Profile & Users",
+        "content": """\
 ## Signing in
-New accounts must be **approved by an admin** before they can log in — the very first account
-created on a fresh install becomes that admin automatically. Until you're approved, sign-up
-confirms "Account created. An admin must approve it before login," and login replies "Account is
-waiting for admin approval." On phones, tap the **☰** button (top-left) to open the sidebar.
 
-## Navigation
-The left sidebar has these views:
-- **Assets** — your uploaded PDFs
-- **Idea Bubbles** — topic groups with report wikis
-- **Attention** — papers that need manual tagging review
-- **News** — papers surfaced by the web crawler (premium; only shown if it's enabled for you)
-- **Settings** — model configuration, plus a user-access panel for admins
+New accounts must be **approved by an admin** before they can log in. The very first account
+created is automatically admin. Until approved, login shows *"Account is waiting for admin
+approval."*
 
-## Assets (PDFs)
-- **Upload**: drag/select a PDF, optionally give a title, comma-separated bubble tags, and a
-  source URL. If you leave tags blank, the AI will auto-suggest them in the background.
-- **Edit**: click any asset card to edit its title, tags, notes, and source URL; clear the
-  attention flag; or open the PDF inline.
-- **Auto-tagging**: uploaded papers without tags are queued for background summarization and
-  tag suggestion. They appear in the **Attention** queue until reviewed.
+On phones, tap **☰** (top-left) to open the sidebar.
 
-## Idea Bubbles
-- **Create**: click "+ New bubble" in the Bubbles view, or tag a PDF with a new name.
-- **Suggestions**: auto-tagging suggestions stay in the Attention queue. They do not become
-  visible bubbles until you apply them by editing the asset's tags.
-- **Rename**: click the ✏️ pencil next to the bubble title inside its detail view.
-- **Delete**: the 🗑 icon on the bubble card removes the bubble and all its pages.
+## Your account
 
-## Report Editor (multi-page wiki)
-Each approved bubble has a mini-wiki of Markdown pages. Opening a bubble shows the **rendered
-page** (reading view) by default; use the view dropdown in the toolbar to switch to the editor or
-a side-by-side layout. You write the reports yourself — the chat assistant is read-only and does
-not edit pages for you.
+Go to **⚙️ Settings → Account** to change your username or password. You must supply your
+current password to confirm. A username change carries all your data over and keeps you
+logged in. The **Log out** button is also in that section.
 
-### Page tabs
-- **+ Page** — create a new page (give it a title)
-- Click a tab to switch pages (current page auto-saves first)
-- **✕** on a tab deletes that page (the home/overview page cannot be deleted)
+## Admin: managing users
 
-### Writing Markdown
-Switch the view dropdown to **✏️ Edit** for the plain-Markdown editor, or **◧ Split** to see the
-editor and live preview side-by-side. **👁 Read** shows just the rendered page.
+Admins see a **User access** card in Settings. From there you can:
+- **Approve** pending sign-ups so they can log in
+- **Revoke** approval to lock an account
+- **Delete** a user permanently
 
-**Math** — use standard LaTeX delimiters:
-- Inline: `$E = mc^2$`
-- Display: `$$\\int_0^\\infty f(x)\\,dx$$`
+You cannot approve, revoke, or delete your own account.
+""",
+    },
+    {
+        "title": "Models & Chat",
+        "content": """\
+## Switching the active model
 
-**Numbered equations with cross-references**: put `\\label{name}` inside a `$$` block to
-auto-number it, then reference it anywhere with `\\eqref{name}`, which renders as the matching
-number. Forward references work.
+Open **⚙️ Settings**. The model cards show Qwen (local), OpenAI, Claude, and Gemini.
+Double-click a card (or click **Use this model**) to activate it. Click **Configure** to
+set the API key or Ollama endpoint for that provider.
 
-**Wikilinks** — link between pages in the same bubble by title: `[[Overview]]`, `[[Key Papers]]`.
-The system resolves titles to real page slugs on save.
+| Provider | Notes |
+|----------|-------|
+| **Qwen (local)** | Runs via Ollama — private, free, no API key needed |
+| **OpenAI** | GPT-4o and others; API key from platform.openai.com |
+| **Claude** | Anthropic models; API key from console.anthropic.com |
+| **Gemini** | Google models; API key from aistudio.google.com/apikey |
 
-### Toolbar buttons (top of the editor pane)
-| Button | Action |
-|--------|--------|
-| `+ Page` | Create a new page |
-| `⟳ synced` / `⟳ unsynced` | **Click to save.** Shows sync state. If an external edit was detected, confirms whether to load the remote version or overwrite with your edits. |
-| view dropdown (`👁 Read` / `✏️ Edit` / `◧ Split`) | Switch the page between rendered reading view, the Markdown editor, and side-by-side |
-| `💬 <` / `💬 >` | Collapse or expand the chat sidebar |
-| `👁 Preview` (next to Share) | Open the read-only page exactly as share viewers see it, in a new tab |
+The coloured dot next to the active model updates when a health-check runs.
 
-### Auto-sync
-If you edit a page's `.md` file directly on disk (e.g. from another tool or a DEV_MODE session),
-the browser detects the change within ~5 seconds and silently reloads the content — as long as
-you have no unsaved local edits. If you do have unsaved edits, a toast notifies you and the ⟳
-badge will prompt you to choose when you click to save.
+## Math macros
 
-## Chat Sidebar
-The right pane is a **read-only** research assistant. It knows the full text of this bubble's
-report pages, a summary of every tagged paper, and — when you attach them — the full text of
-specific papers. Use it to ask questions, explain math, summarize, compare papers, and
-brainstorm. It does **not** edit your report; if you want wording for a page, ask it to draft the
-text and paste it into the editor yourself.
+In **⚙️ Settings → Math Macros** you can define shorthand LaTeX commands. For example,
+define `\\mu` → `\\mathbf{\\mu}` to use your own shorthand everywhere on the page.
+Macros apply automatically to all math in your reports.
 
-### Deep-read
-Use the "📎 Add paper to deep-read…" dropdown at the bottom of the chat to attach specific PDFs.
-The assistant then reads the full paper text (or the PDF itself, with Claude) for the
-conversation, enabling detailed paper-specific questions.
+## Research chat
 
-### Sessions
-Chat history is saved automatically. Use the session dropdown at the top of the chat pane to
-switch between saved conversations or start a new one. The 📋 icon opens a session management
-panel to delete old sessions.
+The chat sidebar (right pane, inside any bubble) is a **read-only** assistant: it
+discusses your reports and papers but cannot edit pages. It knows:
+- The full text of every page in the current bubble
+- A summary of every tagged paper
+- The full text of any PDF you attach via deep-read
 
-## Sharing a bubble
-Open a bubble and click **🔗 Share** in its header to publish an unlisted, read-only link.
-While sharing is on the button shows **🟢 Sharing** and a **📋 Copy link** button appears —
-clicking it copies a link to the page you currently have open. Send that link to anyone (no
-login needed) and they see a rendered, read-only preview of the bubble, able to browse all its
-pages. On the shared page, hovering a heading reveals a 🔗 that copies a link straight to that
-section, so you can point someone at a specific part. Click **🟢 Sharing** again to turn it off;
-the link stops working immediately. Turning it back on restores the same link.
+**Deep-read** — use the 📎 dropdown at the bottom of the chat to attach specific PDFs.
+With Claude the actual PDF is sent; with other models the extracted text is used.
 
-## News (premium)
-If the News crawler is enabled for your account, a **News** view appears in the sidebar. Click
-**Crawl now** to have it search the web for recent papers relevant to your approved bubbles,
-matched against each bubble's scope (not just its title). Found papers stream into the feed with
-the reason they're relevant; you can steer the crawl with follow-up messages, then **accept** the
-batch (which advances the date pointer so the next crawl picks up where this one left off) or
-discard it. The same commands are available in the Slack bot via `news` and `crawl`.
+**Sessions** — chat history is saved automatically. The session dropdown at the top of the
+chat pane lets you switch between or delete saved conversations.
 
-## Account
-Click your **@username** in the top bar to change your username and/or password. You must enter
-your current password to confirm. Changing your username carries all your data over and keeps
-you logged in.
+## News crawler (premium)
 
-**Admins** also get a **User access** panel in **Settings**: approve or revoke pending accounts
-and delete users.
+If enabled for your account, a **📰 News** view appears in the sidebar. Click **Crawl now**
+to search the web for recent papers relevant to your approved bubbles. Found papers stream
+into the feed; steer with follow-up messages, then **accept** (advances the date pointer)
+or **discard** the batch.
+""",
+    },
+    {
+        "title": "Bubbles",
+        "content": """\
+## What is a bubble?
 
-## Model Settings
-Click any model tab in the topbar (🖥 Qwen, OpenAI, Claude, Gemini) to switch the active model.
-Click the ⚙ gear icon on a tab to configure its API key or endpoint. Models:
-- **Qwen (local)** — runs via Ollama on your machine; private and free.
-- **OpenAI** — GPT-4o and others; requires an API key.
-- **Claude** — Anthropic models; requires an API key.
-- **Gemini** — Google models via AI Studio; requires an API key.
-Only the active model's health indicator (coloured dot) is checked on load.
-"""
+An **Idea Bubble** is a topic group. Each bubble has a name, a multi-page Markdown wiki,
+and a research chat sidebar. Bubbles start in an unapproved state when auto-suggested; you
+must approve them before the wiki opens.
+
+## Creating & approving
+
+Click **+ New bubble** in the Bubbles view, or tag any PDF with a new topic name.
+Auto-suggested bubbles land in the **🔔 Attention** queue — approve them there.
+
+## Renaming & deleting
+
+Rename a bubble from its detail view: an **approved** bubble is renamed via **🏷️ Edit titles**
+in the view dropdown (the same mode that renames its pages); an **unapproved** one has a ✏️
+pencil next to its name. The 🗑 icon on a bubble card deletes the bubble **and all its wiki pages**.
+
+## Page tabs
+
+Each bubble has a mini-wiki. The tabs at the top of the editor list all pages.
+
+- **+ Page** — create a new page
+- Click a tab to switch pages (the current page auto-saves first)
+- **✕** on a tab deletes that page (the overview page cannot be deleted)
+- Pick **🏷️ Edit titles** in the view dropdown to rename pages (and the bubble itself)
+
+Renaming a page updates its display everywhere — existing links that used the old title
+are rewritten automatically.
+
+## Sharing
+
+Click **🔗 Share** in the bubble header to publish an unlisted, read-only link. While
+sharing is active the button shows **🟢 Sharing** and a **📋 Copy link** button appears.
+Anyone with the link can browse all pages (no login needed). Toggle off to revoke
+immediately; toggle back on to restore the same URL.
+
+Hovering a heading on the shared page reveals a 🔗 anchor for deep-linking to a section.
+""",
+    },
+    {
+        "title": "TODOs",
+        "content": """\
+## Overview
+
+TODOs are your personal task list (like GitHub issues). Each item has a numeric **id**,
+a **title**, an optional Markdown **note**, and a **done** flag.
+
+## Managing TODOs
+
+Open the **✅ TODOs** view in the sidebar.
+
+- **+ New TODO** — creates a new item; give it a title and optional note
+- Click a TODO to expand and edit its note
+- The **Open / Done** toggle at the top filters the list
+- Check the checkbox to mark done (it moves to the Done list)
+- The 🗑 button deletes a TODO — only allowed when no report page references it
+
+## Referencing TODOs in reports
+
+Write `@5` in any report page to create a live link to TODO #5. It renders as a clickable
+link showing the TODO title, with strikethrough if done.
+
+`@50` never accidentally matches `@5` — the number must match exactly.
+""",
+    },
+    {
+        "title": "Assets",
+        "content": """\
+## Uploading PDFs
+
+Drag a PDF onto the **📚 Assets** view (or click to browse). You can optionally set:
+- **Title** — defaults to the filename
+- **Tags** — comma-separated topic names; each tag links the paper to a bubble
+- **Source URL** — the paper's arXiv/DOI link
+
+Leave tags blank to let the AI auto-suggest them in the background.
+
+## Editing an asset
+
+Click any asset card to open its detail panel:
+- Edit title, tags, notes, source URL
+- Clear the **attention flag** once you've reviewed auto-suggested tags
+- Open the **PDF inline**
+
+## Auto-tagging & the Attention queue
+
+After upload, papers without tags are summarised and given suggested tags. They appear in
+**🔔 Attention** until you review the suggestions. Auto-suggested bubbles also appear there
+until approved.
+
+## Tagging a paper into a bubble
+
+When editing tags, use the tag name shown inside each bubble's detail view (visible as
+a small label). Using a display name that differs from what's shown can create a duplicate
+bubble — always copy the tag exactly from the bubble's detail view.
+""",
+    },
+    {
+        "title": "Editing Guide",
+        "content": """\
+## The editor
+
+Open any bubble and use the view dropdown in the toolbar:
+- **◧ Split** — editor left, live preview right
+- **✏️ Edit** — plain Markdown editor
+- **👁 Read** — rendered reading view (default)
+- **🏷️ Edit titles** — rename the bubble and its pages inline; pick another view (or press
+  Enter in a title) to save
+
+**Save**: click the **⟳ synced** badge, or press **Ctrl/⌘+S**.
+
+The editor toolbar shows: **↶ undo**, **↷ redo**, insert table, insert image, insert link.
+
+### On mobile
+
+The bubble page is streamlined to the essentials: the page tabs, the **⟳ synced** badge, and
+the view dropdown. Switch between **👁 Read** and **✏️ Edit** right from that dropdown. A small
+**↗** link in the top-right corner opens the read-only preview of the current page. Papers and
+the research chat live behind the floating **📚** and **💬** buttons. (Sharing is done from a
+larger screen.)
+
+---
+
+## Markdown
+
+Standard CommonMark: headings `#`, bold `**`, italic `*`, lists, blockquotes `>`,
+fenced code blocks, tables, images. Nothing unusual here.
+
+---
+
+## Math
+
+Inline math goes between single dollar signs:
+
+| What you type | What you get |
+|---------------|--------------|
+| `$E = mc^2$` | $E = mc^2$ |
+| `$\\nabla \\cdot F = 0$` | $\\nabla \\cdot F = 0$ |
+
+For a centred display equation, use double dollar signs. Typing
+
+```
+$$\\int_0^\\infty e^{-x}\\,dx = 1$$
+```
+
+renders as:
+
+$$\\int_0^\\infty e^{-x}\\,dx = 1$$
+
+For multi-line aligned equations use an `align` environment:
+
+```
+\\begin{align}
+f(x) &= x^2 + 2x + 1 \\\\
+     &= (x+1)^2
+\\end{align}
+```
+
+**Supported environments:** `align`, `equation`, `gather`, `multline`, `alignat`
+(and their starred variants). **Do not use** `\\( \\)` or `\\[ \\]`.
+
+### Numbered equations
+
+Add `\\label{eq:name}` on any line inside a display block to give it a number.
+Lines without a label show no number. Numbers are sequential **across the whole
+bubble** — every page's equations share one counter, in page order.
+
+| What you type | What you get |
+|---------------|--------------|
+| `\\eqref{eq:name}` | a clickable **(n)** |
+| `\\ref{eq:name}` | the bare number **n** |
+
+References are **global**: you can `\\eqref` a label before it appears, and even
+one defined on another page of the bubble. They also work **inside** a math block.
+
+---
+
+## Theorem environments
+
+Write `\\begin{theorem}[optional title] ... \\end{theorem}` to get a styled box.
+Here is what it looks like:
+
+\\begin{theorem}[Example Theorem]
+For any $n \\geq 1$, we have $\\sum_{k=1}^n k = \\frac{n(n+1)}{2}$.
+\\end{theorem}
+
+\\begin{proof}
+By induction: the base case $n=1$ gives $1 = 1$. The inductive step follows from
+$\\sum_{k=1}^{n+1} k = \\frac{n(n+1)}{2} + (n+1) = \\frac{(n+1)(n+2)}{2}$.
+\\end{proof}
+
+**All supported environments:**
+
+| Environment | Numbered? |
+|-------------|-----------|
+| `theorem` | ✓ (own counter) |
+| `lemma` | ✓ (own counter) |
+| `corollary` | ✓ (own counter) |
+| `definition` | ✓ (own counter) |
+| `proposition` | ✓ (own counter) |
+| `remark` | ✓ (own counter) |
+| `proof` | ✗ — ends with ∎ |
+
+The optional `[title]` appears after the number. For example,
+`\\begin{theorem}[Spectral Theorem]` renders as **Theorem 1 (Spectral Theorem)**.
+
+### Cross-referencing environments
+
+Put `\\label{thm:key}` inside any environment (it is hidden in the display).
+Then write `\\thmref{thm:key}` anywhere — on this or any other page of the
+bubble, and even inside a math block — to get an inline reference. Theorem
+counters are bubble-wide too. For example, `\\thmref{thm:key}` → **Theorem 2**.
+
+---
+
+## Wikilinks
+
+Link to another page in the same bubble by writing its title in double brackets:
+
+| What you type | What you get |
+|---------------|--------------|
+| `[[Overview]]` | a link to the page titled "Overview" |
+| `[[My Page\\|see here]]` | a link with custom label "see here" |
+
+Links always display the page's current title. Renaming a page automatically updates
+any links that used the old title.
+
+---
+
+## Math macros
+
+Define your own shorthand commands in **⚙️ Settings → Math Macros**. For example,
+you might define `\\bmu` → `\\boldsymbol{\\mu}` so you can write `$\\bmu$` everywhere.
+Macros are applied automatically to all math on every page.
+
+---
+
+## TODOs in reports
+
+Type an `@` followed by a TODO's number anywhere in a page to link to it — for example
+`@5` links to TODO number 5. It renders as a clickable link showing the TODO's title
+(struck through if the TODO is done). The number must match exactly, so `@50` never
+accidentally links to TODO 5.
+""",
+    },
+]
+
+# Backwards-compat alias used by the /api/help endpoint
+APP_USAGE_GUIDE = "\n\n".join(s["content"] for s in APP_USAGE_GUIDE_SECTIONS)
+
+
+def guide_section(title: str) -> str:
+    """Return the markdown body of the usage-guide section with the given title (matched by
+    title, not index), or "" if there is none. Single source of truth for the `lockedin
+    editguide` CLI command and the scientist launchers."""
+    return next((s["content"] for s in APP_USAGE_GUIDE_SECTIONS if s["title"] == title), "")
 
 # A SHORT, model-safe summary for the chat system prompt — facts only, no fenced code blocks.
 APP_USAGE_BRIEF = (
@@ -160,7 +364,8 @@ APP_USAGE_BRIEF = (
     "- Reports are multi-page Markdown wikis, one per idea bubble; the editor is on the left, a "
     "live preview on the right. The user writes the reports themselves.\n"
     "- Math: $...$ inline, $$...$$ display. Number a display equation by putting \\label{name} "
-    "inside its $$ block, then reference it anywhere with \\eqref{name} (renders as its number).\n"
+    "inside its $$ block, then reference it with \\eqref{name} (renders as its number). Equation "
+    "and theorem (\\thmref) numbers/refs are bubble-wide — they work across pages and inside math.\n"
     "- Link to another page in the same bubble by its title in double brackets, e.g. [[Overview]].\n"
     "- The synced/unsynced badge saves the current page; the preview toggle shows/hides the "
     "preview; the chat pane can be collapsed; the magnifier opens a full-page preview.\n"
@@ -168,7 +373,7 @@ APP_USAGE_BRIEF = (
     "full text to the conversation.\n"
     "- Click 🔗 Share in a bubble's header to publish an unlisted read-only link (a 📋 Copy-link "
     "button then appears); headings on the shared page have 🔗 anchors for section links.\n"
-    "- Click your @username in the top bar to change your username or password.\n"
+    "- Go to ⚙️ Settings → Account to change your username or password, or to log out.\n"
     "For the complete step-by-step guide, tell the user to click the ? button in the top bar."
 )
 

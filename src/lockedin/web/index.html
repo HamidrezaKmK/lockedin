@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>lockedin — research assistant</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔒</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
 <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
@@ -15,35 +18,50 @@
 <script src="https://uicdn.toast.com/editor/latest/toastui-editor-all.min.js"></script>
 <style>
   :root{
-    --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --line:#2a2f3a;
-    --ink:#e6e9ef; --muted:#9aa3b2; --accent:#7c9cff; --accent2:#5ce6c4;
-    --warn:#ffcc66; --bad:#ff7a7a; --good:#5ce6a0; --radius:12px;
+    --bg:#0d1018; --panel:#161b25; --panel2:#1c2230; --line:#252d3d;
+    --ink:#e8ecf4; --muted:#8a94a8; --accent:#9b80ff; --accent2:#4dd9b8;
+    --warn:#f5c842; --bad:#ff6b6b; --good:#4ade80; --radius:12px;
     --vvh:100vh;
+    --font-ui:'Syne',system-ui,sans-serif;
+    --font-reading:'Source Serif 4',Georgia,serif;
+    --font-mono:'JetBrains Mono',ui-monospace,monospace;
+    --shadow-sm:0 1px 6px rgba(0,0,0,.4);
+    --shadow:0 6px 24px rgba(0,0,0,.55);
+    --glow:0 0 0 1px var(--accent);
   }
   /* Light mode */
   body.light{
-    --bg:#f4f6fb; --panel:#ffffff; --panel2:#eef1f7; --line:#d0d7e3;
-    --ink:#1a1d24; --muted:#6b7280; --accent:#3b5bdb; --accent2:#0d9488;
+    --bg:#f2f4f8; --panel:#ffffff; --panel2:#edf0f7; --line:#d4daea;
+    --ink:#1a1d28; --muted:#5f6880; --accent:#6d4aff; --accent2:#0aa882;
     --warn:#b45309; --bad:#dc2626; --good:#16a34a;
+    --shadow-sm:0 1px 6px rgba(0,0,0,.1);
+    --shadow:0 6px 24px rgba(0,0,0,.15);
   }
   body.light .msg.assistant{background:#f0f4ff}
   body.light .toastui-editor-defaultUI{filter:invert(1) hue-rotate(180deg)}
   body.light .toastui-editor-defaultUI img{filter:invert(1) hue-rotate(180deg)}
   *{box-sizing:border-box}
   html,body{height:100%}
-  body{margin:0;font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  body{margin:0;font:14px/1.55 var(--font-ui);
        background:var(--bg);color:var(--ink);overflow:hidden;overflow:clip}
   /* Auth screen can scroll internally on very short viewports (body itself never scrolls) */
   #auth{overflow-y:auto}
   button{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--panel2);
-         color:var(--ink);border-radius:8px;padding:7px 12px}
-  button:hover{border-color:var(--accent)}
-  button.primary{background:var(--accent);color:#0b0e14;border-color:var(--accent);font-weight:600}
+         color:var(--ink);border-radius:8px;padding:7px 12px;min-height:36px;
+         transition:border-color .15s,box-shadow .15s,background .15s}
+  button:hover{border-color:var(--accent);background:var(--panel)}
+  button:focus-visible{outline:none;box-shadow:var(--glow)}
+  button.primary{background:var(--accent);color:#fff;border-color:var(--accent);font-weight:700;
+    letter-spacing:.01em}
+  button.primary:hover{background:color-mix(in srgb, var(--accent) 85%, white);border-color:var(--accent)}
   button.ghost{background:transparent}
   button.danger{background:transparent;border-color:var(--bad);color:var(--bad)}
-  button.danger:hover{background:rgba(255,122,122,.08);border-color:var(--bad)}
+  button.danger:hover{background:rgba(255,107,107,.08);border-color:var(--bad)}
   input,textarea,select{font:inherit;background:var(--panel);color:var(--ink);
-         border:1px solid var(--line);border-radius:8px;padding:8px 10px;width:100%}
+         border:1px solid var(--line);border-radius:8px;padding:8px 10px;width:100%;
+         transition:border-color .15s,box-shadow .15s}
+  input:focus,textarea:focus,select:focus{outline:none;border-color:var(--accent);
+    box-shadow:0 0 0 3px rgba(155,128,255,.15)}
   textarea{resize:vertical}
   a{color:var(--accent);text-decoration:none}
   .row{display:flex;gap:10px;align-items:center}
@@ -55,12 +73,17 @@
   .dot{width:9px;height:9px;border-radius:50%;display:inline-block;background:var(--muted)}
   .dot.ok{background:var(--good)} .dot.bad{background:var(--bad)}
   .hide{display:none!important}
+  /* Shown only on phones (the mobile media query flips it on); the `.hide` class still wins
+     (it's !important) so it can additionally be gated to specific views from JS. */
+  .mobile-only{display:none}
 
   /* auth */
-  #auth{min-height:100vh;display:flex;align-items:center;justify-content:center}
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:22px}
-  #auth .card{width:360px}
-  .brand{font-size:22px;font-weight:700}
+  #auth{min-height:100vh;display:flex;align-items:center;justify-content:center;
+    background:radial-gradient(ellipse 80% 50% at 50% -10%, rgba(155,128,255,.12) 0%, transparent 70%)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:22px;
+    box-shadow:var(--shadow-sm)}
+  #auth .card{width:min(360px,calc(100vw - 32px));box-shadow:var(--shadow)}
+  .brand{font-size:22px;font-weight:700;font-family:var(--font-ui);letter-spacing:-.02em}
   .brand .lock{color:var(--accent2)}
   .err{color:var(--bad);min-height:18px;font-size:13px}
 
@@ -69,10 +92,16 @@
        grid-template-columns:220px minmax(0,1fr);
        grid-template-areas:"top top" "side main"}
   #topbar{grid-area:top;display:flex;align-items:center;gap:14px;padding:10px 16px;
-          border-bottom:1px solid var(--line);background:var(--panel);min-width:0}
+          border-bottom:1px solid var(--line);background:var(--panel);min-width:0;
+          background:linear-gradient(180deg, color-mix(in srgb, var(--panel) 100%, var(--accent) 0%) 0%, var(--panel) 100%)}
   #topbar #modelTabs{display:none;min-width:0;overflow:hidden}
   #side{grid-area:side;border-right:1px solid var(--line);background:var(--panel);padding:14px 10px;
-        overflow:hidden;transition:width .2s ease,padding .15s ease}
+        overflow:hidden;transition:width .2s ease,padding .15s ease;display:flex;flex-direction:column}
+  /* minimal authorship credit, pinned to the bottom of the side pane */
+  .side-credit{margin-top:auto;padding:12px 8px 4px;font-family:var(--font-ui);font-size:11px;
+        color:var(--muted);line-height:1.4}
+  .side-credit a{color:var(--muted);text-decoration:none}
+  .side-credit a:hover{color:var(--accent)}
   /* min-height/min-width:0 let the grid track govern size (no hardcoded topbar height,
      no flex/grid blowout from wide content → no surprise global scrollbars) */
   #main{grid-area:main;padding:18px 22px;overflow:auto;min-width:0;min-height:0;box-sizing:border-box}
@@ -81,8 +110,11 @@
      leave them stuck (the editor's own internal scroller absorbs it instead). */
   #main.detailmode{overflow:hidden;overflow:clip;display:flex;flex-direction:column;padding-bottom:0;min-height:0}
   .navbtn{display:block;width:100%;text-align:left;border:none;background:transparent;
-          padding:10px 12px;border-radius:8px;color:var(--muted);margin-bottom:4px}
-  .navbtn.active{background:var(--panel2);color:var(--ink)}
+          padding:10px 12px;border-radius:8px;color:var(--muted);margin-bottom:2px;
+          font-size:13px;font-weight:600;letter-spacing:.01em;transition:color .15s,background .15s}
+  .navbtn:hover{color:var(--ink);background:var(--panel2)}
+  .navbtn.active{background:color-mix(in srgb, var(--accent) 12%, var(--panel2));
+    color:var(--accent);border:1px solid color-mix(in srgb, var(--accent) 25%, transparent)}
 
   /* model switcher */
   .mtab{display:flex;align-items:center;gap:7px;padding:6px 10px;border-radius:8px;
@@ -91,18 +123,22 @@
   .mtab .gear{opacity:.6}
   #modelCfg{position:absolute;top:52px;right:16px;width:340px;max-width:calc(100vw - 32px);
             max-height:calc(100vh - 70px);overflow:auto;z-index:30}
-  .model-card{cursor:default}
-  .model-card.active{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+  .model-card{cursor:default;transition:border-color .18s,box-shadow .18s}
+  .model-card.active{border-color:var(--accent);
+    box-shadow:0 0 0 1px var(--accent) inset,0 4px 20px rgba(155,128,255,.15)}
   .model-card .model-title{display:flex;gap:8px;align-items:center;min-width:0}
   .model-card .model-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px}
 
   /* grids */
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px}
   .acard{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
-         padding:14px;cursor:pointer;transition:border-color .15s}
-  .acard:hover{border-color:var(--accent)}
-  /* min-width:0 lets the title shrink + ellipsize inside its flex .row instead of forcing the
-     card (and the whole page) wider than the viewport on narrow screens. */
+         padding:14px;cursor:pointer;transition:border-color .18s,box-shadow .18s,transform .18s;
+         box-shadow:var(--shadow-sm);min-width:0}
+  .acard:hover{border-color:var(--accent);box-shadow:var(--shadow);transform:translateY(-2px)}
+  /* min-width:0 down the chain (card → its flex .row → the h4) lets the nowrap title ellipsize
+     instead of forcing the card — and the whole page — wider than the viewport. Without it, a
+     `1fr` grid track resolves its `auto` minimum to the title's full min-content width. */
+  .acard>.row{min-width:0}
   .acard h4{margin:0 0 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
   .truncate{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .badge{font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid var(--warn);
@@ -113,17 +149,24 @@
           min-height:0;min-width:0}
   .pane{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
         display:flex;flex-direction:column;min-height:0;min-width:0;overflow:hidden;overflow:clip}
-  .pane .hd{padding:10px 12px;border-bottom:1px solid var(--line);display:flex;gap:8px;
-            align-items:center;flex-wrap:wrap;flex:0 0 auto;min-width:0}
+  .pane .hd{padding:10px 14px;border-bottom:1px solid var(--line);display:flex;gap:8px;
+            align-items:center;flex-wrap:wrap;flex:0 0 auto;min-width:0;font-size:13px;font-weight:600}
   .pane .bd{padding:12px;overflow:auto;flex:1;min-height:0;min-width:0}
-  #editor{width:100%;height:100%;min-height:340px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  #editor{width:100%;height:100%;min-height:340px;font-family:var(--font-mono);
           font-size:13px;border:none;background:transparent;resize:none}
-  .preview{line-height:1.6;overflow-wrap:anywhere;word-break:break-word}
-  .preview h1{font-size:24px} .preview h2{font-size:19px;border-bottom:1px solid var(--line);padding-bottom:4px}
-  .preview code{background:var(--panel2);padding:1px 5px;border-radius:5px;overflow-wrap:anywhere}
-  .preview pre{background:var(--panel2);padding:10px;border-radius:8px;overflow:auto}
-  .preview pre code{overflow-wrap:normal;word-break:normal}
-  .preview img{max-width:100%;height:auto;border-radius:8px}
+  .preview{line-height:1.75;overflow-wrap:anywhere;word-break:break-word;
+    font-family:var(--font-reading);font-size:16px}
+  .preview h1{font-size:26px;font-family:var(--font-reading);font-weight:600;letter-spacing:-.01em}
+  .preview h2{font-size:20px;border-bottom:1px solid var(--line);padding-bottom:4px;
+    font-family:var(--font-reading);font-weight:600}
+  .preview h3,.preview h4{font-family:var(--font-reading)}
+  .preview p{margin:.6em 0}
+  .preview code{background:var(--panel2);padding:1px 5px;border-radius:5px;overflow-wrap:anywhere;
+    font-family:var(--font-mono);font-size:.85em}
+  .preview pre{background:var(--panel2);padding:12px;border-radius:8px;overflow:auto;
+    box-shadow:var(--shadow-sm)}
+  .preview pre code{overflow-wrap:normal;word-break:normal;font-family:var(--font-mono);font-size:13px}
+  .preview img{max-width:100%;height:auto;border-radius:8px;box-shadow:var(--shadow-sm)}
   /* tables + blockquotes — shared by the preview pane and chat messages */
   .preview table,.msg table{display:block;width:max-content;max-width:100%;overflow-x:auto;
         border-collapse:collapse;margin:8px 0;font-size:13px}
@@ -132,9 +175,41 @@
   .preview blockquote,.msg blockquote{margin:8px 0;padding:4px 12px;border-left:3px solid var(--accent);
         color:var(--muted);background:var(--panel2);border-radius:0 6px 6px 0}
   .preview blockquote p,.msg blockquote p{margin:4px 0}
-  /* Wide display-math scrolls inside its block instead of stretching the pane */
+  /* Wide display-math scrolls inside its block instead of stretching the pane. */
   .katex-display{overflow-x:auto;overflow-y:hidden;max-width:100%}
-  .eq-ref{color:var(--accent);font-weight:500}
+  /* A numbered equation's \tag{} is KaTeX-positioned absolute at right:0, so a wide equation
+     (common on mobile) runs straight under it. Take it out of absolute flow: the number then
+     trails the centred body and can never overlap — a too-wide equation simply scrolls, number
+     and all. (Centred-equation + flush-right-number can't both hold once the body fills the width.) */
+  .katex-display>.katex>.katex-html>.tag{position:static;margin-left:1.2em}
+  /* An equation's own number shares the accent + tabular figures with its cross-references,
+     so a \tag and the \eqref pointing at it read as one typographic system. */
+  .katex .tag,.katex-display .tag{color:var(--accent);font-feature-settings:"tnum" 1;font-variant-numeric:tabular-nums}
+  /* Cross-references: typeset inline links — tabular figures, a hairline underline that lifts
+     into a soft pill on hover. They sit inside serif prose so they stay light, not chip-heavy. */
+  .eq-ref,.thm-ref{font-family:var(--font-ui);font-weight:600;color:var(--accent);
+    font-feature-settings:"tnum" 1;font-variant-numeric:tabular-nums;white-space:nowrap;
+    padding:0 .14em;border-radius:4px;
+    box-shadow:inset 0 -1px 0 color-mix(in srgb,var(--accent) 40%,transparent);
+    transition:background .14s ease,box-shadow .14s ease;cursor:default}
+  .eq-ref:hover,.thm-ref:hover{background:color-mix(in srgb,var(--accent) 15%,transparent);
+    box-shadow:inset 0 -1px 0 transparent}
+  /* Theorem / lemma / proof boxes: refined journal callouts, one jewel tone per class (--env). */
+  .math-env{--env:var(--accent);position:relative;margin:1.6em 0;padding:.85em 1.15em .85em 1.4em;
+    border-radius:4px 12px 12px 4px;
+    background:linear-gradient(90deg,color-mix(in srgb,var(--env) 9%,transparent),transparent 42%),var(--panel2);
+    border:1px solid color-mix(in srgb,var(--env) 24%,var(--line));
+    box-shadow:0 10px 30px -22px rgba(0,0,0,.8)}
+  .math-env::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;border-radius:4px 0 0 4px;
+    background:linear-gradient(var(--env),color-mix(in srgb,var(--env) 35%,transparent))}
+  .math-env-title{font-family:var(--font-ui);font-weight:700;font-size:.74em;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--env);margin-bottom:.45em;
+    font-feature-settings:"tnum" 1;font-variant-numeric:tabular-nums}
+  .math-env.definition,.math-env.proposition{--env:var(--accent2)}
+  .math-env.remark{--env:var(--muted)}
+  .math-env.proof{--env:color-mix(in srgb,var(--muted) 55%,var(--line))}
+  .math-env.proof .math-env-title{letter-spacing:.12em;opacity:.85}
+  .math-env .math-env-qed{text-align:right;margin-top:.5em;color:var(--env);opacity:.6;font-size:1.15em;line-height:1}
 
   /* chat */
   #chatlog{display:flex;flex-direction:column;gap:10px;min-width:0}
@@ -151,11 +226,18 @@
   .toolbar{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
   .small{font-size:12px;padding:5px 9px}
   .deepitem{display:flex;align-items:center;gap:8px;padding:5px 0;border-top:1px solid var(--line)}
-  h2.section-title{margin:0 0 14px}
+  h2.section-title{margin:0 0 18px;font-family:var(--font-ui);font-weight:700;
+    letter-spacing:-.02em;font-size:20px}
   .spacer{flex:1}
   .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--panel2);
          border:1px solid var(--line);padding:10px 16px;border-radius:10px;z-index:50}
 
+  /* help modal tabs */
+  .help-tab{padding:8px 14px;font-family:var(--font-ui);font-size:12px;font-weight:600;
+    cursor:pointer;border:none;background:none;color:var(--muted);border-bottom:2px solid transparent;
+    margin-bottom:-1px;white-space:nowrap;transition:color .15s}
+  .help-tab:hover{color:var(--ink)}
+  .help-tab.active{color:var(--accent);border-bottom-color:var(--accent)}
   /* modal overlay (used by the help modal) */
   .overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;
            justify-content:center;z-index:60}
@@ -241,39 +323,46 @@
     /* The brand is the one flexible item: it truncates first so the controls on the right
        (account / help / theme / log out) always stay visible and never wrap. */
     #topbar .brand{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    #topbar button{flex-shrink:0;white-space:nowrap}
-    #topbar #who{max-width:96px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    #topbar button{flex-shrink:0;white-space:nowrap;min-height:40px;padding:6px 10px}
     /* always collapse sidebar — hamburger still toggles it as a narrow overlay */
     #side{width:0!important;min-width:0!important;padding:0!important;border-right:none!important;
-          position:fixed;top:calc(49px + env(safe-area-inset-top));bottom:0;left:0;z-index:20;box-shadow:2px 0 12px rgba(0,0,0,.4)}
-    #app.side-open #side{width:220px!important;padding:14px 10px!important;border-right:1px solid var(--line)!important}
-    #app.side-open::after{content:'';position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:19}
+          position:fixed;top:calc(49px + env(safe-area-inset-top));bottom:0;left:0;z-index:20;
+          box-shadow:4px 0 24px rgba(0,0,0,.5)}
+    #app.side-open #side{width:240px!important;padding:14px 12px!important;border-right:1px solid var(--line)!important}
+    #app.side-open #side .navbtn{min-height:44px;display:flex;align-items:center}
+    #app.side-open::after{content:'';position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:19;
+      backdrop-filter:blur(2px)}
     /* main scrolls with the page */
-    #main{height:auto;overflow:visible}
+    #main{height:auto;overflow:visible;padding:14px 12px}
     #main.detailmode{height:auto;overflow:visible;min-height:0;padding:12px 10px 84px}
     #detail{display:block;min-height:0}
     .pane{height:auto;min-height:0}
     #detail>.editor-pane{height:calc(var(--vvh) - 154px - env(safe-area-inset-top));min-height:min(380px, calc(var(--vvh) - 154px))}
     #detail>.chat-pane,.bubble-papers-inline,.desktop-only-tool{display:none!important}
-    /* editor-only on mobile; the read-only render is still available via the 👁 Preview button.
-       The View/Edit toggle is desktop-only, so force the editor visible regardless of mode. */
+    .mobile-only{display:inline-flex;align-items:center}
+    /* Mobile respects the chosen view mode (the Split/Edit/Read selector is visible here now).
+       Panes stack vertically; the .mode-view/.mode-edit rules above hide whichever pane isn't
+       wanted, and split shows both — editor above preview. */
     #editorHost{flex-direction:column}
-    #previewWrap{display:none!important}
-    #editorHost #editorWrap{display:block!important}
-    .mobile-bubble-actions{position:fixed;left:14px;right:14px;bottom:calc(env(safe-area-inset-bottom) + 14px);
+    .mobile-bubble-actions{position:fixed;left:14px;right:14px;bottom:calc(env(safe-area-inset-bottom) + 16px);
       display:flex;justify-content:space-between;gap:12px;z-index:45;pointer-events:none}
-    .mobile-bubble-actions button{pointer-events:auto;border-radius:999px;padding:10px 14px;
-      box-shadow:0 8px 26px rgba(0,0,0,.45)}
+    .mobile-bubble-actions button{pointer-events:auto;border-radius:999px;padding:12px 18px;
+      min-height:48px;font-size:13px;font-weight:600;
+      box-shadow:0 8px 32px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.06)}
     .mobile-sheet{display:block;position:fixed;inset:0;z-index:70;pointer-events:none}
     .mobile-sheet.open{pointer-events:auto}
-    .mobile-sheet-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.48);opacity:0;transition:opacity .16s ease}
+    .mobile-sheet-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.52);opacity:0;
+      transition:opacity .2s ease;backdrop-filter:blur(2px)}
     .mobile-sheet.open .mobile-sheet-backdrop{opacity:1}
     .mobile-sheet-panel{position:absolute;left:0;right:0;bottom:0;max-height:calc(var(--vvh) - 12px);
-      background:var(--panel);border:1px solid var(--line);border-bottom:none;border-radius:14px 14px 0 0;
-      display:flex;flex-direction:column;transform:translateY(100%);transition:transform .18s ease;
+      background:var(--panel);border:1px solid var(--line);border-bottom:none;border-radius:18px 18px 0 0;
+      display:flex;flex-direction:column;transform:translateY(100%);transition:transform .22s cubic-bezier(.32,.72,0,1);
       padding-bottom:env(safe-area-inset-bottom)}
+    .mobile-sheet-panel::before{content:'';display:block;width:36px;height:4px;border-radius:2px;
+      background:var(--line);margin:10px auto 0;flex-shrink:0}
     .mobile-sheet.open .mobile-sheet-panel{transform:translateY(0)}
-    .mobile-sheet-hd{padding:10px 12px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px}
+    .mobile-sheet-hd{padding:12px 14px 10px;border-bottom:1px solid var(--line);
+      display:flex;align-items:center;gap:8px;font-weight:600}
     .mobile-sheet-body{overflow:auto;min-height:0;display:flex;flex-direction:column}
     .mobile-sheet-body>.pane{height:calc(var(--vvh) - 90px);min-height:0;border:none;border-radius:0;background:transparent}
     .mobile-sheet-body>.bd{padding:12px;overflow:auto}
@@ -283,10 +372,15 @@
     .mobile-sheet-body .chat-pane:not(.chat-controls-open) .sessions-panel,
     .mobile-sheet-body .chat-pane:not(.chat-controls-open) .drwrap{display:none!important}
     #modelCfg{position:fixed;top:calc(58px + env(safe-area-inset-top));left:12px;right:12px;
-      width:auto;max-width:none;max-height:calc(var(--vvh) - 82px)}
-    /* single-column cards */
-    .grid{grid-template-columns:1fr}
-    .brand{font-size:18px}
+      width:auto;max-width:none;max-height:calc(var(--vvh) - 82px);border-radius:14px}
+    /* single-column cards. minmax(0,1fr) (not 1fr) forces the track minimum to 0 so a card's
+       nowrap title can't blow the column — and the page — wider than the viewport. */
+    .grid{grid-template-columns:minmax(0,1fr)}
+    .brand{font-size:18px;letter-spacing:-.02em}
+    /* Larger touch targets in the bubble toolbar on mobile */
+    .ptab{min-height:38px;display:flex;align-items:center}
+    /* Settings cards full-width */
+    .card{border-radius:10px}
   }
 </style>
 </head>
@@ -314,10 +408,10 @@
     <div class="brand">🔒 <span class="lock">locked</span>in</div>
     <div class="row" id="modelTabs"></div>
     <div class="spacer"></div>
-    <button class="ghost small" id="who" title="Account settings"></button>
     <button class="ghost small" id="helpBtn" title="User guide">?</button>
     <button class="ghost small" id="themeToggle" title="Toggle light/dark mode">☀️</button>
-    <button class="ghost small" id="logout">Log out</button>
+    <!-- mobile-only: opens the read-only preview of the current bubble page; hidden off a bubble -->
+    <button class="ghost small mobile-only hide" id="previewArrow" title="Open the read-only preview of this page">↗</button>
   </div>
 
   <div id="side">
@@ -327,6 +421,7 @@
     <button class="navbtn" data-view="todos">✅ TODOs</button>
     <button class="navbtn" data-view="news" id="newsNav" style="display:none">📰 News <span id="newsCount" class="muted"></span></button>
     <button class="navbtn" data-view="settings">⚙️ Settings</button>
+    <div class="side-credit">Made with 💜 + 🤖 by <a href="https://github.com/HamidrezaKmK" target="_blank" rel="noopener">HamidrezaKmK</a></div>
   </div>
 
   <div id="main"></div>
@@ -334,25 +429,11 @@
 
 <div id="modelCfg" class="card col hide"></div>
 <div id="helpModal" class="overlay hide">
-  <div class="diffbox" style="width:min(780px,95vw);max-height:88vh">
-    <div class="hd"><b>User Guide</b><span class="spacer"></span>
+  <div class="diffbox col" style="width:min(900px,97vw);max-height:92vh;padding:0;gap:0;overflow:hidden">
+    <div class="hd" style="padding:10px 16px;flex-shrink:0;display:flex;align-items:center;gap:8px"><b>User Guide</b><span class="spacer"></span>
       <button class="ghost small" id="helpClose">✕</button></div>
-    <div class="diffbody preview" id="helpBody" style="font-family:inherit;font-size:14px;padding:16px 20px"></div>
-  </div>
-</div>
-<div id="acctModal" class="overlay hide">
-  <div class="diffbox col" style="width:min(420px,95vw);padding:18px;gap:10px">
-    <div class="row"><b>Account settings</b><span class="spacer"></span>
-      <button class="ghost small" id="acctClose">✕</button></div>
-    <label class="muted">New username (leave blank to keep)</label>
-    <input id="acct_user" autocomplete="username" placeholder="">
-    <label class="muted">New password (leave blank to keep)</label>
-    <input id="acct_pass" type="password" autocomplete="new-password" placeholder="">
-    <label class="muted">Current password (required to confirm)</label>
-    <input id="acct_cur" type="password" autocomplete="current-password">
-    <div class="err" id="acct_err"></div>
-    <div class="row"><span class="spacer"></span>
-      <button class="primary" id="acct_save">Save changes</button></div>
+    <div id="helpTabs" style="display:flex;gap:0;flex-wrap:wrap;border-bottom:1px solid var(--line);flex-shrink:0;padding:0 12px"></div>
+    <div class="diffbody preview" id="helpBody" style="font-family:inherit;font-size:14px;padding:20px 24px;overflow-y:auto;flex:1;min-height:0"></div>
   </div>
 </div>
 <div id="toast" class="toast hide"></div>
@@ -465,41 +546,147 @@
   }
 
   // ---------- markdown + math ----------
-  function renderMarkdown(md){
+  // opts.refs (bubble-wide reference registry from /api/bubbles/<slug>/refs) + opts.pageSlug make
+  // equation/theorem numbers and \eqref/\thmref resolve ACROSS pages; without them numbering is
+  // self-contained to this content (chat, TODO notes, summaries, the help guide). Mirrors the
+  // server's _build_refs/_preprocess_* so the live editor preview matches the standalone pages.
+  function renderMarkdown(md,opts){
+    opts=opts||{}; const refs=opts.refs;
     const store=[]; let s=md||"";
-    // Pass 1 — collect \label{} from display math, assign sequential numbers
-    const eqN={};let eqI=0;
-    const _dr=/\$\$([\s\S]+?)\$\$/g; let _dm;
-    while((_dm=_dr.exec(s))!==null){
-      const lb=(_dm[1].match(/\\label\{([^}]+)\}/)||[])[1];
-      if(lb&&!(lb in eqN))eqN[lb]=++eqI;
+    // Pre-stash fenced code blocks so Pass 0 and math stashing never touch their content.
+    const cbStore=[];
+    s=s.replace(/^(`{3,})[^\n]*\n[\s\S]*?\n\1/gm,m=>{ cbStore.push(m); return '\n\n@@CB'+(cbStore.length-1)+'@@\n\n'; });
+    // Pre-stash INLINE code spans too — so `$x$`, `[[link]]`, `@5`, `\begin{theorem}` written
+    // inside backticks render as literal source (the syntax columns in the user guide rely on
+    // this) instead of being picked up by the math/theorem/eqref passes below. Restored last.
+    const icStore=[];
+    s=s.replace(/`([^`\n]+)`/g,(m,p1)=>{ icStore.push(p1); return '@@IC'+(icStore.length-1)+'@@'; });
+    // Pass 1 — determine equation numbers. With a bubble-wide registry (refs) the label→number
+    // map is global, so \eqref resolves across pages; otherwise collect \label{} from THIS
+    // content's display math in document order ($$...$$ and environments). Runs BEFORE theorem
+    // stashing (Pass 0) so equations inside theorem/proof blocks join the numbering.
+    let eqN, eqI=0;
+    if(refs){ eqN=refs.eq||{}; }
+    else {
+      eqN={};
+      const _ENVPAT=/\\begin\{(?:align\*?|alignat\*?|gather\*?|multline\*?|equation\*?)\}([\s\S]*?)\\end\{(?:align\*?|alignat\*?|gather\*?|multline\*?|equation\*?)\}/g;
+      const _allBlocks=[]; let _dm;
+      const _dr=/\$\$([\s\S]+?)\$\$/g;
+      _dr.lastIndex=0; while((_dm=_dr.exec(s))!==null) _allBlocks.push({pos:_dm.index,inner:_dm[1]});
+      _ENVPAT.lastIndex=0; while((_dm=_ENVPAT.exec(s))!==null) _allBlocks.push({pos:_dm.index,inner:_dm[1]});
+      _allBlocks.sort((a,b)=>a.pos-b.pos);
+      for(const {inner} of _allBlocks){
+        const _lr=/\\label\{([^}]+)\}/g; let _lm;
+        while((_lm=_lr.exec(inner))!==null){ const lb=_lm[1]; if(!(lb in eqN)) eqN[lb]=++eqI; }
+      }
     }
-    // Pass 2 — replace \label{lbl} with \tag{n} inside $$...$$ blocks
-    if(eqI>0) s=s.replace(/\$\$([\s\S]+?)\$\$/g,(f,inner)=>{
-      const lb=(inner.match(/\\label\{([^}]+)\}/)||[])[1];
-      return lb&&eqN[lb]?"$$"+inner.replace(/\\label\{[^}]+\}/,"\\tag{"+eqN[lb]+"}") +"$$":f;
+    const hasEq=Object.keys(eqN).length>0;
+    // Pass 2 — replace \label{name} with \tag{n} in $$...$$ blocks and environments;
+    // always star non-starred environments to suppress KaTeX's built-in auto-counter. An unknown
+    // label (e.g. just typed, not yet in the saved registry) is dropped so KaTeX doesn't choke.
+    const _retag=inner=>inner.replace(/\\label\{([^}]+)\}/g,(f,lb)=>eqN[lb]?'\\tag{'+eqN[lb]+'}':'');
+    const _star=env=>env.endsWith('*')?env:env+'*';
+    if(hasEq) s=s.replace(/\$\$([\s\S]+?)\$\$/g,(f,inner)=>'$$'+_retag(inner)+'$$');
+    s=s.replace(/\\begin\{(align\*?|alignat\*?|gather\*?|multline\*?|equation\*?)\}([\s\S]*?)\\end\{(?:align\*?|alignat\*?|gather\*?|multline\*?|equation\*?)\}/g,
+      (f,env,inner)=>{ const se=_star(env); return '\\begin{'+se+'}'+_retag(inner)+'\\end{'+se+'}'; });
+    // Pass 0 — NOW stash \begin{theorem|lemma|...} environments. Their inner math already carries
+    // \tag{n} from Pass 2, so equation numbers render correctly inside the box. Inner content is
+    // stored raw; \label{} left inside (theorem labels) are recorded for \thmref references.
+    // theoCounts seeds from the per-page offset (count of each env on earlier pages) so theorem
+    // numbering is bubble-wide; theoLabels collects this page's labels, then merges the global
+    // map (refs.thm) so \thmref resolves to theorems on other pages too.
+    const theoStore=[];
+    const theoCounts=(refs&&refs.thmStart&&opts.pageSlug&&refs.thmStart[opts.pageSlug])
+      ? Object.assign({},refs.thmStart[opts.pageSlug]) : {};
+    let theoLabels={};
+    const _THEO_ENVS='theorem|lemma|corollary|definition|proposition|remark|proof';
+    const _THEO_RE=new RegExp('\\\\begin\\{('+_THEO_ENVS+')\\}(?:\\[([^\\]]*)\\])?([\\s\\S]*?)\\\\end\\{(?:'+_THEO_ENVS+')\\}','gi');
+    s=s.replace(_THEO_RE,(m,env,optTitle,inner)=>{
+      const e=env.toLowerCase(), numbered=(e!=='proof');
+      if(numbered) theoCounts[e]=(theoCounts[e]||0)+1;
+      const n=numbered?theoCounts[e]:0;
+      const cap=e.charAt(0).toUpperCase()+e.slice(1);
+      const title=numbered?(optTitle?`${cap} ${n} (${optTitle.trim()})`:cap+' '+n)
+                          :(optTitle?`${cap} (${optTitle.trim()})`:cap);
+      // Extract \label{} from inner content and record for \thmref
+      let cleanInner=inner.replace(/\\label\{([^}]+)\}/g,(_,lb)=>{ theoLabels[lb]={env:e,number:n}; return ''; });
+      theoStore.push({env:e,title,inner:cleanInner.trim(),proof:!numbered});
+      return '\n\n@@TH'+(theoStore.length-1)+'@@\n\n';
     });
-    // Stash all math tokens so marked.js can't mangle them
+    // Merge the global theorem labels (other pages) under this page's local ones (which win).
+    if(refs&&refs.thm) theoLabels=Object.assign({},refs.thm,theoLabels);
+    // Stash all math tokens so marked.js can't mangle them. This MUST come before the
+    // \thmref/\eqref span substitutions below, so an in-math reference stays raw inside the
+    // stashed source (renderMath resolves it for KaTeX) instead of being turned into an HTML span.
     const stash=(re,display)=>{ s=s.replace(re,(m,p1)=>{ store.push({src:p1,display}); return `@@M${store.length-1}@@`; }); };
     s=s.replace(/(\\begin\{(?:align\*?|alignat\*?|gather\*?|multline\*?|equation\*?)\}[\s\S]*?\\end\{(?:align\*?|alignat\*?|gather\*?|multline\*?|equation\*?)\})/g,(m,p1)=>{ store.push({src:p1,display:true}); return `@@M${store.length-1}@@`; });
     stash(/\$\$([\s\S]+?)\$\$/g,true);
     stash(/\\\[([\s\S]+?)\\\]/g,true);
     stash(/\\\(([\s\S]+?)\\\)/g,false);
     stash(/\$([^\$\n]+?)\$/g,false);
+    // Replace \thmref{name} in the remaining (non-math) text with styled inline references.
+    s=s.replace(/\\thmref\{([^}]+)\}/g,(_,lb)=>{
+      const t=theoLabels[lb]; if(!t) return `\\thmref{${lb}}`;
+      const cap=t.env.charAt(0).toUpperCase()+t.env.slice(1);
+      return `<span class="thm-ref">${cap} ${t.number}</span>`;
+    });
     // Pass 3 — replace \eqref{}/\ref{} in remaining (non-math) text
-    if(eqI>0){
+    if(hasEq){
       s=s.replace(/\\eqref\{([^}]+)\}/g,(_,lb)=>`<span class="eq-ref">(${eqN[lb]||"?"})</span>`);
       s=s.replace(/\\ref\{([^}]+)\}/g,(_,lb)=>`<span class="eq-ref">${eqN[lb]||"?"}</span>`);
     }
+    // Resolve \eqref/\ref/\thmref that appear INSIDE math to KaTeX-renderable plain math (KaTeX
+    // doesn't know these commands — a raw one breaks the whole equation). Mirrors the server's
+    // _resolve_refs_in_math. Runs at render time, when eqN + theoLabels are fully populated.
+    const resolveRefsInMath=src=>{
+      let r=src.replace(/\\eqref\{([^}]+)\}/g,(_,lb)=>`(${eqN[lb]||"?"})`)
+              .replace(/\\ref\{([^}]+)\}/g,(_,lb)=>`${eqN[lb]||"?"}`);
+      return r.replace(/\\thmref\{([^}]+)\}/g,(_,lb)=>{
+        const t=theoLabels[lb]; if(!t) return `\\thmref{${lb}}`;
+        return `\\text{${t.env.charAt(0).toUpperCase()+t.env.slice(1)} ${t.number}}`;
+      });
+    };
+    const renderMath=src=>{ try{ return katex.renderToString(resolveRefsInMath(src.src),{displayMode:src.display,macros:S.mathMacros,throwOnError:false}); }
+      catch(e){ return `<span style="color:#ff7a7a">${src.src}</span>`; } };
     let html=marked.parse(s,{breaks:true});
-    html=html.replace(/@@M(\d+)@@/g,(m,i)=>{ const it=store[+i];
-      try{ return katex.renderToString(it.src,{displayMode:it.display,macros:S.mathMacros,throwOnError:false}); }
-      catch(e){ return `<span style="color:#ff7a7a">${it.src}</span>`; } });
+    html=html.replace(/@@M(\d+)@@/g,(m,i)=>renderMath(store[+i]));
+    // Restore theorem/lemma/proof blocks: render inner content (math + markdown)
+    html=html.replace(/<p>@@TH(\d+)@@<\/p>/g,(m,i)=>{
+      const t=theoStore[+i];
+      const istore=[]; let is=t.inner;
+      const istash=(re,disp)=>{ is=is.replace(re,(_,p1)=>{ istore.push({src:p1,display:disp}); return `@@IM${istore.length-1}@@`; }); };
+      is=is.replace(/(\\begin\{(?:align\*?|alignat\*?|gather\*?|multline\*?|equation\*?)\}[\s\S]*?\\end\{(?:align\*?|alignat\*?|gather\*?|multline\*?|equation\*?)\})/g,(_,p1)=>{ istore.push({src:p1,display:true}); return `@@IM${istore.length-1}@@`; });
+      istash(/\$\$([\s\S]+?)\$\$/g,true);
+      istash(/\\\[([\s\S]+?)\\\]/g,true);
+      istash(/\\\(([\s\S]+?)\\\)/g,false);
+      istash(/\$([^\$\n]+?)\$/g,false);
+      // Resolve \eqref/\ref/\thmref in theorem prose now that inner math is stashed — the body
+      // Pass 3 couldn't reach these (they were hidden inside the @@TH placeholder).
+      if(hasEq){
+        is=is.replace(/\\eqref\{([^}]+)\}/g,(_,lb)=>`<span class="eq-ref">(${eqN[lb]||"?"})</span>`);
+        is=is.replace(/\\ref\{([^}]+)\}/g,(_,lb)=>`<span class="eq-ref">${eqN[lb]||"?"}</span>`);
+      }
+      is=is.replace(/\\thmref\{([^}]+)\}/g,(_,lb)=>{
+        const tr=theoLabels[lb]; if(!tr) return `\\thmref{${lb}}`;
+        const c2=tr.env.charAt(0).toUpperCase()+tr.env.slice(1);
+        return `<span class="thm-ref">${c2} ${tr.number}</span>`;
+      });
+      let ih=marked.parse(is,{breaks:true});
+      ih=ih.replace(/@@IM(\d+)@@/g,(_,j)=>renderMath(istore[+j]));
+      const qed=t.proof?'<div class="math-env-qed">∎</div>':'';
+      return `<div class="math-env ${t.env}"><div class="math-env-title">${t.title}</div>${ih}${qed}</div>`;
+    });
+    // Restore fenced code blocks (rendered through marked so they get proper <pre><code> wrapping)
+    html=html.replace(/<p>@@CB(\d+)@@<\/p>/g,(_,i)=>marked.parse(cbStore[+i],{breaks:true}));
+    // Restore inline code LAST and globally (placeholders can land inside theorem HTML too).
+    // Escape HTML so the literal source shows verbatim; unescape \| like marked does in tables.
+    const _esc=t=>t.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    html=html.replace(/@@IC(\d+)@@/g,(_,i)=>'<code>'+_esc(icStore[+i].replace(/\\\|/g,"|"))+'</code>');
     return html;
   }
 
   // ---------- state ----------
-  const S = { user:null, model:null, mathMacros:{}, view:"assets", bubble:null, chat:[],
+  const S = { user:null, model:null, mathMacros:{}, refs:null, view:"assets", bubble:null, chat:[],
     editor:null, page:null, pages:[], home:null, bubbleInstr:"", bubbleAssets:[],
     sessionId:null, sessionTitle:null,
     todos:[], todosById:{}, todoFilter:"open",
@@ -526,56 +713,46 @@
   $("#au_login").onclick=()=>doAuth("login");
   $("#au_signup").onclick=()=>doAuth("signup");
   $("#au_pass").onkeydown=e=>{ if(e.key==="Enter")doAuth("login"); };
-  $("#logout").onclick=async()=>{ await api("/api/logout",{method:"POST"}); location.reload(); };
+  // ---------- help modal (multi-section) ----------
+  let _helpSections=null;
   $("#helpBtn").onclick=async()=>{
-    const modal=$("#helpModal"), body=$("#helpBody");
-    modal.classList.remove("hide");
-    if(!body.dataset.loaded){
-      try{
-        const r=await api("/api/help");
-        body.innerHTML=renderMarkdown(r.guide);
-        body.dataset.loaded="1";
-      }catch(e){ body.textContent="Could not load guide."; }
-    }
+    const modal=$("#helpModal"); modal.classList.remove("hide");
+    if(_helpSections) return;
+    try{
+      const r=await api("/api/help");
+      _helpSections=r.sections||[];
+      const tabBar=$("#helpTabs"), body=$("#helpBody");
+      tabBar.innerHTML="";
+      _helpSections.forEach((sec,i)=>{
+        const btn=el("button",{class:"help-tab"+(i===0?" active":""),onclick:()=>{
+          tabBar.querySelectorAll(".help-tab").forEach(b=>b.classList.remove("active"));
+          btn.classList.add("active");
+          body.innerHTML=renderMarkdown(sec.content);
+          linkifyWikilinks(body);
+          body.scrollTop=0;
+        }},sec.title);
+        tabBar.append(btn);
+      });
+      body.innerHTML=renderMarkdown(_helpSections[0].content);
+      linkifyWikilinks(body);
+    }catch(e){ $("#helpBody").textContent="Could not load guide."; }
   };
   $("#helpClose").onclick=()=>$("#helpModal").classList.add("hide");
   $("#helpModal").onclick=e=>{ if(e.target===e.currentTarget)$("#helpModal").classList.add("hide"); };
-
-  // ---------- account settings ----------
-  function openAccount(){
-    $("#acct_user").value=""; $("#acct_pass").value=""; $("#acct_cur").value="";
-    $("#acct_err").textContent=""; $("#acct_user").setAttribute("placeholder",S.user||"");
-    $("#acctModal").classList.remove("hide"); $("#acct_cur").focus();
-  }
-  $("#who").onclick=openAccount;
-  $("#acctClose").onclick=()=>$("#acctModal").classList.add("hide");
-  $("#acctModal").onclick=e=>{ if(e.target===e.currentTarget)$("#acctModal").classList.add("hide"); };
-  $("#acct_save").onclick=async()=>{
-    const new_username=$("#acct_user").value.trim(), new_password=$("#acct_pass").value;
-    const current_password=$("#acct_cur").value;
-    $("#acct_err").textContent="";
-    if(!current_password){ $("#acct_err").textContent="Enter your current password to confirm."; return; }
-    if(!new_username && !new_password){ $("#acct_err").textContent="Nothing to change."; return; }
-    try{
-      const r=await api("/api/account",{method:"POST",
-        body:JSON.stringify({current_password,new_username:new_username||null,new_password:new_password||null})});
-      S.user=r.user; $("#who").textContent="@"+S.user;
-      $("#acctModal").classList.add("hide");
-      toast(new_username?("Account updated — you are now @"+S.user):"Password updated");
-    }catch(e){ $("#acct_err").textContent=e.message; }
-  };
   $("#themeToggle").onclick=()=>{
     const light=document.body.classList.toggle("light");
     $("#themeToggle").textContent=light?"🌙":"☀️";
     localStorage.setItem("li_theme",light?"light":"dark");
   };
   if(localStorage.getItem("li_theme")==="light"){ document.body.classList.add("light"); $("#themeToggle").textContent="🌙"; }
+  // Mobile-only ↗ in the topbar → open the current bubble page's read-only preview in a new tab.
+  $("#previewArrow").onclick=()=>{ if(S.bubble) window.open(
+    "/api/bubbles/"+S.bubble+"/preview/"+(S.page||S.home||"overview"),"_blank"); };
 
   async function boot(){
     let me; try{ me=await api("/api/me"); }catch(e){ return; }
     S.user=me.user; S.model=me.model; S.newsEnabled=!!me.news_enabled; S.admin=!!me.admin;
     $("#auth").style.display="none"; $("#app").style.display="grid";
-    $("#who").textContent="@"+S.user;
     if(S.newsEnabled){ $("#newsNav").style.display=""; refreshNewsCount(); }
     applySideCollapsed(localStorage.getItem("li_side")==="1");
     renderModelTabs(); refreshHealth(); applyHash();
@@ -735,7 +912,37 @@
         style:"white-space:pre-wrap;overflow:auto;margin-top:8px;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--panel);font-size:12px"}));
     renderMathMacros(m);
     if(S.admin) renderUserAccess(m);
+    renderAccountSection(m);
     if(checkHealth)scheduleLiveHealth(S.model.active);
+  }
+
+  function renderAccountSection(main){
+    const old=$("#accountSection"); if(old)old.remove();
+    const box=el("div",{id:"accountSection",class:"card col",style:"margin-top:20px;gap:10px"});
+    box.append(el("b",{},"Account — @"+(S.user||"")));
+    box.append(el("div",{class:"muted",style:"font-size:12px;margin-bottom:4px"},
+      "Change your username or password. Current password is always required."));
+    const uIn=el("input",{type:"text",autocomplete:"username",placeholder:"New username (leave blank to keep)"});
+    const pIn=el("input",{type:"password",autocomplete:"new-password",placeholder:"New password (leave blank to keep)"});
+    const cIn=el("input",{type:"password",autocomplete:"current-password",placeholder:"Current password (required)"});
+    const err=el("div",{class:"err"});
+    const saveBtn=el("button",{class:"primary small",onclick:async()=>{
+      const new_username=uIn.value.trim(), new_password=pIn.value, current_password=cIn.value;
+      err.textContent="";
+      if(!current_password){err.textContent="Enter your current password to confirm.";return;}
+      if(!new_username&&!new_password){err.textContent="Nothing to change.";return;}
+      try{
+        const r=await api("/api/account",{method:"POST",
+          body:JSON.stringify({current_password,new_username:new_username||null,new_password:new_password||null})});
+        S.user=r.user; uIn.value=""; pIn.value=""; cIn.value="";
+        box.querySelector("b").textContent="Account — @"+S.user;
+        toast(new_username?("Account updated — you are now @"+S.user):"Password updated");
+      }catch(e){err.textContent=e.message;}
+    }},"Save changes");
+    const logoutBtn=el("button",{class:"ghost small",style:"color:var(--bad)",
+      onclick:async()=>{ await api("/api/logout",{method:"POST"}); location.reload(); }},"Log out");
+    box.append(uIn,pIn,cIn,err,el("div",{class:"row"},logoutBtn,el("span",{class:"spacer"}),saveBtn));
+    main.append(box);
   }
 
   function renderMathMacros(main){
@@ -844,6 +1051,7 @@
     S.view=v; S.bubble=null;
     stopPolling(); stopNewsLive();
     document.getElementById("main").classList.remove("detailmode");
+    $("#previewArrow").classList.add("hide");   // left the bubble → hide the mobile preview link
     document.querySelectorAll(".navbtn").forEach(b=>b.classList.toggle("active",b.dataset.view===v));
     if(!noRoute)pushRoute(v==="assets"?"":v);
     if(v==="assets")viewAssets();
@@ -1078,6 +1286,7 @@
   async function viewTodo(id){
     S.view="todos"; S.bubble=null; stopPolling(); if(typeof stopNewsLive==="function")stopNewsLive();
     document.getElementById("main").classList.remove("detailmode");
+    $("#previewArrow").classList.add("hide");   // left the bubble → hide the mobile preview link
     document.querySelectorAll(".navbtn").forEach(b=>b.classList.toggle("active",b.dataset.view==="todos"));
     pushRoute("todos/"+id);
     const m=$("#main"); m.innerHTML="";
@@ -1220,11 +1429,14 @@
     }
     titleRow.append(el("span",{class:"spacer"}));
     if(b.approved){
-      // "👁 Preview" opens the server-rendered, read-only page — exactly what a share viewer
-      // sees — for whatever page is currently open. Sits next to the share controls.
-      titleRow.append(el("button",{class:"ghost small",title:"Preview the read-only page your share viewers see",
+      // Preview + share controls are desktop-only: on mobile the header collapses to just the
+      // bubble name (sharing/preview are done from a larger screen) to keep the page minimal.
+      // "👁 Preview" opens the server-rendered, read-only page — exactly what a share viewer sees.
+      const tools=el("span",{class:"row desktop-only-tool",style:"gap:6px;align-items:center;flex-shrink:0"});
+      tools.append(el("button",{class:"ghost small",title:"Preview the read-only page your share viewers see",
         onclick:()=>window.open("/api/bubbles/"+slug+"/preview/"+(S.page||S.home||"overview"),"_blank")},"👁 Preview"));
-      titleRow.append(buildShareControls(slug));
+      tools.append(buildShareControls(slug));
+      titleRow.append(tools);
     }
     m.append(titleRow);
 
@@ -1239,6 +1451,8 @@
     else { buildWorkspace(left,b); }
     buildChatPane(right,b);
     if(b.approved) buildMobileBubbleTools(m,b,wrap,right);
+    // mobile ↗ preview link in the topbar: only meaningful on an approved bubble (it has pages)
+    $("#previewArrow").classList.toggle("hide", !b.approved);
     // Deep-link: restore a specific page (e.g. after a refresh) without clobbering history.
     if(b.approved && page && page!==S.home && S.pages.some(p=>p.page_slug===page)){
       switchPage(page,{noRoute:true});
@@ -1261,6 +1475,7 @@
   // ---- workspace: page tabs + Toast UI editor ----
   function buildWorkspace(left,b){
     S.pages=b.pages||[]; S.home=b.home; S.bubbleInstr=b.instructions||"";
+    fetchRefs().then(()=>updatePreview());   // bubble-wide eqn/thm numbering for the preview
     const tabs=el("div",{class:"ptabs",id:"ptabs"});
     const editorWrap=el("div",{id:"editorWrap"});
     S.previewEl=el("div",{id:"previewWrap",class:"preview"});
@@ -1292,6 +1507,8 @@
       if(p){ e.preventDefault(); switchPage(decodeURIComponent(p.getAttribute("href").slice(5))); return; }
       const t=e.target.closest('a[href^="todo:"]');
       if(t){ e.preventDefault(); viewTodo(+t.getAttribute("href").slice(5)); } });
+    // Overleaf-style reverse sync: double-click the rendered preview → jump the editor cursor.
+    S.previewEl.addEventListener("dblclick",syncPreviewToSource);
   }
 
   function buildMobileSheet(title){
@@ -1419,6 +1636,7 @@
       previewStyle:"tab", initialValue, usageStatistics:false,
       autofocus:false,   // don't grab focus on load: it scrolls a long page's editor into
                          // view, which can scroll the whole document and hide the app
+      toolbarItems:[['table','image','link']],   // undo/redo added below; everything else removed
       hooks:{ addImageBlobHook:(blob,cb)=>uploadImage(S.bubble,blob,cb) },
     });
     // Undo/redo toolbar buttons (the editor only ships keyboard shortcuts for these).
@@ -1492,8 +1710,16 @@
 
   function updatePreview(){
     if(!S.previewEl||!S.editor)return;
-    S.previewEl.innerHTML=renderMarkdown(S.editor.getMarkdown());
+    S.previewEl.innerHTML=renderMarkdown(S.editor.getMarkdown(),{refs:S.refs,pageSlug:S.page});
     linkifyWikilinks(S.previewEl);
+  }
+  // Bubble-wide equation/theorem reference registry: numbers + labels are global, so \eqref and
+  // \thmref resolve across pages. Re-fetched on bubble open, after every save, and after page
+  // add/delete — then the preview re-renders with the updated numbering.
+  async function fetchRefs(){
+    const bubble=S.bubble; if(!bubble){ S.refs=null; return; }
+    try{ const r=await api("/api/bubbles/"+bubble+"/refs"); if(S.bubble===bubble) S.refs=r; }
+    catch(e){ if(S.bubble===bubble) S.refs=null; }
   }
 
   function uploadImage(slug,blob,cb){
@@ -1505,10 +1731,14 @@
   // matches @5). A known @id renders as "@id title" linking to the TODO detail view; an unknown
   // id is left as literal text.
   function linkifyWikilinks(root){
+    // Build slug→title lookup so links show the current page title, not the raw slug
+    const slugTitle={};
+    (S.pages||[]).forEach(p=>slugTitle[p.page_slug]=p.title);
     const RE=/\[\[([^\]]+)\]\]|@(\d+)/g;
     const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT,null);
     const targets=[]; let n; while(n=walker.nextNode()){ RE.lastIndex=0;
-      if(RE.test(n.nodeValue) && !n.parentElement.closest("a")) targets.push(n); }
+      // Skip text already inside a link, or inside code/pre (literal syntax must not resolve).
+      if(RE.test(n.nodeValue) && !n.parentElement.closest("a,code,pre")) targets.push(n); }
     targets.forEach(node=>{
       const s=node.nodeValue, frag=document.createDocumentFragment(); let last=0,mm;
       RE.lastIndex=0;
@@ -1517,7 +1747,8 @@
           const raw=mm[1].trim();
           const pipe=raw.indexOf("|");
           const target=pipe===-1?raw:raw.slice(0,pipe).trim();
-          const label=pipe===-1?raw:raw.slice(pipe+1).trim();
+          const explicitLabel=pipe!==-1?raw.slice(pipe+1).trim():null;
+          const label=explicitLabel||(slugTitle[target]||target);
           const a=document.createElement("a"); a.href="page:"+encodeURIComponent(target);
           a.textContent=label; a.className="wikilink"; frag.append(a);
         } else {
@@ -1534,6 +1765,77 @@
       if(last<s.length)frag.append(s.slice(last));
       node.parentNode.replaceChild(frag,node);
     });
+  }
+
+  // ---- reverse sync (Overleaf-style): double-click rendered preview → jump editor cursor ----
+  // Heuristic text match: the rendered HTML keeps no source positions, so we search the live
+  // markdown for the double-clicked word (or, inside a rendered equation, its LaTeX) and move
+  // the Toast UI cursor there. Good enough — lands on the right spot almost always.
+  function _srcPosFromOffset(md,off){            // → 1-indexed [line, ch] for setSelection
+    let line=1; for(let i=0;i<off;i++) if(md.charCodeAt(i)===10) line++;
+    const ls=md.lastIndexOf("\n",off-1)+1;
+    return [line, off-ls+1];
+  }
+  function _normTex(s){                            // compare TeX ignoring numbering + whitespace
+    return (s||"").replace(/\\(?:tag|label)\{[^}]*\}/g,"").replace(/\s+/g,"").trim();
+  }
+  // Find where a rendered equation's LaTeX lives in the source. The KaTeX annotation carries the
+  // retagged TeX (\tag{n}); the source still has \label{} — so we match on the normalized form.
+  function _findMathOffset(md,tex){
+    const needle=_normTex(tex); if(!needle) return -1;
+    const res=[/\$\$([\s\S]+?)\$\$/g,
+               /\\begin\{(?:align\*?|alignat\*?|gather\*?|multline\*?|equation\*?)\}([\s\S]*?)\\end\{(?:align\*?|alignat\*?|gather\*?|multline\*?|equation\*?)\}/g,
+               /\\\[([\s\S]+?)\\\]/g, /\\\(([\s\S]+?)\\\)/g, /\$([^\$\n]+?)\$/g];
+    for(const re of res){ let m; re.lastIndex=0;
+      while((m=re.exec(md))!==null){ const n=_normTex(m[1]);
+        if(n && (n===needle || n.includes(needle) || needle.includes(n))) return m.index; }
+    }
+    return -1;
+  }
+  // Find the double-clicked word in the source. When it occurs several times, disambiguate by how
+  // many neighbouring words (from the clicked block) sit near each candidate in the source.
+  function _stripMd(t){ return (t||"").replace(/[*_#>\[\]|`~]/g," "); }
+  function _findWordOffset(md,word,context){
+    const esc=word.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+    const re=new RegExp("\\b"+esc+"\\b","gi"); const hits=[]; let m;
+    while((m=re.exec(md))!==null){ hits.push(m.index); if(hits.length>500) break; }
+    if(!hits.length){ const i=md.toLowerCase().indexOf(word.toLowerCase()); return i; }
+    if(hits.length===1 || !context) return hits[0];
+    const neigh=_stripMd(context).toLowerCase().split(/\s+/)
+      .filter(w=>w.length>2 && w.toLowerCase()!==word.toLowerCase()).slice(0,8);
+    let best=hits[0],bestScore=-1;
+    for(const off of hits){
+      const around=_stripMd(md.slice(Math.max(0,off-60),off+60)).toLowerCase();
+      let score=0; for(const w of neigh) if(around.includes(w)) score++;
+      if(score>bestScore){ bestScore=score; best=off; }
+    }
+    return best;
+  }
+  function syncPreviewToSource(e){
+    if(S.viewMode!=="split" || !S.editor || !S.editor.setSelection) return;
+    let off=-1, matchLen=0;
+    const mathEl=e.target.closest && e.target.closest(".katex");
+    const md=S.editor.getMarkdown();
+    if(mathEl){
+      const ann=mathEl.querySelector('annotation[encoding="application/x-tex"]');
+      off=_findMathOffset(md, ann?ann.textContent:"");
+    } else {
+      const word=(window.getSelection&&window.getSelection().toString().trim())||"";
+      if(!word) return;
+      const block=e.target.closest("p,li,h1,h2,h3,h4,h5,h6,td,th,blockquote,.math-env,div");
+      off=_findWordOffset(md, word, block?block.textContent:"");
+      if(off>=0) matchLen=word.length;
+    }
+    if(off<0) return;
+    const [line,ch]=_srcPosFromOffset(md,off);
+    // Moving the editor selection + focus can make the browser scroll the preview pane (its own
+    // overflow:auto container) to a weird spot. The right pane must NOT move on a dblclick — so
+    // snapshot its scroll and restore it, including after Toast UI's deferred focus scrollIntoView.
+    const pv=S.previewEl, sTop=pv.scrollTop, sLeft=pv.scrollLeft;
+    const keepPreview=()=>{ pv.scrollTop=sTop; pv.scrollLeft=sLeft; };
+    try{ S.editor.setSelection([line,ch],[line,ch+matchLen]); S.editor.focus(); }
+    catch(err){ console.warn("reverse-sync setSelection failed",err); }
+    keepPreview(); requestAnimationFrame(keepPreview); setTimeout(keepPreview,30);
   }
 
   // ---- page tabs ----
@@ -1562,17 +1864,22 @@
     tabs.append(el("span",{class:"synced "+st,id:"syncedBadge",
       title:st==="conflict"?"Changed on disk — click to resolve":"Saved automatically; click to save now",
       style:"cursor:pointer",onclick:clickSave},SYNC_LABEL[st]));
-    // edit-titles toggle: sits right of the sync badge; renames pages + the bubble inline
-    tabs.append(el("button",{class:"small ghost",id:"editTitlesBtn",
-      title:S.editingTitles?"Save title edits":"Edit page titles and the bubble title",
-      style:S.editingTitles?"color:var(--accent);border-color:var(--accent)":"",
-      onclick:toggleEditTitles},S.editingTitles?"✓ Save titles":"✏️ Edit titles"));
-    // view-mode selector: reading view / editor only / side-by-side
-    const vm=el("select",{class:"small ghost desktop-only-tool",title:"Page view mode",
-      style:"width:auto;padding:4px 8px"});
-    [["view","👁 Read"],["edit","✏️ Edit"],["split","◧ Split"]].forEach(([v,lbl])=>{
-      const o=el("option",{value:v},lbl); if(v===S.viewMode)o.selected=true; vm.append(o); });
-    vm.onchange=()=>setViewMode(vm.value);
+    // view-mode selector — also the home of "Edit titles" (folded in as a 4th option). Visible on
+    // mobile too, so phones can switch between Read and Edit. Selecting "Edit titles" enters
+    // rename mode (page titles + bubble name); picking any real view mode while renaming saves
+    // those edits first, then switches. Enter inside a title input also saves (see toggleEditTitles).
+    const vm=el("select",{class:"small ghost",title:"Page view mode",
+      style:"width:auto;padding:4px 8px"+(S.editingTitles?";color:var(--accent);border-color:var(--accent)":"")});
+    [["split","◧ Split"],["edit","✏️ Edit"],["view","👁 Read"],["edittitles","🏷️ Edit titles"]].forEach(([v,lbl])=>{
+      const o=el("option",{value:v},lbl);
+      if(v==="edittitles" ? S.editingTitles : (v===S.viewMode && !S.editingTitles)) o.selected=true;
+      vm.append(o); });
+    vm.onchange=async()=>{
+      const v=vm.value;
+      if(v==="edittitles"){ if(!S.editingTitles) toggleEditTitles(); return; }
+      if(S.editingTitles) await toggleEditTitles();   // persist the in-progress title edits first
+      setViewMode(v);
+    };
     tabs.append(vm);
     // chat-pane toggle
     tabs.append(el("button",{class:"small ghost desktop-only-tool",title:S.chatCollapsed?"Show chat":"Hide chat",
@@ -1656,6 +1963,7 @@
       // Only declare "synced" if nothing was typed while the request was in flight.
       if(content===S.editor.getMarkdown())markSynced(); else scheduleAutosave();
       if(!opts.auto)toast("Page saved");
+      fetchRefs().then(()=>updatePreview());   // pick up labels/numbers added on this save
       return true;
     }catch(e){
       if(S.bubble===bubble&&S.page===page){
@@ -1746,7 +2054,7 @@
     await primeSync();                          // base off the just-created file
     S.editor.setMarkdown("# "+title+"\n\n");    // a real edit -> autosaves on idle
     setTimeout(resetEditorHistory,200);         // don't let Ctrl+Z wipe the new page
-    refreshTabs();
+    refreshTabs(); fetchRefs().then(()=>updatePreview());   // page set changed → renumber
   }
   async function deletePage(ps){
     if(!confirm("Delete this page?"))return;
@@ -1757,7 +2065,7 @@
       pushRoute("bubble/"+S.bubble);
       const c=(await api("/api/bubbles/"+S.bubble+"/pages/"+S.home)).content;
       applyRemote(c||""); markSynced(); scrollContentTop(); primeSync(); }
-    refreshTabs();
+    refreshTabs(); fetchRefs().then(()=>updatePreview());   // page removed → renumber
   }
   const SYNC_LABEL={synced:"⟳ synced",stale:"✎ unsaved",saving:"⟳ saving…",conflict:"⚠ unsynced"};
   function setSync(state){

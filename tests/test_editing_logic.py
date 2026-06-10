@@ -353,5 +353,63 @@ class TodoRefRendering(unittest.TestCase):
         self.assertNotIn("/#todos/1", html)    # no login-gated link on the public page
 
 
+# --------------------------------------------------------------------------- #
+# Cross-page (bubble-wide) equation & theorem references + in-math \eqref/\thmref.
+# Numbering is pure Python (server._build_refs), so it's a deterministic guard.
+# --------------------------------------------------------------------------- #
+class CrossPageReferences(unittest.TestCase):
+    P1 = ("$$ a = b \\label{eq:one} $$\n\n"
+          "\\begin{theorem}\\label{thm:a}\nFirst.\n\\end{theorem}\n")
+    P2 = ("See \\eqref{eq:one} and \\thmref{thm:a}.\n\n"
+          "$$ c = d \\label{eq:two} $$\n\n"
+          "\\begin{theorem}\\label{thm:b}\nSecond.\n\\end{theorem}\n\n"
+          "Inline use: $$ x = y \\cdot \\eqref{eq:one} \\label{eq:three} $$\n")
+    PAGES = [{"page_slug": "p1", "title": "One"}, {"page_slug": "p2", "title": "Two"}]
+
+    def _refs(self):
+        return server._build_refs([{"page_slug": "p1", "content": self.P1},
+                                   {"page_slug": "p2", "content": self.P2}])
+
+    def test_registry_numbers_globally(self):
+        refs = self._refs()
+        # Equations numbered across both pages in document order.
+        self.assertEqual(refs["eq"], {"eq:one": 1, "eq:two": 2, "eq:three": 3})
+        # Theorem counter continues onto page 2.
+        self.assertEqual(refs["thm"]["thm:a"], {"env": "theorem", "number": 1})
+        self.assertEqual(refs["thm"]["thm:b"], {"env": "theorem", "number": 2})
+        # Page 2 starts with one theorem already counted on page 1.
+        self.assertEqual(refs["thmStart"]["p1"], {})
+        self.assertEqual(refs["thmStart"]["p2"], {"theorem": 1})
+
+    def _render(self, page, content):
+        return server._render_preview_html(
+            name="B", page=page, all_pages=self.PAGES, content=content, slug="s",
+            link_base="/x", asset_base="/x/assets", show_back=False, refs=self._refs())
+
+    def test_eqref_and_thmref_resolve_across_pages(self):
+        html = self._render("p2", self.P2)
+        self.assertIn('<span class="eq-ref">(1)</span>', html)   # \eqref{eq:one} from page 1
+        self.assertIn('<span class="thm-ref">Theorem 1</span>', html)  # \thmref{thm:a} from page 1
+        self.assertIn("Theorem 2", html)                          # this page's theorem box continues
+
+    def test_tag_number_matches_eqref_number(self):
+        # eq:one renders as \tag{1} on page 1 and as (1) when \eqref'd on page 2 — they agree.
+        self.assertIn(r"\tag{1}", self._render("p1", self.P1))
+        self.assertIn('<span class="eq-ref">(1)</span>', self._render("p2", self.P2))
+
+    def test_in_math_eqref_is_resolved_not_raw(self):
+        html = self._render("p2", self.P2)
+        # The in-math \eqref{eq:one} is baked to (1); no raw \eqref command survives anywhere.
+        self.assertNotIn(r"\eqref{", html)
+        self.assertIn(r"\tag{3}", html)   # the same inline block's own label became \tag{3}
+
+    def test_in_math_thmref_is_resolved_not_raw(self):
+        # \thmref inside a $$ block resolves to \text{Theorem n} (KaTeX-renderable), never raw.
+        content = "$$ y = \\thmref{thm:a} $$\n"
+        html = self._render("p2", content)
+        self.assertNotIn(r"\thmref{", html)
+        self.assertIn(r"\text{Theorem 1}", html)
+
+
 if __name__ == "__main__":
     unittest.main()

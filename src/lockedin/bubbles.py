@@ -452,10 +452,41 @@ def create_page(slug: str, title: str) -> str:
 
 def rename_page(slug: str, page_slug: str, title: str) -> None:
     data = manifest(slug)
+    old_title = ""
     for p in data["pages"]:
         if p["page_slug"] == page_slug:
+            old_title = p["title"]
             p["title"] = title.strip() or page_slug
     _save_manifest(slug, data)
+    new_title = title.strip() or page_slug
+    if old_title and old_title.lower() != new_title.lower():
+        _rewrite_title_links(slug, old_title, page_slug)
+
+
+def _rewrite_title_links(slug: str, old_title: str, page_slug: str) -> None:
+    """Replace [[Old Title]] with [[page_slug]] across all pages after a title rename."""
+    old_lower = old_title.lower()
+
+    def repl(m: "re.Match") -> str:
+        raw = m.group(1).strip()
+        if "|" in raw:
+            target, label = raw.split("|", 1)
+            if target.strip().lower() == old_lower:
+                return f"[[{page_slug}|{label.strip()}]]"
+            return m.group(0)
+        if raw.lower() == old_lower:
+            return f"[[{page_slug}]]"
+        return m.group(0)
+
+    for p in manifest(slug).get("pages", []):
+        path = paths.bubble_page_path(slug, p["page_slug"])
+        try:
+            content = path.read_text()
+            new_content = _WIKILINK_RE.sub(repl, content)
+            if new_content != content:
+                _atomic_write(path, new_content)
+        except Exception:  # noqa: BLE001
+            pass
 
 
 def delete_page(slug: str, page_slug: str) -> bool:

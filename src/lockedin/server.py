@@ -22,36 +22,187 @@ from typing import Optional
 from . import auth, bubbles, news, paths, service, tagger
 
 
-def _preprocess_equations(md: str) -> str:
-    """Number \\label{} equations in display math and resolve \\eqref{}/\\ref{} references.
+# Display-math environments (numbered) vs theorem-like environments (boxed). Shared by the
+# reference builder and the two preprocess passes so their ordering rules can't drift.
+_DISP_ENVS = r'align\*?|alignat\*?|gather\*?|multline\*?|equation\*?'
+_THEO_ENVS = r'theorem|lemma|corollary|definition|proposition|remark|proof'
+_LABEL_RE = re.compile(r'\\label\{([^}]+)\}')
 
-    Scans all $$...$$ blocks for \\label{name}, assigns sequential numbers, replaces
-    \\label{name} with \\tag{n} (so KaTeX renders the number), and replaces \\eqref{name}
-    / \\ref{name} in surrounding text with the corresponding number as a styled span.
-    Pure rendering transform — the source .md files are never modified.
+
+def _build_refs(pages: "list[dict]") -> dict:
+    """Build the bubble-wide reference registry from pages in manifest order.
+
+    ``pages`` — ordered ``[{"page_slug","content"}, ...]``. Returns
+    ``{"eq": {label: n}, "thm": {label: {env, number}}, "thmStart": {page_slug: {env: count}}}``.
+    Equation numbers are label-keyed and run across the whole bubble in document order
+    (``$$`` blocks and display environments merged by position). Theorems are numbered
+    positionally per env (proof unnumbered); ``thmStart`` records each env's running count
+    *before* a given page, so one page can be re-numbered in isolation yet stay globally
+    consistent. The ordering rules mirror the SPA's ``buildRefs`` (index.html) exactly — keep
+    the two in lockstep or a \\tag number and its \\eqref will disagree.
     """
-    eq_nums: dict[str, int] = {}
-    idx = 0
-    for m in re.finditer(r'\$\$([\s\S]+?)\$\$', md):
-        lm = re.search(r'\\label\{([^}]+)\}', m.group(1))
-        if lm and lm.group(1) not in eq_nums:
-            idx += 1
-            eq_nums[lm.group(1)] = idx
-    if not eq_nums:
-        return md
+    eq: dict[str, int] = {}
+    eq_idx = 0
+    thm: dict[str, dict] = {}
+    thm_counts: dict[str, int] = {}
+    thm_start: dict[str, dict] = {}
+    env_re = re.compile(r'\\begin\{(' + _DISP_ENVS + r')\}([\s\S]*?)\\end\{(?:' + _DISP_ENVS + r')\}')
+    dd_re = re.compile(r'\$\$([\s\S]+?)\$\$')
+    theo_re = re.compile(
+        r'\\begin\{(' + _THEO_ENVS + r')\}(?:\[([^\]]*)\])?([\s\S]*?)\\end\{(?:' + _THEO_ENVS + r')\}',
+        re.IGNORECASE)
+    for pg in pages:
+        slug = pg["page_slug"]
+        content = pg.get("content", "") or ""
+        thm_start[slug] = dict(thm_counts)
+        # Equations: collect $$ blocks and display environments, count labels in document order.
+        cands: list[tuple[int, str]] = []
+        for m in dd_re.finditer(content):
+            cands.append((m.start(), m.group(1)))
+        for m in env_re.finditer(content):
+            cands.append((m.start(), m.group(2)))
+        cands.sort(key=lambda x: x[0])
+        for _, inner in cands:
+            for lm in _LABEL_RE.finditer(inner):
+                name = lm.group(1)
+                if name not in eq:
+                    eq_idx += 1
+                    eq[name] = eq_idx
+        # Theorems: number positionally per env (proof unnumbered), record labeled ones.
+        for m in theo_re.finditer(content):
+            env = m.group(1).lower()
+            inner = m.group(3)
+            numbered = env != "proof"
+            if numbered:
+                thm_counts[env] = thm_counts.get(env, 0) + 1
+            n = thm_counts.get(env, 0) if numbered else 0
+            for lm in _LABEL_RE.finditer(inner):
+                thm[lm.group(1)] = {"env": env, "number": n}
+    return {"eq": eq, "thm": thm, "thmStart": thm_start}
 
-    def _tag(m: re.Match) -> str:
-        inner = m.group(1)
-        lm = re.search(r'\\label\{([^}]+)\}', inner)
-        if lm and lm.group(1) in eq_nums:
-            return "$$" + inner.replace(lm.group(0), f'\\tag{{{eq_nums[lm.group(1)]}}}', 1) + "$$"
-        return m.group(0)
 
-    md = re.sub(r'\$\$([\s\S]+?)\$\$', _tag, md)
+def _bubble_refs(home, slug: str, all_pages: list) -> dict:
+    """Read every page's stored content (manifest order) and build the reference registry."""
+    return _build_refs([{"page_slug": p["page_slug"],
+                         "content": service.get_page(home, slug, p["page_slug"])}
+                        for p in all_pages])
+
+
+def _preprocess_theorems(md: str, thm_labels: dict, start_counts: dict) -> "tuple[str, list[dict]]":
+    """Extract \\begin{theorem|lemma|...} environments; return (processed_md, theo_store).
+
+    ``start_counts`` seeds each env's counter with the count accumulated on earlier pages
+    (from _build_refs' ``thmStart``) so numbering is bubble-wide; ``thm_labels`` is the global
+    label→{env,number} map used to resolve \\thmref across pages. Mirrors the SPA's
+    renderMarkdown Pass 0. Runs *after* _preprocess_equations (same order as the JS passes).
+    """
+    _RE = re.compile(
+        r'\\begin\{(' + _THEO_ENVS + r')\}(?:\[([^\]]*)\])?([\s\S]*?)\\end\{(?:' + _THEO_ENVS + r')\}',
+        re.IGNORECASE,
+    )
+    counts: dict[str, int] = dict(start_counts)
+    theo_store: list[dict] = []
+
+    def _replace(m: re.Match) -> str:
+        env = m.group(1).lower()
+        opt_title = (m.group(2) or "").strip()
+        inner = m.group(3)
+        numbered = env != "proof"
+        if numbered:
+            counts[env] = counts.get(env, 0) + 1
+        n = counts.get(env, 0) if numbered else 0
+        cap = env.capitalize()
+        if numbered:
+            title = f"{cap} {n} ({opt_title})" if opt_title else f"{cap} {n}"
+        else:
+            title = f"{cap} ({opt_title})" if opt_title else cap
+        # Strip \label{thm:name} from inner content (it's already recorded in thm_labels).
+        clean = re.sub(r'\\label\{[^}]+\}', '', inner).strip()
+        theo_store.append({"env": env, "title": title, "inner": clean, "proof": not numbered})
+        return f"\n\n@@TH{len(theo_store) - 1}@@\n\n"
+
+    md = _RE.sub(_replace, md)
+
+    def _thmref(m: re.Match) -> str:
+        t = thm_labels.get(m.group(1))
+        if not t:
+            return m.group(0)
+        return f'<span class="thm-ref">{t["env"].capitalize()} {t["number"]}</span>'
+
+    md = re.sub(r'\\thmref\{([^}]+)\}', _thmref, md)
+    # Resolve \thmref inside theorem/proof bodies too. Their \eqref/\ref and in-math \thmref
+    # were already handled by the equations pass, which ran on the full content first.
+    for entry in theo_store:
+        entry["inner"] = re.sub(r'\\thmref\{([^}]+)\}', _thmref, entry["inner"])
+    return md, theo_store
+
+
+def _resolve_refs_in_math(src: str, eq_nums: dict, thm_labels: dict) -> str:
+    """Resolve \\eqref/\\ref/\\thmref that appear INSIDE math to KaTeX-renderable text.
+
+    KaTeX doesn't know these commands, so an in-math reference used to break the whole
+    equation. We bake in the resolved value as plain math: \\eqref→(n), \\ref→n,
+    \\thmref→\\text{Env n}. Out-of-math references are handled separately (styled spans).
+    """
+    src = re.sub(r'\\eqref\{([^}]+)\}', lambda m: f'({eq_nums.get(m.group(1), "?")})', src)
+    src = re.sub(r'\\ref\{([^}]+)\}', lambda m: str(eq_nums.get(m.group(1), "?")), src)
+
+    def _thm(m: "re.Match") -> str:
+        t = thm_labels.get(m.group(1))
+        if not t:
+            return m.group(0)
+        return r'\text{' + t["env"].capitalize() + ' ' + str(t["number"]) + '}'
+
+    return re.sub(r'\\thmref\{([^}]+)\}', _thm, src)
+
+
+def _preprocess_equations(md: str, eq_nums: dict, thm_labels: dict) -> str:
+    """Inject \\tag{n} for labeled equations and resolve \\eqref{}/\\ref{} references.
+
+    ``eq_nums`` is the bubble-wide label→number map (built by _build_refs), so references
+    resolve across pages. Each display ``\\label{name}`` becomes ``\\tag{n}`` and environments
+    are starred to suppress KaTeX's auto-counter. Math regions are then stashed and their
+    in-math references resolved to plain math (see _resolve_refs_in_math) before the remaining
+    out-of-math ``\\eqref``/``\\ref`` become styled spans — so KaTeX never sees a raw reference
+    and the span substitution can't corrupt math. ``thm_labels`` is only consulted for a
+    \\thmref written inside math. Pure rendering transform — source .md files are untouched.
+    """
+    _ENV = r'\\begin\{(' + _DISP_ENVS + r')\}([\s\S]*?)\\end\{(?:' + _DISP_ENVS + r')\}'
+
+    def _retag(inner: str) -> str:
+        # Labeled → \tag{n}; an unknown label (e.g. typed but not yet saved) is dropped so it
+        # never reaches KaTeX (which errors on a bare \label).
+        return re.sub(r'\\label\{([^}]+)\}',
+                      lambda lm: f'\\tag{{{eq_nums[lm.group(1)]}}}' if lm.group(1) in eq_nums else '',
+                      inner)
+
+    def _star(env: str) -> str:
+        """Return the starred form of an environment name (idempotent)."""
+        return env if env.endswith('*') else env + '*'
+
+    md = re.sub(r'\$\$([\s\S]+?)\$\$', lambda m: f'$${_retag(m.group(1))}$$', md)
+    md = re.sub(_ENV, lambda m: f'\\begin{{{_star(m.group(1))}}}{_retag(m.group(2))}\\end{{{_star(m.group(1))}}}', md)
+
+    # Stash every math region, resolve its in-math refs, then restore — the out-of-math span
+    # substitution below then can't touch math, and KaTeX receives only resolved numbers.
+    stored: list[str] = []
+
+    def _stash(m: "re.Match") -> str:
+        stored.append(_resolve_refs_in_math(m.group(0), eq_nums, thm_labels))
+        return f'@@MR{len(stored) - 1}@@'
+
+    md = re.sub(_ENV, _stash, md)
+    md = re.sub(r'\$\$[\s\S]+?\$\$', _stash, md)
+    md = re.sub(r'\\\[[\s\S]+?\\\]', _stash, md)
+    md = re.sub(r'\\\([\s\S]+?\\\)', _stash, md)
+    md = re.sub(r'\$[^\$\n]+?\$', _stash, md)
+
     md = re.sub(r'\\eqref\{([^}]+)\}',
                 lambda m: f'<span class="eq-ref">({eq_nums.get(m.group(1), "?")})</span>', md)
     md = re.sub(r'\\ref\{([^}]+)\}',
                 lambda m: f'<span class="eq-ref">{eq_nums.get(m.group(1), "?")}</span>', md)
+
+    md = re.sub(r'@@MR(\d+)@@', lambda m: stored[int(m.group(1))], md)
     return md
 
 
@@ -59,13 +210,18 @@ def _render_preview_html(*, name: str, page: str, all_pages: list, content: str,
                          link_base: str, asset_base: str, show_back: bool,
                          todos: "dict | None" = None,
                          todo_link_base: "str | None" = None,
-                         macros: "dict | None" = None) -> str:
+                         macros: "dict | None" = None,
+                         refs: "dict | None" = None) -> str:
     """Build the standalone rendered-page HTML shared by the owner preview and public share pages.
 
     ``link_base``  — prefix for intra-bubble nav + wikilinks (e.g. ``/api/bubbles/<slug>/preview``
                      or ``/share/<token>``).
     ``asset_base`` — prefix images resolve to (``/share/<token>/assets`` rewrites the stored
                      ``/api/bubbles/<slug>/assets`` URLs so figures load without a login).
+    ``refs``       — the bubble-wide reference registry (from _build_refs) so equation/theorem
+                     numbers and \\eqref/\\thmref resolve across pages. ``page`` is the current
+                     page slug, used to look up its theorem-counter offset. If omitted, refs are
+                     built from this page alone (single-page fallback for tests/standalone use).
     """
     nav_links = " &nbsp;|&nbsp; ".join(
         f'<a href="{link_base}/{p["page_slug"]}">{p["title"]}</a>' for p in all_pages)
@@ -105,7 +261,19 @@ def _render_preview_html(*, name: str, page: str, all_pages: list, content: str,
         return f'<span class="todoref">{label}</span>'
 
     content = re.sub(r'@(\d+)', resolve_todoref, content)
-    md = _preprocess_equations(re.sub(r'\[\[([^\]]+)\]\]', resolve_wikilink, content))
+    content = re.sub(r'\[\[([^\]]+)\]\]', resolve_wikilink, content)
+    # Number equations FIRST (on the full content, incl. theorem/proof interiors) so equations
+    # inside theorems join the bubble-wide numbering and \eqref to them resolves; THEN stash the
+    # theorem boxes. Matches the SPA renderMarkdown pass order. Numbers come from the bubble-wide
+    # registry (refs) so references work across pages; fall back to this page alone if absent.
+    if refs is None:
+        refs = _build_refs([{"page_slug": page, "content": content}])
+    eq_map = refs.get("eq", {})
+    thm_map = refs.get("thm", {})
+    thm_start = refs.get("thmStart", {}).get(page, {})
+    content = _preprocess_equations(content, eq_map, thm_map)
+    content, theo_store = _preprocess_theorems(content, thm_map, thm_start)
+    md = content
     # point figure URLs at the right (possibly public) asset route
     md = md.replace(f"/api/bubbles/{slug}/assets/", f"{asset_base}/")
 
@@ -122,47 +290,105 @@ def _render_preview_html(*, name: str, page: str, all_pages: list, content: str,
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{name} — {page}</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔒</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
 <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/marked@11/marked.min.js"></script>
 <style>
-:root{{font:16px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-      --bg:#0f1115;--ink:#e6e9ef;--muted:#9aa3b2;--line:#2a2f3a;--panel:#1e222b;--accent:#7c9cff}}
-body.light{{--bg:#f4f6fb;--ink:#1a1d24;--muted:#6b7280;--line:#d0d7e3;--panel:#eef1f7;--accent:#3b5bdb}}
-body{{background:var(--bg);color:var(--ink);max-width:860px;margin:0 auto;padding:24px 32px}}
-nav{{font-size:13px;margin-bottom:24px;padding-bottom:12px;border-bottom:1px solid var(--line);color:var(--muted)}}
+:root{{
+  --bg:#0d1018;--ink:#e8ecf4;--muted:#8a94a8;--line:#252d3d;--panel:#1c2230;--accent:#9b80ff;--accent2:#4dd9b8;
+  --font-ui:'Syne',system-ui,sans-serif;
+  --font-reading:'Source Serif 4',Georgia,serif;
+  --font-mono:'JetBrains Mono',ui-monospace,monospace;
+}}
+body.light{{--bg:#f2f4f8;--ink:#1a1d28;--muted:#5f6880;--line:#d4daea;--panel:#edf0f7;--accent:#6d4aff;--accent2:#0aa882}}
+*{{box-sizing:border-box}}
+body{{background:var(--bg);color:var(--ink);max-width:860px;margin:0 auto;padding:24px 32px;
+     font:16px/1.75 var(--font-reading)}}
+nav{{font-family:var(--font-ui);font-size:13px;font-weight:600;margin-bottom:28px;
+     padding-bottom:12px;border-bottom:1px solid var(--line);color:var(--muted)}}
 nav a{{color:var(--accent);text-decoration:none}} nav a:hover{{text-decoration:underline}}
-h1,h2,h3,h4{{position:relative}}
+h1,h2,h3,h4{{position:relative;font-family:var(--font-reading);font-weight:600;letter-spacing:-.01em}}
 h1:hover .anchor,h2:hover .anchor,h3:hover .anchor,h4:hover .anchor{{opacity:.55}}
 .anchor{{position:absolute;left:-1.1em;opacity:0;text-decoration:none;color:var(--accent);
          cursor:pointer;font-size:.8em;padding-right:.3em}}
 .anchor:hover{{opacity:1!important}}
-h1{{font-size:28px}} h2{{font-size:21px;border-bottom:1px solid var(--line);padding-bottom:4px}}
-code{{background:var(--panel);padding:2px 6px;border-radius:4px}}
-pre{{background:var(--panel);padding:14px;border-radius:8px;overflow:auto}}
-a{{color:var(--accent)}} img{{max-width:100%;border-radius:8px}}
-table{{display:block;width:max-content;max-width:100%;overflow-x:auto;border-collapse:collapse;margin:12px 0}}
-th,td{{border:1px solid var(--line);padding:6px 10px;text-align:left}}
-thead th{{background:var(--panel)}}
-blockquote{{margin:12px 0;padding:6px 14px;border-left:3px solid var(--accent);color:var(--muted);
+h1{{font-size:30px;margin-top:0}}
+h2{{font-size:22px;border-bottom:1px solid var(--line);padding-bottom:5px;margin-top:2em}}
+h3{{font-size:18px}} h4{{font-size:16px}}
+p{{margin:.65em 0}}
+code{{background:var(--panel);padding:2px 6px;border-radius:4px;font-family:var(--font-mono);font-size:.84em}}
+pre{{background:var(--panel);padding:14px;border-radius:10px;overflow:auto;
+     box-shadow:0 2px 12px rgba(0,0,0,.35)}}
+pre code{{font-family:var(--font-mono);font-size:13px}}
+a{{color:var(--accent)}} img{{max-width:100%;border-radius:8px;box-shadow:0 2px 12px rgba(0,0,0,.3)}}
+table{{display:block;width:max-content;max-width:100%;overflow-x:auto;border-collapse:collapse;margin:14px 0;font-size:15px}}
+th,td{{border:1px solid var(--line);padding:7px 11px;text-align:left}}
+thead th{{background:var(--panel);font-family:var(--font-ui);font-size:13px;font-weight:600}}
+blockquote{{margin:14px 0;padding:8px 16px;border-left:3px solid var(--accent);color:var(--muted);
             background:var(--panel);border-radius:0 8px 8px 0}}
-blockquote p{{margin:6px 0}}
-.katex-display{{overflow-x:auto}}
-.eq-ref{{color:var(--accent);font-weight:500}}
-.todoref{{color:var(--accent);font-weight:500;background:var(--panel);padding:1px 5px;border-radius:4px}}
+blockquote p{{margin:5px 0}}
+.katex-display{{overflow-x:auto;overflow-y:hidden;max-width:100%}}
+/* Take the \tag out of KaTeX's absolute right:0 so a wide equation can't run under it: the
+   number trails the centred body and a too-wide equation just scrolls. Mirrors the SPA rule. */
+.katex-display>.katex>.katex-html>.tag{{position:static;margin-left:1.2em}}
+/* An equation's own number shares the accent + tabular figures with its cross-references. */
+.katex .tag,.katex-display .tag{{color:var(--accent);font-feature-settings:"tnum" 1;font-variant-numeric:tabular-nums}}
+/* Cross-references: typeset inline links — tabular figures, hairline underline → soft hover pill. */
+.eq-ref,.thm-ref{{font-family:var(--font-ui);font-weight:600;color:var(--accent);
+  font-feature-settings:"tnum" 1;font-variant-numeric:tabular-nums;white-space:nowrap;
+  padding:0 .14em;border-radius:4px;
+  box-shadow:inset 0 -1px 0 color-mix(in srgb,var(--accent) 40%,transparent);
+  transition:background .14s ease,box-shadow .14s ease}}
+.eq-ref:hover,.thm-ref:hover{{background:color-mix(in srgb,var(--accent) 15%,transparent);
+  box-shadow:inset 0 -1px 0 transparent}}
+/* Theorem / lemma / proof boxes: refined journal callouts, one jewel tone per class (--env). */
+.math-env{{--env:var(--accent);position:relative;margin:1.6em 0;padding:.85em 1.15em .85em 1.4em;
+  border-radius:4px 12px 12px 4px;
+  background:linear-gradient(90deg,color-mix(in srgb,var(--env) 9%,transparent),transparent 42%),var(--panel);
+  border:1px solid color-mix(in srgb,var(--env) 24%,var(--line));
+  box-shadow:0 10px 30px -22px rgba(0,0,0,.8)}}
+.math-env::before{{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;border-radius:4px 0 0 4px;
+  background:linear-gradient(var(--env),color-mix(in srgb,var(--env) 35%,transparent))}}
+.math-env-title{{font-family:var(--font-ui);font-weight:700;font-size:.74em;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--env);margin-bottom:.45em;
+  font-feature-settings:"tnum" 1;font-variant-numeric:tabular-nums}}
+.math-env.definition,.math-env.proposition{{--env:var(--accent2)}}
+.math-env.remark{{--env:var(--muted)}}
+.math-env.proof{{--env:color-mix(in srgb,var(--muted) 55%,var(--line))}}
+.math-env.proof .math-env-title{{letter-spacing:.12em;opacity:.85}}
+.math-env .math-env-qed{{text-align:right;margin-top:.5em;color:var(--env);opacity:.6;font-size:1.15em;line-height:1}}
+.todoref{{color:var(--accent);font-weight:500;background:var(--panel);padding:1px 5px;border-radius:4px;
+          font-family:var(--font-ui);font-size:.9em}}
 #copied{{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--panel);
-         border:1px solid var(--line);padding:8px 14px;border-radius:8px;font-size:13px;opacity:0;
+         border:1px solid var(--line);padding:8px 14px;border-radius:8px;
+         font-family:var(--font-ui);font-size:13px;opacity:0;
          transition:opacity .2s;pointer-events:none}}
 #copied.show{{opacity:1}}
 #theme-toggle{{position:fixed;top:14px;right:16px;background:var(--panel);border:1px solid var(--line);
-               color:var(--ink);border-radius:8px;padding:5px 10px;cursor:pointer;font-size:13px;z-index:10}}
+               color:var(--ink);border-radius:8px;padding:6px 12px;cursor:pointer;
+               font-family:var(--font-ui);font-size:13px;font-weight:600;z-index:10}}
 #back-btn{{position:fixed;top:14px;left:16px;background:var(--panel);border:1px solid var(--line);
-           color:var(--ink);border-radius:8px;padding:5px 10px;cursor:pointer;font-size:13px;z-index:10}}
+           color:var(--ink);border-radius:8px;padding:6px 12px;cursor:pointer;
+           font-family:var(--font-ui);font-size:13px;font-weight:600;z-index:10}}
+.page-credit{{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);
+  font-family:var(--font-ui);font-size:12px;color:var(--muted);text-align:center}}
+.page-credit a{{color:var(--muted);text-decoration:none}}
+.page-credit a:hover{{color:var(--accent)}}
+@media(max-width:600px){{
+  body{{padding:16px 18px}}
+  #theme-toggle,#back-btn{{top:10px;padding:5px 10px;font-size:12px}}
+  #back-btn{{left:10px}} #theme-toggle{{right:10px}}
+  h1{{font-size:24px}} h2{{font-size:19px}}
+}}
 </style></head><body>
 {back_btn}
 <button id="theme-toggle" onclick="toggleTheme()">☀️ Light</button>
 <nav><b>{name}</b> &nbsp;|&nbsp; {nav_links}</nav>
 <div id="content"></div>
+<footer class="page-credit">Made with 💜 + 🤖 by <a href="https://github.com/HamidrezaKmK" target="_blank" rel="noopener">HamidrezaKmK</a></footer>
 <div id="copied">🔗 Link copied</div>
 <script>
 (function(){{
@@ -174,12 +400,17 @@ function toggleTheme(){{
   document.getElementById("theme-toggle").textContent=light?"🌙 Dark":"☀️ Light";
   localStorage.setItem("preview_theme",light?"light":"dark");
 }}
-// Stash every math span before marked.js runs so it can't mangle the LaTeX
-// (e.g. underscores → <em>), then render KaTeX from the untouched source.
-// Mirrors the editor side pane's renderMarkdown() so preview/share match it exactly.
+// Render markdown + math + theorem environments.
+// Equation numbering (\\label→\\tag) was already done server-side by _preprocess_equations.
+// Theorem blocks were extracted server-side and injected as _theoStore below.
+// This JS step: stash math → marked.parse → KaTeX restore → theorem block restore.
+// Mirrors renderMarkdown() in index.html so preview and split-view are always identical.
 (function(){{
   const store=[]; let s={repr(md)};
   const _macros={json.dumps(macros or {})};
+  const _theoStore={json.dumps(theo_store)};
+  const renderMath=it=>{{ try{{ return katex.renderToString(it.src,{{displayMode:it.display,macros:_macros,throwOnError:false}}); }}
+    catch(e){{ return '<span style="color:#ff7a7a">'+it.src+'</span>'; }} }};
   const stash=(re,display)=>{{ s=s.replace(re,(m,p1)=>{{ store.push({{src:p1,display}}); return "@@M"+(store.length-1)+"@@"; }}); }};
   s=s.replace(/(\\\\begin\\{{(?:align\\*?|alignat\\*?|gather\\*?|multline\\*?|equation\\*?)\\}}[\\s\\S]*?\\\\end\\{{(?:align\\*?|alignat\\*?|gather\\*?|multline\\*?|equation\\*?)\\}})/g,(m,p1)=>{{ store.push({{src:p1,display:true}}); return "@@M"+(store.length-1)+"@@"; }});
   stash(/\\$\\$([\\s\\S]+?)\\$\\$/g,true);
@@ -187,9 +418,22 @@ function toggleTheme(){{
   stash(/\\\\\\(([\\s\\S]+?)\\\\\\)/g,false);
   stash(/\\$([^\\$\\n]+?)\\$/g,false);
   let html=marked.parse(s);
-  html=html.replace(/@@M(\\d+)@@/g,(m,i)=>{{ const it=store[+i];
-    try{{ return katex.renderToString(it.src,{{displayMode:it.display,macros:_macros,throwOnError:false}}); }}
-    catch(e){{ return '<span style="color:#ff7a7a">'+it.src+'</span>'; }} }});
+  html=html.replace(/@@M(\\d+)@@/g,(m,i)=>renderMath(store[+i]));
+  // Restore theorem/lemma/proof blocks: render inner content with math
+  html=html.replace(/<p>@@TH(\\d+)@@<\\/p>/g,(m,i)=>{{
+    const t=_theoStore[+i];
+    const istore=[]; let is=t.inner;
+    const istash=(re,disp)=>{{ is=is.replace(re,(_,p1)=>{{ istore.push({{src:p1,display:disp}}); return "@@IM"+(istore.length-1)+"@@"; }}); }};
+    is=is.replace(/(\\\\begin\\{{(?:align\\*?|alignat\\*?|gather\\*?|multline\\*?|equation\\*?)\\}}[\\s\\S]*?\\\\end\\{{(?:align\\*?|alignat\\*?|gather\\*?|multline\\*?|equation\\*?)\\}})/g,(_,p1)=>{{ istore.push({{src:p1,display:true}}); return "@@IM"+(istore.length-1)+"@@"; }});
+    istash(/\\$\\$([\\s\\S]+?)\\$\\$/g,true);
+    istash(/\\\\\\[([\\s\\S]+?)\\\\\\]/g,true);
+    istash(/\\\\\\(([\\s\\S]+?)\\\\\\)/g,false);
+    istash(/\\$([^\\$\\n]+?)\\$/g,false);
+    let ih=marked.parse(is);
+    ih=ih.replace(/@@IM(\\d+)@@/g,(_,j)=>renderMath(istore[+j]));
+    const qed=t.proof?'<div class="math-env-qed">∎</div>':'';
+    return '<div class="math-env '+t.env+'"><div class="math-env-title">'+t.title+'</div>'+ih+qed+'</div>';
+  }});
   document.getElementById("content").innerHTML=html;
 }})();
 // Give every heading a stable id + a click-to-copy section anchor; deep-link via #id.
@@ -411,7 +655,7 @@ def build_app():
     @app.get("/api/help")
     def get_help():
         from . import reports as _r
-        return {"guide": _r.APP_USAGE_GUIDE}
+        return {"sections": _r.APP_USAGE_GUIDE_SECTIONS}
 
     # ---- public share (NO auth — gated only by the unlisted token + the bubble's active flag) ----
     @app.get("/share/{token}")
@@ -440,7 +684,8 @@ def build_app():
             slug=slug, link_base=f"/share/{token}",
             asset_base=f"/share/{token}/assets", show_back=False,
             todos={t["id"]: t for t in service.list_todos(home)},  # share: styled text, no link
-            macros=service.load_math_config(home).get("macros", {}))
+            macros=service.load_math_config(home).get("macros", {}),
+            refs=_bubble_refs(home, slug, all_pages))
         return HTMLResponse(html)
 
     @app.get("/share/{token}/assets/{filename}")
@@ -806,20 +1051,34 @@ def build_app():
     def get_page(slug: str, page: str, user: str = Depends(current_user)):
         return {"content": service.get_page(home_of(user), slug, page)}
 
+    @app.get("/api/bubbles/{slug}/refs")
+    def get_refs(slug: str, user: str = Depends(current_user)):
+        """Bubble-wide equation/theorem reference registry for the live editor preview.
+
+        The SPA renders one page at a time but numbers/links references across the whole bubble,
+        so it fetches this map (eq labels, thm labels, per-page theorem-counter offsets) and
+        re-fetches it after saves and page add/remove. Mirrors the server-side _build_refs the
+        preview/share HTML uses, so the editor preview and the standalone pages stay identical.
+        """
+        home = home_of(user)
+        return _bubble_refs(home, slug, service.list_pages(home, slug))
+
     @app.get("/api/bubbles/{slug}/preview/{page}")
     def preview_page(slug: str, page: str, user: str = Depends(current_user)):
         """Serve a standalone HTML page — full-screen rendered preview with working intra-bubble links."""
         from fastapi.responses import HTMLResponse
 
         home = home_of(user)
+        all_pages = service.list_pages(home, slug)
         html = _render_preview_html(
             name=service.bubble_detail(home, slug)["name"], page=page,
-            all_pages=service.list_pages(home, slug), content=service.get_page(home, slug, page),
+            all_pages=all_pages, content=service.get_page(home, slug, page),
             slug=slug, link_base=f"/api/bubbles/{slug}/preview",
             asset_base=f"/api/bubbles/{slug}/assets", show_back=True,
             todos={t["id"]: t for t in service.list_todos(home)},
             todo_link_base="/#todos",  # owner is logged in → link opens the SPA TODO manager
-            macros=service.load_math_config(home).get("macros", {}))
+            macros=service.load_math_config(home).get("macros", {}),
+            refs=_bubble_refs(home, slug, all_pages))
         return HTMLResponse(html)
 
     @app.post("/api/bubbles/{slug}/pages")

@@ -29,6 +29,18 @@ def doctor():
     raise typer.Exit(0 if res["ok"] else 1)
 
 
+@app.command()
+def editguide():
+    """Print the canonical report Editing Guide (markdown) to stdout.
+
+    Single source of truth for report-formatting conventions — the scientist launcher scripts
+    capture this and inject it into the assistant's role so it consults the guide before editing.
+    Needs no auth or .env: it just emits static text."""
+    from . import reports
+
+    typer.echo(reports.guide_section("Editing Guide"))
+
+
 @app.command(name="serve")
 def serve_cmd(
     host: str = typer.Option("127.0.0.1", help="Host/interface to bind."),
