@@ -283,6 +283,28 @@ def _scan_references() -> tuple[dict, dict]:
     return counts, locations
 
 
+def _rewrite_todo_references(id_map: dict[int, int]) -> None:
+    """Rewrite report-page ``@<id>`` references after TODO ids are compacted."""
+    if not id_map:
+        return
+    reg = bubbles.load_registry()
+    for slug in reg:
+        try:
+            pages = bubbles.manifest(slug).get("pages", [])
+        except Exception:  # noqa: BLE001
+            continue
+        for p in pages:
+            md = bubbles.get_page(slug, p["page_slug"])
+
+            def repl(m: re.Match) -> str:
+                old = int(m.group(1))
+                return f"@{id_map.get(old, old)}"
+
+            new_md = _TODO_REF_RE.sub(repl, md or "")
+            if new_md != md:
+                bubbles.save_page(slug, p["page_slug"], new_md)
+
+
 def list_todos(home: Path) -> list[dict]:
     with paths.use_root(home):
         items = todos.list_todos()
@@ -325,7 +347,10 @@ def delete_todo(home: Path, tid: int) -> bool:
             raise ValueError(
                 f"Referenced in {len(refs)} place(s): {where}. "
                 f"Remove the @{int(tid)} references first.")
-        return todos.delete_todo(tid)
+        deleted, id_map = todos.delete_todo(tid)
+        if deleted:
+            _rewrite_todo_references(id_map)
+        return deleted
 
 
 # ---- figures ----

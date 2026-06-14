@@ -41,6 +41,13 @@
   body.light .toastui-editor-defaultUI{filter:invert(1) hue-rotate(180deg)}
   body.light .toastui-editor-defaultUI img{filter:invert(1) hue-rotate(180deg)}
   *{box-sizing:border-box}
+  *{scrollbar-width:thin;scrollbar-color:color-mix(in srgb,var(--accent) 34%,transparent) transparent}
+  *::-webkit-scrollbar{width:10px;height:10px}
+  *::-webkit-scrollbar-track{background:transparent}
+  *::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--accent) 28%,transparent);
+    border-radius:999px;border:3px solid transparent;background-clip:content-box}
+  *:hover::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--accent) 46%,transparent);
+    background-clip:content-box}
   html,body{height:100%}
   body{margin:0;font:14px/1.55 var(--font-ui);
        background:var(--bg);color:var(--ink);overflow:hidden;overflow:clip}
@@ -256,10 +263,18 @@
   /* preview-pane toggle is handled via S.previewEl.classList.toggle("hide") */
 
   /* page tabs + editor host */
-  .ptabs{display:flex;gap:4px;flex-wrap:wrap;align-items:center;padding:8px 10px;
+  .ptabs{display:flex;gap:10px;align-items:center;padding:8px 10px;
          border-bottom:1px solid var(--line);flex:0 0 auto;min-width:0}
+  .ptab-scroll{display:flex;gap:4px;align-items:center;min-width:0;flex:1 1 auto;
+         overflow-x:auto;overflow-y:hidden;padding-bottom:2px}
+  .ptab-scroll::-webkit-scrollbar{height:8px}
+  .ptab-scroll::-webkit-scrollbar-thumb{border-width:2px}
+  .ptab-scroll>*{flex:0 0 auto}
+  .ptab-controls{display:flex;gap:8px;align-items:center;flex:0 0 auto;white-space:nowrap}
   .ptab{padding:4px 10px;border-radius:7px 7px 0 0;border:1px solid var(--line);
-        background:var(--panel2);cursor:pointer;font-size:13px;display:flex;gap:6px;align-items:center}
+        background:var(--panel2);cursor:pointer;font-size:13px;display:flex;gap:6px;align-items:center;
+        max-width:280px}
+  .ptab>span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
   .ptab.active{border-color:var(--accent);color:var(--ink);background:var(--bg)}
   .ptab .x{opacity:.5;font-size:11px}
   .ptab .x:hover{opacity:1;color:var(--bad)}
@@ -1865,6 +1880,17 @@
   // ---- page tabs ----
   function refreshTabs(){
     const tabs=$("#ptabs"); if(!tabs)return; tabs.innerHTML="";
+    const tabScroll=el("div",{class:"ptab-scroll"});
+    const controls=el("div",{class:"ptab-controls"});
+    tabScroll.onwheel=e=>{
+      if(Math.abs(e.deltaY)<=Math.abs(e.deltaX))return;
+      const max=tabScroll.scrollWidth-tabScroll.clientWidth;
+      if(max<=0)return;
+      const before=tabScroll.scrollLeft;
+      tabScroll.scrollLeft+=e.deltaY;
+      if(tabScroll.scrollLeft!==before)e.preventDefault();
+    };
+    tabs.append(tabScroll,controls);
     S.titleInputs={};
     S.pages.forEach(p=>{
       const t=el("div",{class:"ptab"+(p.page_slug===S.page?" active":"")});
@@ -1879,13 +1905,12 @@
         if(p.page_slug!==S.home)
           t.append(el("span",{class:"x",title:"Delete page",onclick:(e)=>{e.stopPropagation();deletePage(p.page_slug);}},"✕"));
       }
-      tabs.append(t);
+      tabScroll.append(t);
     });
-    if(!S.editingTitles) tabs.append(el("button",{class:"small ghost",onclick:newPage},"+ Page"));
-    tabs.append(el("span",{class:"spacer",style:"flex:1"}));
+    if(!S.editingTitles) tabScroll.append(el("button",{class:"small ghost",onclick:newPage},"+ Page"));
     // sync badge lives here in the editor toolbar (state in S.syncState; autosaves on idle)
     const st=S.syncState||"synced";
-    tabs.append(el("span",{class:"synced "+st,id:"syncedBadge",
+    controls.append(el("span",{class:"synced "+st,id:"syncedBadge",
       title:st==="conflict"?"Changed on disk — click to resolve":"Saved automatically; click to save now",
       style:"cursor:pointer",onclick:clickSave},SYNC_LABEL[st]));
     // view-mode selector — also the home of "Edit titles" (folded in as a 4th option). Visible on
@@ -1904,9 +1929,9 @@
       if(S.editingTitles) await toggleEditTitles();   // persist the in-progress title edits first
       setViewMode(v);
     };
-    tabs.append(vm);
+    controls.append(vm);
     // chat-pane toggle
-    tabs.append(el("button",{class:"small ghost desktop-only-tool",title:S.chatCollapsed?"Show chat":"Hide chat",
+    controls.append(el("button",{class:"small ghost desktop-only-tool",title:S.chatCollapsed?"Show chat":"Hide chat",
       onclick:toggleChat},S.chatCollapsed?"💬 >":"💬 <"));
   }
   // ---- inline title editing: toggle page-title + bubble-name inputs from the sync-badge row ----

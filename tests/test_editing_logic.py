@@ -299,6 +299,8 @@ class TodosCrud(unittest.TestCase):
             self.assertTrue(got["done"])
             self.assertTrue(service.delete_todo(home, 2))
             self.assertIsNone(service.get_todo(home, 2))
+            t2b = service.add_todo(home, "Second again")
+            self.assertEqual(t2b["id"], 2)
             self.assertFalse(service.delete_todo(home, 999))  # missing id → no-op
 
 
@@ -318,6 +320,22 @@ class TodoReferenceGuard(unittest.TestCase):
             with self.assertRaises(ValueError):
                 service.delete_todo(home, 1)
             self.assertTrue(service.delete_todo(home, 2))
+
+    def test_delete_compacts_ids_and_rewrites_shifted_references(self):
+        with temp_home() as home:
+            slug = make_bubble(home)
+            service.add_todo(home, "one")
+            service.add_todo(home, "two")
+            service.add_todo(home, "three")
+            with paths.use_root(home):
+                bubbles.save_page(slug, "overview", "# T\n\nKeep tracking @3 here.\n")
+
+            self.assertTrue(service.delete_todo(home, 2))
+            remaining = service.list_todos(home)
+            self.assertEqual([(t["id"], t["title"]) for t in remaining], [(1, "one"), (2, "three")])
+            with paths.use_root(home):
+                self.assertIn("@2 here", bubbles.get_page(slug, "overview"))
+                self.assertNotIn("@3 here", bubbles.get_page(slug, "overview"))
 
     def test_get_todo_lists_reference_locations(self):
         with temp_home() as home:

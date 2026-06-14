@@ -1,6 +1,6 @@
 """TODOs — lightweight, GitHub-issue-style task items, global per user.
 
-Each TODO has an auto-incrementing integer ``id`` (referenced from report pages as ``@<id>``),
+Each TODO has a compact integer ``id`` (referenced from report pages as ``@<id>``),
 a ``title``, a markdown ``note`` (same math/markdown style as reports), a ``done`` flag, and a
 ``created_at`` stamp. Stored in a single per-user ``todos.yaml``::
 
@@ -59,10 +59,14 @@ def get_todo(tid: int) -> dict | None:
 
 def add_todo(title: str, note: str = "") -> dict:
     data = _load()
-    tid = int(data["next_id"])
+    todos = data["todos"]
+    existing = {int(k) for k in todos}
+    tid = 1
+    while tid in existing:
+        tid += 1
     todo = {"id": tid, "title": (title or "").strip() or f"TODO {tid}",
             "note": note or "", "done": False, "created_at": _now_iso()}
-    data["todos"][str(tid)] = todo
+    todos[str(tid)] = todo
     data["next_id"] = tid + 1
     _save(data)
     return todo
@@ -86,12 +90,26 @@ def update_todo(tid: int, *, title: str | None = None, note: str | None = None,
     return todo
 
 
-def delete_todo(tid: int) -> bool:
-    """Remove a TODO. Returns True if it existed. (Reference guard is enforced in service.)"""
+def delete_todo(tid: int) -> tuple[bool, dict[int, int]]:
+    """Remove a TODO and compact ids. Returns ``(deleted, old_to_new_id)``.
+
+    Reference guards and report-page reference rewrites are enforced by the service layer.
+    """
     data = _load()
     key = str(int(tid))
     if key not in data["todos"]:
-        return False
+        return False, {}
     del data["todos"][key]
+    old_items = [data["todos"][k] for k in sorted(data["todos"], key=lambda x: int(x))]
+    id_map: dict[int, int] = {}
+    compacted: dict[str, dict] = {}
+    for new_id, todo in enumerate(old_items, start=1):
+        old_id = int(todo["id"])
+        if old_id != new_id:
+            id_map[old_id] = new_id
+        todo["id"] = new_id
+        compacted[str(new_id)] = todo
+    data["todos"] = compacted
+    data["next_id"] = len(compacted) + 1
     _save(data)
-    return True
+    return True, id_map

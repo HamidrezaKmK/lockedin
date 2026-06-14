@@ -306,6 +306,13 @@ def _render_preview_html(*, name: str, page: str, all_pages: list, content: str,
 }}
 body.light{{--bg:#f2f4f8;--ink:#1a1d28;--muted:#5f6880;--line:#d4daea;--panel:#edf0f7;--accent:#6d4aff;--accent2:#0aa882}}
 *{{box-sizing:border-box}}
+*{{scrollbar-width:thin;scrollbar-color:color-mix(in srgb,var(--accent) 34%,transparent) transparent}}
+*::-webkit-scrollbar{{width:10px;height:10px}}
+*::-webkit-scrollbar-track{{background:transparent}}
+*::-webkit-scrollbar-thumb{{background:color-mix(in srgb,var(--accent) 28%,transparent);
+  border-radius:999px;border:3px solid transparent;background-clip:content-box}}
+*:hover::-webkit-scrollbar-thumb{{background:color-mix(in srgb,var(--accent) 46%,transparent);
+  background-clip:content-box}}
 body{{background:var(--bg);color:var(--ink);max-width:860px;margin:0 auto;padding:24px 32px;
      font:16px/1.75 var(--font-reading)}}
 nav{{font-family:var(--font-ui);font-size:13px;font-weight:600;margin-bottom:28px;

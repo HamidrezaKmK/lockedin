@@ -111,7 +111,7 @@ Layered; the server is thin HTTP/SSE glue over `service.py`.
 | `assets.py` | PDF storage: `ASSETS/<pdf_id>/{paper.pdf,text.txt,summary.md,meta.yaml}`. Atomic writes. |
 | `tagger.py` | Background ingest after upload: extract text → summarize (cached) → suggest reuse-first tags. Fail-safe. |
 | `bubbles.py` | Bubble registry (`bubbles.yaml`) + the per-bubble **mini-wiki**: pages manifest, page CRUD, image storage, legacy-`report.md` migration, chat-session CRUD (`chats/` dir). |
-| `todos.py` | **Global per-user TODOs** (GitHub-issue style), stored in `todos.yaml` (`next_id` + `todos` map). Pure storage: auto-incrementing integer `id`, `title`, markdown `note`, `done`. CRUD only — it does **not** import `bubbles`; reference counting + the delete guard live in `service.py`. Referenced from report pages as `@<id>`. |
+| `todos.py` | **Global per-user TODOs** (GitHub-issue style), stored in `todos.yaml` (`next_id` + `todos` map). Pure storage: compact integer `id`, `title`, markdown `note`, `done`. CRUD only — it does **not** import `bubbles`; reference counting, delete guard, and report-reference rewrites after id compaction live in `service.py`. Referenced from report pages as `@<id>`. |
 | `reports.py` | `chat_stream` — a **read-only** streamed research chat grounded in the bubble's report pages + paper summaries + deep-read PDFs (bounded context, internal compaction). Also `generate_chat_title`. It does NOT edit pages. |
 | `news.py` | **Premium interactive crawl chat** (no daemon — all in `serve`). The user converses with the *operator's* Claude Code agent (headless **streaming** `claude -p --output-format stream-json --verbose --allowedTools WebSearch WebFetch`, web tools only, host login). `chat_stream` spawns the agent via `_agent_events` (the NDJSON Popen seam tests monkeypatch), parses a one-line `@@ITEM {json}` protocol to **save each paper the instant it's found** (`add_item`, dedup vs `seen`), and yields SSE `delta`/`activity`/`item`/`done` (with `stopped:"timeout"\|"max_turns"`, real `cost_usd`). "continue" resumes the same agent session (`--resume <uuid>`). Instructions are **plain text** (no per-instruction date); a single **global pointer** (`last_checked` in `config/news.yaml`) seeds the default crawl range and advances **only on `accept_session`** (typed "I'm happy" or the button) to the range's `until`. Matching is against a **persistent per-bubble scope summary** (not titles): on the first turn of a crawl, `refresh_bubble_summaries` regenerates each approved bubble's 2–4-sentence summary via the user's active model **only if its content changed** (sha256 fingerprint over name + instructions + report pages + paper summaries), caches it in `bubble_summaries.yaml`, and feeds those summaries to the agent. A **hard date-range rule** in the prompt ([since..until], plus a guaranteed closing ```json``` block) keeps old papers out. The whole interaction (tool-use **activities** + item markers + prose) is recorded to the session transcript **live** so history replays it exactly. A crawl turn sets a `running` flag on the session; the SSE worker runs to completion server-side even if the browser disconnects, so leaving the News page mid-crawl is safe — on return the SPA sees `running` and **reconnects by polling** `status`/feed until the turn ends (no live SSE re-attach). `discard_session` drops the batch. An end-of-turn **reconciliation pass** (`_extract_items_from_text`) re-scans the agent's full output + the final `result` payload for any `@@ITEM` line or fenced `{"items":[…]}` block, so every structured result reaches the feed even if streaming missed it (dedup prevents doubles). Ended conversations are **archived** to `news_chats/<uuid>.json` (`list/get/delete_chat_session`, like bubble chats). Stores in `news_items.yaml` (`items`/`seen`/active `session`). Gated by the kill switch (env `LOCKEDIN_NEWS_ENABLED`, default OFF — set on `serve`) + per-account `news_enabled`. Also surfaced in the Slack bot (`slackbot.py`) for entitled users via the `news` (list items + reasons) and `crawl` commands. `crawl` is an interactive wizard — it prompts for the from/to date range (showing defaults to confirm or replace), runs the turn, then enters a **steering** mode where free-text follow-ups (`continue`, refinements, `accept`, `stop`) drive the open session; both call `/api/news` and stream `/api/news/chat`. |
 | `service.py` | Orchestration; wraps non-streaming ops in `use_root`. Streaming generators manage their own root. |
@@ -178,15 +178,16 @@ data/users/share_index.yaml         # {token: {user, slug}} — global lookup fo
   (qwen/openai), now clipped to a char budget, for the conversation.
 - **Within-bubble links only.** `[[page-slug]]` links navigate between a bubble's pages; no
   cross-bubble/global wiki.
-- **TODO `@<id>` references resolve at render time only.** Typing `@5` in any report page links
-  to TODO #5 — there is **no save-time normalization** (`bubbles.save_page` is untouched). The
-  SPA's `linkifyWikilinks` and the server's `_render_preview_html` both resolve `@(\d+)` (digits
-  only, so `@50` never matches `@5`) against the global TODO list at display time; unknown ids
-  stay literal. Reference counting (`service._scan_references`) scans page manifests **read-only**
-  — it uses `bubbles.manifest`, NOT `list_pages` (which would `ensure_pages` and clobber an
-  unmaterialized page). A TODO can be **deleted only when it has zero references** — the guard is
-  in `service.delete_todo` (raises → HTTP 409), so both the web UI and the Slack `todos` command
-  inherit it. Done TODOs are hidden by default (web: Open⇄Done toggle; Slack lists open only).
+- **TODO `@<id>` references resolve by exact digits.** Typing `@5` in any report page links
+  to TODO #5. The SPA's `linkifyWikilinks` and the server's `_render_preview_html` both resolve
+  `@(\d+)` (digits only, so `@50` never matches `@5`) against the global TODO list at display time;
+  unknown ids stay literal. Reference counting (`service._scan_references`) scans page manifests
+  **read-only** — it uses `bubbles.manifest`, NOT `list_pages` (which would `ensure_pages` and
+  clobber an unmaterialized page). A TODO can be **deleted only when it has zero references** — the
+  guard is in `service.delete_todo` (raises → HTTP 409), so both the web UI and the Slack `todos`
+  command inherit it. After deletion, remaining TODO ids are compacted and report `@id` references
+  for shifted TODOs are rewritten. Done TODOs are hidden by default (web: Open⇄Done toggle; Slack
+  lists open only).
 
 ## Gotchas
 

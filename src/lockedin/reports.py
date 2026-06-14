@@ -157,6 +157,8 @@ Open the **✅ TODOs** view in the sidebar.
 - The **Open / Done** toggle at the top filters the list
 - Check the checkbox to mark done (it moves to the Done list)
 - The 🗑 button deletes a TODO — only allowed when no report page references it
+- Deleting a TODO compacts the remaining ids; any shifted `@id` references in report pages
+  are updated automatically
 
 ## Referencing TODOs in reports
 
