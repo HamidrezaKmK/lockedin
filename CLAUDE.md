@@ -43,8 +43,8 @@ uv run lockedin news-revoke <user>                  # remove entitlement
 ```
 
 Without `LOCKEDIN_NEWS_ENABLED=1` (the default), `POST /api/news/crawl` → 503. The switch is
-read from the **server's** environment, so set it on the `serve` command. `serve` does not load
-`.env`.
+read from the **server's** environment. `uv run lockedin serve` loads the project-root `.env`
+first, and systemd deployments additionally read `ops/lockedin.env`.
 
 ### Tests
 

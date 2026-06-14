@@ -3,7 +3,7 @@
 > A local-first research assistant for grad students.
 
 `lockedin` is a FastAPI app for keeping up with research: upload papers and posts, group them
-into idea bubbles, maintain math-aware Markdown reports, and chat with a switchable LLM backend.
+into bubbles, maintain math-aware Markdown reports, and chat with a switchable LLM backend.
 
 The default deployment is private and local-only on `127.0.0.1`. If you want web access, keep the
 app bound to localhost and expose it through HTTPS with a tunnel such as Cloudflare Tunnel.
@@ -14,7 +14,7 @@ Public exposure still needs application-layer hardening; see [Security](#securit
 - Per-user workspaces with username/password auth. The first account is the admin; later
   sign-ups stay pending until an admin approves them in-app.
 - Paper upload, extraction, one-time summaries, and cached report context.
-- Auto-tagging into idea bubbles.
+- Auto-tagging into bubbles.
 - Multi-page Markdown reports with internal links, figures, KaTeX, and live preview.
 - TODOs: GitHub-issue-style task items with a dedicated manager pane. Reference one from any
   report page as `@id` (a clickable link to its detail view); notes support the same
@@ -178,6 +178,14 @@ LOCKEDIN_URL=https://yourdomain.example/
 
 Plain `http://127.0.0.1:8080/` works only if the server also runs with
 `LOCKEDIN_INSECURE_COOKIE=1`.
+
+For persistent Slack account links, run both the web server and the bot with the same
+`LOCKEDIN_SLACK_SHARED_SECRET` (or expose `SLACK_BOT_TOKEN` to both processes). This lets the bot
+refresh a web session for an already-linked Slack user without storing their password.
+
+On first Slack use, the bot asks for your lockedin username and password, then persists a
+Slack-user link on your account. Later bot/server restarts refresh silently from that link; changing
+your lockedin username or password clears the link and requires logging in from Slack again.
 
 Full setup: [docs/SLACKBOT_SETUP.md](docs/SLACKBOT_SETUP.md).
 

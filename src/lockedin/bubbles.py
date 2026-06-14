@@ -1,4 +1,4 @@
-"""Idea bubbles — topic groupings that own a Markdown report.
+"""Bubbles — topic groupings that own a Markdown report.
 
 A bubble has a slug (filesystem key) and a display name. Bubbles are tracked in a registry
 (``bubbles.yaml``) so they can carry approval state + report instructions and exist

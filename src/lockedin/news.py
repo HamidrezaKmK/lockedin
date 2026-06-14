@@ -85,7 +85,7 @@ _TRUTHY = {"1", "true", "yes", "on"}
 SYSTEM_PROMPT = (
     "You are an interactive research-news crawler for an academic user, talking with them in a "
     "chat. Use ONLY the WebSearch and WebFetch tools to find genuinely NEW publications/posts "
-    "that match the user's monitoring instructions AND are relevant to one of their idea bubbles. "
+    "that match the user's monitoring instructions AND are relevant to one of their bubbles. "
     "Prefer precision over recall.\n"
     "HARD DATE RULE: a crawl date range [SINCE .. UNTIL] is given. Include an item ONLY if its "
     "publication/last-updated date falls within that range (strictly after SINCE, up to and "
@@ -602,7 +602,7 @@ def _extract_items_from_text(text: str, session_uuid: str) -> list:
 # Per-bubble scope summaries (the crawler's matching signal — titles alone are weak)
 # --------------------------------------------------------------------------- #
 _SUMMARY_SYSTEM = (
-    "You summarize the RESEARCH SCOPE of one idea bubble for an automated paper-matching system. "
+    "You summarize the RESEARCH SCOPE of one bubble for an automated paper-matching system. "
     "In 2–4 sentences, capture the specific topics, methods, problems, and the kind of papers that "
     "belong in it — use concrete technical keywords a matcher can rely on. Output ONLY the "
     "summary, no preamble."
@@ -692,7 +692,7 @@ def _first_prompt(cfg: CrawlConfig, message: str, since: str, until: str,
     except Exception:  # noqa: BLE001
         bubs = []
     summaries = summaries or {}
-    lines = ["# Idea bubbles — match each item to the ONE whose SCOPE it best fits (a paper's "
+    lines = ["# Bubbles — match each item to the ONE whose SCOPE it best fits (a paper's "
              "title alone is not enough; judge against the scope description). Drop items that "
              "fit none:"]
     for b in bubs:

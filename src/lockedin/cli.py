@@ -46,7 +46,13 @@ def serve_cmd(
     host: str = typer.Option("127.0.0.1", help="Host/interface to bind."),
     port: int = typer.Option(8000, help="Port for the web server."),
 ):
-    """Launch the local web server."""
+    """Launch the local web server. Reads optional runtime settings from .env."""
+    from dotenv import load_dotenv
+
+    from . import paths
+
+    load_dotenv(paths.base_root() / ".env")
+
     from .server import serve
 
     typer.secho(f"lockedin → http://{host}:{port}   (Ctrl-C to stop)", fg="cyan")
@@ -100,7 +106,7 @@ def devmode():
 
 @app.command()
 def slackbot():
-    """Run the Slack bot (socket mode). Reads tokens from .env. Users authenticate on first contact."""
+    """Run the Slack bot (socket mode). Reads tokens from .env. Users authenticate on first use."""
     import os
 
     from dotenv import load_dotenv

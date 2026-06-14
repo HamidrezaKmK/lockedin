@@ -79,6 +79,20 @@ class Account(unittest.TestCase):
             self.assertFalse(auth.verify_password("alice", "oldpw"))
             self.assertTrue(auth.verify_password("alice", "newpw"))
 
+    def test_slack_link_is_cleared_on_password_or_username_change(self):
+        with temp_base():
+            from lockedin import auth, service
+            auth.create_user("alice", "pw12")
+            auth.link_slack_user("alice", "U123")
+            self.assertEqual(auth.user_for_slack("U123"), "alice")
+
+            service.update_account("alice", current_password="pw12", new_password="newpw")
+            self.assertIsNone(auth.user_for_slack("U123"))
+
+            auth.link_slack_user("alice", "U123")
+            service.update_account("alice", current_password="newpw", new_username="alice2")
+            self.assertIsNone(auth.user_for_slack("U123"))
+
     def test_rename_moves_workspace_and_repoints_share(self):
         with temp_base():
             from lockedin import auth, paths, service, sharing

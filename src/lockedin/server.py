@@ -15,6 +15,7 @@ import logging
 import os
 import queue
 import re
+import secrets
 import threading
 from pathlib import Path
 from typing import Optional
@@ -484,7 +485,7 @@ def _sse(obj: dict) -> str:
 
 def build_app():
     from fastapi import (BackgroundTasks, Cookie, Depends, FastAPI, File, Form,
-                         HTTPException, UploadFile)
+                         Header, HTTPException, UploadFile)
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
     from pydantic import BaseModel
@@ -501,6 +502,9 @@ def build_app():
     class Credentials(BaseModel):
         username: str
         password: str
+
+    class SlackLinkIn(BaseModel):
+        slack_user_id: str
 
     class AccountIn(BaseModel):
         current_password: str
@@ -620,6 +624,13 @@ def build_app():
                             max_age=7 * 24 * 3600)
         return resp
 
+    def _require_slack_secret(secret: str | None) -> None:
+        expected = os.environ.get("LOCKEDIN_SLACK_SHARED_SECRET") or os.environ.get("SLACK_BOT_TOKEN")
+        if not expected:
+            raise HTTPException(status_code=503, detail="Slack linking is not configured.")
+        if not secret or not secrets.compare_digest(secret, expected):
+            raise HTTPException(status_code=403, detail="Invalid Slack secret.")
+
     def _stream(generator_factory):
         """Run a dict-yielding generator in a worker thread; forward events as SSE."""
         def gen():
@@ -655,7 +666,18 @@ def build_app():
     @app.get("/api/help")
     def get_help():
         from . import reports as _r
-        return {"sections": _r.APP_USAGE_GUIDE_SECTIONS}
+        invite = (os.environ.get("SLACKBOT_INVITE_LINK") or "").strip()
+        if invite and re.match(r"^https://join\.slack\.com/\S+$", invite):
+            invite_md = f"[Join the lockedin Slack workspace]({invite}) to use the bot."
+        else:
+            invite_md = ("Ask the workspace admin for the Slack invite link. Operators can set "
+                         "`SLACKBOT_INVITE_LINK` in the server environment to show it here.")
+        sections = []
+        for sec in _r.APP_USAGE_GUIDE_SECTIONS:
+            item = dict(sec)
+            item["content"] = item["content"].replace("{{SLACKBOT_INVITE}}", invite_md)
+            sections.append(item)
+        return {"sections": sections}
 
     # ---- public share (NO auth — gated only by the unlisted token + the bubble's active flag) ----
     @app.get("/share/{token}")
@@ -724,6 +746,32 @@ def build_app():
         if not auth.is_approved(username):
             raise HTTPException(status_code=403, detail="Account is waiting for admin approval.")
         return _auth_response(username)
+
+    @app.post("/api/slack/link")
+    def slack_link(
+        body: SlackLinkIn,
+        user: str = Depends(current_user),
+        x_lockedin_slack_secret: Optional[str] = Header(default=None),
+    ):
+        _require_slack_secret(x_lockedin_slack_secret)
+        try:
+            auth.link_slack_user(user, body.slack_user_id)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        return {"ok": True, "user": user}
+
+    @app.post("/api/slack/session")
+    def slack_session(
+        body: SlackLinkIn,
+        x_lockedin_slack_secret: Optional[str] = Header(default=None),
+    ):
+        _require_slack_secret(x_lockedin_slack_secret)
+        user = auth.user_for_slack(body.slack_user_id)
+        if not user:
+            raise HTTPException(status_code=404, detail="No lockedin account is linked to this Slack user.")
+        if not auth.is_approved(user):
+            raise HTTPException(status_code=403, detail="Account is waiting for admin approval.")
+        return _auth_response(user)
 
     @app.post("/api/logout")
     def logout(lockedin_session: Optional[str] = Cookie(default=None)):

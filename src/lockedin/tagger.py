@@ -2,7 +2,7 @@
 
 Runs after every upload (via FastAPI BackgroundTasks). The summary is cached so chat and
 report generation stay low-latency (read-once, reuse). Tag suggestion reuses the user's
-existing idea bubbles when a paper fits one, inventing a new short tag only when none apply.
+existing bubbles when a paper fits one, inventing a new short tag only when none apply.
 
 The whole pipeline is fail-safe: any error is logged and leaves the asset usable (it just
 ends up in the attention queue for manual tagging). Reports are never auto-generated here.
@@ -30,7 +30,7 @@ SUMMARY_SYSTEM = (
 )
 
 TAG_SYSTEM = (
-    "You classify research papers into short topic tags ('idea bubbles'). "
+    "You classify research papers into short topic tags ('bubbles'). "
     "Reuse one of the user's EXISTING bubbles whenever the paper fits it; only invent a new "
     "tag when none apply. Tags are 1-4 words, lowercase, concept-level (e.g. 'diffusion models', "
     "'optimal transport', 'mechanistic interpretability'). Return STRICT JSON only: "
@@ -93,7 +93,7 @@ def suggest_tags(home: Path, text: str, existing_bubbles: list[str]) -> list[str
     if not text:
         return []
     existing = ", ".join(existing_bubbles) if existing_bubbles else "(none yet)"
-    user = (f"Existing idea bubbles to reuse when possible: {existing}\n\n"
+    user = (f"Existing bubbles to reuse when possible: {existing}\n\n"
             f"Paper excerpt:\n{text[:8000]}\n\n"
             "Return the JSON object of tags now.")
     raw = models.complete(home, [{"role": "user", "content": user}],

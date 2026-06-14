@@ -103,13 +103,13 @@ or **discard** the batch.
         "content": """\
 ## What is a bubble?
 
-An **Idea Bubble** is a topic group. Each bubble has a name, a multi-page Markdown wiki,
-and a research chat sidebar. Bubbles start in an unapproved state when auto-suggested; you
-must approve them before the wiki opens.
+A **bubble** is a topic group. Each bubble has a name, a multi-page Markdown wiki,
+attached papers, and a read-only research chat sidebar. Bubbles start in an unapproved
+state when auto-suggested; you must approve them before the wiki opens.
 
 ## Creating & approving
 
-Click **+ New bubble** in the Bubbles view, or tag any PDF with a new topic name.
+Click **+ New bubble** in the Bubbles view, or tag any paper with a new topic name.
 Auto-suggested bubbles land in the **🔔 Attention** queue — approve them there.
 
 ## Renaming & deleting
@@ -169,9 +169,9 @@ link showing the TODO title, with strikethrough if done.
     {
         "title": "Assets",
         "content": """\
-## Uploading PDFs
+## Uploading papers
 
-Drag a PDF onto the **📚 Assets** view (or click to browse). You can optionally set:
+Use **📚 Assets** to add a PDF or a paper URL. You can optionally set:
 - **Title** — defaults to the filename
 - **Tags** — comma-separated topic names; each tag links the paper to a bubble
 - **Source URL** — the paper's arXiv/DOI link
@@ -182,8 +182,9 @@ Leave tags blank to let the AI auto-suggest them in the background.
 
 Click any asset card to open its detail panel:
 - Edit title, tags, notes, source URL
-- Clear the **attention flag** once you've reviewed auto-suggested tags
-- Open the **PDF inline**
+- Open the paper PDF
+- **Move to attention queue** if you want to review or summarize it later
+- **Remove from attention queue** once it no longer needs attention
 
 ## Auto-tagging & the Attention queue
 
@@ -191,11 +192,42 @@ After upload, papers without tags are summarised and given suggested tags. They 
 **🔔 Attention** until you review the suggestions. Auto-suggested bubbles also appear there
 until approved.
 
+The Assets view is always your full paper inventory. Attention is just a queue toggle on
+those same assets: every paper stays visible in Assets whether or not it is in Attention.
+
 ## Tagging a paper into a bubble
 
 When editing tags, use the tag name shown inside each bubble's detail view (visible as
 a small label). Using a display name that differs from what's shown can create a duplicate
 bubble — always copy the tag exactly from the bubble's detail view.
+""",
+    },
+    {
+        "title": "Slackbot",
+        "content": """\
+## Slackbot access
+
+If your workspace has the lockedin Slack app installed, you can use it from Slack DMs or
+by @-mentioning the bot in a channel.
+
+{{SLACKBOT_INVITE}}
+
+On first use, the bot asks for your lockedin username and password. After that, your Slack
+user is linked to that lockedin account and the bot can refresh its session after restarts.
+You only need to log in again if you change your lockedin username or password.
+
+## What it can do
+
+- **`select`** — choose the active bubble for questions
+- **`list`** — show your bubbles
+- **Ask a question** — the bot answers using your active bubble's reports and paper summaries
+- **Attach a PDF** — uploads it to your Assets queue
+- **Send a PDF link** — fetches and uploads the paper when the link resolves to a PDF
+- **`todos`** — list, add, edit, complete, or remove open TODOs
+- **`news`** — list retrieved news items and why they match your bubbles, if News is enabled
+- **`crawl`** — run the premium News crawler from Slack, if enabled
+
+The Slackbot follows the same account approval and per-user workspace rules as the website.
 """,
     },
     {
@@ -361,7 +393,7 @@ def guide_section(title: str) -> str:
 # A SHORT, model-safe summary for the chat system prompt — facts only, no fenced code blocks.
 APP_USAGE_BRIEF = (
     "ABOUT THIS APP (use these facts to answer usage questions):\n"
-    "- Reports are multi-page Markdown wikis, one per idea bubble; the editor is on the left, a "
+    "- Reports are multi-page Markdown wikis, one per bubble; the editor is on the left, a "
     "live preview on the right. The user writes the reports themselves.\n"
     "- Math: $...$ inline, $$...$$ display. Number a display equation by putting \\label{name} "
     "inside its $$ block, then reference it with \\eqref{name} (renders as its number). Equation "
@@ -378,7 +410,7 @@ APP_USAGE_BRIEF = (
 )
 
 CHAT_SYSTEM = """\
-You are a knowledgeable research assistant embedded in a grad student's idea bubble. You discuss
+You are a knowledgeable research assistant embedded in a grad student's bubble. You discuss
 the papers and the user's report notes: answer questions, explain the math, summarize, compare
 papers, surface open questions, and help the user think.
 

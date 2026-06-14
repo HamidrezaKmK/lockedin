@@ -24,10 +24,11 @@ logger = logging.getLogger(__name__)
 URL    = ""
 QWEN   = ""
 OLLAMA = ""
+SLACK_SECRET = ""
 
 _HELP = (
     "Commands:\n"
-    "• `select` — choose your active idea bubble\n"
+    "• `select` — choose your active bubble\n"
     "• `list` — show all bubbles\n"
     "• `news` — list retrieved news + why each is relevant (premium)\n"
     "• `crawl` — search the web for new papers for your bubbles (premium)\n"
@@ -37,7 +38,8 @@ _HELP = (
     "• Anything else — asks Qwen about your active bubble"
 )
 
-# Per-Slack-user state (in-memory; resets on bot restart)
+# Per-Slack-user runtime state. The Slack→lockedin account link itself is persisted by the
+# server after first login, so sessions can be refreshed after bot/server restarts.
 _sessions:       dict[str, httpx.Client] = {}   # uid → logged-in HTTP client
 _auth:           dict[str, str | None]   = {}   # uid → None (need username) | str (need password)
 _usernames:      dict[str, str]          = {}   # uid → lockedin username for reauth prompts
@@ -55,10 +57,47 @@ _STEER_ACCEPT_RE = re.compile(r"^(accept|save|done|i'?m happy|looks good|that'?s
                               re.IGNORECASE)
 
 
-def _login(username: str, password: str) -> httpx.Client:
+def _slack_headers() -> dict[str, str]:
+    return {"X-Lockedin-Slack-Secret": SLACK_SECRET} if SLACK_SECRET else {}
+
+
+def _login(username: str, password: str, uid: str = "") -> httpx.Client:
     http = httpx.Client(timeout=60, follow_redirects=True)
-    http.post(f"{URL}/api/login", json={"username": username, "password": password}).raise_for_status()
+    r = http.post(f"{URL}/api/login", json={"username": username, "password": password})
+    r.raise_for_status()
+    username = r.json().get("user") or username
+    if uid and SLACK_SECRET:
+        try:
+            http.post(
+                f"{URL}/api/slack/link",
+                json={"slack_user_id": uid},
+                headers=_slack_headers(),
+            ).raise_for_status()
+        except Exception as e:
+            logger.warning("Could not persist Slack link for %s/%s: %s", uid, username, e)
     return http
+
+
+def _linked_login(uid: str) -> httpx.Client | None:
+    if not SLACK_SECRET:
+        return None
+    http = httpx.Client(timeout=60, follow_redirects=True)
+    try:
+        r = http.post(
+            f"{URL}/api/slack/session",
+            json={"slack_user_id": uid},
+            headers=_slack_headers(),
+        )
+        if r.status_code == 404:
+            http.close()
+            return None
+        r.raise_for_status()
+        _usernames[uid] = r.json().get("user", "")
+        return http
+    except Exception as e:
+        logger.warning("Could not refresh Slack-linked session for %s: %s", uid, e)
+        http.close()
+        return None
 
 
 def _is_unauthorized(exc: Exception) -> bool:
@@ -78,6 +117,12 @@ def _forget_session(uid: str) -> None:
 
 def _ask_reauth(uid: str, say) -> None:
     _forget_session(uid)
+    linked = _linked_login(uid)
+    if linked is not None:
+        _sessions[uid] = linked
+        _auth.pop(uid, None)
+        say("Your lockedin session was refreshed. Please retry that last message.")
+        return
     if uid in _usernames:
         _auth[uid] = _usernames[uid]
         say("Your lockedin session expired. Send your password to log in again, then retry.")
@@ -371,24 +416,29 @@ def handle(event: dict, say) -> None:
 
     # ── auth flow ─────────────────────────────────────────────────────────────
     if uid not in _sessions:
-        if uid not in _auth:
-            _auth[uid] = None
-            say("Welcome to lockedin! What's your username?")
+        linked = _linked_login(uid)
+        if linked is not None:
+            _sessions[uid] = linked
+            _auth.pop(uid, None)
+        else:
+            if uid not in _auth:
+                _auth[uid] = None
+                say("Welcome to lockedin! What's your username?")
+                return
+            if _auth[uid] is None:
+                _auth[uid] = text
+                say("Got it. What's your password?")
+                return
+            username = _auth[uid]
+            try:
+                _sessions[uid] = _login(username, text, uid)
+                _usernames[uid] = username
+                del _auth[uid]
+                say(f"Logged in as *{username}*.\n" + _HELP)
+            except Exception:
+                _auth[uid] = None
+                say("Login failed. Send your username to try again.")
             return
-        if _auth[uid] is None:
-            _auth[uid] = text
-            say("Got it. What's your password?")
-            return
-        username = _auth[uid]
-        try:
-            _sessions[uid] = _login(username, text)
-            _usernames[uid] = username
-            del _auth[uid]
-            say(f"Logged in as *{username}*.\n" + _HELP)
-        except Exception:
-            _auth[uid] = None
-            say("Login failed. Send your username to try again.")
-        return
 
     # ── normal operation ──────────────────────────────────────────────────────
     http = _sessions[uid]
@@ -533,7 +583,7 @@ def handle(event: dict, say) -> None:
             + (" ← active" if current and b["slug"] == current["slug"] else "")
             for i, b in enumerate(bs)
         ]
-        say("Your idea bubbles:\n" + "\n".join(lines) + "\n\nReply with a number to select.")
+        say("Your bubbles:\n" + "\n".join(lines) + "\n\nReply with a number to select.")
         _selecting[uid] = bs
         return
 
@@ -595,7 +645,7 @@ def handle(event: dict, say) -> None:
     if text:
         bubble = _active_bubble.get(uid)
         if not bubble:
-            say("No active bubble. Type `select` to pick one.")
+            say("I don't have an active bubble for questions yet. Here are your options:\n\n" + _HELP)
             return
         say(f"_(asking Qwen about *{bubble['name']}*…)_")
         try:
@@ -610,10 +660,11 @@ def handle(event: dict, say) -> None:
 
 
 def run(*, slack_bot_token: str, slack_app_token: str) -> None:
-    global URL, QWEN, OLLAMA
+    global URL, QWEN, OLLAMA, SLACK_SECRET
     URL    = os.environ.get("LOCKEDIN_URL",    "http://localhost:8000").rstrip("/")
     QWEN   = os.environ.get("QWEN_MODEL",      "qwen2.5:7b-instruct")
     OLLAMA = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+    SLACK_SECRET = os.environ.get("LOCKEDIN_SLACK_SHARED_SECRET") or slack_bot_token
 
     app = App(token=slack_bot_token)
 

@@ -55,6 +55,11 @@
     letter-spacing:.01em}
   button.primary:hover{background:color-mix(in srgb, var(--accent) 85%, white);border-color:var(--accent)}
   button.ghost{background:transparent}
+  button.help-cta{background:color-mix(in srgb, var(--accent2) 18%, var(--panel2));
+    border-color:color-mix(in srgb, var(--accent2) 58%, var(--line));color:var(--ink);
+    font-weight:700;box-shadow:0 0 0 1px color-mix(in srgb, var(--accent2) 18%, transparent)}
+  button.help-cta:hover{background:color-mix(in srgb, var(--accent2) 26%, var(--panel));
+    border-color:var(--accent2);box-shadow:0 0 0 3px color-mix(in srgb, var(--accent2) 18%, transparent)}
   button.danger{background:transparent;border-color:var(--bad);color:var(--bad)}
   button.danger:hover{background:rgba(255,107,107,.08);border-color:var(--bad)}
   input,textarea,select{font:inherit;background:var(--panel);color:var(--ink);
@@ -408,7 +413,7 @@
     <div class="brand">🔒 <span class="lock">locked</span>in</div>
     <div class="row" id="modelTabs"></div>
     <div class="spacer"></div>
-    <button class="ghost small" id="helpBtn" title="User guide">?</button>
+    <button class="ghost small help-cta" id="helpBtn" title="Help and user guide">Help</button>
     <button class="ghost small" id="themeToggle" title="Toggle light/dark mode">☀️</button>
     <!-- mobile-only: opens the read-only preview of the current bubble page; hidden off a bubble -->
     <button class="ghost small mobile-only hide" id="previewArrow" title="Open the read-only preview of this page">↗</button>
@@ -416,7 +421,7 @@
 
   <div id="side">
     <button class="navbtn active" data-view="assets">📚 Assets</button>
-    <button class="navbtn" data-view="bubbles">🫧 Idea Bubbles</button>
+    <button class="navbtn" data-view="bubbles">🫧 Bubbles</button>
     <button class="navbtn" data-view="attention">🔔 Attention <span id="attnCount" class="muted"></span></button>
     <button class="navbtn" data-view="todos">✅ TODOs</button>
     <button class="navbtn" data-view="news" id="newsNav" style="display:none">📰 News <span id="newsCount" class="muted"></span></button>
@@ -1131,12 +1136,22 @@
     c.append(tagWrap);
     c.append(el("div",{class:"muted",style:"font-size:12px;margin-top:6px"},
       (a.summarized?"summarized • ":"") + (a.date_added||"").slice(0,10)));
+    c.append(el("div",{class:"row",style:"margin-top:10px"},
+      el("button",{class:"ghost small",onclick:async(e)=>{
+        e.stopPropagation();
+        const next=!a.attention_flag;
+        await api("/api/assets/"+a.pdf_id,{method:"PATCH",body:JSON.stringify({attention_flag:next})});
+        toast(next?"Added to attention queue":"Removed from attention queue");
+        viewAssets(); refreshAttnCount();
+      }},a.attention_flag?"Remove from attention queue":"Add to attention queue")));
     c.onclick=()=>openAssetEditor(a);
     return c;
   }
-  async function openAssetEditor(a){
+  async function openAssetEditor(a, opts={}){
+    const returnTo=opts.returnTo||"assets";
+    const goBack=()=>returnTo==="attention"?viewAttention():viewAssets();
     const m=$("#main"); m.innerHTML="";
-    m.append(el("button",{class:"ghost small",onclick:viewAssets},"← Assets"));
+    m.append(el("button",{class:"ghost small",onclick:goBack},returnTo==="attention"?"← Attention":"← Assets"));
     const box=el("div",{class:"card col",style:"margin-top:12px;max-width:720px"});
     const title=el("input",{value:a.title||""});
     const tags=el("input",{value:(a.tags||[]).join(", ")});
@@ -1163,20 +1178,29 @@
         p.onclick=()=>{ tags.value=(tags.value?tags.value+", ":"")+t; }; sg.append(p); });
       box.append(sg);
     }
-    box.append(el("div",{class:"row"},
-      el("button",{class:"primary",onclick:async()=>{
-        const tagList=tags.value.split(",").map(s=>s.trim()).filter(Boolean);
-        await api("/api/assets/"+a.pdf_id,{method:"PATCH",body:JSON.stringify({
-          title:title.value,tags:tagList,notes:notes.value,url_source:url.value,
-          attention_flag:false,suggested_tags:[]})});
-        for(const t of tagList){ await api("/api/bubbles",{method:"POST",body:JSON.stringify({name:t})}); }
-        toast("Saved"); viewAssets();
-      }},"Save & clear flag"),
+    const saveAsset=async(attentionFlag)=>{
+      const tagList=tags.value.split(",").map(s=>s.trim()).filter(Boolean);
+      const payload={title:title.value,tags:tagList,notes:notes.value,url_source:url.value,suggested_tags:[]};
+      if(attentionFlag!==undefined)payload.attention_flag=attentionFlag;
+      await api("/api/assets/"+a.pdf_id,{method:"PATCH",body:JSON.stringify(payload)});
+      for(const t of tagList){ await api("/api/bubbles",{method:"POST",body:JSON.stringify({name:t})}); }
+      toast(attentionFlag===false?"Saved and cleared from attention queue":attentionFlag===true?"Saved and moved to attention queue":"Saved");
+      goBack(); refreshAttnCount();
+    };
+    const actionRow=el("div",{class:"row"},
+      el("button",{class:"primary",onclick:async()=>saveAsset(undefined)},"Save"));
+    if(a.attention_flag){
+      actionRow.append(el("button",{class:"ghost",onclick:async()=>saveAsset(false)},"Remove from attention queue"));
+    }else{
+      actionRow.append(el("button",{class:"ghost",onclick:async()=>saveAsset(true)},"Move to attention queue"));
+    }
+    actionRow.append(
       el("a",{href:"/api/assets/"+a.pdf_id+"/pdf",target:"_blank"},
         el("button",{class:"ghost"},"Open PDF")),
       el("span",{class:"spacer"}),
       el("button",{class:"ghost",onclick:async()=>{ if(confirm("Delete this asset?")){
-        await api("/api/assets/"+a.pdf_id,{method:"DELETE"}); toast("Deleted"); viewAssets(); }}},"Delete")));
+        await api("/api/assets/"+a.pdf_id,{method:"DELETE"}); toast("Deleted"); goBack(); refreshAttnCount(); }}},"Delete"));
+    box.append(actionRow);
     m.append(box);
     // show cached summary
     const sumWrap=el("div",{class:"card",style:"margin-top:12px;max-width:720px"});
@@ -1190,12 +1214,12 @@
   // ================= IDEA BUBBLES =================
   async function viewBubbles(){
     const m=$("#main"); m.innerHTML="";
-    const head=el("div",{class:"row"}, el("h2",{class:"section-title",style:"margin:0"},"🫧 Idea Bubbles"),
+    const head=el("div",{class:"row"}, el("h2",{class:"section-title",style:"margin:0"},"🫧 Bubbles"),
       el("span",{class:"spacer"}),
       el("button",{class:"primary small",onclick:newBubble},"+ New bubble"));
     m.append(head, el("div",{style:"height:14px"}));
     const r=await api("/api/bubbles");
-    if(!r.bubbles.length){ m.append(el("div",{class:"muted"},"No idea bubbles yet. Tag a PDF or create one.")); return; }
+    if(!r.bubbles.length){ m.append(el("div",{class:"muted"},"No bubbles yet. Tag a PDF or create one.")); return; }
     const grid=el("div",{class:"grid"});
     r.bubbles.forEach(b=>{
       const c=el("div",{class:"acard"});
@@ -1215,12 +1239,12 @@
     m.append(grid);
   }
   async function newBubble(){
-    const name=prompt("Name your idea bubble (e.g. 'optimal transport'):"); if(!name)return;
+    const name=prompt("Name your bubble (e.g. 'optimal transport'):"); if(!name)return;
     const r=await api("/api/bubbles",{method:"POST",body:JSON.stringify({name})});
     openBubble(r.slug);
   }
   async function deleteBubble(slug, name, onDone){
-    if(!confirm(`Delete the idea bubble "${name}"?\n\nThis permanently removes all its report pages and figures. PDFs tagged with it will have this tag removed. This cannot be undone.`)) return;
+    if(!confirm(`Delete the bubble "${name}"?\n\nThis permanently removes all its report pages and figures. PDFs tagged with it will have this tag removed. This cannot be undone.`)) return;
     try{ await api("/api/bubbles/"+slug,{method:"DELETE"}); toast("Bubble deleted"); onDone&&onDone(); }
     catch(e){ toast("Error: "+e.message); }
   }
@@ -1461,7 +1485,7 @@
 
   function buildApprovalPane(left,b){
     const bd=el("div",{class:"bd col"});
-    bd.append(el("p",{},"This idea bubble was auto-suggested. Approve it to start its report pages."));
+    bd.append(el("p",{},"This bubble was auto-suggested. Approve it to start its report pages."));
     if(b.assets.length)bd.append(el("div",{class:"muted"},"Triggered by: "+b.assets.map(a=>a.title).join(", ")));
     const instr=el("textarea",{rows:"3",placeholder:"Optional: what should this report focus on?"});
     bd.append(el("label",{class:"muted"},"Report instructions (optional)"),instr);
@@ -2331,11 +2355,7 @@
       c.append(el("div",{class:"row",style:"margin-top:10px"},
         el("a",{href:"/api/assets/"+a.pdf_id+"/pdf",target:"_blank",onclick:e=>e.stopPropagation()},
           el("button",{class:"primary small"},"Open PDF")),
-        el("button",{class:"small",onclick:(e)=>{e.stopPropagation();openAssetEditor(a);}},"Edit"),
-        el("button",{class:"ghost small",onclick:async(e)=>{e.stopPropagation();
-          await api("/api/assets/"+a.pdf_id,{method:"PATCH",body:JSON.stringify({attention_flag:false})});
-          toast("Dismissed"); viewAttention(); refreshAttnCount();
-        }},"Dismiss")));
+        el("button",{class:"small",onclick:(e)=>{e.stopPropagation();openAssetEditor(a,{returnTo:"attention"});}},"Manage")));
       grid.append(c);
     });
     m.append(grid);

@@ -130,6 +130,52 @@ def list_users() -> list[dict]:
     return out
 
 
+def link_slack_user(username: str, slack_user_id: str) -> None:
+    """Associate a Slack user id with an approved lockedin account."""
+    username = username.strip().lower()
+    slack_user_id = slack_user_id.strip()
+    if not slack_user_id:
+        raise ValueError("Slack user id is required.")
+    users = load_accounts()
+    rec = users.get(username)
+    if rec is None:
+        raise ValueError("No such user.")
+    if not rec.get("approved"):
+        raise ValueError("Account is waiting for admin approval.")
+    for other, other_rec in users.items():
+        if other != username:
+            ids = [sid for sid in other_rec.get("slack_user_ids", []) if sid != slack_user_id]
+            if ids:
+                other_rec["slack_user_ids"] = ids
+            else:
+                other_rec.pop("slack_user_ids", None)
+    ids = list(dict.fromkeys([*rec.get("slack_user_ids", []), slack_user_id]))
+    rec["slack_user_ids"] = ids
+    save_accounts(users)
+
+
+def user_for_slack(slack_user_id: str) -> str | None:
+    """Return the approved username linked to a Slack user id, if any."""
+    slack_user_id = slack_user_id.strip()
+    if not slack_user_id:
+        return None
+    for username, rec in load_accounts().items():
+        if rec.get("approved") and slack_user_id in rec.get("slack_user_ids", []):
+            return username
+    return None
+
+
+def unlink_slack_users(username: str) -> None:
+    """Clear all Slack identity links for one account."""
+    username = username.strip().lower()
+    users = load_accounts()
+    rec = users.get(username)
+    if rec is None:
+        return
+    rec.pop("slack_user_ids", None)
+    save_accounts(users)
+
+
 def set_approved(username: str, approved: bool) -> None:
     username = username.strip().lower()
     users = load_accounts()
@@ -212,6 +258,7 @@ def set_password(username: str, new_password: str) -> None:
     salt = secrets.token_hex(16)
     rec["salt"] = salt
     rec["hash"] = _hash_password(new_password, salt)
+    rec.pop("slack_user_ids", None)
     save_accounts(users)
 
 
@@ -233,6 +280,7 @@ def rename_user(old: str, new: str) -> str:
     if new in users:
         raise ValueError("That username is already taken.")
     users[new] = users.pop(old)
+    users[new].pop("slack_user_ids", None)
     save_accounts(users)
     # repoint any in-memory sessions to the new name so the user stays logged in
     for token, name in list(_SESSIONS.items()):

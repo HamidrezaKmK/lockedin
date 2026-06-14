@@ -15,7 +15,7 @@ dependencies = [
     "python-slugify",     # "Generative Modeling" -> "generative-modeling"
     "typer",
     "google-genai",           # Gemini via Google GenAI SDK
-    "python-dotenv",          # load DEV_USERNAME/DEV_PASSWORD from .env in DEV mode
+    "python-dotenv",          # load project-root .env for serve/devmode/slackbot
     "slack-bolt",             # Slack bot (socket mode)
     "httpx",                  # HTTP client used by slackbot to call lockedin API
 ]

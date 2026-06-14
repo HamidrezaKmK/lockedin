@@ -78,17 +78,21 @@ systemctl --user enable --now lockedin-slackbot.service
 ## What the bot can do
 
 DM the bot (or @-mention it in a channel). On first contact it asks for your lockedin username
-and password — after that it remembers your session. The lockedin account you log in with must be
-**approved** (see the approval flow in the README), or login fails. Sessions live in memory, so
-they reset when the bot **or** the web server restarts; the bot will simply ask you to log in
-again on your next message.
+and password — after that your Slack user is linked to that lockedin account. The bot can refresh
+its session from that link after bot or web-server restarts, so you only need to log in again if
+you change your lockedin username or password. The lockedin account you log in with must be
+**approved** (see the approval flow in the README), or login fails.
+
+For those persistent links, the web server and Slack bot must share
+`LOCKEDIN_SLACK_SHARED_SECRET`. If you do not set it, both processes can use the same
+`SLACK_BOT_TOKEN` instead. The bot never stores your lockedin password.
 
 | Message | Action |
 |---|---|
 | *(first message)* | Bot asks for username, then password |
 | Attach a PDF / send a PDF link | Uploads it to your Assets queue |
 | `select` (or `switch`) | Lists your bubbles, reply with a number to set the active one |
-| `list` | Lists your idea bubbles |
+| `list` | Lists your bubbles |
 | `news` | Lists crawled news items + why each is relevant (premium) |
 | `crawl` | Searches the web for new papers for your bubbles (premium) |
 | `help` | Shows the command list |
