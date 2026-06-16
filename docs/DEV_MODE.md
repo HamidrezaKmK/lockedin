@@ -20,11 +20,13 @@ for that one session and authenticate against your `.env` first.
 > stored machine-locally (only your `.env` credentials are per-machine).
 >
 > `codex_scientist.sh` follows the same launcher pattern and starts Codex with a read-only
-> sandbox, approval prompts, web search disabled, multi-agent disabled, and the Codex shell
-> tool disabled when supported by your installed CLI. If that local Codex build cannot
-> inspect/edit report files with the shell tool disabled, retry with
-> `CODEX_SCIENTIST_SHELL=enabled ./codex_scientist.sh`; the role still forbids shell use, and
-> the read-only sandbox keeps writes behind approval prompts.
+> sandbox, approval prompts, live web search for explicit source-search requests,
+> multi-agent disabled, and the same report-assistant role injected into the session. Codex
+> usually needs its shell tool for local file reads; set
+> `CODEX_SCIENTIST_SHELL=disabled ./codex_scientist.sh` only if your installed Codex build
+> exposes separate file-reading tools/resources. The role still limits shell use to read-only
+> inspection of authorized Markdown/PDF files, and the read-only sandbox keeps writes behind
+> approval prompts.
 
 ## Setup (once)
 
@@ -35,6 +37,7 @@ cp .env.example .env          # then edit: DEV_USERNAME / DEV_PASSWORD = your lo
 `.env` is git-ignored. Then:
 
 ```bash
+./claude_scientist.sh                 # Claude Code version
 ./gemini_scientist.sh                 # interactive — authenticates, then greets with your bubbles
 ./gemini_scientist.sh "summarize the new FLIPD paper into my diffusion report"   # one-shot kickoff
 ./codex_scientist.sh                  # Codex CLI version
@@ -42,6 +45,32 @@ cp .env.example .env          # then edit: DEV_USERNAME / DEV_PASSWORD = your lo
 
 The script verifies your `.env` credentials (via `uv run lockedin devmode`) before launching and
 exits if they don't match.
+
+## Resume agent sessions
+
+Use each scientist wrapper's `resume` mode instead of calling the raw CLI resume command. The
+wrapper re-authenticates, rebuilds the current workspace/editing-guide prompt, and resumes with
+the same tool restrictions, policies, sandbox settings, and report-assistant role as a fresh
+scientist session.
+
+```bash
+./codex_scientist.sh resume            # Codex resume picker
+./codex_scientist.sh resume --last     # latest Codex session
+./codex_scientist.sh resume <session>  # Codex session id/name, plus any Codex resume flags
+
+./claude_scientist.sh resume           # Claude resume picker
+./claude_scientist.sh resume --last    # latest Claude session
+./claude_scientist.sh resume latest    # same as --last
+./claude_scientist.sh resume <session> # Claude session id or picker search term
+
+./gemini_scientist.sh resume           # list Gemini sessions for this project
+./gemini_scientist.sh resume latest    # latest Gemini session
+./gemini_scientist.sh resume 5         # Gemini session index from the list
+```
+
+The raw commands, such as `codex resume`, `claude --resume`, or `gemini --resume`, can reopen
+history, but they do not necessarily carry the scientist launcher's sandbox, allowlist, policy,
+or injected report instructions. Prefer the wrapper commands above for report work.
 
 ---
 

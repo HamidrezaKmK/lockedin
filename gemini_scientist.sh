@@ -17,6 +17,9 @@
 # so a fresh clone with Gemini installed gets the same behavior — nothing is machine-local.
 #
 #   ./gemini_scientist.sh                 # interactive, auto-greets with your bubbles
+#   ./gemini_scientist.sh resume          # list resume choices with the same scientist policy
+#   ./gemini_scientist.sh resume latest   # resume latest session with the same scientist policy
+#   ./gemini_scientist.sh resume 5        # resume session index 5 with the same scientist policy
 
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -113,7 +116,14 @@ GEMINI_FLAGS=(--policy "$POLICY")
 # embedded workspace listing and parrot CLAUDE.md's module list instead.)
 GREETING="Now, briefly introduce yourself as my research-report assistant, list my bubbles by their human-readable names (not slugs or IDs) from the CURRENT WORKSPACE section above, then ask what I'd like to work on. Do not run any commands and do not describe source code."
 
-if [[ $# -gt 0 ]]; then
+if [[ "${1:-}" == "resume" ]]; then
+  shift
+  if [[ $# -eq 0 ]]; then
+    exec gemini "${GEMINI_FLAGS[@]}" --list-sessions
+  else
+    exec gemini "${GEMINI_FLAGS[@]}" --resume "$@"
+  fi
+elif [[ $# -gt 0 ]]; then
   exec gemini "${GEMINI_FLAGS[@]}" -i "${ROLE}
 
 MY REQUEST: $*"

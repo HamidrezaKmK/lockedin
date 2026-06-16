@@ -16,6 +16,8 @@
 # only; a plain `claude` session in this repo (for developing lockedin) keeps full tool access.
 #
 #   ./claude_scientist.sh                 # interactive, auto-greets with your bubbles
+#   ./claude_scientist.sh resume          # resume picker with the same scientist permissions
+#   ./claude_scientist.sh resume --last   # resume latest session with the same scientist permissions
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -103,7 +105,15 @@ ${EDITING_GUIDE}"
 # still prompt by default since they're not in an auto-approve (--allowedTools) list.
 CLAUDE_FLAGS=(--tools Read Edit Write Glob Grep --append-system-prompt "$ROLE")
 
-if [[ $# -gt 0 ]]; then
+if [[ "${1:-}" == "resume" ]]; then
+  shift
+  if [[ "${1:-}" == "--last" || "${1:-}" == "latest" ]]; then
+    shift
+    exec claude "${CLAUDE_FLAGS[@]}" --continue "$@"
+  else
+    exec claude "${CLAUDE_FLAGS[@]}" --resume "$@"
+  fi
+elif [[ $# -gt 0 ]]; then
   exec claude "${CLAUDE_FLAGS[@]}" "$@"
 else
   exec claude "${CLAUDE_FLAGS[@]}" \

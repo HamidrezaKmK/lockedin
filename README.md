@@ -216,6 +216,21 @@ uv run lockedin news-revoke <username>
 For hands-on report editing without running the web server, use DEV mode. It authenticates
 against your `.env` account credentials and scopes CLI agents to that user's report files.
 
+```bash
+./claude_scientist.sh
+./gemini_scientist.sh
+./codex_scientist.sh
+```
+
+To reopen prior agent sessions with the same scientist permissions, use the wrapper resume
+commands instead of the raw CLI resume commands:
+
+```bash
+./claude_scientist.sh resume
+./gemini_scientist.sh resume
+./codex_scientist.sh resume
+```
+
 See [docs/DEV_MODE.md](docs/DEV_MODE.md).
 
 ## Security
