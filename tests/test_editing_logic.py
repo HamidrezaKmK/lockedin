@@ -22,7 +22,7 @@ import unittest
 from contextlib import contextmanager
 from pathlib import Path
 
-from lockedin import bubbles, models, paths, reports, server, service
+from lockedin import assets, bubbles, models, paths, reports, server, service
 
 from tests._fixtures import make_bubble
 
@@ -369,6 +369,121 @@ class TodoRefRendering(unittest.TestCase):
         html = self._render(todo_link_base=None)
         self.assertIn("todoref", html)         # styled non-link span
         self.assertNotIn("/#todos/1", html)    # no login-gated link on the public page
+
+
+# --------------------------------------------------------------------------- #
+# Asset BibTeX — optional metadata, user-global duplicate-key guard, previews,
+# and rendered \cite{} references.
+# --------------------------------------------------------------------------- #
+class AssetBibtex(unittest.TestCase):
+    BIB1 = "@article{bases4spaces, title={Bases for Spaces}, author={Ada Lovelace}, year={1843}, journal={Notes}}"
+    BIB2 = "@book{otherkey, title={Other Book}, author={Grace Hopper}, year={1952}, publisher={Press}}"
+
+    def test_bibtex_round_trip_and_clear(self):
+        with temp_home() as home:
+            with paths.use_root(home):
+                pid = assets.save_asset(b"%PDF-1", "a.pdf", title="A")
+            meta = service.update_asset_bibliography(home, pid, self.BIB1)
+            self.assertIn("bases4spaces", meta["bibliography"])
+            preview = service.preview_bibtex(home, self.BIB1)
+            self.assertEqual(preview["entries"][0]["key"], "bases4spaces")
+            self.assertIn("Bases for Spaces", preview["entries"][0]["text"])
+            meta = service.update_asset_bibliography(home, pid, "")
+            self.assertEqual(meta["bibliography"], "")
+
+    def test_duplicate_key_on_another_asset_is_rejected(self):
+        with temp_home() as home:
+            with paths.use_root(home):
+                p1 = assets.save_asset(b"%PDF-1", "a.pdf", title="A")
+                p2 = assets.save_asset(b"%PDF-1", "b.pdf", title="B")
+            service.update_asset_bibliography(home, p1, self.BIB1)
+            with self.assertRaises(assets.DuplicateBibKeyError) as cm:
+                service.update_asset_bibliography(home, p2, self.BIB1)
+            self.assertEqual(cm.exception.key, "bases4spaces")
+
+    def test_duplicate_key_inside_same_field_is_rejected(self):
+        with temp_home() as home:
+            with paths.use_root(home):
+                pid = assets.save_asset(b"%PDF-1", "a.pdf", title="A")
+            dup = self.BIB1 + "\n\n@book{bases4spaces, title={Duplicate}}"
+            with self.assertRaises(assets.DuplicateBibKeyError):
+                service.update_asset_bibliography(home, pid, dup)
+
+    def test_page_can_cite_key_from_asset_attached_to_bubble(self):
+        with temp_home() as home:
+            slug = make_bubble(home)
+            with paths.use_root(home):
+                pid = assets.save_asset(b"%PDF-1", "a.pdf", title="A", tags=["Diffusion Models"])
+            service.update_asset_bibliography(home, pid, self.BIB1)
+            service.save_page(home, slug, "overview", "# T\n\nUse \\cite{bases4spaces}.\n")
+            with paths.use_root(home):
+                self.assertIn("\\cite{bases4spaces}", bubbles.get_page(slug, "overview"))
+
+    def test_page_cannot_cite_key_from_unattached_asset(self):
+        with temp_home() as home:
+            slug = make_bubble(home)
+            with paths.use_root(home):
+                pid = assets.save_asset(b"%PDF-1", "a.pdf", title="A")
+            service.update_asset_bibliography(home, pid, self.BIB1)
+            with self.assertRaises(service.CitationValidationError):
+                service.save_page(home, slug, "overview", "# T\n\nUse \\cite{bases4spaces}.\n")
+
+    def test_page_cannot_cite_unknown_key(self):
+        with temp_home() as home:
+            slug = make_bubble(home)
+            with self.assertRaises(service.CitationValidationError):
+                service.save_page(home, slug, "overview", "# T\n\nUse \\cite{missing}.\n")
+
+
+class CitationRendering(unittest.TestCase):
+    BIB = {
+        "bases4spaces": {"key": "bases4spaces", "text": "Ada Lovelace. \"Bases for Spaces\". Notes. 1843."},
+        "otherkey": {"key": "otherkey", "text": "Grace Hopper. \"Other Book\". Press. 1952."},
+    }
+    P1 = "Uses \\cite{bases4spaces}.\n"
+    P2 = "Also \\cite{otherkey,bases4spaces} and unknown \\cite{missing}.\n"
+    PAGES = [{"page_slug": "p1", "title": "One"}, {"page_slug": "p2", "title": "Two"}]
+
+    def _refs(self):
+        return server._build_refs([{"page_slug": "p1", "content": self.P1},
+                                   {"page_slug": "p2", "content": self.P2}],
+                                  bibliography=self.BIB)
+
+    def _render(self, page, content):
+        return server._render_preview_html(
+            name="B", page=page, all_pages=self.PAGES, content=content, slug="s",
+            link_base="/x", asset_base="/x/assets", show_back=False, refs=self._refs())
+
+    def test_registry_numbers_citations_by_first_appearance(self):
+        refs = self._refs()
+        self.assertEqual(refs["citeOrder"], ["bases4spaces", "otherkey"])
+        self.assertEqual(refs["citeMap"], {"bases4spaces": 1, "otherkey": 2})
+
+    def test_citations_and_shared_references_render(self):
+        html = self._render("p2", self.P2)
+        self.assertIn('<span class="cite-ref">[2, 1]</span>', html)
+        self.assertIn('<span class="cite-ref">[?missing]</span>', html)
+        self.assertIn("# References", html)
+        self.assertIn('<span class="bibnum">[1]</span>', html)
+        self.assertIn("Bases for Spaces", html)
+        self.assertIn('<span class="bibnum">[2]</span>', html)
+        self.assertIn("Other Book", html)
+
+    def test_references_section_appears_on_page_without_local_cite(self):
+        html = self._render("p1", "No citation on this page.\n")
+        self.assertIn("# References", html)
+        self.assertIn("Bases for Spaces", html)
+        self.assertIn("Other Book", html)
+
+    def test_no_references_section_without_known_cites(self):
+        refs = server._build_refs([{"page_slug": "p1", "content": "Only \\cite{missing}."}],
+                                  bibliography=self.BIB)
+        html = server._render_preview_html(
+            name="B", page="p1", all_pages=[{"page_slug": "p1", "title": "One"}],
+            content="Only \\cite{missing}.", slug="s", link_base="/x",
+            asset_base="/x/assets", show_back=False, refs=refs)
+        self.assertNotIn("# References", html)
+        self.assertIn("[?missing]", html)
 
 
 # --------------------------------------------------------------------------- #

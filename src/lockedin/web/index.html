@@ -199,13 +199,19 @@
   .katex .tag,.katex-display .tag{color:var(--accent);font-feature-settings:"tnum" 1;font-variant-numeric:tabular-nums}
   /* Cross-references: typeset inline links — tabular figures, a hairline underline that lifts
      into a soft pill on hover. They sit inside serif prose so they stay light, not chip-heavy. */
-  .eq-ref,.thm-ref{font-family:var(--font-ui);font-weight:600;color:var(--accent);
+  .eq-ref,.thm-ref,.cite-ref{font-family:var(--font-ui);font-weight:600;color:var(--accent);
     font-feature-settings:"tnum" 1;font-variant-numeric:tabular-nums;white-space:nowrap;
     padding:0 .14em;border-radius:4px;
     box-shadow:inset 0 -1px 0 color-mix(in srgb,var(--accent) 40%,transparent);
     transition:background .14s ease,box-shadow .14s ease;cursor:default}
-  .eq-ref:hover,.thm-ref:hover{background:color-mix(in srgb,var(--accent) 15%,transparent);
+  .eq-ref:hover,.thm-ref:hover,.cite-ref:hover{background:color-mix(in srgb,var(--accent) 15%,transparent);
     box-shadow:inset 0 -1px 0 transparent}
+  .bibitem{display:grid;grid-template-columns:auto 1fr;gap:.65em;margin:.5em 0;line-height:1.55}
+  .bibnum{font-family:var(--font-ui);font-weight:700;color:var(--accent);
+    font-feature-settings:"tnum" 1;font-variant-numeric:tabular-nums}
+  .bib-preview{background:var(--panel2);border:1px solid var(--line);border-radius:8px;
+    padding:10px 12px;font-family:var(--font-reading);font-size:15px;line-height:1.55}
+  .bib-preview .warn{color:var(--warn);font-family:var(--font-ui);font-size:13px}
   /* Theorem / lemma / proof boxes: refined journal callouts, one jewel tone per class (--env). */
   .math-env{--env:var(--accent);position:relative;margin:1.6em 0;padding:.85em 1.15em .85em 1.4em;
     border-radius:4px 12px 12px 4px;
@@ -655,6 +661,21 @@
       s=s.replace(/\\eqref\{([^}]+)\}/g,(_,lb)=>`<span class="eq-ref">(${eqN[lb]||"?"})</span>`);
       s=s.replace(/\\ref\{([^}]+)\}/g,(_,lb)=>`<span class="eq-ref">${eqN[lb]||"?"}</span>`);
     }
+    // Citations are numbered bubble-wide by /refs. Unknown keys stay visible as [?key].
+    const citeMap=(refs&&refs.citeMap)||{};
+    s=s.replace(/\\cite\{([^}]+)\}/g,(_,raw)=>{
+      const labels=raw.split(",").map(k=>k.trim()).filter(Boolean)
+        .map(k=>Object.prototype.hasOwnProperty.call(citeMap,k)?String(citeMap[k]):"?"+k);
+      return `<span class="cite-ref">[${labels.join(", ")}]</span>`;
+    });
+    if(refs&&Array.isArray(refs.citeOrder)&&refs.citeOrder.length){
+      const bib=refs.bibliography||{};
+      const rows=refs.citeOrder.map(k=>{
+        const ent=bib[k]; if(!ent)return "";
+        return `<p class="bibitem"><span class="bibnum">[${refs.citeMap[k]}]</span> ${ent.text||k}</p>`;
+      }).filter(Boolean).join("\n");
+      if(rows) s += "\n\n# References\n\n"+rows;
+    }
     // Resolve \eqref/\ref/\thmref that appear INSIDE math to KaTeX-renderable plain math (KaTeX
     // doesn't know these commands — a raw one breaks the whole equation). Mirrors the server's
     // _resolve_refs_in_math. Runs at render time, when eqN + theoLabels are fully populated.
@@ -690,6 +711,11 @@
         const tr=theoLabels[lb]; if(!tr) return `\\thmref{${lb}}`;
         const c2=tr.env.charAt(0).toUpperCase()+tr.env.slice(1);
         return `<span class="thm-ref">${c2} ${tr.number}</span>`;
+      });
+      is=is.replace(/\\cite\{([^}]+)\}/g,(_,raw)=>{
+        const labels=raw.split(",").map(k=>k.trim()).filter(Boolean)
+          .map(k=>Object.prototype.hasOwnProperty.call(citeMap,k)?String(citeMap[k]):"?"+k);
+        return `<span class="cite-ref">[${labels.join(", ")}]</span>`;
       });
       let ih=marked.parse(is,{breaks:true});
       ih=ih.replace(/@@IM(\d+)@@/g,(_,j)=>renderMath(istore[+j]));
@@ -1186,6 +1212,80 @@
       el("label",{class:"muted"},"Tags (comma-separated)"),tags,bubbleSel,
       el("label",{class:"muted"},"Notes"),notes,
       el("label",{class:"muted"},"Source URL"),url);
+    const bibPanel=el("div",{class:"col",style:"border-top:1px solid var(--line);padding-top:12px"});
+    const bibSummary=el("div",{class:"bib-preview hide"});
+    const bibEdit=el("div",{class:"col hide"});
+    const bibBtn=el("button",{class:"ghost"},(a.bibliography||"").trim()?"Edit BibTeX":"+ BibTeX");
+    box.append(el("div",{class:"row"},bibBtn));
+    const bibText=el("textarea",{rows:"8",style:"font-family:var(--font-mono);font-size:13px"});
+    bibText.value=a.bibliography||"";
+    const bibStatus=el("div",{class:"muted",style:"font-size:13px;min-height:18px"});
+    const bibPreview=el("div",{class:"bib-preview"});
+    let bibTimer=null, bibSeq=0;
+    const renderBibPreview=(entries,warning)=>{
+      bibPreview.innerHTML="";
+      if(warning){ bibPreview.append(el("div",{class:"warn"},warning)); return; }
+      if(!entries||!entries.length){ bibPreview.append(el("div",{class:"muted"},"No BibTeX entry to preview.")); return; }
+      entries.forEach((entry,i)=>{
+        bibPreview.append(el("p",{class:"bibitem"},
+          el("span",{class:"bibnum"},"["+(i+1)+"]"),
+          document.createTextNode(entry.text||entry.key)));
+      });
+    };
+    const updateBibSummary=async()=>{
+      bibSummary.innerHTML="";
+      bibSummary.classList.toggle("hide",!(a.bibliography||"").trim());
+      if(!(a.bibliography||"").trim())return;
+      try{
+        const r=await api("/api/bibtex/preview",{method:"POST",body:JSON.stringify({bibliography:a.bibliography||""})});
+        if(r.warning){ bibSummary.append(el("div",{class:"warn"},r.warning)); return; }
+        (r.entries||[]).forEach((entry,i)=>bibSummary.append(el("p",{class:"bibitem"},
+          el("span",{class:"bibnum"},"["+(i+1)+"]"),
+          document.createTextNode(entry.text||entry.key))));
+      }catch(e){ bibSummary.append(el("div",{class:"warn"},e.message)); }
+    };
+    const closeBibEdit=()=>{ bibEdit.classList.add("hide"); bibText.value=a.bibliography||""; bibStatus.textContent=""; bibStatus.style.color=""; refreshBibPreview(); };
+    bibBtn.onclick=()=>{ bibText.value=a.bibliography||""; bibStatus.textContent=""; bibStatus.style.color=""; refreshBibPreview(); bibEdit.classList.remove("hide"); bibText.focus(); };
+    const refreshBibPreview=()=>{
+      clearTimeout(bibTimer);
+      const text=bibText.value;
+      if(!text.trim()){ renderBibPreview([],""); return; }
+      const seq=++bibSeq;
+      bibTimer=setTimeout(async()=>{
+        try{
+          const r=await api("/api/bibtex/preview",{method:"POST",body:JSON.stringify({bibliography:text})});
+          if(seq!==bibSeq)return;
+          renderBibPreview(r.entries||[],r.warning||"");
+        }catch(e){ if(seq===bibSeq) renderBibPreview([],e.message); }
+      },250);
+    };
+    bibText.addEventListener("input",refreshBibPreview);
+    refreshBibPreview();
+    updateBibSummary();
+    bibEdit.append(
+      el("label",{class:"muted"},"BibTeX"), bibText,
+      bibPreview,
+      bibStatus,
+      el("div",{class:"row"},
+        el("button",{class:"primary",onclick:async()=>{
+          bibStatus.textContent="";
+          try{
+            const r=await api("/api/assets/"+a.pdf_id+"/bibliography",
+              {method:"PUT",body:JSON.stringify({bibliography:bibText.value})});
+            a.bibliography=(r.meta&&r.meta.bibliography)||"";
+            bibBtn.textContent=a.bibliography.trim()?"Edit BibTeX":"+ BibTeX";
+            bibStatus.textContent="BibTeX saved.";
+            toast("BibTeX saved");
+            closeBibEdit(); updateBibSummary();
+            if(S.bubble){ await fetchRefs(); updatePreview(); }
+          }catch(e){
+            bibStatus.textContent=e.message;
+            bibStatus.style.color="var(--bad)";
+          }
+        }},"Save BibTeX"),
+        el("button",{class:"ghost",onclick:closeBibEdit},"Cancel")));
+    bibPanel.append(bibSummary,bibEdit);
+    box.append(bibPanel);
     // suggestions are only a hint while a paper is still un-tagged
     if(!(a.tags||[]).length && (a.suggested_tags||[]).length){
       const sg=el("div",{class:"row"},el("span",{class:"muted"},"Suggested:"));

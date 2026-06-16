@@ -12,6 +12,7 @@ so callers wrap operations in ``paths.use_root(home)``.
 from __future__ import annotations
 
 import os
+import re
 import secrets
 from datetime import datetime, timezone
 from urllib.parse import unquote, urlparse
@@ -88,6 +89,7 @@ def save_asset(pdf_bytes: bytes, filename: str, title: str = "",
         "suggested_tags": [],
         "summarized": False,
         "notes": "",
+        "bibliography": "",
         "date_added": _now_iso(),
     }
     save_meta(pdf_id, meta)
@@ -139,11 +141,123 @@ def update_asset(pdf_id: str, **fields) -> dict:
         meta["tags"] = tags
         meta["idea_bubbles"] = [slug_of(t) for t in tags]
         fields.pop("tags")
-    for k in ("title", "notes", "url_source", "attention_flag", "suggested_tags"):
+    for k in ("title", "notes", "url_source", "attention_flag", "suggested_tags", "bibliography"):
         if k in fields and fields[k] is not None:
             meta[k] = fields[k]
     save_meta(pdf_id, meta)
     return meta
+
+
+# --------------------------------------------------------------------------- #
+# BibTeX parsing / formatting
+# --------------------------------------------------------------------------- #
+_BIB_ENTRY_RE = re.compile(r"@([A-Za-z]+)\s*\{\s*([^,\s{}]+)\s*,", re.MULTILINE)
+_BIB_FIELD_RE = re.compile(
+    r"([A-Za-z][A-Za-z0-9_-]*)\s*=\s*(\{(?:[^{}]|\{[^{}]*\})*\}|\"(?:[^\"\\]|\\.)*\"|[^,\n]+)",
+    re.MULTILINE,
+)
+
+
+class BibtexError(ValueError):
+    """Raised when BibTeX cannot be used as citation metadata."""
+
+
+class DuplicateBibKeyError(BibtexError):
+    """Raised when a BibTeX key is already used by this user."""
+
+    def __init__(self, key: str, asset: dict | None = None):
+        self.key = key
+        self.asset = asset or {}
+        title = self.asset.get("title") or self.asset.get("filename") or self.asset.get("pdf_id", "")
+        suffix = f" on asset {title!r}" if title else ""
+        super().__init__(f"Duplicate BibTeX key {key!r}{suffix}. Change the key and save again.")
+
+
+def parse_bibtex_entries(text: str) -> list[dict]:
+    """Parse enough BibTeX for citation keys and readable references.
+
+    This is deliberately small: it extracts entries, keys, and common scalar fields without
+    attempting full BibTeX macro or concatenation semantics.
+    """
+    text = text or ""
+    entries: list[dict] = []
+    matches = list(_BIB_ENTRY_RE.finditer(text))
+    for i, m in enumerate(matches):
+        start = m.end()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+        body = text[start:end].rsplit("}", 1)[0]
+        fields = {}
+        for fm in _BIB_FIELD_RE.finditer(body):
+            key = fm.group(1).lower()
+            value = fm.group(2).strip().rstrip(",").strip()
+            if (value.startswith("{") and value.endswith("}")) or (
+                value.startswith('"') and value.endswith('"')
+            ):
+                value = value[1:-1]
+            fields[key] = re.sub(r"\s+", " ", value).strip()
+        entries.append({"type": m.group(1).lower(), "key": m.group(2).strip(), "fields": fields})
+    return entries
+
+
+def bibtex_keys(text: str) -> list[str]:
+    return [e["key"] for e in parse_bibtex_entries(text)]
+
+
+def validate_bibtex_text(text: str) -> list[dict]:
+    stripped = (text or "").strip()
+    if not stripped:
+        return []
+    entries = parse_bibtex_entries(stripped)
+    if not entries:
+        raise BibtexError("BibTeX must contain at least one entry like @article{key, ...}.")
+    seen: set[str] = set()
+    for entry in entries:
+        key = entry["key"]
+        if key in seen:
+            raise DuplicateBibKeyError(key)
+        seen.add(key)
+    return entries
+
+
+def validate_bibtex_unique(pdf_id: str, text: str) -> list[dict]:
+    """Validate BibTeX syntax and user-global key uniqueness for an asset save."""
+    entries = validate_bibtex_text(text)
+    keys = {e["key"] for e in entries}
+    if not keys:
+        return entries
+    for meta in list_assets():
+        other_id = meta.get("pdf_id")
+        if other_id == pdf_id:
+            continue
+        for key in bibtex_keys(meta.get("bibliography", "")):
+            if key in keys:
+                raise DuplicateBibKeyError(key, meta)
+    return entries
+
+
+def format_bibtex_entry(entry: dict) -> str:
+    f = entry.get("fields", {}) or {}
+    parts: list[str] = []
+    if f.get("author"):
+        parts.append(f["author"])
+    title = f.get("title")
+    if title:
+        parts.append(f'"{title}"')
+    venue = f.get("journal") or f.get("booktitle") or f.get("publisher")
+    if venue:
+        parts.append(venue)
+    if f.get("year"):
+        parts.append(str(f["year"]))
+    if f.get("doi"):
+        parts.append(f"doi:{f['doi']}")
+    elif f.get("url"):
+        parts.append(f["url"])
+    return ". ".join(p.strip().rstrip(".") for p in parts if p and p.strip()) + "."
+
+
+def preview_bibtex(text: str) -> dict:
+    entries = validate_bibtex_text(text)
+    return {"entries": [{"key": e["key"], "text": format_bibtex_entry(e)} for e in entries]}
 
 
 def delete_asset(pdf_id: str) -> bool:

@@ -15,6 +15,13 @@ import yaml
 from . import assets, auth, bubbles, models, news, paths, reports, sharing, todos
 
 
+_CITE_REF_RE = re.compile(r"\\cite\{([^}]+)\}")
+
+
+class CitationValidationError(ValueError):
+    """Raised when a report page cites a key unavailable to its bubble."""
+
+
 def ensure_workspace(home: Path) -> None:
     home.mkdir(parents=True, exist_ok=True)
     for sub in ("ASSETS", "REPORTS", "config"):
@@ -55,6 +62,17 @@ def get_asset(home: Path, pdf_id: str) -> dict:
 def update_asset(home: Path, pdf_id: str, **fields) -> dict:
     with paths.use_root(home):
         return assets.update_asset(pdf_id, **fields)
+
+
+def update_asset_bibliography(home: Path, pdf_id: str, bibliography: str) -> dict:
+    with paths.use_root(home):
+        assets.validate_bibtex_unique(pdf_id, bibliography)
+        return assets.update_asset(pdf_id, bibliography=bibliography or "")
+
+
+def preview_bibtex(home: Path, bibliography: str) -> dict:
+    with paths.use_root(home):
+        return assets.preview_bibtex(bibliography)
 
 
 def delete_asset(home: Path, pdf_id: str) -> bool:
@@ -213,7 +231,40 @@ def get_page(home: Path, slug: str, page_slug: str) -> str:
 def save_page(home: Path, slug: str, page_slug: str, content: str,
               base_mtime: "float | None" = None) -> float:
     with paths.use_root(home):
+        _validate_page_citations(slug, content)
         return bubbles.save_page(slug, page_slug, content, base_mtime)
+
+
+def _citation_keys(content: str) -> list[str]:
+    keys: list[str] = []
+    for m in _CITE_REF_RE.finditer(content or ""):
+        keys.extend(k.strip() for k in m.group(1).split(",") if k.strip())
+    return keys
+
+
+def _validate_page_citations(slug: str, content: str) -> None:
+    cited = set(_citation_keys(content))
+    if not cited:
+        return
+    bubble_keys: set[str] = set()
+    global_keys: dict[str, dict] = {}
+    for meta in assets.list_assets():
+        keys = assets.bibtex_keys(meta.get("bibliography", ""))
+        if slug in meta.get("idea_bubbles", []):
+            bubble_keys.update(keys)
+        for key in keys:
+            global_keys.setdefault(key, meta)
+    unavailable = sorted(cited - bubble_keys)
+    if not unavailable:
+        return
+    key = unavailable[0]
+    meta = global_keys.get(key)
+    if meta:
+        title = meta.get("title") or meta.get("filename") or meta.get("pdf_id", key)
+        raise CitationValidationError(
+            f"Cannot cite {key!r} in this bubble because asset {title!r} is not attached to it.")
+    raise CitationValidationError(
+        f"Cannot cite {key!r}: no asset in this bubble has that BibTeX key.")
 
 
 def create_page(home: Path, slug: str, title: str) -> str:

@@ -20,7 +20,7 @@ import threading
 from pathlib import Path
 from typing import Optional
 
-from . import auth, bubbles, news, paths, service, tagger
+from . import assets, auth, bubbles, news, paths, service, tagger
 
 
 # Display-math environments (numbered) vs theorem-like environments (boxed). Shared by the
@@ -30,11 +30,15 @@ _THEO_ENVS = r'theorem|lemma|corollary|definition|proposition|remark|proof'
 _LABEL_RE = re.compile(r'\\label\{([^}]+)\}')
 
 
-def _build_refs(pages: "list[dict]") -> dict:
+_CITE_RE = re.compile(r'\\cite\{([^}]+)\}')
+
+
+def _build_refs(pages: "list[dict]", bibliography: "dict | None" = None) -> dict:
     """Build the bubble-wide reference registry from pages in manifest order.
 
     ``pages`` — ordered ``[{"page_slug","content"}, ...]``. Returns
-    ``{"eq": {label: n}, "thm": {label: {env, number}}, "thmStart": {page_slug: {env: count}}}``.
+    ``{"eq": {label: n}, "thm": {label: {env, number}}, "thmStart": {page_slug: {env: count}},
+    "citeMap": {key: n}, "citeOrder": [key], "bibliography": {key: entry}}``.
     Equation numbers are label-keyed and run across the whole bubble in document order
     (``$$`` blocks and display environments merged by position). Theorems are numbered
     positionally per env (proof unnumbered); ``thmStart`` records each env's running count
@@ -47,6 +51,9 @@ def _build_refs(pages: "list[dict]") -> dict:
     thm: dict[str, dict] = {}
     thm_counts: dict[str, int] = {}
     thm_start: dict[str, dict] = {}
+    bibliography = bibliography or {}
+    cite_order: list[str] = []
+    cite_map: dict[str, int] = {}
     env_re = re.compile(r'\\begin\{(' + _DISP_ENVS + r')\}([\s\S]*?)\\end\{(?:' + _DISP_ENVS + r')\}')
     dd_re = re.compile(r'\$\$([\s\S]+?)\$\$')
     theo_re = re.compile(
@@ -79,14 +86,32 @@ def _build_refs(pages: "list[dict]") -> dict:
             n = thm_counts.get(env, 0) if numbered else 0
             for lm in _LABEL_RE.finditer(inner):
                 thm[lm.group(1)] = {"env": env, "number": n}
-    return {"eq": eq, "thm": thm, "thmStart": thm_start}
+        for m in _CITE_RE.finditer(content):
+            for key in [k.strip() for k in m.group(1).split(",") if k.strip()]:
+                if key in bibliography and key not in cite_map:
+                    cite_map[key] = len(cite_order) + 1
+                    cite_order.append(key)
+    return {"eq": eq, "thm": thm, "thmStart": thm_start,
+            "citeMap": cite_map, "citeOrder": cite_order, "bibliography": bibliography}
+
+
+def _bubble_bibliography(home, slug: str) -> dict:
+    out: dict[str, dict] = {}
+    for meta in service.bubble_detail(home, slug).get("assets", []):
+        for entry in assets.parse_bibtex_entries(meta.get("bibliography", "")):
+            key = entry["key"]
+            if key not in out:
+                out[key] = {"key": key, "text": assets.format_bibtex_entry(entry),
+                            "type": entry.get("type", ""), "fields": entry.get("fields", {})}
+    return out
 
 
 def _bubble_refs(home, slug: str, all_pages: list) -> dict:
     """Read every page's stored content (manifest order) and build the reference registry."""
     return _build_refs([{"page_slug": p["page_slug"],
                          "content": service.get_page(home, slug, p["page_slug"])}
-                        for p in all_pages])
+                        for p in all_pages],
+                       bibliography=_bubble_bibliography(home, slug))
 
 
 def _preprocess_theorems(md: str, thm_labels: dict, start_counts: dict) -> "tuple[str, list[dict]]":
@@ -207,6 +232,31 @@ def _preprocess_equations(md: str, eq_nums: dict, thm_labels: dict) -> str:
     return md
 
 
+def _preprocess_citations(md: str, refs: dict) -> str:
+    cite_map = refs.get("citeMap", {}) if refs else {}
+
+    def repl(m: re.Match) -> str:
+        labels = []
+        for key in [k.strip() for k in m.group(1).split(",") if k.strip()]:
+            labels.append(str(cite_map[key]) if key in cite_map else f"?{key}")
+        return f'<span class="cite-ref">[{", ".join(labels)}]</span>'
+
+    return _CITE_RE.sub(repl, md)
+
+
+def _references_markdown(refs: dict) -> str:
+    order = refs.get("citeOrder", []) if refs else []
+    bibliography = refs.get("bibliography", {}) if refs else {}
+    rows = []
+    for key in order:
+        entry = bibliography.get(key)
+        if entry:
+            rows.append(f'<p class="bibitem"><span class="bibnum">[{refs["citeMap"][key]}]</span> {entry.get("text", key)}</p>')
+    if not rows:
+        return ""
+    return "\n\n# References\n\n" + "\n".join(rows)
+
+
 def _render_preview_html(*, name: str, page: str, all_pages: list, content: str, slug: str,
                          link_base: str, asset_base: str, show_back: bool,
                          todos: "dict | None" = None,
@@ -274,6 +324,10 @@ def _render_preview_html(*, name: str, page: str, all_pages: list, content: str,
     thm_start = refs.get("thmStart", {}).get(page, {})
     content = _preprocess_equations(content, eq_map, thm_map)
     content, theo_store = _preprocess_theorems(content, thm_map, thm_start)
+    content = _preprocess_citations(content, refs)
+    for entry in theo_store:
+        entry["inner"] = _preprocess_citations(entry["inner"], refs)
+    content += _references_markdown(refs)
     md = content
     # point figure URLs at the right (possibly public) asset route
     md = md.replace(f"/api/bubbles/{slug}/assets/", f"{asset_base}/")
@@ -345,13 +399,16 @@ blockquote p{{margin:5px 0}}
 /* An equation's own number shares the accent + tabular figures with its cross-references. */
 .katex .tag,.katex-display .tag{{color:var(--accent);font-feature-settings:"tnum" 1;font-variant-numeric:tabular-nums}}
 /* Cross-references: typeset inline links — tabular figures, hairline underline → soft hover pill. */
-.eq-ref,.thm-ref{{font-family:var(--font-ui);font-weight:600;color:var(--accent);
+.eq-ref,.thm-ref,.cite-ref{{font-family:var(--font-ui);font-weight:600;color:var(--accent);
   font-feature-settings:"tnum" 1;font-variant-numeric:tabular-nums;white-space:nowrap;
   padding:0 .14em;border-radius:4px;
   box-shadow:inset 0 -1px 0 color-mix(in srgb,var(--accent) 40%,transparent);
   transition:background .14s ease,box-shadow .14s ease}}
-.eq-ref:hover,.thm-ref:hover{{background:color-mix(in srgb,var(--accent) 15%,transparent);
+.eq-ref:hover,.thm-ref:hover,.cite-ref:hover{{background:color-mix(in srgb,var(--accent) 15%,transparent);
   box-shadow:inset 0 -1px 0 transparent}}
+.bibitem{{display:grid;grid-template-columns:auto 1fr;gap:.65em;margin:.5em 0;line-height:1.55}}
+.bibnum{{font-family:var(--font-ui);font-weight:700;color:var(--accent);
+  font-feature-settings:"tnum" 1;font-variant-numeric:tabular-nums}}
 /* Theorem / lemma / proof boxes: refined journal callouts, one jewel tone per class (--env). */
 .math-env{{--env:var(--accent);position:relative;margin:1.6em 0;padding:.85em 1.15em .85em 1.4em;
   border-radius:4px 12px 12px 4px;
@@ -531,6 +588,12 @@ def build_app():
         url_source: Optional[str] = None
         attention_flag: Optional[bool] = None
         suggested_tags: Optional[list[str]] = None
+
+    class AssetBibtexIn(BaseModel):
+        bibliography: str = ""
+
+    class BibtexPreviewIn(BaseModel):
+        bibliography: str = ""
 
     class AssetUrlIn(BaseModel):
         url: str
@@ -996,6 +1059,26 @@ def build_app():
             raise HTTPException(status_code=404, detail="No such asset.")
         return {"meta": meta}
 
+    @app.put("/api/assets/{pdf_id}/bibliography")
+    def put_asset_bibliography(pdf_id: str, body: AssetBibtexIn,
+                               user: str = Depends(current_user)):
+        try:
+            meta = service.update_asset_bibliography(home_of(user), pdf_id, body.bibliography)
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail="No such asset.")
+        except assets.DuplicateBibKeyError as e:
+            raise HTTPException(status_code=409, detail=str(e))
+        except assets.BibtexError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        return {"meta": meta}
+
+    @app.post("/api/bibtex/preview")
+    def preview_bibtex(body: BibtexPreviewIn, user: str = Depends(current_user)):
+        try:
+            return service.preview_bibtex(home_of(user), body.bibliography)
+        except assets.BibtexError as e:
+            return {"entries": [], "warning": str(e)}
+
     @app.delete("/api/assets/{pdf_id}")
     def del_asset(pdf_id: str, user: str = Depends(current_user)):
         if not service.delete_asset(home_of(user), pdf_id):
@@ -1150,6 +1233,8 @@ def build_app():
             # 409: the editor's base mtime is stale — an external edit landed first.
             raise HTTPException(status_code=409, detail="Page changed on disk",
                                 headers={"X-Disk-Mtime": repr(e.disk_mtime)})
+        except service.CitationValidationError as e:
+            raise HTTPException(status_code=400, detail=str(e))
         return {"ok": True, "page_mtime": mtime}
 
     @app.get("/api/bubbles/{slug}/poll")
