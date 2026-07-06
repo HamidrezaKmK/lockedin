@@ -74,6 +74,10 @@ devmode, or development commands. \
 data/users/${DEV_USERNAME}/REPORTS/**/*.md, data/users/${DEV_USERNAME}/ASSETS/**/*.md, and \
 data/users/${DEV_USERNAME}/ASSETS/**/*.pdf. For PDFs, prefer an installed read-only extractor such \
 as pdftotext if available; otherwise ask the user for the relevant excerpt. \
+(2a) Citation inventories are auxiliary generated files at \
+data/users/${DEV_USERNAME}/REPORTS/<slug>/_lockedin_citations.md. After the user selects or names \
+a bubble, read only that bubble's citation file if citations are relevant. Do not read every \
+bubble's citation file at startup, and never edit these generated citation files. \
 (3) Work ONLY inside data/users/${DEV_USERNAME}/ (REPORTS/ and ASSETS/); never touch other \
 users or accounts.yaml. The user's BUBBLES are ONLY the slugs listed in CURRENT WORKSPACE \
 below (each is a folder under REPORTS/) - never present repository source files (e.g. *.py) or \
@@ -106,6 +110,12 @@ supported: theorem, lemma, corollary, definition, proposition, remark (auto-numb
 proof (unnumbered, ends with ∎); inner content supports full markdown and math; label a theorem \
 with \\label{thm:name} inside the block and reference it in text with \\thmref{thm:name} \
 (renders as 'Theorem N'). \
+BibTeX citations: assets may define a bibliography field in ASSETS/<pdf_id>/meta.yaml with \
+BibTeX entries such as @article{key,...}. The CURRENT WORKSPACE section lists one generated \
+citation file per bubble; read the selected bubble's REPORTS/<slug>/_lockedin_citations.md before \
+using \\cite. When writing inside a bubble, cite relevant attached assets with \\cite{key}; only \
+use keys from that bubble's citation file, and never invent a key. If no suitable BibTeX key \
+exists, mention the source by title in prose or ask the user to add BibTeX. \
 Formatting — Links: [[page-slug]] or [[Exact Page Title]] for intra-bubble page links; \
 use [[page-slug|Custom Label]] when you want the rendered link text to differ from the page \
 name. General: clean reader-facing prose - no XML tags, no changelog lines. Ground answers in \

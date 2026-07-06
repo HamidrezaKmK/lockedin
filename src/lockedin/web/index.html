@@ -18,28 +18,69 @@
 <script src="https://uicdn.toast.com/editor/latest/toastui-editor-all.min.js"></script>
 <style>
   :root{
-    --bg:#0d1018; --panel:#161b25; --panel2:#1c2230; --line:#252d3d;
-    --ink:#e8ecf4; --muted:#8a94a8; --accent:#9b80ff; --accent2:#4dd9b8;
-    --warn:#f5c842; --bad:#ff6b6b; --good:#4ade80; --radius:12px;
-    --vvh:100vh;
+    --radius:12px; --vvh:100vh;
     --font-ui:'Syne',system-ui,sans-serif;
     --font-reading:'Source Serif 4',Georgia,serif;
     --font-mono:'JetBrains Mono',ui-monospace,monospace;
-    --shadow-sm:0 1px 6px rgba(0,0,0,.4);
-    --shadow:0 6px 24px rgba(0,0,0,.55);
     --glow:0 0 0 1px var(--accent);
   }
-  /* Light mode */
-  body.light{
-    --bg:#f2f4f8; --panel:#ffffff; --panel2:#edf0f7; --line:#d4daea;
-    --ink:#1a1d28; --muted:#5f6880; --accent:#6d4aff; --accent2:#0aa882;
-    --warn:#b45309; --bad:#dc2626; --good:#16a34a;
-    --shadow-sm:0 1px 6px rgba(0,0,0,.1);
-    --shadow:0 6px 24px rgba(0,0,0,.15);
+  /*
+    Theme color knobs.
+    Tune these variables to adjust Dark / Light / Pink / Techno without touching layout CSS.
+  */
+  :root,body.theme-dark{
+    --bg:#0d1018; --panel:#161b25; --panel2:#1c2230; --line:#252d3d;
+    --ink:#e8ecf4; --muted:#8a94a8; --accent:#9b80ff; --accent2:#4dd9b8;
+    --warn:#f5c842; --bad:#ff6b6b; --good:#4ade80; --assistant-bg:#13202b;
+    --ref-accent:#b59cff;
+    --text-color-1:#b59cff; --text-color-2:#4dd9b8; --text-color-3:#f2c94c; --text-color-4:#ff7aa2; --text-color-5:#8bd3ff;
+    --shadow-sm:0 1px 6px rgba(0,0,0,.4); --shadow:0 6px 24px rgba(0,0,0,.55);
   }
-  body.light .msg.assistant{background:#f0f4ff}
-  body.light .toastui-editor-defaultUI{filter:invert(1) hue-rotate(180deg)}
-  body.light .toastui-editor-defaultUI img{filter:invert(1) hue-rotate(180deg)}
+  body.theme-light{
+    --bg:#ffffff; --panel:#eef2f7; --panel2:#dfe6f0; --line:#c4ccd9;
+    --ink:#171b24; --muted:#526073; --accent:#5b3ee8; --accent2:#087f69;
+    --warn:#b45309; --bad:#dc2626; --good:#16a34a; --assistant-bg:#f0f4ff;
+    --ref-accent:#6d4aff;
+    --text-color-1:#5b3ee8; --text-color-2:#087f69; --text-color-3:#b45309; --text-color-4:#be185d; --text-color-5:#0369a1;
+    --shadow-sm:0 1px 8px rgba(17,24,39,.12); --shadow:0 8px 28px rgba(17,24,39,.2);
+  }
+  body.theme-pink{
+    --bg:#fff0fa; --panel:#ffe0f3; --panel2:#ffc7e8; --line:#ff94d2;
+    --ink:#57113e; --muted:#9b4b7d; --accent:#ff1493; --accent2:#00b8a9;
+    --warn:#c06b00; --bad:#e11d75; --good:#00a86b; --assistant-bg:#ffd6ee;
+    --ref-accent:var(--accent2);
+    --text-color-1:#ff1493; --text-color-2:#b5179e; --text-color-3:#00a6a6; --text-color-4:#ff6f59; --text-color-5:#7b2cbf;
+    --shadow-sm:0 1px 8px rgba(255,20,147,.18); --shadow:0 8px 28px rgba(255,20,147,.24);
+  }
+  body.theme-techno{
+    --bg:#020704; --panel:#07110a; --panel2:#0b1b10; --line:#174f25;
+    --ink:#d7f4dc; --muted:#82b58a; --accent:#35c85a; --accent2:#8bd68f;
+    --warn:#c6d65a; --bad:#ff4d6d; --good:#35c85a; --assistant-bg:#06180c;
+    --ref-accent:var(--accent2);
+    --text-color-1:#35c85a; --text-color-2:#8bd68f; --text-color-3:#b7d36b; --text-color-4:#5ed0a0; --text-color-5:#7aa88a;
+    --shadow-sm:0 1px 8px rgba(53,200,90,.14); --shadow:0 8px 30px rgba(53,200,90,.2);
+  }
+  body.theme-pearl{
+    --bg:#fffdf7; --panel:#fffaf0; --panel2:#f3f0e8; --line:#d8d2c4;
+    --ink:#3f3f3b; --muted:#7c7168; --accent:#d9480f; --accent2:#f06d3a;
+    --warn:#c05621; --bad:#b42318; --good:#6f8f3f; --assistant-bg:#fff1e8;
+    --ref-accent:var(--accent2);
+    --text-color-1:#d9480f; --text-color-2:#f06d3a; --text-color-3:#b7791f; --text-color-4:#7c7168; --text-color-5:#9a3412;
+    --shadow-sm:0 1px 8px rgba(217,72,15,.12); --shadow:0 8px 28px rgba(217,72,15,.18);
+  }
+  body.theme-light .toastui-editor-defaultUI{filter:invert(1) hue-rotate(180deg)}
+  body.theme-light .toastui-editor-defaultUI img{filter:invert(1) hue-rotate(180deg)}
+  body.theme-pearl .toastui-editor-defaultUI{filter:invert(1) hue-rotate(180deg)}
+  body.theme-pearl .toastui-editor-defaultUI img{filter:invert(1) hue-rotate(180deg)}
+  body.theme-pink #auth{background:
+    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(255,111,200,.18) 0%, transparent 70%),
+    linear-gradient(180deg,var(--bg) 0%,color-mix(in srgb,var(--panel) 74%,var(--bg)) 58%,var(--bg) 100%)}
+  body.theme-techno #auth{background:
+    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(53,200,90,.14) 0%, transparent 70%),
+    linear-gradient(180deg,var(--bg) 0%,color-mix(in srgb,var(--panel) 74%,var(--bg)) 58%,var(--bg) 100%)}
+  body.theme-pearl #auth{background:
+    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(217,72,15,.16) 0%, transparent 70%),
+    linear-gradient(180deg,var(--bg) 0%,color-mix(in srgb,var(--panel) 74%,var(--bg)) 58%,var(--bg) 100%)}
   *{box-sizing:border-box}
   *{scrollbar-width:thin;scrollbar-color:color-mix(in srgb,var(--accent) 34%,transparent) transparent}
   *::-webkit-scrollbar{width:10px;height:10px}
@@ -82,6 +123,7 @@
   .pill{display:inline-block;background:var(--panel2);border:1px solid var(--line);
         border-radius:999px;padding:2px 10px;font-size:12px;margin:2px 4px 2px 0}
   .pill.suggest{border-color:var(--warn);color:var(--warn)}
+  .pill.more{border-color:var(--line);color:var(--muted)}
   .dot{width:9px;height:9px;border-radius:50%;display:inline-block;background:var(--muted)}
   .dot.ok{background:var(--good)} .dot.bad{background:var(--bad)}
   .hide{display:none!important}
@@ -89,12 +131,62 @@
      (it's !important) so it can additionally be gated to specific views from JS. */
   .mobile-only{display:none}
 
-  /* auth */
-  #auth{min-height:100vh;display:flex;align-items:center;justify-content:center;
-    background:radial-gradient(ellipse 80% 50% at 50% -10%, rgba(155,128,255,.12) 0%, transparent 70%)}
+  /* auth / public landing */
+  #auth{height:100vh;min-height:100vh;display:block;
+    background:
+      radial-gradient(ellipse 80% 50% at 50% -10%, rgba(155,128,255,.12) 0%, transparent 70%),
+      linear-gradient(180deg,var(--bg) 0%,color-mix(in srgb,var(--panel) 76%,var(--bg)) 58%,var(--bg) 100%)}
+  .landing{width:100%;min-height:100vh}
+  .landing-inner{width:min(1160px,calc(100vw - 40px));margin:0 auto}
+  .landing-hero{min-height:min(760px,100vh);display:grid;grid-template-columns:minmax(0,1.1fr) minmax(310px,.82fr);
+    gap:42px;align-items:center;padding:42px 0 54px}
+  .landing-kicker{display:inline-flex;align-items:center;gap:8px;color:var(--accent2);font-size:12px;
+    font-weight:700;text-transform:uppercase;letter-spacing:.12em;margin-bottom:14px}
+  .landing-lock{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;
+    border-radius:7px;background:color-mix(in srgb,var(--accent2) 16%,transparent);
+    border:1px solid color-mix(in srgb,var(--accent2) 34%,var(--line));letter-spacing:0}
+  .landing h1{font-family:var(--font-ui);font-size:clamp(44px,8vw,92px);line-height:.92;margin:0 0 18px;
+    letter-spacing:0;font-weight:700}
+  .landing h1 .lock{color:var(--accent2)}
+  .landing-lede{max-width:680px;font-size:clamp(18px,2vw,23px);line-height:1.45;color:var(--ink);margin:0 0 20px}
+  .landing-copy{max-width:690px;color:var(--muted);font-size:15px;margin:0 0 26px}
+  .landing-points{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;max-width:760px}
+  .landing-point{border-left:2px solid color-mix(in srgb,var(--accent) 60%,var(--line));padding:8px 12px;
+    background:color-mix(in srgb,var(--panel) 40%,transparent);border-radius:0 8px 8px 0}
+  .landing-point b{display:block;margin-bottom:2px}
+  .landing-point span{display:block;color:var(--muted);font-size:12px;line-height:1.45}
+  .landing-auth-panel{background:color-mix(in srgb,var(--panel) 94%,transparent);border:1px solid var(--line);
+    border-radius:8px;padding:22px;box-shadow:var(--shadow);position:relative;overflow:hidden}
+  .landing-auth-panel::before{content:"";position:absolute;inset:0 0 auto;height:3px;
+    background:linear-gradient(90deg,var(--accent),var(--accent2))}
+  .landing-auth-panel h2{margin:0;font-size:20px;letter-spacing:0}
+  .landing-auth-panel .auth-note{color:var(--muted);font-size:13px;margin:2px 0 12px}
+  .landing-auth-panel .row{flex-wrap:wrap}
+  .landing-auth-panel button{flex:1 1 120px}
+  .landing-section{padding:54px 0;border-top:1px solid color-mix(in srgb,var(--line) 72%,transparent)}
+  .landing-section-head{display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1fr);gap:30px;align-items:end;margin-bottom:24px}
+  .landing-section h2{font-size:28px;line-height:1.15;margin:0;letter-spacing:0}
+  .landing-section-head p{margin:0;color:var(--muted)}
+  .workflow-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+  .workflow-step,.feature-card,.privacy-panel{background:var(--panel);border:1px solid var(--line);
+    border-radius:8px;padding:16px;box-shadow:var(--shadow-sm)}
+  .workflow-step{display:flex;flex-direction:column;gap:8px;min-height:150px}
+  .workflow-num{font-family:var(--font-mono);font-size:12px;color:var(--accent2)}
+  .workflow-step b,.feature-card b{font-size:15px}
+  .workflow-step span,.feature-card span,.privacy-panel p{color:var(--muted);font-size:13px;line-height:1.55}
+  .feature-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+  .feature-card{min-height:142px}
+  .feature-icon{width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;
+    background:color-mix(in srgb,var(--accent) 13%,var(--panel2));border:1px solid color-mix(in srgb,var(--accent) 30%,var(--line));
+    margin-bottom:12px}
+  .privacy-panel{display:grid;grid-template-columns:minmax(0,.72fr) minmax(0,1fr);gap:28px;align-items:start}
+  .privacy-panel h2{margin:0 0 10px}
+  .privacy-list{display:grid;gap:10px;margin:0;padding:0;list-style:none}
+  .privacy-list li{padding-left:18px;position:relative;color:var(--muted);font-size:13px;line-height:1.55}
+  .privacy-list li::before{content:"";position:absolute;left:0;top:.72em;width:7px;height:7px;border-radius:50%;background:var(--accent2)}
+  .landing-footer{padding:24px 0 38px;color:var(--muted);font-size:12px}
   .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:22px;
     box-shadow:var(--shadow-sm)}
-  #auth .card{width:min(360px,calc(100vw - 32px));box-shadow:var(--shadow)}
   .brand{font-size:22px;font-weight:700;font-family:var(--font-ui);letter-spacing:-.02em}
   .brand .lock{color:var(--accent2)}
   .err{color:var(--bad);min-height:18px;font-size:13px}
@@ -140,21 +232,51 @@
     box-shadow:0 0 0 1px var(--accent) inset,0 4px 20px rgba(155,128,255,.15)}
   .model-card .model-title{display:flex;gap:8px;align-items:center;min-width:0}
   .model-card .model-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px}
+  .account-quick{position:relative;flex:0 0 auto}
+  #accountBtn{max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #accountMenu{position:absolute;top:calc(100% + 8px);right:0;width:260px;z-index:35;
+    gap:10px;padding:14px}
+  #accountMenu .acct-head{display:flex;align-items:center;gap:8px;min-width:0}
+  #accountMenu .acct-name{font-weight:700;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #accountMenu .acct-row{font-size:12px;color:var(--muted);line-height:1.45}
+  #accountMenu .acct-actions{display:flex;gap:8px;flex-wrap:wrap}
 
   /* grids */
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px}
+  .asset-filter{display:grid;grid-template-columns:minmax(180px,1fr) minmax(180px,260px) auto;
+    gap:10px;align-items:end;margin:0 0 14px}
+  .asset-filter label{display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--muted)}
+  .asset-count{font-size:12px;color:var(--muted);white-space:nowrap;padding-bottom:9px}
+  .seg{display:inline-flex;gap:3px;background:var(--panel2);border:1px solid var(--line);
+    border-radius:9px;padding:3px;align-self:flex-start}
+  .seg button{border:none;background:transparent;min-height:30px;padding:4px 10px;font-size:12px}
+  .seg button.active{background:var(--accent);color:#fff}
   .acard{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
          padding:14px;cursor:pointer;transition:border-color .18s,box-shadow .18s,transform .18s;
-         box-shadow:var(--shadow-sm);min-width:0}
+         box-shadow:var(--shadow-sm);min-width:0;display:flex;flex-direction:column;gap:10px;
+         position:relative;overflow:hidden}
+  .acard::before{content:"";position:absolute;inset:0 0 auto;height:3px;
+    background:linear-gradient(90deg,var(--accent),var(--accent2));opacity:.68}
   .acard:hover{border-color:var(--accent);box-shadow:var(--shadow);transform:translateY(-2px)}
   /* min-width:0 down the chain (card → its flex .row → the h4) lets the nowrap title ellipsize
      instead of forcing the card — and the whole page — wider than the viewport. Without it, a
      `1fr` grid track resolves its `auto` minimum to the title's full min-content width. */
   .acard>.row{min-width:0}
   .acard h4{margin:0 0 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+  .acard-head{display:flex;gap:9px;align-items:flex-start;min-width:0}
+  .acard-title{min-width:0;flex:1}
+  .acard-title h4{margin:0}
+  .acard-tags{min-height:24px;max-height:58px;overflow:hidden}
+  .tag-summary{height:26px;display:flex;align-items:center;gap:6px;min-width:0;
+    color:var(--muted);font-size:12px}
+  .tag-summary-main{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tag-summary-more{flex:0 0 auto;color:var(--accent);font-weight:600}
+  .acard-meta{font-size:12px;color:var(--muted);display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  .acard-actions{display:flex;gap:8px;align-items:center;margin-top:auto;flex-wrap:wrap}
   .truncate{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .badge{font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid var(--warn);
          color:var(--warn);flex-shrink:0;white-space:nowrap}
+  .badge.bib{border-color:var(--accent2);color:var(--accent2)}
 
   /* bubble detail */
   #detail{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(0,1fr);gap:16px;flex:1;
@@ -197,21 +319,43 @@
   /* An equation's own number shares the accent + tabular figures with its cross-references,
      so a \tag and the \eqref pointing at it read as one typographic system. */
   .katex .tag,.katex-display .tag{color:var(--accent);font-feature-settings:"tnum" 1;font-variant-numeric:tabular-nums}
-  /* Cross-references: typeset inline links — tabular figures, a hairline underline that lifts
-     into a soft pill on hover. They sit inside serif prose so they stay light, not chip-heavy. */
+  /* Cross-references: colored inline labels that go quiet on hover. */
   .eq-ref,.thm-ref,.cite-ref{font-family:var(--font-ui);font-weight:600;color:var(--accent);
     font-feature-settings:"tnum" 1;font-variant-numeric:tabular-nums;white-space:nowrap;
-    padding:0 .14em;border-radius:4px;
-    box-shadow:inset 0 -1px 0 color-mix(in srgb,var(--accent) 40%,transparent);
-    transition:background .14s ease,box-shadow .14s ease;cursor:default}
-  .eq-ref:hover,.thm-ref:hover,.cite-ref:hover{background:color-mix(in srgb,var(--accent) 15%,transparent);
-    box-shadow:inset 0 -1px 0 transparent}
+    padding:0 .14em;border-radius:4px;transition:color .14s ease;cursor:default}
+  .eq-ref:hover,.thm-ref:hover,.cite-ref:hover{color:var(--ink)}
+  a.cite-ref,.cite-ref a{color:var(--accent);text-decoration:none}
+  a.cite-ref:hover,.cite-ref a:hover{color:var(--ink)}
+  a.cite-ref,.cite-ref a{cursor:pointer}
+  .text-color{color:var(--tc)}
   .bibitem{display:grid;grid-template-columns:auto 1fr;gap:.65em;margin:.5em 0;line-height:1.55}
   .bibnum{font-family:var(--font-ui);font-weight:700;color:var(--accent);
     font-feature-settings:"tnum" 1;font-variant-numeric:tabular-nums}
+  a.bibnum{text-decoration:none;cursor:pointer}
+  .references-box{margin:2.2em 0 1.2em;padding:1.05em 1.2em 1.15em;
+    border-radius:7px;background:
+      linear-gradient(135deg,color-mix(in srgb,var(--ref-accent) 13%,transparent),transparent 58%),
+      var(--panel2);
+    border:1px solid color-mix(in srgb,var(--ref-accent) 32%,var(--line));
+    box-shadow:0 14px 34px -28px rgba(0,0,0,.9)}
+  .references-box h1{margin:.05em 0 .55em;padding:0;border:none;
+    font-family:var(--font-ui);font-size:15px;font-weight:700;letter-spacing:.08em;
+    text-transform:uppercase;color:var(--ref-accent)}
+  .references-box .bibitem:last-child{margin-bottom:0}
   .bib-preview{background:var(--panel2);border:1px solid var(--line);border-radius:8px;
     padding:10px 12px;font-family:var(--font-reading);font-size:15px;line-height:1.55}
   .bib-preview .warn{color:var(--warn);font-family:var(--font-ui);font-size:13px}
+  .ref-ac{position:absolute;top:10px;right:10px;width:min(360px,calc(100% - 20px));max-height:280px;
+    overflow:auto;z-index:22;background:var(--panel);border:1px solid var(--line);
+    border-radius:10px;box-shadow:var(--shadow);padding:7px;font-family:var(--font-ui);font-size:12px}
+  .ref-ac-title{color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.08em;
+    padding:2px 5px 6px}
+  .ref-ac-item{display:block;width:100%;text-align:left;border:1px solid transparent;background:transparent;
+    min-height:0;border-radius:7px;padding:6px 7px;margin:1px 0;color:var(--ink)}
+  .ref-ac-item.active,.ref-ac-item:hover{border-color:color-mix(in srgb,var(--accent) 45%,var(--line));
+    background:color-mix(in srgb,var(--accent) 12%,var(--panel2))}
+  .ref-ac-key{font-family:var(--font-mono);font-weight:700;color:var(--accent);overflow-wrap:anywhere}
+  .ref-ac-detail{color:var(--muted);font-size:11px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   /* Theorem / lemma / proof boxes: refined journal callouts, one jewel tone per class (--env). */
   .math-env{--env:var(--accent);position:relative;margin:1.6em 0;padding:.85em 1.15em .85em 1.4em;
     border-radius:4px 12px 12px 4px;
@@ -236,12 +380,33 @@
   .msg img{max-width:100%;height:auto}
   .msg .katex-display{overflow-x:auto;overflow-y:hidden}
   .msg.user{align-self:flex-end;background:var(--panel2)}
-  .msg.assistant{align-self:flex-start;background:#13202b;border:1px solid var(--line)}
+  .msg.assistant{align-self:flex-start;background:var(--assistant-bg);border:1px solid var(--line)}
   .synced{font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid var(--good);color:var(--good)}
   .synced.stale{border-color:var(--warn);color:var(--warn)}
   .synced.saving{border-color:var(--warn);color:var(--warn);opacity:.7}
   .synced.conflict{border-color:var(--bad);color:var(--bad);font-weight:600}
+  .page-visibility-btn{display:inline-flex;align-items:center;justify-content:center;width:30px;height:28px;
+    padding:0;border-color:var(--line);color:var(--muted)}
+  .page-visibility-btn svg{width:16px;height:16px;display:block;stroke:currentColor;fill:none;stroke-width:2;
+    stroke-linecap:round;stroke-linejoin:round}
+  .page-visibility-btn.hidden-page{color:var(--muted);opacity:.55}
+  .page-visibility-btn.hidden-page svg .slash{display:block}
+  .page-visibility-btn svg .slash{display:none}
   .toolbar{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+  .color-tool{position:relative;display:inline-flex;align-items:center;height:24px}
+  .color-tool-btn{position:relative;display:inline-flex;align-items:center;justify-content:center;
+    width:24px;height:24px;font-family:var(--font-ui);font-size:15px;line-height:1;
+    font-weight:700;background:transparent!important;border:none!important;color:inherit!important;
+    cursor:pointer;margin:0;padding:0;border-radius:4px}
+  .color-tool-btn::after{content:"";position:absolute;left:6px;right:6px;bottom:3px;height:2px;
+    border-radius:999px;background:var(--accent)}
+  .color-tool-btn:hover{color:var(--accent)!important;background:transparent!important}
+  .color-menu{position:absolute;top:28px;left:0;z-index:50;display:flex;gap:5px;padding:6px;
+    background:var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow)}
+  .color-menu.hide{display:none}
+  .color-swatch{width:22px;height:22px;border-radius:999px;border:1px solid var(--line);
+    cursor:pointer;padding:0;background:var(--swatch)}
+  .color-swatch:hover{border-color:var(--ink);transform:translateY(-1px)}
   .small{font-size:12px;padding:5px 9px}
   .deepitem{display:flex;align-items:center;gap:8px;padding:5px 0;border-top:1px solid var(--line)}
   h2.section-title{margin:0 0 18px;font-family:var(--font-ui);font-weight:700;
@@ -282,13 +447,16 @@
         max-width:280px}
   .ptab>span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
   .ptab.active{border-color:var(--accent);color:var(--ink);background:var(--bg)}
+  .ptab.dragging{opacity:.45;border-color:var(--accent)}
+  .ptab.drop-target{box-shadow:inset 2px 0 0 var(--accent)}
   .ptab .x{opacity:.5;font-size:11px}
   .ptab .x:hover{opacity:1;color:var(--bad)}
   .ptab-edit{font-size:13px;padding:2px 6px;width:130px;border-radius:5px}
   #editorHost{flex:1;min-height:0;min-width:0;display:flex;overflow:hidden;overflow:clip}
   #editorWrap{flex:1;min-height:0;min-width:0;overflow:hidden;overflow:clip}
   #editorWrap .toastui-editor-defaultUI{height:100%}
-  #previewWrap{flex:1;overflow:auto;padding:12px 16px;min-width:0;min-height:0;line-height:1.6}
+  #previewWrap{flex:1;overflow:auto;padding:12px 16px;min-width:0;min-height:0;line-height:1.6;
+    overflow-anchor:none}
   /* The editor pane has three view modes, chosen from the toolbar dropdown:
      view  = rendered page only (default reading view),
      edit  = Markdown editor only,
@@ -402,11 +570,28 @@
     /* single-column cards. minmax(0,1fr) (not 1fr) forces the track minimum to 0 so a card's
        nowrap title can't blow the column — and the page — wider than the viewport. */
     .grid{grid-template-columns:minmax(0,1fr)}
+    .asset-filter{grid-template-columns:minmax(0,1fr);align-items:stretch}
+    .asset-count{padding-bottom:0}
     .brand{font-size:18px;letter-spacing:-.02em}
     /* Larger touch targets in the bubble toolbar on mobile */
     .ptab{min-height:38px;display:flex;align-items:center}
     /* Settings cards full-width */
     .card{border-radius:10px}
+    #auth{height:auto;min-height:var(--vvh)}
+    .landing,.landing-inner{min-height:var(--vvh)}
+    .landing-inner{width:min(100% - 28px,1160px)}
+    .landing-hero{min-height:auto;display:flex;flex-direction:column;align-items:stretch;gap:24px;
+      padding:28px 0 38px}
+    .landing h1{font-size:48px;line-height:.96}
+    .landing-lede{font-size:18px}
+    .landing-points{grid-template-columns:minmax(0,1fr)}
+    .landing-section{padding:36px 0}
+    .landing-section-head{display:block;margin-bottom:18px}
+    .landing-section h2{font-size:23px;margin-bottom:8px}
+    .workflow-grid,.feature-grid{grid-template-columns:minmax(0,1fr)}
+    .workflow-step,.feature-card{min-height:0}
+    .privacy-panel{display:block}
+    .privacy-panel h2{font-size:23px}
   }
 </style>
 </head>
@@ -414,17 +599,81 @@
 
 <!-- ============ AUTH ============ -->
 <div id="auth">
-  <div class="card col">
-    <div class="brand">🔒 <span class="lock">locked</span>in</div>
-    <div class="muted">The ultimate research assistant for grad students.</div>
-    <input id="au_user" placeholder="username" autocomplete="username">
-    <input id="au_pass" type="password" placeholder="password" autocomplete="current-password">
-    <div class="row">
-      <button class="primary" id="au_login">Log in</button>
-      <button id="au_signup">Sign up</button>
+  <main class="landing">
+    <div class="landing-inner">
+      <section class="landing-hero" aria-labelledby="landing-title">
+        <div>
+          <div class="landing-kicker"><span class="landing-lock">🔒</span> private research workspace</div>
+          <h1 id="landing-title"><span class="lock">locked</span>in</h1>
+          <p class="landing-lede">A calm command center for papers, math notes, topic wikis, research chat, and the small TODOs that keep a project moving.</p>
+          <p class="landing-copy">Upload PDFs, organize them into bubbles, write math-aware reports, cite your own library, and keep model-powered research help close to the work without moving your notes into a public platform.</p>
+          <div class="landing-points">
+            <div class="landing-point"><b>Paper-first</b><span>Assets keep source PDFs, tags, notes, summaries, and BibTeX together.</span></div>
+            <div class="landing-point"><b>Math-aware</b><span>Reports render equations, theorem boxes, citations, wikilinks, and TODO references.</span></div>
+            <div class="landing-point"><b>Private by default</b><span>Run locally or expose it only through your own HTTPS tunnel when needed.</span></div>
+          </div>
+        </div>
+        <form class="landing-auth-panel col" onsubmit="return false" aria-label="Account access">
+          <h2>Enter your workspace</h2>
+          <div class="auth-note">Log in, or create an account and start building your research graph.</div>
+          <input id="au_user" placeholder="username" autocomplete="username">
+          <input id="au_pass" type="password" placeholder="password" autocomplete="current-password">
+          <div class="row">
+            <button class="primary" id="au_login">Log in</button>
+            <button id="au_signup">Sign up</button>
+          </div>
+          <div class="err" id="au_err"></div>
+        </form>
+      </section>
+
+      <section class="landing-section" aria-labelledby="workflow-title">
+        <div class="landing-section-head">
+          <h2 id="workflow-title">From paper pile to working theory</h2>
+          <p>lockedin follows the everyday research loop: collect sources, shape topic clusters, write technical notes, then use chat, sharing, and tasks to keep context alive.</p>
+        </div>
+        <div class="workflow-grid">
+          <div class="workflow-step"><span class="workflow-num">01</span><b>Upload papers</b><span>Add PDFs or PDF links, then capture titles, tags, source URLs, summaries, notes, and BibTeX.</span></div>
+          <div class="workflow-step"><span class="workflow-num">02</span><b>Organize into bubbles</b><span>Group assets into approved topic spaces with their own multi-page wiki and attached papers.</span></div>
+          <div class="workflow-step"><span class="workflow-num">03</span><b>Write reports</b><span>Use Markdown with KaTeX equations, labels, theorem environments, citations, TODO refs, and wikilinks.</span></div>
+          <div class="workflow-step"><span class="workflow-num">04</span><b>Chat, share, track</b><span>Discuss a bubble with grounded research chat, publish read-only links, and keep TODOs connected to notes.</span></div>
+        </div>
+      </section>
+
+      <section class="landing-section" aria-labelledby="components-title">
+        <div class="landing-section-head">
+          <h2 id="components-title">The pieces that stay connected</h2>
+          <p>Every view is built around repeated research work rather than a separate marketing funnel.</p>
+        </div>
+        <div class="feature-grid">
+          <div class="feature-card"><div class="feature-icon">📚</div><b>Assets</b><br><span>Your complete paper inventory with upload, URL fetch, filters, notes, tags, summaries, and BibTeX validation.</span></div>
+          <div class="feature-card"><div class="feature-icon">🫧</div><b>Bubbles</b><br><span>Topic workspaces that bind papers, pages, chat sessions, citations, and share settings.</span></div>
+          <div class="feature-card"><div class="feature-icon">∑</div><b>Reports</b><br><span>Markdown pages with rendered math, numbered equations, theorem boxes, references, images, and tables.</span></div>
+          <div class="feature-card"><div class="feature-icon">✅</div><b>TODOs</b><br><span>Issue-style tasks with report references, open/done filters, notes, and automatic reference cleanup.</span></div>
+          <div class="feature-card"><div class="feature-icon">💬</div><b>Research Chat</b><br><span>A read-only assistant grounded in the current bubble, paper summaries, and selected deep-read PDFs.</span></div>
+          <div class="feature-card"><div class="feature-icon">📰</div><b>News</b><br><span>Premium crawling for recent papers, with steerable review sessions and accept or discard controls.</span></div>
+          <div class="feature-card"><div class="feature-icon">#</div><b>Slackbot</b><br><span>Use Slack to select bubbles, ask questions, upload papers, manage TODOs, and trigger news crawls.</span></div>
+          <div class="feature-card"><div class="feature-icon">⚙️</div><b>Model Settings</b><br><span>Switch between Qwen, OpenAI, Claude, and Gemini, configure keys, and manage math macros.</span></div>
+          <div class="feature-card"><div class="feature-icon">🔗</div><b>Sharing</b><br><span>Publish unlisted read-only bubble links, copy them, and revoke access without changing the private workspace.</span></div>
+        </div>
+      </section>
+
+      <section class="landing-section" aria-labelledby="privacy-title">
+        <div class="privacy-panel">
+          <div>
+            <h2 id="privacy-title">Local and private-first by default</h2>
+            <p>lockedin is designed for research notes that should stay close to the machine, account, and model configuration you control.</p>
+          </div>
+          <ul class="privacy-list">
+            <li>User data stays behind login; public share pages are unlisted and read-only.</li>
+            <li>Standard accounts can bring their own OpenAI, Claude, or Gemini API key. Server-side Qwen and News can be limited to premium users.</li>
+            <li>For remote access, run the app behind your own HTTPS tunnel or domain setup instead of exposing the local server directly.</li>
+          </ul>
+        </div>
+      </section>
+
+      <div class="landing-footer">Made for focused research sessions by HamidrezaKmK.</div>
     </div>
-    <div class="err" id="au_err"></div>
-  </div>
+  </main>
 </div>
 
 <!-- ============ APP ============ -->
@@ -434,8 +683,12 @@
     <div class="brand">🔒 <span class="lock">locked</span>in</div>
     <div class="row" id="modelTabs"></div>
     <div class="spacer"></div>
+    <div class="account-quick">
+      <button class="ghost small" id="accountBtn" title="Account">Account</button>
+      <div id="accountMenu" class="card col hide"></div>
+    </div>
     <button class="ghost small help-cta" id="helpBtn" title="Help and user guide">Help</button>
-    <button class="ghost small" id="themeToggle" title="Toggle light/dark mode">☀️</button>
+    <button class="ghost small" id="themeCycle" title="Cycle theme">🌙</button>
     <!-- mobile-only: opens the read-only preview of the current bubble page; hidden off a bubble -->
     <button class="ghost small mobile-only hide" id="previewArrow" title="Open the read-only preview of this page">↗</button>
   </div>
@@ -552,6 +805,73 @@
     if(!r.ok){ let d; try{d=(await r.json()).detail;}catch(e){d=r.statusText;} const err=new Error(d||"Error"); err.status=r.status; throw err; }
     const ct=r.headers.get("content-type")||""; return ct.includes("json")?r.json():r.text();
   }
+
+  function renderLandingContent(c){
+    if(!c||typeof c!=="object")return;
+    const setText=(sel,v)=>{ const n=$(sel); if(n&&v!=null)n.textContent=String(v); };
+    const setTitle=(accent,rest)=>{
+      const h=$("#landing-title"); if(!h)return;
+      h.innerHTML="";
+      h.append(el("span",{class:"lock"},accent||""), rest||"");
+    };
+    const cards=(wrapSel,items,build)=>{
+      const wrap=$(wrapSel); if(!wrap||!Array.isArray(items))return;
+      wrap.innerHTML="";
+      items.forEach(item=>wrap.append(build(item||{})));
+    };
+
+    const hero=c.hero||{};
+    const kicker=$(".landing-kicker");
+    if(kicker){
+      kicker.innerHTML="";
+      kicker.append(el("span",{class:"landing-lock"},hero.kicker_icon||""), " "+(hero.kicker||""));
+    }
+    setTitle(hero.title_accent,hero.title_rest);
+    setText(".landing-lede",hero.lede);
+    setText(".landing-copy",hero.copy);
+    cards(".landing-points",hero.points,(p)=>el("div",{class:"landing-point"},
+      el("b",{},p.title||""),el("span",{},p.text||"")));
+
+    const auth=c.auth||{};
+    setText(".landing-auth-panel h2",auth.title);
+    setText(".landing-auth-panel .auth-note",auth.note);
+
+    const workflow=c.workflow||{};
+    setText("#workflow-title",workflow.title);
+    const workflowIntro=$("#workflow-title")&&$("#workflow-title").parentElement.querySelector("p");
+    if(workflowIntro&&workflow.intro!=null) workflowIntro.textContent=workflow.intro;
+    cards(".workflow-grid",workflow.steps,(s)=>el("div",{class:"workflow-step"},
+      el("span",{class:"workflow-num"},s.number||""),
+      el("b",{},s.title||""),
+      el("span",{},s.text||"")));
+
+    const components=c.components||{};
+    setText("#components-title",components.title);
+    const componentsIntro=$("#components-title")&&$("#components-title").parentElement.querySelector("p");
+    if(componentsIntro&&components.intro!=null) componentsIntro.textContent=components.intro;
+    cards(".feature-grid",components.features,(f)=>el("div",{class:"feature-card"},
+      el("div",{class:"feature-icon"},f.icon||""),
+      el("b",{},f.title||""),
+      el("br"),
+      el("span",{},f.text||"")));
+
+    const privacy=c.privacy||{};
+    setText("#privacy-title",privacy.title);
+    const privacyText=$("#privacy-title")&&$("#privacy-title").parentElement.querySelector("p");
+    if(privacyText&&privacy.text!=null) privacyText.textContent=privacy.text;
+    const list=$(".privacy-list");
+    if(list&&Array.isArray(privacy.bullets)){
+      list.innerHTML="";
+      privacy.bullets.forEach(b=>list.append(el("li",{},b||"")));
+    }
+    setText(".landing-footer",c.footer);
+  }
+
+  async function loadLandingContent(){
+    try{ renderLandingContent(await api("/api/landing")); }
+    catch(e){ /* Static HTML remains as the public fallback. */ }
+  }
+
   // SSE over POST; returns AbortController. onEvent({type,...}).
   function streamPost(path, body, onEvent){
     const ac = new AbortController();
@@ -663,19 +983,41 @@
     }
     // Citations are numbered bubble-wide by /refs. Unknown keys stay visible as [?key].
     const citeMap=(refs&&refs.citeMap)||{};
-    s=s.replace(/\\cite\{([^}]+)\}/g,(_,raw)=>{
-      const labels=raw.split(",").map(k=>k.trim()).filter(Boolean)
-        .map(k=>Object.prototype.hasOwnProperty.call(citeMap,k)?String(citeMap[k]):"?"+k);
-      return `<span class="cite-ref">[${labels.join(", ")}]</span>`;
-    });
+    const bib=(refs&&refs.bibliography)||{};
+    const escAttr=t=>String(t||"").replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    const escHtml=t=>String(t||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    const renderTextColor=src=>src.replace(/\\textcolor\{(#[0-9a-fA-F]{3}(?:[0-9a-fA-F]{3})?)\}\{([^{}\n]*)\}/g,
+      (_,color,text)=>`<span class="text-color" style="--tc:${color}">${escHtml(text)}</span>`);
+    const citationHref=k=>{
+      const ent=bib[k], pdfId=ent&&ent.pdf_id;
+      return (opts.citationPdfLinks&&pdfId)?"/api/assets/"+encodeURIComponent(pdfId)+"/pdf":"";
+    };
+    const citationHtml=raw=>{
+      const keys=raw.split(",").map(k=>k.trim()).filter(Boolean);
+      if(!opts.citationPdfLinks){
+        const labels=keys.map(k=>Object.prototype.hasOwnProperty.call(citeMap,k)?String(citeMap[k]):"?"+k);
+        return `<span class="cite-ref">[${labels.join(", ")}]</span>`;
+      }
+      return keys.map(k=>{
+        const label=Object.prototype.hasOwnProperty.call(citeMap,k)?String(citeMap[k]):"?"+k;
+        const href=citationHref(k);
+        return href
+          ? `<a class="cite-ref" href="${href}" target="_blank" rel="noopener" title="Open PDF for ${escAttr(k)}">[${label}]</a>`
+          : `<span class="cite-ref">[${label}]</span>`;
+      }).join(", ");
+    };
+    s=s.replace(/\\cite\{([^}]+)\}/g,(_,raw)=>citationHtml(raw));
     if(refs&&Array.isArray(refs.citeOrder)&&refs.citeOrder.length){
-      const bib=refs.bibliography||{};
       const rows=refs.citeOrder.map(k=>{
         const ent=bib[k]; if(!ent)return "";
-        return `<p class="bibitem"><span class="bibnum">[${refs.citeMap[k]}]</span> ${ent.text||k}</p>`;
+        const num=`[${refs.citeMap[k]}]`;
+        const href=citationHref(k);
+        const marker=href?`<a class="bibnum" href="${href}" target="_blank" rel="noopener" title="Open PDF for ${escAttr(k)}">${num}</a>`:`<span class="bibnum">${num}</span>`;
+        return `<p class="bibitem">${marker} ${ent.text||k}</p>`;
       }).filter(Boolean).join("\n");
-      if(rows) s += "\n\n# References\n\n"+rows;
+      if(rows) s += `\n\n<section class="references-box">\n<h1>References</h1>\n${rows}\n</section>`;
     }
+    s=renderTextColor(s);
     // Resolve \eqref/\ref/\thmref that appear INSIDE math to KaTeX-renderable plain math (KaTeX
     // doesn't know these commands — a raw one breaks the whole equation). Mirrors the server's
     // _resolve_refs_in_math. Runs at render time, when eqN + theoLabels are fully populated.
@@ -689,7 +1031,7 @@
     };
     const renderMath=src=>{ try{ return katex.renderToString(resolveRefsInMath(src.src),{displayMode:src.display,macros:S.mathMacros,throwOnError:false}); }
       catch(e){ return `<span style="color:#ff7a7a">${src.src}</span>`; } };
-    let html=marked.parse(s,{breaks:true});
+    let html=marked.parse(s,{breaks:false});
     html=html.replace(/@@M(\d+)@@/g,(m,i)=>renderMath(store[+i]));
     // Restore theorem/lemma/proof blocks: render inner content (math + markdown)
     html=html.replace(/<p>@@TH(\d+)@@<\/p>/g,(m,i)=>{
@@ -712,27 +1054,24 @@
         const c2=tr.env.charAt(0).toUpperCase()+tr.env.slice(1);
         return `<span class="thm-ref">${c2} ${tr.number}</span>`;
       });
-      is=is.replace(/\\cite\{([^}]+)\}/g,(_,raw)=>{
-        const labels=raw.split(",").map(k=>k.trim()).filter(Boolean)
-          .map(k=>Object.prototype.hasOwnProperty.call(citeMap,k)?String(citeMap[k]):"?"+k);
-        return `<span class="cite-ref">[${labels.join(", ")}]</span>`;
-      });
-      let ih=marked.parse(is,{breaks:true});
+      is=is.replace(/\\cite\{([^}]+)\}/g,(_,raw)=>citationHtml(raw));
+      is=renderTextColor(is);
+      let ih=marked.parse(is,{breaks:false});
       ih=ih.replace(/@@IM(\d+)@@/g,(_,j)=>renderMath(istore[+j]));
       const qed=t.proof?'<div class="math-env-qed">∎</div>':'';
       return `<div class="math-env ${t.env}"><div class="math-env-title">${t.title}</div>${ih}${qed}</div>`;
     });
     // Restore fenced code blocks (rendered through marked so they get proper <pre><code> wrapping)
-    html=html.replace(/<p>@@CB(\d+)@@<\/p>/g,(_,i)=>marked.parse(cbStore[+i],{breaks:true}));
+    html=html.replace(/<p>@@CB(\d+)@@<\/p>/g,(_,i)=>marked.parse(cbStore[+i],{breaks:false}));
     // Restore inline code LAST and globally (placeholders can land inside theorem HTML too).
     // Escape HTML so the literal source shows verbatim; unescape \| like marked does in tables.
-    const _esc=t=>t.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-    html=html.replace(/@@IC(\d+)@@/g,(_,i)=>'<code>'+_esc(icStore[+i].replace(/\\\|/g,"|"))+'</code>');
+    html=html.replace(/@@IC(\d+)@@/g,(_,i)=>'<code>'+escHtml(icStore[+i].replace(/\\\|/g,"|"))+'</code>');
     return html;
   }
 
   // ---------- state ----------
-  const S = { user:null, model:null, mathMacros:{}, refs:null, view:"assets", bubble:null, chat:[],
+  const S = { user:null, model:null, premium:false, premiumRequestedAt:"", admin:false,
+    newsEnabled:false, mathMacros:{}, refs:null, view:"assets", bubble:null, chat:[],
     editor:null, page:null, pages:[], home:null, bubbleInstr:"", bubbleAssets:[],
     sessionId:null, sessionTitle:null,
     todos:[], todosById:{}, todoFilter:"open",
@@ -741,6 +1080,7 @@
     baseMtime:null, autosaveTimer:null, saving:false, syncState:"synced", applyingRemote:false,
     previewEl:null, remoteChangePending:false, papersPane:null, chatPane:null,
     detailWrap:null,
+    refAc:null,
     healthTimer:null, healthSeq:0, verifiedActive:null,
     shareActive:false, shareToken:""
   };
@@ -759,6 +1099,56 @@
   $("#au_login").onclick=()=>doAuth("login");
   $("#au_signup").onclick=()=>doAuth("signup");
   $("#au_pass").onkeydown=e=>{ if(e.key==="Enter")doAuth("login"); };
+
+  function refreshAccountButton(){
+    const btn=$("#accountBtn");
+    if(btn) btn.textContent=S.user?("@"+S.user):"Account";
+  }
+
+  function renderAccountMenu(){
+    const menu=$("#accountMenu");
+    menu.innerHTML="";
+    const premiumText=S.premium?"Premium account":"Standard account";
+    menu.append(
+      el("div",{class:"acct-head"},
+        el("span",{class:"acct-name"},"@"+(S.user||"")),
+        el("span",{class:"spacer"}),
+        el("span",{class:"pill"},S.premium?"premium":"standard")),
+      el("div",{class:"acct-row"},premiumText),
+    );
+    if(!S.premium){
+      menu.append(el("div",{class:"acct-row"},
+        S.premiumRequestedAt
+          ? "Premium requested "+S.premiumRequestedAt.slice(0,10)+"."
+          : "Premium unlocks server-side Qwen and news crawling."));
+    }
+    const actions=el("div",{class:"acct-actions"});
+    if(!S.premium){
+      actions.append(el("button",{class:"primary small",disabled:!!S.premiumRequestedAt,onclick:async()=>{
+        try{
+          const r=await api("/api/account/premium-request",{method:"POST"});
+          S.premium=!!r.premium; S.premiumRequestedAt=r.premium_requested_at||"";
+          renderAccountMenu();
+          toast(S.premium?"Premium is already enabled":"Premium request sent");
+        }catch(e){ toast(e.message); }
+      }},S.premiumRequestedAt?"Requested":"Request premium"));
+    }
+    actions.append(el("button",{class:"ghost small",style:"color:var(--bad)",onclick:async()=>{
+      await api("/api/logout",{method:"POST"});
+      location.reload();
+    }},"Log out"));
+    menu.append(actions);
+  }
+
+  $("#accountBtn").onclick=e=>{
+    e.stopPropagation();
+    renderAccountMenu();
+    $("#accountMenu").classList.toggle("hide");
+  };
+  document.addEventListener("click",e=>{
+    const wrap=document.querySelector(".account-quick");
+    if(wrap&&!wrap.contains(e.target)) $("#accountMenu").classList.add("hide");
+  });
   // ---------- help modal (multi-section) ----------
   let _helpSections=null;
   $("#helpBtn").onclick=async()=>{
@@ -785,20 +1175,30 @@
   };
   $("#helpClose").onclick=()=>$("#helpModal").classList.add("hide");
   $("#helpModal").onclick=e=>{ if(e.target===e.currentTarget)$("#helpModal").classList.add("hide"); };
-  $("#themeToggle").onclick=()=>{
-    const light=document.body.classList.toggle("light");
-    $("#themeToggle").textContent=light?"🌙":"☀️";
-    localStorage.setItem("li_theme",light?"light":"dark");
+  const THEMES=["dark","light","pink","techno","pearl"];
+  const THEME_LABELS={dark:"🌙",light:"☀️",pink:"🦄",techno:"🤖",pearl:"⚪"};
+  function applyTheme(name){
+    const theme=THEMES.includes(name)?name:"dark";
+    document.body.classList.remove(...THEMES.map(t=>"theme-"+t), "light");
+    document.body.classList.add("theme-"+theme);
+    $("#themeCycle").textContent=THEME_LABELS[theme];
+    localStorage.setItem("li_theme",theme);
+  }
+  $("#themeCycle").onclick=()=>{
+    const cur=localStorage.getItem("li_theme")||"dark";
+    applyTheme(THEMES[(THEMES.indexOf(cur)+1)%THEMES.length]);
   };
-  if(localStorage.getItem("li_theme")==="light"){ document.body.classList.add("light"); $("#themeToggle").textContent="🌙"; }
+  applyTheme(localStorage.getItem("li_theme")||"dark");
   // Mobile-only ↗ in the topbar → open the current bubble page's read-only preview in a new tab.
   $("#previewArrow").onclick=()=>{ if(S.bubble) window.open(
     "/api/bubbles/"+S.bubble+"/preview/"+(S.page||S.home||"overview"),"_blank"); };
 
   async function boot(){
     let me; try{ me=await api("/api/me"); }catch(e){ return; }
-    S.user=me.user; S.model=me.model; S.newsEnabled=!!me.news_enabled; S.admin=!!me.admin;
+    S.user=me.user; S.model=me.model; S.newsEnabled=!!me.news_enabled; S.premium=!!me.premium;
+    S.premiumRequestedAt=me.premium_requested_at||""; S.admin=!!me.admin;
     $("#auth").style.display="none"; $("#app").style.display="grid";
+    refreshAccountButton();
     if(S.newsEnabled){ $("#newsNav").style.display=""; refreshNewsCount(); }
     applySideCollapsed(localStorage.getItem("li_side")==="1");
     renderModelTabs(); refreshHealth(); applyHash();
@@ -807,7 +1207,7 @@
   }
 
   // ================= MODEL SWITCHER =================
-  const PROV=[{k:"qwen",label:"🖥 Qwen (local)"},{k:"openai",label:"OpenAI"},{k:"claude",label:"Claude"},{k:"gemini",label:"Gemini"}];
+  const PROV=[{k:"qwen",label:"🖥 Qwen (premium)"},{k:"openai",label:"OpenAI"},{k:"claude",label:"Claude"},{k:"gemini",label:"Gemini"}];
   const MODEL_SUGGESTIONS={
     qwen:["qwen2.5:7b-instruct","qwen2.5:14b-instruct","qwen2.5:32b-instruct","qwen2.5:72b-instruct"],
     openai:["gpt-4o","gpt-4o-mini","o3-mini","o1","o1-mini"],
@@ -818,11 +1218,12 @@
     const wrap=$("#modelTabs"); wrap.innerHTML="";
     PROV.forEach(p=>{
       const active=S.model.active===p.k;
+      const locked=p.k==="qwen"&&!S.premium;
       const dot=el("span",{class:"dot","data-dot-provider":p.k});
-      const tab=el("div",{class:"mtab"+(active?" active":"")},
+      const tab=el("div",{class:"mtab"+(active?" active":"")+(locked?" muted":"")},
         dot, el("span",{},p.label),
         el("span",{class:"gear",title:"Configure",onclick:(ev)=>{ev.stopPropagation();openCfg(p.k);}},"⚙"));
-      tab.onclick=()=>setActive(p.k);
+      tab.onclick=()=>locked?toast("Qwen is premium. Configure OpenAI, Claude, or Gemini with your own API key."):setActive(p.k);
       wrap.append(tab);
     });
   }
@@ -852,6 +1253,8 @@
     };
 
     if(k==="qwen"){
+      if(!S.premium) box.append(el("div",{class:"err",style:"margin-bottom:8px"},
+        "Qwen uses server compute and is available only for premium accounts."));
       field("base_url","Ollama base URL",cfg.base_url||"http://localhost:11434/v1");
       field("model","Model name",cfg.model||"qwen2.5:7b-instruct",null,MODEL_SUGGESTIONS.qwen);
     } else if(k==="openai"){
@@ -927,6 +1330,7 @@
     PROV.forEach(p=>{
       const cfg=S.model[p.k]||{};
       const active=S.model.active===p.k;
+      const locked=p.k==="qwen"&&!S.premium;
       const verified=S.verifiedActive===p.k;
       const card=el("div",{class:"acard model-card"+(active?" active":""),
         ondblclick:()=>{ if(!active)setActive(p.k); }});
@@ -940,13 +1344,15 @@
       card.append(el("div",{class:"muted",style:"font-size:12px;margin-top:8px"},"Model: "+modelName));
       if(p.k==="qwen"){
         card.append(el("div",{class:"muted truncate",style:"font-size:12px;margin-top:4px"},cfg.base_url||"http://localhost:11434/v1"));
+        if(locked)card.append(el("div",{class:"err",style:"font-size:12px;margin-top:6px"},"Premium required"));
       } else {
         card.append(el("div",{class:"muted",style:"font-size:12px;margin-top:4px"},
           cfg.api_key?"API key saved":"API key not set"));
       }
       const useBtn=el("button",{class:active?"ghost small":"primary small",
-        onclick:()=>{ if(!active)setActive(p.k); }},active?(verified?"Current":"Testing"):"Use this model");
-      if(active)useBtn.disabled=true;
+        onclick:()=>{ if(locked)toast("Qwen is premium. Use your own API key with another provider."); else if(!active)setActive(p.k); }},
+        locked?"Premium only":(active?(verified?"Current":"Testing"):"Use this model"));
+      if(active||locked)useBtn.disabled=true;
       card.append(el("div",{class:"model-actions"},
         useBtn,
         el("button",{class:"ghost small",onclick:()=>openCfg(p.k)},"Configure")));
@@ -982,6 +1388,7 @@
           body:JSON.stringify({current_password,new_username:new_username||null,new_password:new_password||null})});
         S.user=r.user; uIn.value=""; pIn.value=""; cIn.value="";
         box.querySelector("b").textContent="Account — @"+S.user;
+        refreshAccountButton();
         toast(new_username?("Account updated — you are now @"+S.user):"Password updated");
       }catch(e){err.textContent=e.message;}
     }},"Save changes");
@@ -995,8 +1402,17 @@
     const old=$("#mathMacros"); if(old)old.remove();
     const pending=Object.assign({},S.mathMacros); // editable copy
     const box=el("div",{id:"mathMacros",class:"card col",style:"margin-top:20px"});
-    box.append(el("b",{},"Math Macros"));
-    box.append(el("div",{class:"muted",style:"font-size:12px;margin-top:4px;margin-bottom:10px"},
+    const body=el("div",{class:"col hide",style:"gap:10px;margin-top:10px"});
+    const toggle=el("button",{class:"ghost small",onclick:()=>{
+      body.classList.toggle("hide");
+      toggle.textContent=body.classList.contains("hide")?"Show macros":"Hide macros";
+    }},"Show macros");
+    box.append(el("div",{class:"row"},
+      el("b",{},"Math Macros"),
+      el("span",{class:"muted",style:"font-size:12px"},Object.keys(pending).length+" configured"),
+      el("span",{class:"spacer"}),
+      toggle));
+    body.append(el("div",{class:"muted",style:"font-size:12px"},
       "Define shorthand LaTeX commands used in all report math environments (powered by KaTeX macros)."));
     const tbody=el("tbody");
     function addRow(key,val){
@@ -1018,9 +1434,9 @@
         el("th",{style:"text-align:left;font-size:12px;color:var(--muted);padding-bottom:4px"},"Expansion"),
         el("th",{}))),
       tbody);
-    box.append(tbl);
+    body.append(tbl);
     const status=el("span",{class:"muted",style:"font-size:12px"});
-    box.append(el("div",{class:"row",style:"margin-top:10px;gap:8px"},
+    body.append(el("div",{class:"row",style:"margin-top:10px;gap:8px"},
       el("button",{class:"ghost small",onclick:()=>addRow("","")},"+ Add macro"),
       el("span",{class:"spacer"}),
       status,
@@ -1040,6 +1456,7 @@
           status.textContent="Saved!"; setTimeout(()=>status.textContent="",2000);
         }catch(e){ status.textContent="Error: "+e.message; }
       }},"Save macros")));
+    box.append(body);
     main.append(box);
   }
 
@@ -1053,7 +1470,9 @@
       el("button",{class:"ghost small",onclick:()=>renderUserAccess(main)},"Refresh")));
     const body=el("div",{class:"col"});
     box.append(body);
-    main.append(box);
+    const account=$("#accountSection");
+    if(account&&account.parentNode===main) main.insertBefore(box,account);
+    else main.append(box);
     try{
       const r=await api("/api/admin/users");
       body.innerHTML="";
@@ -1061,19 +1480,20 @@
         const row=el("div",{class:"row",style:"gap:8px;align-items:center;border-top:1px solid var(--line);padding-top:8px;flex-wrap:wrap"},
           el("b",{}, "@"+u.username),
           u.admin?el("span",{class:"badge"},"admin"):null,
-          el("span",{class:"pill"},u.approved?"approved":"pending"),
+          el("span",{class:"pill"},u.premium?"premium":"standard"),
+          u.premium_requested_at&&!u.premium?el("span",{class:"badge"},"requested"):null,
           el("span",{class:"muted",style:"font-size:12px"},u.created_at?("created "+u.created_at.slice(0,10)):""),
           el("span",{class:"spacer"}));
-        if(u.username!==S.user){
-          row.append(el("button",{class:u.approved?"ghost small":"primary small",onclick:async()=>{
+        row.append(el("button",{class:u.premium?"ghost small":"primary small",onclick:async()=>{
             try{
-              await api("/api/admin/users/"+encodeURIComponent(u.username)+"/approval",
-                {method:"PUT",body:JSON.stringify({approved:!u.approved})});
+              await api("/api/admin/users/"+encodeURIComponent(u.username)+"/premium",
+                {method:"PUT",body:JSON.stringify({premium:!u.premium})});
               renderUserAccess(main);
-              toast((u.approved?"Revoked ":"Approved ")+u.username);
+              toast((u.premium?"Removed premium from ":"Upgraded ")+u.username);
             }catch(e){ toast(e.message); }
-          }},u.approved?"Revoke":"Approve"),
-          el("button",{class:"danger small",onclick:async()=>{
+          }},u.premium?"Remove premium":"Upgrade to premium"));
+        if(u.username!==S.user){
+          row.append(el("button",{class:"danger small",onclick:async()=>{
             const ok=prompt("Delete @"+u.username+" permanently? Type the username to confirm.");
             if(ok!==u.username)return;
             try{
@@ -1121,6 +1541,10 @@
 
     // upload form
     const f=el("div",{class:"card col"});
+    let uploadMode=S.assetUploadMode||"file";
+    const fileMode=el("button",{type:"button"},"Upload file");
+    const linkMode=el("button",{type:"button"},"PDF link");
+    const modeSeg=el("div",{class:"seg"},fileMode,linkMode);
     const file=el("input",{type:"file",accept:"application/pdf"});
     const title=el("input",{placeholder:"Title (optional)"});
     const tags=el("input",{placeholder:"Idea-bubble tags, comma-separated (leave blank to auto-tag)"});
@@ -1129,21 +1553,35 @@
     bubbleSel.append(el("option",{value:""},"➕ Pick an existing bubble…"));
     // option label = display name; value = the bubble's stable membership tag (slugifies to its
     // slug) so picking a *renamed* bubble still tags the paper into that same bubble, not a phantom.
-    try{ (await api("/api/bubbles")).bubbles.forEach(b=>bubbleSel.append(el("option",{value:b.tag||b.name},b.name))); }catch(e){}
+    let bubbles=[];
+    try{ bubbles=(await api("/api/bubbles")).bubbles||[]; }catch(e){}
+    bubbles.forEach(b=>bubbleSel.append(el("option",{value:b.tag||b.name},b.name)));
     bubbleSel.onchange=()=>{ const name=bubbleSel.value; bubbleSel.value=""; if(!name)return;
       const cur=tags.value.split(",").map(s=>s.trim()).filter(Boolean);
       if(!cur.some(t=>t.toLowerCase()===name.toLowerCase())){ cur.push(name); tags.value=cur.join(", "); } };
-    const url=el("input",{placeholder:"…or paste a PDF link to fetch it automatically (no file needed)"});
+    const url=el("input",{placeholder:"Paste a PDF link to fetch it automatically"});
+    const applyUploadMode=mode=>{
+      uploadMode=mode; S.assetUploadMode=mode;
+      file.classList.toggle("hide",mode!=="file");
+      url.classList.toggle("hide",mode!=="link");
+      fileMode.classList.toggle("active",mode==="file");
+      linkMode.classList.toggle("active",mode==="link");
+      if(mode==="file")url.value=""; else file.value="";
+    };
+    fileMode.onclick=()=>applyUploadMode("file");
+    linkMode.onclick=()=>applyUploadMode("link");
+    applyUploadMode(uploadMode);
     const btn=el("button",{class:"primary"},"Add paper");
     btn.onclick=async()=>{
-      const hasFile=!!file.files[0], link=url.value.trim();
-      if(!hasFile && !link){toast("Choose a PDF or paste a PDF link.");return;}
-      btn.disabled=true; btn.textContent=hasFile?"Uploading…":"Fetching…";
+      const hasFile=uploadMode==="file"&&!!file.files[0], link=uploadMode==="link"?url.value.trim():"";
+      if(uploadMode==="file"&&!hasFile){toast("Choose a PDF file.");return;}
+      if(uploadMode==="link"&&!link){toast("Paste a PDF link.");return;}
+      btn.disabled=true; btn.textContent=uploadMode==="file"?"Uploading…":"Fetching…";
       try{
         let d;
-        if(hasFile){
+        if(uploadMode==="file"){
           const fd=new FormData(); fd.append("file",file.files[0]);
-          fd.append("title",title.value); fd.append("tags",tags.value); fd.append("url_source",link);
+          fd.append("title",title.value); fd.append("tags",tags.value); fd.append("url_source","");
           const r=await fetch("/api/assets/upload",{method:"POST",credentials:"include",body:fd});
           if(!r.ok)throw new Error((await r.json()).detail);
           d=await r.json();
@@ -1155,38 +1593,95 @@
         viewAssets();
       }catch(e){toast(e.message);} finally{btn.disabled=false;btn.textContent="Add paper";}
     };
-    f.append(el("b",{},"Add a paper / blogpost"),file,title,tags,bubbleSel,url,btn);
+    f.append(el("b",{},"Add a PDF"),modeSeg,file,url,title,tags,bubbleSel,btn);
     m.append(f, el("div",{style:"height:16px"}));
 
     const r=await api("/api/assets");
     if(!r.assets.length){ m.append(el("div",{class:"muted"},"No assets yet. Upload your first PDF above.")); return; }
+    const filterText=el("input",{placeholder:"Search assets by title, filename, tag, notes, or BibTeX key…"});
+    filterText.value=S.assetSearch||"";
+    const filterBubble=el("select");
+    filterBubble.append(el("option",{value:""},"All bubbles"));
+    bubbles.forEach(b=>filterBubble.append(el("option",{value:b.slug},b.name||b.slug)));
+    filterBubble.value=S.assetBubble||"";
+    const count=el("div",{class:"asset-count"});
+    const filters=el("div",{class:"asset-filter"},
+      el("label",{},"Search",filterText),
+      el("label",{},"Bubble",filterBubble),
+      count);
     const grid=el("div",{class:"grid"});
-    r.assets.forEach(a=>grid.append(assetCard(a)));
-    m.append(grid);
+    const haystack=a=>[
+      a.title,a.filename,a.pdf_id,a.url_source,a.notes,
+      ...(a.tags||[]),...(a.suggested_tags||[]),
+      ...(a.bibliography||"").match(/@\w+\s*\{\s*([^,\s}]+)/g)||[]
+    ].filter(Boolean).join(" ").toLowerCase();
+    const renderFiltered=()=>{
+      S.assetSearch=filterText.value;
+      S.assetBubble=filterBubble.value;
+      const q=filterText.value.trim().toLowerCase();
+      const bs=filterBubble.value;
+      const shown=r.assets.filter(a=>{
+        if(bs && !(a.idea_bubbles||[]).includes(bs)) return false;
+        return !q || haystack(a).includes(q);
+      });
+      grid.innerHTML="";
+      shown.forEach(a=>grid.append(assetCard(a)));
+      count.textContent=shown.length===r.assets.length?`${shown.length} assets`:`${shown.length} of ${r.assets.length}`;
+      if(!shown.length) grid.append(el("div",{class:"muted"},"No assets match these filters."));
+    };
+    filterText.addEventListener("input",renderFiltered);
+    filterBubble.addEventListener("change",renderFiltered);
+    renderFiltered();
+    m.append(filters,grid);
   }
   function assetCard(a){
     const c=el("div",{class:"acard"});
-    const head=el("div",{class:"row"}, el("h4",{},a.title||a.filename||a.pdf_id));
-    if(a.attention_flag)head.append(el("span",{class:"badge"},"needs review"));
+    const titleBox=el("div",{class:"acard-title"},
+      el("h4",{},a.title||a.filename||a.pdf_id),
+      el("div",{class:"muted truncate",style:"font-size:11px;margin-top:2px"},a.filename||a.pdf_id));
+    const head=el("div",{class:"acard-head"},titleBox);
+    const badges=el("div",{class:"row",style:"gap:5px;flex-wrap:wrap;justify-content:flex-end"});
+    if((a.bibliography||"").trim())badges.append(el("span",{class:"badge bib",title:"BibTeX available"},"✓ BibTeX"));
+    if(a.attention_flag)badges.append(el("span",{class:"badge"},"needs review"));
+    if(badges.childNodes.length)head.append(badges);
     c.append(head);
-    const tagWrap=el("div",{});
-    (a.tags||[]).forEach(t=>tagWrap.append(el("span",{class:"pill"},t)));
-    // suggestions are only a hint for un-tagged papers — once bubbles are picked, drop them
-    if(!(a.tags||[]).length)
-      (a.suggested_tags||[]).forEach(t=>tagWrap.append(el("span",{class:"pill suggest"},"? "+t)));
-    c.append(tagWrap);
-    c.append(el("div",{class:"muted",style:"font-size:12px;margin-top:6px"},
-      (a.summarized?"summarized • ":"") + (a.date_added||"").slice(0,10)));
-    c.append(el("div",{class:"row",style:"margin-top:10px"},
+    c.append(renderAssetTags(a));
+    c.append(el("div",{class:"acard-meta"},
+      el("span",{},a.summarized?"summarized":"processing"),
+      el("span",{},"•"),
+      el("span",{},(a.date_added||"").slice(0,10)||"undated")));
+    c.append(el("div",{class:"acard-actions"},
+      el("a",{href:"/api/assets/"+a.pdf_id+"/pdf",target:"_blank",title:"Open PDF",onclick:e=>e.stopPropagation()},
+        el("button",{class:"primary small",onclick:e=>e.stopPropagation()},"↗ PDF")),
+      el("span",{class:"spacer"}),
       el("button",{class:"ghost small",onclick:async(e)=>{
         e.stopPropagation();
         const next=!a.attention_flag;
         await api("/api/assets/"+a.pdf_id,{method:"PATCH",body:JSON.stringify({attention_flag:next})});
         toast(next?"Added to attention queue":"Removed from attention queue");
         viewAssets(); refreshAttnCount();
-      }},a.attention_flag?"Remove from attention queue":"Add to attention queue")));
+      }},a.attention_flag?"Clear queue":"Queue")));
     c.onclick=()=>openAssetEditor(a);
     return c;
+  }
+  function renderAssetTags(a,{suggestionsOnly=false,emptyText=""}={}){
+    const wrap=el("div",{class:"acard-tags"});
+    const real=suggestionsOnly?[]:(a.tags||[]).map(t=>({label:t,cls:"pill"}));
+    // Suggestions are only a hint for un-tagged papers in the full asset grid, but the
+    // attention queue is specifically about reviewing suggestions.
+    const showSuggestions=suggestionsOnly||!(a.tags||[]).length;
+    const suggested=showSuggestions?(a.suggested_tags||[]).map(t=>({label:"? "+t,cls:"pill suggest"})):[];
+    const items=real.concat(suggested);
+    if(!items.length){
+      if(emptyText)wrap.append(el("div",{class:"tag-summary"},el("span",{class:"tag-summary-main"},emptyText)));
+      return wrap;
+    }
+    const labels=items.map(it=>it.label);
+    const summary=el("div",{class:"tag-summary",title:labels.join(", ")},
+      el("span",{class:"tag-summary-main"},labels[0]));
+    if(labels.length>1)summary.append(el("span",{class:"tag-summary-more"},"+"+(labels.length-1)));
+    wrap.append(summary);
+    return wrap;
   }
   async function openAssetEditor(a, opts={}){
     const returnTo=opts.returnTo||"assets";
@@ -1327,6 +1822,22 @@
   }
 
   // ================= IDEA BUBBLES =================
+  function relativeEditedLabel(iso){
+    if(!iso)return "last edited just now";
+    const t=Date.parse(iso); if(!Number.isFinite(t))return "last edited just now";
+    const seconds=Math.max(0,Math.floor((Date.now()-t)/1000));
+    if(seconds<60)return "last edited just now";
+    const days=Math.floor(seconds/86400);
+    if(days<1){
+      const hours=Math.max(1,Math.floor(seconds/3600));
+      return "last edited "+hours+" hour"+(hours===1?"":"s")+" ago";
+    }
+    if(days<30)return "last edited "+days+" day"+(days===1?"":"s")+" ago";
+    const months=Math.floor(days/30);
+    if(months<12)return "last edited "+months+" month"+(months===1?"":"s")+" ago";
+    const years=Math.floor(days/365);
+    return "last edited "+years+" year"+(years===1?"":"s")+" ago";
+  }
   async function viewBubbles(){
     const m=$("#main"); m.innerHTML="";
     const head=el("div",{class:"row"}, el("h2",{class:"section-title",style:"margin:0"},"🫧 Bubbles"),
@@ -1348,6 +1859,8 @@
       c.append(h);
       c.append(el("div",{class:"muted",style:"font-size:12px;margin-top:6px"},
         `${b.pdf_count} paper(s) • ${b.page_count||0} page(s)`));
+      c.append(el("div",{class:"muted",style:"font-size:12px;margin-top:3px"},
+        relativeEditedLabel(b.last_edited_at)));
       c.onclick=()=>openBubble(b.slug);
       grid.append(c);
     });
@@ -1389,6 +1902,7 @@
     try{ S.todos=(await api("/api/todos")).todos||[]; }
     catch(e){ S.todos=[]; }
     S.todosById={}; S.todos.forEach(t=>S.todosById[t.id]=t);
+    refreshReferenceAutocomplete();
     return S.todos;
   }
   async function viewTodos(){
@@ -1500,10 +2014,28 @@
   }
 
   // ---- public share controls (toggle + copy link to current page/section) ----
-  function shareUrl(){
-    // Link to the page currently open, so viewers land where you are (append #section there).
-    return location.origin+"/share/"+S.shareToken+"/"+(S.page||"overview");
+  function currentPageMeta(){
+    return (S.pages||[]).find(p=>p.page_slug===S.page)||null;
   }
+
+  function visibleSharePage(){
+    const cur=currentPageMeta();
+    if(cur&&!cur.hidden)return cur.page_slug;
+    const first=(S.pages||[]).find(p=>!p.hidden);
+    return first?first.page_slug:(S.page||"overview");
+  }
+
+  function shareUrl(){
+    // Link to the current page unless it is hidden from readers, then fall back to a visible page.
+    return location.origin+"/share/"+S.shareToken+"/"+visibleSharePage();
+  }
+
+  function openReadOnlyPreview(slug){
+    const target=visibleSharePage();
+    if(currentPageMeta()&&currentPageMeta().hidden)toast("This page is hidden in preview/share; opening a visible page.");
+    window.open("/api/bubbles/"+slug+"/preview/"+target,"_blank");
+  }
+
   function buildShareControls(slug){
     const wrap=el("span",{class:"row",style:"gap:6px;align-items:center;flex-shrink:0"});
     const btn=el("button",{class:"ghost small"});
@@ -1573,7 +2105,7 @@
       // "👁 Preview" opens the server-rendered, read-only page — exactly what a share viewer sees.
       const tools=el("span",{class:"row desktop-only-tool",style:"gap:6px;align-items:center;flex-shrink:0"});
       tools.append(el("button",{class:"ghost small",title:"Preview the read-only page your share viewers see",
-        onclick:()=>window.open("/api/bubbles/"+slug+"/preview/"+(S.page||S.home||"overview"),"_blank")},"👁 Preview"));
+        onclick:()=>openReadOnlyPreview(slug)},"👁 Preview"));
       tools.append(buildShareControls(slug));
       titleRow.append(tools);
     }
@@ -1792,7 +2324,10 @@
         {name:"redo",tooltip:"Redo (Ctrl+Shift+Z)",el:histBtn("↷","Redo",true)});
       S.editor.insertToolbarItem({groupIndex:0,itemIndex:0},
         {name:"undo",tooltip:"Undo (Ctrl+Z)",el:histBtn("↶","Undo",false)});
+      S.editor.insertToolbarItem({groupIndex:0,itemIndex:2},
+        {name:"text-color",tooltip:"Color selected text",el:buildColorTool()});
     }catch(e){}
+    installReferenceAutocomplete(host);
     // Ctrl/Cmd+S should save the page. The editor maps Mod-s to strikethrough, so we
     // catch the key in the capture phase (before it reaches the editor's keymap) and
     // save instead. Bound once on document; acts only while a report page is open.
@@ -1808,12 +2343,264 @@
     S.editor.on("change",()=>{
       if(S.applyingRemote)return;            // programmatic setMarkdown — not a user edit
       markStale(); scheduleAutosave();
+      refreshReferenceAutocomplete();
       clearTimeout(deb); deb=setTimeout(updatePreview,300); });
     setTimeout(updatePreview,200);
     // The editor records the initial content load as an undoable step, so a stray
     // Ctrl+Z would wipe the whole page (and then autosave the wipe). Drop that step
     // once the content settles so undo can only reach back to the loaded baseline.
     setTimeout(resetEditorHistory,250);
+  }
+
+  function editorView(){
+    try{ const me=S.editor&&S.editor.getCurrentModeEditor&&S.editor.getCurrentModeEditor();
+      return me&&me.view; }catch(e){ return null; }
+  }
+
+  function themeTextColors(){
+    const cs=getComputedStyle(document.body);
+    const fallback=["#9b80ff","#4dd9b8","#f2c94c","#ff7aa2","#8bd3ff"];
+    return fallback.map((f,i)=>normalizeHex(cs.getPropertyValue("--text-color-"+(i+1)).trim())||f);
+  }
+
+  function normalizeHex(v){
+    v=(v||"").trim();
+    return /^#[0-9a-fA-F]{3}([0-9a-fA-F]{3})?$/.test(v)?v.toLowerCase():"";
+  }
+
+  function buildColorTool(){
+    const wrap=el("span",{class:"color-tool"});
+    const btn=el("button",{type:"button",class:"color-tool-btn",title:"Color selected text"},"A");
+    const menu=el("div",{class:"color-menu hide"});
+    const refresh=()=>{
+      menu.innerHTML="";
+      themeTextColors().forEach(hex=>{
+        const sw=el("button",{type:"button",class:"color-swatch",title:hex,style:"--swatch:"+hex});
+        sw.addEventListener("mousedown",e=>e.preventDefault());
+        sw.onclick=e=>{ e.preventDefault(); menu.classList.add("hide"); applyTextColor(hex); };
+        menu.append(sw);
+      });
+    };
+    btn.addEventListener("mousedown",e=>{ captureColorSelection(); e.preventDefault(); });
+    btn.onclick=e=>{ e.preventDefault(); captureColorSelection(); refresh(); menu.classList.toggle("hide"); };
+    document.addEventListener("click",e=>{ if(!wrap.contains(e.target)) menu.classList.add("hide"); });
+    refresh(); wrap.append(btn,menu); return wrap;
+  }
+
+  function applyTextColor(hex){
+    hex=normalizeHex(hex);
+    if(!hex)return;
+    const md=S.editor&&S.editor.getMarkdown?S.editor.getMarkdown():"";
+    const sel=(S.colorSelection&&S.colorSelection.from!==S.colorSelection.to)
+      ? S.colorSelection : currentEditorSelectionOffsets();
+    if(!sel||sel.from===sel.to){ toast("Select text first"); const v=editorView(); if(v)v.focus(); return; }
+    const from=Math.max(0,Math.min(sel.from,md.length));
+    const to=Math.max(from,Math.min(sel.to,md.length));
+    const selected=md.slice(from,to);
+    const replacement="\\textcolor{"+hex+"}{"+selected+"}";
+    const restoreScroll=preserveEditorScroll();
+    replaceEditorRange(from,to,replacement);
+    restoreScroll();
+    setTimeout(restoreScroll,0);
+    S.colorSelection=null;
+    markStale(); scheduleAutosave(); refreshReferenceAutocomplete(); updatePreview();
+  }
+
+  function preserveEditorScroll(){
+    const nodes=[window,$("#main"),$("#editorHost"),$("#editorWrap"),$(".toastui-editor-main"),
+      $(".toastui-editor-md-container"),$(".toastui-editor-md-splitter"),$(".cm-scroller")].filter(Boolean);
+    const states=nodes.map(n=>n===window
+      ? {n,x:window.scrollX,y:window.scrollY,win:true}
+      : {n,x:n.scrollLeft,y:n.scrollTop,win:false});
+    return ()=>states.forEach(s=>{
+      try{ s.win ? window.scrollTo(s.x,s.y) : (s.n.scrollLeft=s.x,s.n.scrollTop=s.y); }catch(e){}
+    });
+  }
+
+  function captureColorSelection(){
+    const sel=currentEditorSelectionOffsets();
+    if(sel&&sel.from!==sel.to)S.colorSelection=sel;
+  }
+
+  function currentEditorSelectionOffsets(){
+    try{
+      if(S.editor&&S.editor.getSelection){
+        const r=S.editor.getSelection();
+        if(r&&r[0]&&r[1]){
+          const md=S.editor.getMarkdown();
+          const from=editorPosToOffset(md,r[0]), to=editorPosToOffset(md,r[1]);
+          if(from!==to)return {from:Math.min(from,to),to:Math.max(from,to)};
+        }
+      }
+    }catch(e){}
+    const view=editorView();
+    try{
+      const sel=view&&view.state&&view.state.selection&&view.state.selection.main;
+      if(sel&&sel.from!==sel.to)return {from:Math.min(sel.from,sel.to),to:Math.max(sel.from,sel.to)};
+    }catch(e){}
+    return null;
+  }
+
+  function editorPosToOffset(md,pos){
+    const line=Math.max(1,Number(pos[0]||1)), ch=Math.max(0,Number(pos[1]||1)-1);
+    let off=0, cur=1;
+    while(cur<line){
+      const nl=md.indexOf("\n",off);
+      if(nl<0)return md.length;
+      off=nl+1; cur++;
+    }
+    const next=md.indexOf("\n",off), end=next<0?md.length:next;
+    return Math.min(off+ch,end);
+  }
+
+  function replaceEditorRange(from,to,replacement){
+    const view=editorView();
+    try{
+      if(view&&view.dispatch&&view.state&&view.state.doc){
+        view.dispatch({changes:{from,to,insert:replacement},selection:{anchor:from+replacement.length}});
+        try{ view.dom&&view.dom.focus&&view.dom.focus({preventScroll:true}); }catch(e){}
+        return;
+      }
+    }catch(e){}
+    try{
+      const md=S.editor.getMarkdown();
+      S.editor.setMarkdown(md.slice(0,from)+replacement+md.slice(to),false);
+      const pos=_srcPosFromOffset(S.editor.getMarkdown(),from+replacement.length);
+      S.editor.setSelection(pos,pos);
+      try{ S.editor.focus(); }catch(e){}
+    }catch(e){}
+  }
+
+  function installReferenceAutocomplete(host){
+    const box=el("div",{class:"ref-ac hide"});
+    host.style.position=host.style.position||"relative";
+    host.append(box);
+    S.refAc={box,items:[],active:0,token:null};
+    bindReferenceAutocompleteEvents(0);
+  }
+
+  function bindReferenceAutocompleteEvents(attempt){
+    const ac=S.refAc;
+    if(!ac||ac.bound)return;
+    const view=editorView(), dom=view&&view.dom;
+    if(!dom){
+      if(attempt<8) setTimeout(()=>bindReferenceAutocompleteEvents(attempt+1),80);
+      return;
+    }
+    ac.bound=true;
+    dom.addEventListener("keyup",e=>{
+      if(["ArrowUp","ArrowDown","Enter","Tab","Escape"].includes(e.key))return;
+      refreshReferenceAutocomplete();
+    });
+    dom.addEventListener("click",()=>setTimeout(refreshReferenceAutocomplete,0));
+    dom.addEventListener("blur",()=>setTimeout(()=>hideReferenceAutocomplete(),140));
+    dom.addEventListener("keydown",e=>{
+      const ac=S.refAc;
+      if(!ac||ac.box.classList.contains("hide"))return;
+      if(e.key==="Escape"){ e.preventDefault(); hideReferenceAutocomplete(); return; }
+      if(e.key==="ArrowDown"||e.key==="ArrowUp"){
+        e.preventDefault();
+        ac.active=(ac.active+(e.key==="ArrowDown"?1:-1)+ac.items.length)%ac.items.length;
+        renderReferenceAutocomplete();
+        return;
+      }
+      if(e.key==="Enter"||e.key==="Tab"){
+        e.preventDefault();
+        insertReferenceAutocomplete(ac.items[ac.active]);
+      }
+    },true);
+  }
+
+  function currentReferenceToken(){
+    const view=editorView(); if(!view)return null;
+    const st=view.state, sel=st.selection;
+    if(!sel||!sel.empty)return null;
+    const from=sel.from;
+    const before=st.doc.textBetween(Math.max(0,from-260),from,"\n","\n");
+    const m=before.match(/\\(cite|eqref|thmref)\{([^{}\n]*)$/);
+    if(!m){
+      const tm=before.match(/(^|[^\w])@(\d*)$/);
+      if(!tm)return null;
+      const query=tm[2]||"";
+      return {kind:"todo",query,from:from-query.length,to:from,needsClose:false};
+    }
+    const inner=m[2]||"";
+    const lastComma=inner.lastIndexOf(",");
+    const query=(lastComma>=0?inner.slice(lastComma+1):inner).trimStart();
+    const tokenFrom=from-query.length;
+    let next="";
+    try{ next=st.doc.textBetween(from,from+1,"\n","\n"); }catch(e){}
+    return {kind:m[1],query,from:tokenFrom,to:from,needsClose:next!=="}"};
+  }
+
+  function referenceAutocompleteItems(token){
+    const refs=S.refs||{}, q=(token.query||"").toLowerCase();
+    let rows=[];
+    if(token.kind==="cite"){
+      const bib=refs.bibliography||{};
+      rows=Object.keys(bib).map(key=>({key,detail:(bib[key]&&bib[key].text)||""}));
+    }else if(token.kind==="eqref"){
+      const eq=refs.eq||{};
+      rows=Object.keys(eq).sort((a,b)=>(eq[a]||0)-(eq[b]||0)).map(key=>({key,detail:"("+eq[key]+")"}));
+    }else if(token.kind==="thmref"){
+      const thm=refs.thm||{};
+      rows=Object.keys(thm).sort((a,b)=>{
+        const av=thm[a]||{}, bv=thm[b]||{};
+        return String(av.env||"").localeCompare(String(bv.env||"")) || Number(av.number||0)-Number(bv.number||0);
+      }).map(key=>{
+        const t=thm[key]||{};
+        const env=String(t.env||"Theorem");
+        return {key,detail:env.charAt(0).toUpperCase()+env.slice(1)+" "+(t.number||"?")};
+      });
+    }else{
+      rows=(S.todos||[]).slice().sort((a,b)=>(a.done===b.done?Number(a.id)-Number(b.id):(a.done?1:-1)))
+        .map(t=>({key:String(t.id),detail:(t.done?"Done · ":"")+t.title}));
+    }
+    if(q) rows=rows.filter(r=>r.key.toLowerCase().includes(q)||String(r.detail||"").toLowerCase().includes(q));
+    return rows.slice(0,12);
+  }
+
+  function refreshReferenceAutocomplete(){
+    const ac=S.refAc; if(!ac)return;
+    const token=currentReferenceToken();
+    if(!token){ hideReferenceAutocomplete(); return; }
+    const items=referenceAutocompleteItems(token);
+    if(!items.length){ hideReferenceAutocomplete(); return; }
+    ac.token=token; ac.items=items; ac.active=Math.min(ac.active,items.length-1);
+    renderReferenceAutocomplete();
+  }
+
+  function renderReferenceAutocomplete(){
+    const ac=S.refAc; if(!ac)return;
+    const title=ac.token&&ac.token.kind==="cite"?"Citations in this bubble":
+      ac.token&&ac.token.kind==="todo"?"TODOs":
+      ac.token&&ac.token.kind==="thmref"?"Theorem and definition labels":"Equation labels";
+    ac.box.innerHTML="";
+    ac.box.append(el("div",{class:"ref-ac-title"},title));
+    ac.items.forEach((it,i)=>{
+      const b=el("button",{class:"ref-ac-item"+(i===ac.active?" active":""),
+        onmousedown:e=>e.preventDefault(),
+        onclick:e=>{ e.preventDefault(); insertReferenceAutocomplete(it); }},
+        el("div",{class:"ref-ac-key"},it.key));
+      if(it.detail)b.append(el("div",{class:"ref-ac-detail"},it.detail));
+      ac.box.append(b);
+    });
+    ac.box.classList.remove("hide");
+    const active=ac.box.querySelector(".ref-ac-item.active");
+    if(active) active.scrollIntoView({block:"nearest"});
+  }
+
+  function hideReferenceAutocomplete(){
+    if(S.refAc){ S.refAc.box.classList.add("hide"); S.refAc.items=[]; S.refAc.token=null; S.refAc.active=0; }
+  }
+
+  function insertReferenceAutocomplete(item){
+    const ac=S.refAc, token=ac&&ac.token, view=editorView();
+    if(!token||!item||!view)return;
+    const text=item.key+(token.needsClose?"}":"");
+    view.dispatch(view.state.tr.insertText(text,token.from,token.to));
+    try{ view.focus(); }catch(e){}
+    markStale(); scheduleAutosave(); updatePreview(); hideReferenceAutocomplete();
   }
 
   // Trigger the editor's own undo/redo via its keymap (no public API for it otherwise).
@@ -1849,15 +2636,17 @@
 
   function updatePreview(){
     if(!S.previewEl||!S.editor)return;
-    S.previewEl.innerHTML=renderMarkdown(S.editor.getMarkdown(),{refs:S.refs,pageSlug:S.page});
+    const sTop=S.previewEl.scrollTop, sLeft=S.previewEl.scrollLeft;
+    S.previewEl.innerHTML=renderMarkdown(S.editor.getMarkdown(),{refs:S.refs,pageSlug:S.page,citationPdfLinks:true});
     linkifyWikilinks(S.previewEl);
+    S.previewEl.scrollTop=sTop; S.previewEl.scrollLeft=sLeft;
   }
   // Bubble-wide equation/theorem reference registry: numbers + labels are global, so \eqref and
   // \thmref resolve across pages. Re-fetched on bubble open, after every save, and after page
   // add/delete — then the preview re-renders with the updated numbering.
   async function fetchRefs(){
     const bubble=S.bubble; if(!bubble){ S.refs=null; return; }
-    try{ const r=await api("/api/bubbles/"+bubble+"/refs"); if(S.bubble===bubble) S.refs=r; }
+    try{ const r=await api("/api/bubbles/"+bubble+"/refs"); if(S.bubble===bubble){ S.refs=r; refreshReferenceAutocomplete(); } }
     catch(e){ if(S.bubble===bubble) S.refs=null; }
   }
 
@@ -2001,6 +2790,30 @@
         S.titleInputs[p.page_slug]=inp;
         t.append(inp);
       } else {
+        t.draggable=true;
+        t.title="Drag to reorder pages";
+        t.ondragstart=e=>{
+          S.dragPageSlug=p.page_slug;
+          t.classList.add("dragging");
+          e.dataTransfer.effectAllowed="move";
+          try{ e.dataTransfer.setData("text/plain",p.page_slug); }catch(_){}
+        };
+        t.ondragover=e=>{
+          if(!S.dragPageSlug||S.dragPageSlug===p.page_slug)return;
+          e.preventDefault();
+          t.classList.add("drop-target");
+        };
+        t.ondragleave=()=>t.classList.remove("drop-target");
+        t.ondrop=e=>{
+          e.preventDefault();
+          t.classList.remove("drop-target");
+          const rect=t.getBoundingClientRect();
+          reorderPageTabs(S.dragPageSlug,p.page_slug,e.clientX>rect.left+rect.width/2);
+        };
+        t.ondragend=()=>{
+          S.dragPageSlug=null;
+          document.querySelectorAll(".ptab.dragging,.ptab.drop-target").forEach(x=>x.classList.remove("dragging","drop-target"));
+        };
         t.append(el("span",{onclick:()=>switchPage(p.page_slug)},p.title));
         if(p.page_slug!==S.home)
           t.append(el("span",{class:"x",title:"Delete page",onclick:(e)=>{e.stopPropagation();deletePage(p.page_slug);}},"✕"));
@@ -2013,6 +2826,10 @@
     controls.append(el("span",{class:"synced "+st,id:"syncedBadge",
       title:st==="conflict"?"Changed on disk — click to resolve":"Saved automatically; click to save now",
       style:"cursor:pointer",onclick:clickSave},SYNC_LABEL[st]));
+    const curPage=currentPageMeta();
+    controls.append(el("button",{class:"small ghost page-visibility-btn"+(curPage&&curPage.hidden?" hidden-page":""),
+      title:curPage&&curPage.hidden?"Hidden from preview/share — click to show":"Visible in preview/share — click to hide",
+      onclick:toggleCurrentPageHidden}, pageVisibilityIcon()));
     // view-mode selector — also the home of "Edit titles" (folded in as a 4th option). Visible on
     // mobile too, so phones can switch between Read and Edit. Selecting "Edit titles" enters
     // rename mode (page titles + bubble name); picking any real view mode while renaming saves
@@ -2033,6 +2850,49 @@
     // chat-pane toggle
     controls.append(el("button",{class:"small ghost desktop-only-tool",title:S.chatCollapsed?"Show chat":"Hide chat",
       onclick:toggleChat},S.chatCollapsed?"💬 >":"💬 <"));
+  }
+  function pageVisibilityIcon(){
+    const span=document.createElement("span");
+    span.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.6"/><path class="slash" d="M4 20 20 4"/></svg>';
+    return span.firstChild;
+  }
+  async function toggleCurrentPageHidden(){
+    if(!S.bubble||!S.page)return;
+    const p=currentPageMeta(); if(!p)return;
+    const next=!p.hidden;
+    try{
+      const r=await api("/api/bubbles/"+S.bubble+"/pages/"+S.page+"/hidden",
+        {method:"PATCH",body:JSON.stringify({hidden:next})});
+      p.hidden=!!r.hidden;
+      refreshTabs();
+      await fetchRefs();
+      updatePreview();
+      toast(p.hidden?"Hidden from preview/share":"Visible in preview/share");
+    }catch(e){ toast(e.message); }
+  }
+  async function reorderPageTabs(fromSlug,toSlug,after){
+    if(!fromSlug||!toSlug||fromSlug===toSlug)return;
+    const before=S.pages.slice();
+    const pages=S.pages.slice();
+    const fromIdx=pages.findIndex(p=>p.page_slug===fromSlug);
+    if(fromIdx<0)return;
+    const moved=pages.splice(fromIdx,1)[0];
+    let toIdx=pages.findIndex(p=>p.page_slug===toSlug);
+    if(toIdx<0)return;
+    if(after)toIdx+=1;
+    pages.splice(toIdx,0,moved);
+    S.pages=pages;
+    refreshTabs();
+    try{
+      await api("/api/bubbles/"+S.bubble+"/pages/order",
+        {method:"POST",body:JSON.stringify({page_slugs:S.pages.map(p=>p.page_slug)})});
+      await fetchRefs();
+      updatePreview();
+    }catch(e){
+      S.pages=before;
+      refreshTabs();
+      toast(e.message);
+    }
   }
   // ---- inline title editing: toggle page-title + bubble-name inputs from the sync-badge row ----
   function enterNameEdit(){
@@ -2474,9 +3334,7 @@
     r.assets.forEach(a=>{
       const c=el("div",{class:"acard"});
       c.append(el("h4",{},a.title||a.filename||a.pdf_id));
-      const tw=el("div",{}); (a.suggested_tags||[]).forEach(t=>tw.append(el("span",{class:"pill suggest"},t)));
-      if(!(a.suggested_tags||[]).length)tw.append(el("span",{class:"muted"},"No suggestions — tag manually."));
-      c.append(tw);
+      c.append(renderAssetTags(a,{suggestionsOnly:true,emptyText:"No suggestions — tag manually."}));
       c.append(el("div",{class:"row",style:"margin-top:10px"},
         el("a",{href:"/api/assets/"+a.pdf_id+"/pdf",target:"_blank",onclick:e=>e.stopPropagation()},
           el("button",{class:"primary small"},"Open PDF")),
@@ -2796,6 +3654,7 @@
   }
 
   // go
+  loadLandingContent();
   boot();
 })();
 </script>

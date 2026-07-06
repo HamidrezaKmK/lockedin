@@ -4,7 +4,7 @@ Unlike a per-role setup, lockedin uses a single active provider at a time (switc
 top bar). Every task — tagging, summarizing, chat, report generation, edits — goes through
 the same active model. Four providers are supported:
 
-  qwen    local Ollama via its OpenAI-compatible API (free, runs on the server)
+  qwen    local Ollama via its OpenAI-compatible API (premium; runs on the server)
   openai  OpenAI API (needs api_key)
   claude  Anthropic API (needs api_key)
   gemini  Google Gemini via its OpenAI-compatible endpoint (needs api_key from AI Studio)
@@ -12,7 +12,7 @@ the same active model. Four providers are supported:
 
 Config lives per-user in ``config/active_model.yaml``::
 
-    active: qwen
+    active: openai
     qwen:   {base_url: http://localhost:11434/v1, model: qwen2.5:7b-instruct}
     openai: {model: gpt-4o, api_key: sk-...}
     claude: {model: claude-sonnet-4-6, api_key: sk-ant-...}
@@ -39,7 +39,7 @@ PROVIDERS = ("qwen", "openai", "claude", "gemini")
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 
 DEFAULT_CONFIG: dict[str, Any] = {
-    "active": "qwen",
+    "active": "openai",
     "qwen": {"base_url": "http://localhost:11434/v1", "model": "qwen2.5:7b-instruct"},
     "openai": {"model": "gpt-4o", "api_key": ""},
     "claude": {"model": "claude-sonnet-4-6", "api_key": ""},
@@ -52,7 +52,7 @@ DEFAULT_MAX_TOKENS = 4096
 
 @dataclass
 class ActiveModelConfig:
-    active: str = "qwen"
+    active: str = "openai"
     base_url: str = "http://localhost:11434/v1"
     model: str = "qwen2.5:7b-instruct"
     api_key: str = ""
@@ -74,7 +74,9 @@ def load_config(home: Path) -> dict:
             else:
                 cfg[k] = v
     if cfg.get("active") not in PROVIDERS:
-        cfg["active"] = "qwen"
+        cfg["active"] = "openai"
+    if cfg.get("active") == "qwen" and not qwen_allowed(home):
+        cfg["active"] = "openai"
     return cfg
 
 
@@ -86,15 +88,32 @@ def save_config(home: Path, cfg: dict) -> dict:
         else:
             merged[k] = v
     if merged.get("active") not in PROVIDERS:
-        merged["active"] = "qwen"
+        merged["active"] = "openai"
+    if merged.get("active") == "qwen" and not qwen_allowed(home):
+        raise PermissionError("Qwen is a premium feature. Use your own API key or ask an admin to enable premium.")
     (home / "config").mkdir(parents=True, exist_ok=True)
     (home / "config" / "active_model.yaml").write_text(yaml.safe_dump(merged, sort_keys=False))
     return merged
 
 
+def qwen_allowed(home: Path) -> bool:
+    """True when this user's account may use server-side Qwen compute."""
+    try:
+        from . import auth
+
+        users = auth.load_accounts()
+        if home.name not in users:
+            return True
+        return auth.is_premium(home.name)
+    except Exception:  # noqa: BLE001 - temp workspaces in tests may not have accounts.
+        return True
+
+
 def set_active_provider(home: Path, provider: str) -> dict:
     if provider not in PROVIDERS:
         raise ValueError(f"Unknown provider {provider!r}. Choose one of {PROVIDERS}.")
+    if provider == "qwen" and not qwen_allowed(home):
+        raise PermissionError("Qwen is a premium feature. Use your own API key or ask an admin to enable premium.")
     return save_config(home, {"active": provider})
 
 
@@ -203,6 +222,8 @@ def stream_chat(home: Path, messages: list[dict], system: Optional[str] = None,
                 temperature: float = 0.3, *, claude_token: str = "") -> Iterator[str]:
     """Yield text deltas from the active model."""
     rc = get_active_config(home)
+    if rc.active == "qwen" and not qwen_allowed(home):
+        raise PermissionError("Qwen is a premium feature. Use your own API key or ask an admin to enable premium.")
     sys_text, rest = _split_system(messages, system)
 
     if rc.active == "claude":
@@ -280,6 +301,9 @@ def health_check(home: Path, *, claude_token: str = "", live: bool = False) -> d
     """
     rc = get_active_config(home)
     try:
+        if rc.active == "qwen" and not qwen_allowed(home):
+            return {"ok": False, "active": rc.active, "model": rc.model,
+                    "message": "Qwen is a premium feature. Use OpenAI, Claude, or Gemini with your own API key."}
         if live:
             prompt = "Reply with exactly: OK"
             if rc.active == "claude":

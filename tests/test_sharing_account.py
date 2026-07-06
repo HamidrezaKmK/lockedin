@@ -69,6 +69,45 @@ class Sharing(unittest.TestCase):
 
 
 class Account(unittest.TestCase):
+    def test_new_accounts_are_auto_approved_but_not_premium_by_default(self):
+        with temp_base():
+            from lockedin import auth, models, paths
+            auth.create_user("owner", "pw12")
+            auth.create_user("alice", "pw12")
+
+            self.assertTrue(auth.is_approved("alice"))
+            self.assertFalse(auth.is_premium("alice"))
+            self.assertEqual(models.load_config(paths.user_home("alice"))["active"], "openai")
+
+    def test_qwen_requires_premium_account(self):
+        with temp_base():
+            from lockedin import auth, models, paths
+            auth.create_user("owner", "pw12")
+            auth.create_user("alice", "pw12")
+            home = paths.user_home("alice")
+
+            with self.assertRaises(PermissionError):
+                models.set_active_provider(home, "qwen")
+
+            auth.set_premium("alice", True)
+            self.assertTrue(auth.is_premium("alice"))
+            self.assertEqual(models.set_active_provider(home, "qwen")["active"], "qwen")
+
+    def test_premium_request_is_recorded_and_cleared_on_upgrade(self):
+        with temp_base():
+            from lockedin import auth
+            auth.create_user("owner", "pw12")
+            auth.create_user("alice", "pw12")
+
+            requested_at = auth.request_premium("alice")
+            self.assertTrue(requested_at)
+            self.assertEqual(auth.list_users()[0]["premium_requested_at"], requested_at)
+
+            auth.set_premium("alice", True)
+            alice = next(u for u in auth.list_users() if u["username"] == "alice")
+            self.assertTrue(alice["premium"])
+            self.assertFalse(alice["premium_requested_at"])
+
     def test_change_password_requires_current_and_rehashes(self):
         with temp_base():
             from lockedin import auth, service

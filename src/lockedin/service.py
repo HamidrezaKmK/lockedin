@@ -32,7 +32,10 @@ def ensure_workspace(home: Path) -> None:
 def save_asset(home: Path, pdf_bytes: bytes, filename: str, title: str = "",
                tags: list[str] | None = None, url_source: str = "") -> str:
     with paths.use_root(home):
-        return assets.save_asset(pdf_bytes, filename, title=title, tags=tags, url_source=url_source)
+        pdf_id = assets.save_asset(pdf_bytes, filename, title=title, tags=tags, url_source=url_source)
+        meta = assets.load_meta(pdf_id)
+        bubbles.refresh_citation_files(meta.get("idea_bubbles", []))
+        return pdf_id
 
 
 def fetch_and_save_asset(home: Path, url: str, title: str = "",
@@ -61,13 +64,19 @@ def get_asset(home: Path, pdf_id: str) -> dict:
 
 def update_asset(home: Path, pdf_id: str, **fields) -> dict:
     with paths.use_root(home):
-        return assets.update_asset(pdf_id, **fields)
+        before = set(assets.load_meta(pdf_id).get("idea_bubbles", []))
+        meta = assets.update_asset(pdf_id, **fields)
+        after = set(meta.get("idea_bubbles", []))
+        bubbles.refresh_citation_files(before | after)
+        return meta
 
 
 def update_asset_bibliography(home: Path, pdf_id: str, bibliography: str) -> dict:
     with paths.use_root(home):
         assets.validate_bibtex_unique(pdf_id, bibliography)
-        return assets.update_asset(pdf_id, bibliography=bibliography or "")
+        meta = assets.update_asset(pdf_id, bibliography=bibliography or "")
+        bubbles.refresh_citation_files(meta.get("idea_bubbles", []))
+        return meta
 
 
 def preview_bibtex(home: Path, bibliography: str) -> dict:
@@ -77,7 +86,14 @@ def preview_bibtex(home: Path, bibliography: str) -> dict:
 
 def delete_asset(home: Path, pdf_id: str) -> bool:
     with paths.use_root(home):
-        return assets.delete_asset(pdf_id)
+        try:
+            affected = set(assets.load_meta(pdf_id).get("idea_bubbles", []))
+        except FileNotFoundError:
+            affected = set()
+        ok = assets.delete_asset(pdf_id)
+        if ok:
+            bubbles.refresh_citation_files(affected)
+        return ok
 
 
 def asset_pdf_path(home: Path, pdf_id: str) -> Path:
@@ -275,6 +291,16 @@ def create_page(home: Path, slug: str, title: str) -> str:
 def rename_page(home: Path, slug: str, page_slug: str, title: str) -> None:
     with paths.use_root(home):
         bubbles.rename_page(slug, page_slug, title)
+
+
+def set_page_hidden(home: Path, slug: str, page_slug: str, hidden: bool) -> None:
+    with paths.use_root(home):
+        bubbles.set_page_hidden(slug, page_slug, hidden)
+
+
+def reorder_pages(home: Path, slug: str, page_slugs: list[str]) -> None:
+    with paths.use_root(home):
+        bubbles.reorder_pages(slug, page_slugs)
 
 
 def delete_page(home: Path, slug: str, page_slug: str) -> bool:

@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/hamid/projects/lockedin/.agents/agy_permission_hook.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

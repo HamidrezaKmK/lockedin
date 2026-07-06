@@ -60,6 +60,9 @@ def load_accounts() -> dict[str, dict]:
         if "admin" not in rec:
             rec["admin"] = False
             changed = True
+        if "premium" not in rec:
+            rec["premium"] = bool(rec.get("news_enabled"))
+            changed = True
     if users and not any(rec.get("admin") for rec in users.values()):
         owner = "shengdebao" if "shengdebao" in users else sorted(
             users.items(), key=lambda kv: kv[1].get("created_at", ""))[0][0]
@@ -96,10 +99,8 @@ def create_user(username: str, password: str) -> str:
     first_user = not users
     salt = secrets.token_hex(16)
     users[username] = {"salt": salt, "hash": _hash_password(password, salt),
-                       "created_at": _now_iso(), "approved": first_user,
-                       "admin": first_user}
-    if not first_user:
-        users[username]["pending_at"] = _now_iso()
+                       "created_at": _now_iso(), "approved": True,
+                       "admin": first_user, "premium": first_user}
     save_accounts(users)
     paths.ensure_user_dirs(username)
     return username
@@ -123,9 +124,11 @@ def list_users() -> list[dict]:
             "username": username,
             "approved": bool(rec.get("approved")),
             "admin": bool(rec.get("admin")),
+            "premium": bool(rec.get("premium")),
+            "premium_requested_at": rec.get("premium_requested_at", ""),
             "created_at": rec.get("created_at", ""),
             "pending_at": rec.get("pending_at", ""),
-            "news_enabled": bool(rec.get("news_enabled")),
+            "news_enabled": bool(rec.get("premium") or rec.get("news_enabled")),
         })
     return out
 
@@ -221,22 +224,52 @@ def delete_user(username: str) -> None:
 
 def is_news_enabled(username: str) -> bool:
     """Whether the account is entitled to the premium background news crawler."""
-    rec = load_accounts().get(username.strip().lower())
-    return bool(rec and rec.get("news_enabled"))
+    return is_premium(username)
 
 
 def set_news_enabled(username: str, on: bool) -> None:
     """Grant/revoke the premium news entitlement; preserves credential fields. Raises ValueError."""
+    set_premium(username, on)
+
+
+def is_premium(username: str) -> bool:
+    """Whether the account can use server-paid premium features such as local Qwen."""
+    rec = load_accounts().get(username.strip().lower())
+    return bool(rec and (rec.get("premium") or rec.get("news_enabled")))
+
+
+def set_premium(username: str, on: bool) -> None:
+    """Grant/revoke premium entitlements. Raises ValueError."""
     username = username.strip().lower()
     users = load_accounts()
     rec = users.get(username)
     if rec is None:
         raise ValueError("No such user.")
     if on:
+        rec["premium"] = True
         rec["news_enabled"] = True
+        rec.pop("premium_requested_at", None)
     else:
+        rec.pop("premium", None)
         rec.pop("news_enabled", None)
     save_accounts(users)
+
+
+def request_premium(username: str) -> str:
+    """Mark an account as having requested premium access. Returns the request timestamp."""
+    username = username.strip().lower()
+    users = load_accounts()
+    rec = users.get(username)
+    if rec is None:
+        raise ValueError("No such user.")
+    if rec.get("premium") or rec.get("news_enabled"):
+        rec.pop("premium_requested_at", None)
+        save_accounts(users)
+        return ""
+    if not rec.get("premium_requested_at"):
+        rec["premium_requested_at"] = _now_iso()
+        save_accounts(users)
+    return rec.get("premium_requested_at", "")
 
 
 def verify_password(username: str, password: str) -> bool:

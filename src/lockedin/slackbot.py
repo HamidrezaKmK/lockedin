@@ -1,8 +1,8 @@
-"""Minimal Slack bot for lockedin — per-user auth, PDF uploads, Qwen Q&A.
+"""Minimal Slack bot for lockedin — per-user auth, PDF uploads, and model Q&A.
 
 Launch: lockedin slackbot
 Env vars: SLACK_BOT_TOKEN, SLACK_APP_TOKEN
-Optional: LOCKEDIN_URL, QWEN_MODEL, OLLAMA_BASE_URL
+Optional: LOCKEDIN_URL
 """
 from __future__ import annotations
 
@@ -12,7 +12,6 @@ import os  # used inside run() for env reads
 import re
 
 import httpx
-from openai import OpenAI
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 
@@ -22,8 +21,6 @@ logger = logging.getLogger(__name__)
 
 # Read lazily inside run() so .env is always loaded first.
 URL    = ""
-QWEN   = ""
-OLLAMA = ""
 SLACK_SECRET = ""
 
 _HELP = (
@@ -35,7 +32,7 @@ _HELP = (
     "• `todos` — list your open TODOs and add / edit / complete / remove them\n"
     "• Attach a PDF — uploads it to your assets queue\n"
     "• Send a PDF link — downloads it into your assets queue\n"
-    "• Anything else — asks Qwen about your active bubble"
+    "• Anything else — asks your configured model about your active bubble"
 )
 
 # Per-Slack-user runtime state. The Slack→lockedin account link itself is persisted by the
@@ -144,42 +141,10 @@ def _sole_url(text: str) -> str | None:
     return t if re.fullmatch(r"https?://\S+", t) else None
 
 
-def _ask_qwen(question: str, context: str) -> str:
-    resp = OpenAI(base_url=OLLAMA, api_key="ollama").chat.completions.create(
-        model=QWEN,
-        messages=[
-            {"role": "system", "content":
-                "Answer questions using the provided research context. "
-                "Be concise (2-4 sentences). Plain text only — no markdown."},
-            {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {question}"},
-        ],
-        max_tokens=600,
-    )
-    return resp.choices[0].message.content.strip()
-
-
-def _context(http: httpx.Client, slug: str) -> str:
-    bubble = http.get(f"{URL}/api/bubbles/{slug}").raise_for_status().json()["bubble"]
-    parts: list[str] = []
-    for p in (bubble.get("pages") or [])[:6]:
-        try:
-            c = http.get(
-                f"{URL}/api/bubbles/{slug}/pages/{p['page_slug']}"
-            ).raise_for_status().json()["content"]
-            if c.strip():
-                parts.append(f"[{p['title']}]\n{c[:2500]}")
-        except Exception:
-            pass
-    for a in (bubble.get("assets") or [])[:5]:
-        try:
-            s = http.get(
-                f"{URL}/api/assets/{a['pdf_id']}/summary"
-            ).raise_for_status().json()["summary"]
-            if s.strip():
-                parts.append(f"[Paper: {a.get('title') or a['pdf_id']}]\n{s[:1200]}")
-        except Exception:
-            pass
-    return "\n\n".join(parts) or "No content yet."
+def _ask_model(http: httpx.Client, slug: str, question: str) -> str:
+    r = http.post(f"{URL}/api/slack/ask", json={"slug": slug, "question": question})
+    r.raise_for_status()
+    return (r.json().get("answer") or "").strip()
 
 
 def _news_list(http: httpx.Client, say) -> None:
@@ -647,23 +612,22 @@ def handle(event: dict, say) -> None:
         if not bubble:
             say("I don't have an active bubble for questions yet. Here are your options:\n\n" + _HELP)
             return
-        say(f"_(asking Qwen about *{bubble['name']}*…)_")
+        say(f"_(asking your configured model about *{bubble['name']}*…)_")
         try:
-            say(_ask_qwen(text, _context(http, bubble["slug"])))
+            answer = _ask_model(http, bubble["slug"], text)
+            say(answer or "No answer returned.")
         except Exception as e:
             # A stale login (e.g. the server restarted, wiping its in-memory sessions) surfaces
-            # as a 401 here — prompt a re-login instead of a confusing "Qwen error".
+            # as a 401 here — prompt a re-login instead of a confusing model error.
             if _is_unauthorized(e):
                 _ask_reauth(uid, say)
                 return
-            say(f"Qwen error: {e}")
+            say(f"Model error: {e}")
 
 
 def run(*, slack_bot_token: str, slack_app_token: str) -> None:
-    global URL, QWEN, OLLAMA, SLACK_SECRET
+    global URL, SLACK_SECRET
     URL    = os.environ.get("LOCKEDIN_URL",    "http://localhost:8000").rstrip("/")
-    QWEN   = os.environ.get("QWEN_MODEL",      "qwen2.5:7b-instruct")
-    OLLAMA = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434/v1")
     SLACK_SECRET = os.environ.get("LOCKEDIN_SLACK_SHARED_SECRET") or slack_bot_token
 
     app = App(token=slack_bot_token)

@@ -30,26 +30,37 @@ APP_USAGE_GUIDE_SECTIONS = [
         "content": """\
 ## Signing in
 
-New accounts must be **approved by an admin** before they can log in. The very first account
-created is automatically admin. Until approved, login shows *"Account is waiting for admin
-approval."*
+New accounts can log in immediately after sign-up. The very first account becomes the
+admin and starts with premium access. Later sign-ups are standard accounts by default: they
+can use the site right away, but premium-only server compute is not enabled until an admin
+upgrades them.
 
 On phones, tap **☰** (top-left) to open the sidebar.
 
+## Theme modes
+
+Use the theme button in the top bar to cycle the colour scheme:
+**🌙 Dark → ☀️ Light → 🦄 Pony → 🤖 Matrix → ⚪ Pearl**. The same theme is remembered for
+the main app, owner previews, and public share links.
+
 ## Your account
+
+Click your username in the top-right account menu to see whether you are **standard** or
+**premium**, request premium access, or log out.
 
 Go to **⚙️ Settings → Account** to change your username or password. You must supply your
 current password to confirm. A username change carries all your data over and keeps you
-logged in. The **Log out** button is also in that section.
+logged in.
 
 ## Admin: managing users
 
 Admins see a **User access** card in Settings. From there you can:
-- **Approve** pending sign-ups so they can log in
-- **Revoke** approval to lock an account
+- **Upgrade to premium** for users who should be allowed to use server-side Qwen and News
+- **Remove premium** to move an account back to bring-your-own-key model usage
 - **Delete** a user permanently
 
-You cannot approve, revoke, or delete your own account.
+Users who request premium from the top-right account menu appear with a **requested** badge.
+You cannot delete your own account.
 """,
     },
     {
@@ -63,18 +74,22 @@ set the API key or Ollama endpoint for that provider.
 
 | Provider | Notes |
 |----------|-------|
-| **Qwen (local)** | Runs via Ollama — private, free, no API key needed |
+| **Qwen (premium)** | Runs on the server via Ollama; available only for premium accounts |
 | **OpenAI** | GPT-4o and others; API key from platform.openai.com |
 | **Claude** | Anthropic models; API key from console.anthropic.com |
 | **Gemini** | Google models; API key from aistudio.google.com/apikey |
+
+Standard accounts use OpenAI, Claude, or Gemini with their own API key. This keeps public
+sign-ups from consuming the server's local compute by default.
 
 The coloured dot next to the active model updates when a health-check runs.
 
 ## Math macros
 
-In **⚙️ Settings → Math Macros** you can define shorthand LaTeX commands. For example,
-define `\\mu` → `\\mathbf{\\mu}` to use your own shorthand everywhere on the page.
-Macros apply automatically to all math in your reports.
+In **⚙️ Settings → Math Macros**, click **Show macros** to expand the macro editor.
+You can define shorthand LaTeX commands; for example, define `\\mu` →
+`\\mathbf{\\mu}` to use your own shorthand everywhere on the page. Macros apply
+automatically to all math in your reports.
 
 ## Research chat
 
@@ -92,10 +107,10 @@ chat pane lets you switch between or delete saved conversations.
 
 ## News crawler (premium)
 
-If enabled for your account, a **📰 News** view appears in the sidebar. Click **Crawl now**
+If your account is premium, a **📰 News** view appears in the sidebar. Click **Crawl now**
 to search the web for recent papers relevant to your approved bubbles. Found papers stream
 into the feed; steer with follow-up messages, then **accept** (advances the date pointer)
-or **discard** the batch.
+or **discard** the batch. Standard users can request premium from the top-right account menu.
 """,
     },
     {
@@ -138,6 +153,7 @@ Anyone with the link can browse all pages (no login needed). Toggle off to revok
 immediately; toggle back on to restore the same URL.
 
 Hovering a heading on the shared page reveals a 🔗 anchor for deep-linking to a section.
+Shared pages also have the same theme-cycle button as the main app.
 """,
     },
     {
@@ -166,6 +182,9 @@ Write `@5` in any report page to create a live link to TODO #5. It renders as a 
 link showing the TODO title, with strikethrough if done.
 
 `@50` never accidentally matches `@5` — the number must match exactly.
+
+While editing a report page, type `@` to open a TODO autocomplete menu in the top-right
+of the editor. Use ↑/↓ to move, Enter/Tab to insert, or click an item.
 """,
     },
     {
@@ -197,11 +216,44 @@ until approved.
 The Assets view is always your full paper inventory. Attention is just a queue toggle on
 those same assets: every paper stays visible in Assets whether or not it is in Attention.
 
+## Finding assets
+
+The Assets page has filters above the card grid:
+- **Search** — matches title, filename, PDF id, source URL, notes, tags, suggested tags,
+  and BibTeX keys
+- **Bubble** — limits results to assets attached to that bubble
+
+You can combine both filters, for example selecting a bubble and typing part of a paper
+title. Asset cards with saved BibTeX show a small **✓ BibTeX** badge.
+
+## BibTeX and citations
+
+An asset can optionally store BibTeX. Click an asset card, then use **+ BibTeX** or
+**Edit BibTeX**. Paste entries such as:
+
+```
+@article{bases4spaces,
+  title={...},
+  author={...},
+  year={...}
+}
+```
+
+Click **Save BibTeX** to validate and save. BibTeX keys must be unique across your
+assets. While editing, the panel shows a live preview of how the reference will render
+inside a bubble page.
+
+In a report page, cite an attached asset with `\\cite{key}`. A page may only cite keys
+from assets attached to that same bubble; unknown or unattached keys are rejected on save.
+References render as numbered citations, and each rendered page gets a **References**
+section when the bubble has citations.
+
 ## Tagging a paper into a bubble
 
-When editing tags, use the tag name shown inside each bubble's detail view (visible as
-a small label). Using a display name that differs from what's shown can create a duplicate
-bubble — always copy the tag exactly from the bubble's detail view.
+When editing or uploading an asset, use **➕ Pick an existing bubble…** to attach it
+to an existing bubble. The picker uses the bubble's stable tag, so it avoids accidentally
+creating a duplicate bubble after a rename. You can still type new comma-separated tags
+when you intentionally want to create or suggest another topic.
 """,
     },
     {
@@ -229,7 +281,9 @@ You only need to log in again if you change your lockedin username or password.
 - **`news`** — list retrieved news items and why they match your bubbles, if News is enabled
 - **`crawl`** — run the premium News crawler from Slack, if enabled
 
-The Slackbot follows the same account approval and per-user workspace rules as the website.
+The Slackbot follows the same account, premium, and per-user workspace rules as the website.
+Questions use your configured model. Qwen from Slack also requires premium; otherwise configure
+OpenAI, Claude, or Gemini with your own API key in the web settings.
 """,
     },
     {
@@ -310,6 +364,8 @@ bubble** — every page's equations share one counter, in page order.
 References are **global**: you can `\\eqref` a label before it appears, and even
 one defined on another page of the bubble. They also work **inside** a math block.
 
+While editing, type `\\eqref{` to open an equation-label autocomplete menu.
+
 ---
 
 ## Theorem environments
@@ -348,6 +404,21 @@ Then write `\\thmref{thm:key}` anywhere — on this or any other page of the
 bubble, and even inside a math block — to get an inline reference. Theorem
 counters are bubble-wide too. For example, `\\thmref{thm:key}` → **Theorem 2**.
 
+While editing, type `\\thmref{` to open an autocomplete menu for theorem,
+definition, lemma, proposition, corollary, and remark labels.
+
+---
+
+## Citations
+
+Assets with saved BibTeX can be cited from pages in bubbles where those assets are attached.
+Write `\\cite{bibtex-key}` to render a numbered citation like **[1]**. The rendered page
+also includes a **References** section for the bubble's citation set.
+
+Type `\\cite{` in the editor to open a citation-key autocomplete menu. Only keys from
+assets attached to the current bubble are suggested. Use ↑/↓, Enter/Tab, Escape, or click,
+the same as the other editor autocomplete menus.
+
 ---
 
 ## Wikilinks
@@ -378,6 +449,8 @@ Type an `@` followed by a TODO's number anywhere in a page to link to it — for
 `@5` links to TODO number 5. It renders as a clickable link showing the TODO's title
 (struck through if the TODO is done). The number must match exactly, so `@50` never
 accidentally links to TODO 5.
+
+Type `@` in the editor to open the TODO autocomplete menu.
 """,
     },
 ]
@@ -397,9 +470,16 @@ APP_USAGE_BRIEF = (
     "ABOUT THIS APP (use these facts to answer usage questions):\n"
     "- Reports are multi-page Markdown wikis, one per bubble; the editor is on the left, a "
     "live preview on the right. The user writes the reports themselves.\n"
+    "- The top-bar theme button cycles 🌙 Dark, ☀️ Light, 🦄 Pony, 🤖 Matrix, and ⚪ Pearl modes; "
+    "the same theme applies to owner previews and public share links.\n"
     "- Math: $...$ inline, $$...$$ display. Number a display equation by putting \\label{name} "
     "inside its $$ block, then reference it with \\eqref{name} (renders as its number). Equation "
     "and theorem (\\thmref) numbers/refs are bubble-wide — they work across pages and inside math.\n"
+    "- The editor has autocomplete menus: type \\cite{ for attached-asset BibTeX keys, \\eqref{ "
+    "for equation labels, \\thmref{ for theorem/definition labels, and @ for TODO ids.\n"
+    "- Assets can store optional BibTeX. BibTeX keys must be unique; report pages can only cite "
+    "keys from assets attached to that bubble. Asset cards with BibTeX show a ✓ BibTeX badge, "
+    "and the Assets page can filter by search text plus bubble.\n"
     "- Link to another page in the same bubble by its title in double brackets, e.g. [[Overview]].\n"
     "- The synced/unsynced badge saves the current page; the preview toggle shows/hides the "
     "preview; the chat pane can be collapsed; the magnifier opens a full-page preview.\n"
@@ -408,7 +488,7 @@ APP_USAGE_BRIEF = (
     "- Click 🔗 Share in a bubble's header to publish an unlisted read-only link (a 📋 Copy-link "
     "button then appears); headings on the shared page have 🔗 anchors for section links.\n"
     "- Go to ⚙️ Settings → Account to change your username or password, or to log out.\n"
-    "For the complete step-by-step guide, tell the user to click the ? button in the top bar."
+    "For the complete step-by-step guide, tell the user to click the Help button in the top bar."
 )
 
 CHAT_SYSTEM = """\

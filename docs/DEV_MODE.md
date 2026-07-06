@@ -1,6 +1,6 @@
 # DEV MODE — Research-report assistant (no server)
 
-Run `./claude_scientist.sh` (for Claude Code), `./gemini_scientist.sh` (for Gemini CLI), or
+Run `./claude_scientist.sh` (for Claude Code), `./agy_scientist.sh` (for Antigravity CLI / agy), or
 `./codex_scientist.sh` (for Codex CLI) to launch your report assistant: it manages your reports directly on disk — summarize new
 papers, write and edit report pages, reorganize bubbles, answer questions about your
 library — the same job as the in-app chat sidebar, but through the CLI.
@@ -8,16 +8,30 @@ library — the same job as the in-app chat sidebar, but through the CLI.
 The plain commands are **not** repurposed — these wrappers inject the report-assistant role
 for that one session and authenticate against your `.env` first.
 
-> **The Claude and Gemini wrappers run shell-free.** `gemini_scientist.sh` and `claude_scientist.sh` launch the
-> agent as a pure Markdown editor: the shell tool is removed (Gemini via
-> `gemini_scientist.policy.toml`; Claude via a `--tools Read Edit Write Glob Grep` allowlist),
-> file edits still **prompt** for your approval, and the launcher authenticates + captures the
-> bubble/page listing itself and injects it into the session — so the agent ignores the "run
-> `uv run lockedin devmode`" steps below (it can't run shell anyway). Because the agent edits
-> with file tools instead of `cat`/`sed`, Gemini needs to reach the **git-ignored** `data/`
-> dir: `.gemini/settings.json` sets `context.fileFiltering.respectGitIgnore=false` for that.
-> All of this is committed to the repo, so a fresh clone behaves identically — nothing is
-> stored machine-locally (only your `.env` credentials are per-machine).
+> **The Claude and Antigravity wrappers run shell-free.** `agy_scientist.sh` and `claude_scientist.sh` launch the
+> agent as a pure Markdown editor: the shell tool/terminal commands are disabled, file edits
+> still **prompt** for your approval, and the launcher authenticates + captures the bubble/page
+> listing itself and injects it into the session — so the agent ignores the "run
+> `uv run lockedin devmode`" steps below (it can't run shell anyway). Claude does this via a
+> `--tools Read Edit Write Glob Grep` allowlist. `agy` (Google's Antigravity CLI) has no such
+> flags, so the wrapper uses the **project-local `.agents/` folder** that agy auto-loads:
+> `.agents/hooks.json` registers a PreToolUse permission hook (`.agents/agy_permission_hook.sh`)
+> that **denies** the shell tool (`run_command`); every write tool (`write_to_file` /
+> `replace_file_content` / `multi_replace_file_content`) requires your **approval** before it
+> runs. Your **global** agy config (`~/.gemini/antigravity-cli/settings.json`) is never read or
+> modified — the gate is entirely project-local. (This also fixes the default "agy edits without
+> asking" behavior: a global ask-rule can only name `write_file`, which agy doesn't have, so
+> writes slip through; the hook gates the real tool names instead.) All of this is committed to
+> the repo, so a fresh clone behaves identically — nothing is stored machine-locally (only your
+> `.env` credentials are per-machine). Pick the model with `AGY_MODEL` (see `agy models`); a
+> Flash model makes approvals feel much snappier than the default `Pro (High)`.
+>
+> **On approval prompts and diffs:** because your reports live under the git-ignored `data/`
+> dir, agy treats every report file as *outside its workspace* and gates each write with a plain
+> **"File access — allow / deny"** prompt — it does **not** render an inline diff for these edits
+> (no agy setting tried, incl. `allowNonWorkspaceAccess`/`trustedWorkspaces`, changes this). To
+> see what changed, type **`/diff`** in agy after an edit, press **ctrl+o** to expand the `Edit`
+> step, or open the page in the lockedin web app. Edits never apply without your approval.
 >
 > `codex_scientist.sh` follows the same launcher pattern and starts Codex with a read-only
 > sandbox, approval prompts, live web search for explicit source-search requests,
@@ -38,8 +52,8 @@ cp .env.example .env          # then edit: DEV_USERNAME / DEV_PASSWORD = your lo
 
 ```bash
 ./claude_scientist.sh                 # Claude Code version
-./gemini_scientist.sh                 # interactive — authenticates, then greets with your bubbles
-./gemini_scientist.sh "summarize the new FLIPD paper into my diffusion report"   # one-shot kickoff
+./agy_scientist.sh                 # interactive — authenticates, then greets with your bubbles
+./agy_scientist.sh "summarize the new paper into my diffusion report"   # one-shot kickoff
 ./codex_scientist.sh                  # Codex CLI version
 ```
 
@@ -63,12 +77,12 @@ scientist session.
 ./claude_scientist.sh resume latest    # same as --last
 ./claude_scientist.sh resume <session> # Claude session id or picker search term
 
-./gemini_scientist.sh resume           # list Gemini sessions for this project
-./gemini_scientist.sh resume latest    # latest Gemini session
-./gemini_scientist.sh resume 5         # Gemini session index from the list
+./agy_scientist.sh resume           # resume latest Antigravity session
+./agy_scientist.sh resume latest    # same as above
+./agy_scientist.sh resume <session> # resume session by conversation ID
 ```
 
-The raw commands, such as `codex resume`, `claude --resume`, or `gemini --resume`, can reopen
+The raw commands, such as `codex resume`, `claude --resume`, or `agy --continue`, can reopen
 history, but they do not necessarily carry the scientist launcher's sandbox, allowlist, policy,
 or injected report instructions. Prefer the wrapper commands above for report work.
 

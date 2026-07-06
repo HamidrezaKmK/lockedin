@@ -391,6 +391,23 @@ class AssetBibtex(unittest.TestCase):
             meta = service.update_asset_bibliography(home, pid, "")
             self.assertEqual(meta["bibliography"], "")
 
+    def test_generated_citation_file_tracks_bibtex_edits(self):
+        with temp_home() as home:
+            slug = make_bubble(home)
+            pid = service.save_asset(home, b"%PDF-1", "a.pdf", title="A",
+                                     tags=["Diffusion Models"])
+            service.update_asset_bibliography(home, pid, self.BIB1)
+            cite_path = home / "REPORTS" / slug / "_lockedin_citations.md"
+            self.assertIn("bases4spaces", cite_path.read_text())
+            service.update_asset_bibliography(home, pid, self.BIB2)
+            text = cite_path.read_text()
+            self.assertIn("otherkey", text)
+            self.assertNotIn("bases4spaces", text)
+            service.update_asset_bibliography(home, pid, "")
+            text = cite_path.read_text()
+            self.assertIn("No BibTeX entries", text)
+            self.assertNotIn("otherkey", text)
+
     def test_duplicate_key_on_another_asset_is_rejected(self):
         with temp_home() as home:
             with paths.use_root(home):
@@ -418,6 +435,16 @@ class AssetBibtex(unittest.TestCase):
             service.save_page(home, slug, "overview", "# T\n\nUse \\cite{bases4spaces}.\n")
             with paths.use_root(home):
                 self.assertIn("\\cite{bases4spaces}", bubbles.get_page(slug, "overview"))
+
+    def test_bubble_refs_include_pdf_id_for_citation_links(self):
+        with temp_home() as home:
+            slug = make_bubble(home)
+            pid = service.save_asset(home, b"%PDF-1", "a.pdf", title="A",
+                                     tags=["Diffusion Models"])
+            service.update_asset_bibliography(home, pid, self.BIB1)
+            service.save_page(home, slug, "overview", "# T\n\nUse \\cite{bases4spaces}.\n")
+            refs = server._bubble_refs(home, slug, service.list_pages(home, slug))
+            self.assertEqual(refs["bibliography"]["bases4spaces"]["pdf_id"], pid)
 
     def test_page_cannot_cite_key_from_unattached_asset(self):
         with temp_home() as home:
@@ -463,7 +490,8 @@ class CitationRendering(unittest.TestCase):
         html = self._render("p2", self.P2)
         self.assertIn('<span class="cite-ref">[2, 1]</span>', html)
         self.assertIn('<span class="cite-ref">[?missing]</span>', html)
-        self.assertIn("# References", html)
+        self.assertIn('class="references-box"', html)
+        self.assertIn("<h1>References</h1>", html)
         self.assertIn('<span class="bibnum">[1]</span>', html)
         self.assertIn("Bases for Spaces", html)
         self.assertIn('<span class="bibnum">[2]</span>', html)
@@ -471,7 +499,7 @@ class CitationRendering(unittest.TestCase):
 
     def test_references_section_appears_on_page_without_local_cite(self):
         html = self._render("p1", "No citation on this page.\n")
-        self.assertIn("# References", html)
+        self.assertIn('class="references-box"', html)
         self.assertIn("Bases for Spaces", html)
         self.assertIn("Other Book", html)
 
@@ -482,8 +510,32 @@ class CitationRendering(unittest.TestCase):
             name="B", page="p1", all_pages=[{"page_slug": "p1", "title": "One"}],
             content="Only \\cite{missing}.", slug="s", link_base="/x",
             asset_base="/x/assets", show_back=False, refs=refs)
-        self.assertNotIn("# References", html)
+        self.assertNotIn('class="references-box"', html)
         self.assertIn("[?missing]", html)
+
+
+class HiddenPreviewPages(unittest.TestCase):
+    def test_page_hidden_flag_round_trips_in_manifest(self):
+        with temp_home() as home:
+            slug = make_bubble(home)
+            ps = service.create_page(home, slug, "Draft")
+            service.set_page_hidden(home, slug, ps, True)
+            pages = service.list_pages(home, slug)
+            self.assertTrue(next(p for p in pages if p["page_slug"] == ps)["hidden"])
+
+    def test_hidden_pages_are_left_out_of_preview_nav_and_refs(self):
+        pages = [{"page_slug": "visible", "title": "Visible"},
+                 {"page_slug": "draft", "title": "Draft", "hidden": True}]
+        visible = server._visible_pages(pages)
+        refs = server._build_refs([{"page_slug": "visible", "content": "No cite here."}],
+                                  bibliography=CitationRendering.BIB)
+        html = server._render_preview_html(
+            name="B", page="visible", all_pages=visible,
+            content="See [[draft|draft page]].", slug="s", link_base="/x",
+            asset_base="/x/assets", show_back=False, refs=refs)
+        self.assertIn("Visible", html)
+        self.assertNotIn("/x/draft", html)
+        self.assertNotIn('class="references-box"', html)
 
 
 # --------------------------------------------------------------------------- #

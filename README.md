@@ -1,38 +1,42 @@
-# lockedin
+# 🔒 lockedin
 
-> A local-first research assistant for grad students.
+> A research assistant for grad students.
 
-`lockedin` is a FastAPI app for keeping up with research: upload papers and posts, group them
-into bubbles, maintain math-aware Markdown reports, and chat with a switchable LLM backend.
+**lockedin** is a FastAPI application designed to help you keep up with research. You can upload papers, extract summaries, group them into "bubbles", maintain TODOs, math-aware Markdown reports, and chat with a switchable LLM backend, plus a Slackbot plugin that helps you keep track with your ideas and papers on your phone even when you cannot open up your laptop.
 
-The default deployment is private and local-only on `127.0.0.1`. If you want web access, keep the
-app bound to localhost and expose it through HTTPS with a tunnel such as Cloudflare Tunnel.
-Public exposure still needs application-layer hardening; see [Security](#security).
+By default, the deployment is private and local-only (`127.0.0.1`). For web access, keep it bound to localhost and expose it through an HTTPS tunnel (e.g., Cloudflare Tunnel). Public exposure requires application-layer hardening (see [Security](#-security)).
 
-## What It Does
+---
 
-- Per-user workspaces with username/password auth. The first account is the admin; later
-  sign-ups stay pending until an admin approves them in-app.
-- Paper upload, extraction, one-time summaries, and cached report context.
-- Auto-tagging into bubbles.
-- Multi-page Markdown reports with internal links, figures, KaTeX, and live preview.
-- TODOs: GitHub-issue-style task items with a dedicated manager pane. Reference one from any
-  report page as `@id` (a clickable link to its detail view); notes support the same
-  math/markdown as reports. A TODO can only be deleted once it has no remaining `@id`
-  references. Manage them in the web app or via the Slack bot's `todos` command.
-- Read-only research chat grounded in report pages and paper summaries.
-- Model switcher for local Qwen through Ollama, OpenAI, Claude, and Gemini.
-- Optional Slack bot in socket mode.
-- Optional Claude-powered News crawler for granted users.
-- Optional unlisted read-only sharing links for bubbles.
+## ✨ Features
 
-The browser needs internet access for CDN-hosted frontend libraries. They are not vendored.
+- **👤 Per-User Workspaces:** Authenticated workspaces with username/password. The first account becomes the admin; subsequent sign-ups are pending until admin approval.
+- **📄 Paper Management:** Upload papers, extract text, generate one-time summaries, and cache report context.
+- **🏷️ Auto-Tagging:** Automatically group uploaded documents into contextual "bubbles".
+- **📝 Markdown Reports:** Create multi-page Markdown reports featuring internal links, figures, KaTeX math support, and live previews.
+- **✅ TODO Manager:** GitHub-issue-style task items. Reference a TODO in any report page using `@id` (creates a clickable link). Notes support math/markdown. TODOs can only be deleted once all `@id` references are removed. Manage via web or Slack bot.
+- **💬 Research Chat:** Read-only chat grounded in your report pages and paper summaries.
+- **🤖 Switchable LLMs:** Easily switch between local models (Qwen via Ollama) and cloud models (OpenAI, Claude, Gemini).
+- **🔌 Optional Integrations:**
+  - Slack bot (via Socket Mode)
+  - Claude-powered News crawler for granted users
+  - Unlisted read-only sharing links for specific bubbles
 
-## Setup Guide
+*(Note: The browser requires internet access for CDN-hosted frontend libraries, which are not vendored.)*
+
+---
+
+## 🚀 Setup Guide
 
 These steps work from any clone path on a local machine or fresh server.
 
-### 1. Clone And Install
+### 1. Prerequisites
+- Python compatible with [`pyproject.toml`](pyproject.toml)
+- [uv](https://docs.astral.sh/uv/)
+
+*(Optional but recommended: [Ollama](https://ollama.com/) for local models, `cloudflared` for HTTPS tunnels, Slack App tokens for the bot.)*
+
+### 2. Clone and Install
 
 ```bash
 git clone <repo-url> lockedin
@@ -40,51 +44,31 @@ cd lockedin
 uv sync
 ```
 
-Required:
-
-- Python compatible with [pyproject.toml](pyproject.toml).
-- [uv](https://docs.astral.sh/uv/).
-
-Optional:
-
-- [Ollama](https://ollama.com/) for the default local Qwen model.
-- `cloudflared` for temporary or permanent HTTPS access.
-- systemd user services for persistent operation.
-- Slack app tokens for the bot.
-- Claude CLI for the News crawler.
-
-### 2. Set Up The Default Local Model
-
-The default model is Qwen through Ollama. Install Ollama, then pull the model:
+### 3. Set Up the Local Model
+The default model is Qwen via Ollama. Install Ollama and pull the model:
 
 ```bash
 ollama pull qwen2.5:7b-instruct
 uv run lockedin doctor
 ```
+*(If you prefer OpenAI, Claude, or Gemini, you can skip this and configure them in the web UI settings instead.)*
 
-If you do not want local Qwen, you can still start the app and configure OpenAI, Claude, or Gemini
-from the model settings in the web UI.
-
-### 3. Choose How To Run The Server
-
+### 4. Run the Server
 For interactive local use:
 
 ```bash
 uv run lockedin serve
 ```
+Open `http://127.0.0.1:8000/`. Sign up as the first user (becomes admin automatically), upload a paper, and start editing reports! Any subsequent sign-ups will stay pending until approved from **Settings → User access**.
 
-Open `http://127.0.0.1:8000/`, sign up the first user, upload a paper, approve suggested tags,
-and start editing reports. The first account you create becomes the admin and is approved
-automatically; any later sign-ups stay pending until you approve them from **Settings → User
-access**.
+---
 
-For a server that should keep running, use systemd instead of manually starting `uv run lockedin
-serve`. The systemd setup below starts the same server on `127.0.0.1:8080`.
+## 🛠️ Advanced Setup
 
-### 4. Optional: Persistent Systemd Services
+<details>
+<summary><b>Persistent Systemd Services</b></summary>
 
-Systemd is a deployment path, not an extra step after running the app manually. Use it when you
-want lockedin to restart on failure and survive logout.
+Systemd ensures `lockedin` restarts on failure and survives logout.
 
 ```bash
 cp ops/lockedin.env.example ops/lockedin.env
@@ -92,163 +76,117 @@ cp ops/lockedin.env.example ops/lockedin.env
 systemctl --user enable --now lockedin-serve.service
 systemctl --user enable --now lockedin-monitor.timer
 ```
+Access at `http://127.0.0.1:8080/`.
 
-Then open `http://127.0.0.1:8080/`.
-
-Useful checks:
-
+**Useful Checks:**
 ```bash
 systemctl --user status lockedin-serve.service
 journalctl --user -u lockedin-serve.service -f
 ./ops/healthcheck.sh
 ```
 
-For boot persistence after logout:
-
+**Boot Persistence:**
 ```bash
 loginctl enable-linger "$USER"
 ```
-
 More details: [docs/OPS.md](docs/OPS.md).
+</details>
 
-### 5. Optional: Temporary HTTPS URL
+<details>
+<summary><b>Temporary HTTPS URL (Cloudflare Tunnel)</b></summary>
 
-For ad-hoc remote access without buying or configuring a domain:
-
+For remote access without a domain:
 ```bash
 uv run lockedin serve --host 127.0.0.1 --port 8080
 cloudflared tunnel --url http://localhost:8080
 ```
+Use the provided `https://<random>.trycloudflare.com` URL. (If using systemd, just run the `cloudflared` command).
+</details>
 
-Use the printed `https://<random>.trycloudflare.com` URL while `cloudflared` is running.
+<details>
+<summary><b>Permanent Domain</b></summary>
 
-If you are using systemd for the server, do not run the first command. Just start the temporary
-tunnel against the already-running `http://localhost:8080`.
+Create a Cloudflare Tunnel public hostname routing to `localhost:8080`.
 
-### 6. Optional: Permanent Domain
-
-Create a Cloudflare Tunnel public hostname that routes your domain to the local service:
-
-- Service type: `HTTP`
-- URL: `localhost:8080`
-
-With systemd, store the tunnel token privately:
-
+With systemd, save your tunnel token:
 ```bash
 printf '%s\n' 'CLOUDFLARE_TUNNEL_TOKEN=<YOUR_TOKEN>' > ops/tunnel.env
 ```
-
-Set the public URL in `ops/lockedin.env` if you want the monitor to check it:
-
+Set the public URL in `ops/lockedin.env`:
 ```bash
 LOCKEDIN_PUBLIC_URL=https://yourdomain.example/
 ```
-
-Then enable the tunnel service:
-
+Enable the tunnel service:
 ```bash
 systemctl --user enable --now lockedin-tunnel.service
 ```
-
 Full walkthrough: [docs/DOMAIN_SETUP.md](docs/DOMAIN_SETUP.md).
+</details>
 
-### 7. Optional: Slack Bot
+<details>
+<summary><b>Slack Bot</b></summary>
 
-The Slack bot uses socket mode, so it does not need a public URL. Create a Slack app, add bot
-scopes and event subscriptions, then put the tokens in `.env` for manual use or
-`ops/lockedin.env` for systemd.
+Uses socket mode (no public URL needed). Add your Slack app tokens to `.env` or `ops/lockedin.env`.
 
-Manual run:
-
+**Manual:**
 ```bash
 uv run lockedin slackbot
 ```
 
-Systemd run:
-
+**Systemd:**
 ```bash
 systemctl --user enable --now lockedin-slackbot.service
 ```
-
-Because lockedin marks auth cookies `Secure` by default, prefer the HTTPS tunnel/domain URL:
-
-```bash
-LOCKEDIN_URL=https://yourdomain.example/
-```
-
-Plain `http://127.0.0.1:8080/` works only if the server also runs with
-`LOCKEDIN_INSECURE_COOKIE=1`.
-
-For persistent Slack account links, run both the web server and the bot with the same
-`LOCKEDIN_SLACK_SHARED_SECRET` (or expose `SLACK_BOT_TOKEN` to both processes). This lets the bot
-refresh a web session for an already-linked Slack user without storing their password.
-
-On first Slack use, the bot asks for your lockedin username and password, then persists a
-Slack-user link on your account. Later bot/server restarts refresh silently from that link; changing
-your lockedin username or password clears the link and requires logging in from Slack again.
-
+For persistent logins, use an HTTPS URL for `LOCKEDIN_URL` and share `LOCKEDIN_SLACK_SHARED_SECRET` between server and bot. 
 Full setup: [docs/SLACKBOT_SETUP.md](docs/SLACKBOT_SETUP.md).
+</details>
 
-### 8. Optional: News Crawler
+<details>
+<summary><b>News Crawler</b></summary>
 
-The News crawler is opt-in and off by default. It uses the host `claude` CLI and spends your
-Claude subscription/API capacity.
-
+Opt-in feature using the host `claude` CLI.
 ```bash
 uv run lockedin news-grant <username>
 LOCKEDIN_NEWS_ENABLED=1 uv run lockedin serve
 ```
+Revoke access with: `uv run lockedin news-revoke <username>`
+</details>
 
-For systemd, set `LOCKEDIN_NEWS_ENABLED=1` in `ops/lockedin.env` and restart:
+<details>
+<summary><b>Direct Report Editing With Agents (DEV Mode)</b></summary>
 
-```bash
-systemctl --user restart lockedin-serve.service
-```
-
-Granted users see the News tab in the app. Revoke access with:
-
-```bash
-uv run lockedin news-revoke <username>
-```
-
-### 9. Optional: Direct Report Editing With Agents
-
-For hands-on report editing without running the web server, use DEV mode. It authenticates
-against your `.env` account credentials and scopes CLI agents to that user's report files.
+For hands-on editing via CLI agents without the web server.
 
 ```bash
 ./claude_scientist.sh
-./gemini_scientist.sh
+./agy_scientist.sh
 ./codex_scientist.sh
 ```
-
-To reopen prior agent sessions with the same scientist permissions, use the wrapper resume
-commands instead of the raw CLI resume commands:
-
+To resume a session:
 ```bash
 ./claude_scientist.sh resume
-./gemini_scientist.sh resume
-./codex_scientist.sh resume
 ```
-
 See [docs/DEV_MODE.md](docs/DEV_MODE.md).
+</details>
 
-## Security
+---
 
-`lockedin` was designed for trusted local use. HTTPS tunnels protect transport, but public
-exposure also needs application-layer hardening:
+## 🛡️ Security
 
+`lockedin` is designed for trusted local use. If exposed publicly (even via HTTPS), consider these application-layer hardenings:
 - Raise the minimum password length (currently 4 characters).
 - Add rate limiting or lockout for `/api/login` and `/api/signup`.
-- Sign-up is already gated by admin approval (new accounts are pending until approved), but
-  consider also disabling self-signup entirely for a fully private deployment.
+- Disable self-signup entirely for a strictly private deployment.
 - Audit public share links, upload/file-serving paths, and model-key handling.
 
-## Data Layout
+---
+
+## 📂 Data Layout
 
 All per-user content lives under `data/users/<username>/` and is git-ignored:
 
 ```text
+data/landing.yaml              # optional global public landing-page copy
 data/users/<username>/
   config/active_model.yaml
   ASSETS/<pdf_id>/
@@ -262,9 +200,61 @@ data/users/<username>/
   bubbles.yaml
 ```
 
-## Architecture
+## Public Landing Page Copy
 
-`server.py` is HTTP/SSE glue over `service.py`. Per-user isolation uses a contextvar root in
-`paths.py`. `models.py` exposes one active-model interface across Ollama, OpenAI, Anthropic, and
-Gemini. `tagger.py` runs ingest tagging. `reports.py` stores and renders per-bubble Markdown
-pages. The frontend is a single `src/lockedin/web/index.html` app using CDN-hosted libraries.
+The unauthenticated `/` landing page can be edited without rebuilding the app by creating
+`data/landing.yaml`. The server reads this file at startup, so restart `lockedin-serve.service`
+after edits. Missing fields fall back to the built-in defaults, so you can override only the
+parts you want:
+
+```yaml
+hero:
+  kicker_icon: "🔒"
+  kicker: "private research workspace"
+  title_accent: "locked"
+  title_rest: "in"
+  lede: "A calm command center for papers, math notes, topic wikis, research chat, and TODOs."
+  copy: "Upload PDFs, organize them into bubbles, write reports, and keep model-powered help close."
+  points:
+    - title: "Paper-first"
+      text: "Keep PDFs, tags, notes, summaries, and BibTeX together."
+
+auth:
+  title: "Enter your workspace"
+  note: "Log in, or create an account."
+
+workflow:
+  title: "From paper pile to working theory"
+  intro: "Collect sources, shape topic clusters, write technical notes, then chat/share/track."
+  steps:
+    - number: "01"
+      title: "Upload papers"
+      text: "Add PDFs or PDF links."
+
+components:
+  title: "The pieces that stay connected"
+  intro: "Every view is built around repeated research work."
+  features:
+    - icon: "📚"
+      title: "Assets"
+      text: "Your paper inventory with uploads, filters, notes, tags, summaries, and BibTeX."
+
+privacy:
+  title: "Local and private-first by default"
+  text: "Research notes stay close to the machine and model configuration you control."
+  bullets:
+    - "User data stays behind login."
+
+footer: "Made for focused research sessions."
+```
+
+---
+
+## 🏗️ Architecture
+
+- `server.py`: HTTP/SSE glue over `service.py`.
+- `paths.py`: Contextvar root for per-user isolation.
+- `models.py`: Active-model interface across Ollama, OpenAI, Anthropic, and Gemini.
+- `tagger.py`: Runs ingest tagging.
+- `reports.py`: Stores and renders per-bubble Markdown pages.
+- **Frontend:** Single `src/lockedin/web/index.html` app using CDN-hosted libraries.

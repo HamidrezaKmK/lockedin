@@ -91,17 +91,22 @@ def devmode():
         # Only approved bubbles have a materialized report workspace to edit; suggested ones
         # are still waiting in the UI and have no pages, so the report assistant ignores them.
         bubs = [b for b in bubbles.all_bubbles() if b.get("approved")]
-        n_assets = len(assets.list_assets())
-        rows = [(b["slug"], len(bubbles.list_pages(b["slug"]))) for b in bubs]
+        asset_metas = assets.list_assets()
+        n_assets = len(asset_metas)
+        rows = [(b["slug"], b.get("name") or b["slug"], len(bubbles.list_pages(b["slug"])))
+                for b in bubs]
+        bubbles.refresh_citation_files([b["slug"] for b in bubs])
     typer.echo(f"  workspace:    {home}")
     typer.echo(f"  reports dir:  {home / 'REPORTS'}")
     typer.echo(f"  assets dir:   {home / 'ASSETS'}  ({n_assets} PDFs)")
     typer.echo(f"  active model: {model}")
-    typer.echo("  approved bubbles (edit the .md files under REPORTS/<slug>/pages/):")
-    for slug, n in rows:
-        typer.echo(f"    - {slug}  ({n} pages)")
+    typer.echo("  approved bubbles (name — slug; edit .md files under REPORTS/<slug>/pages/):")
+    for slug, name, n in rows:
+        typer.echo(f"    - {name} — {slug}  ({n} pages; citations: REPORTS/{slug}/_lockedin_citations.md)")
     if not rows:
         typer.echo("    (none approved yet — approve a bubble in the app first)")
+    typer.echo("  citation BibTeX is not embedded here; read only the selected bubble's "
+               "REPORTS/<slug>/_lockedin_citations.md when citations are needed.")
 
 
 @app.command()

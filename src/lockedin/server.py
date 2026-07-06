@@ -20,7 +20,7 @@ import threading
 from pathlib import Path
 from typing import Optional
 
-from . import assets, auth, bubbles, news, paths, service, tagger
+from . import assets, auth, bubbles, landing, news, paths, service, tagger
 
 
 # Display-math environments (numbered) vs theorem-like environments (boxed). Shared by the
@@ -102,7 +102,8 @@ def _bubble_bibliography(home, slug: str) -> dict:
             key = entry["key"]
             if key not in out:
                 out[key] = {"key": key, "text": assets.format_bibtex_entry(entry),
-                            "type": entry.get("type", ""), "fields": entry.get("fields", {})}
+                            "type": entry.get("type", ""), "fields": entry.get("fields", {}),
+                            "pdf_id": meta.get("pdf_id", "")}
     return out
 
 
@@ -112,6 +113,10 @@ def _bubble_refs(home, slug: str, all_pages: list) -> dict:
                          "content": service.get_page(home, slug, p["page_slug"])}
                         for p in all_pages],
                        bibliography=_bubble_bibliography(home, slug))
+
+
+def _visible_pages(pages: list[dict]) -> list[dict]:
+    return [p for p in pages if not p.get("hidden")]
 
 
 def _preprocess_theorems(md: str, thm_labels: dict, start_counts: dict) -> "tuple[str, list[dict]]":
@@ -254,7 +259,8 @@ def _references_markdown(refs: dict) -> str:
             rows.append(f'<p class="bibitem"><span class="bibnum">[{refs["citeMap"][key]}]</span> {entry.get("text", key)}</p>')
     if not rows:
         return ""
-    return "\n\n# References\n\n" + "\n".join(rows)
+    return ('\n\n<section class="references-box">\n<h1>References</h1>\n'
+            + "\n".join(rows) + "\n</section>")
 
 
 def _render_preview_html(*, name: str, page: str, all_pages: list, content: str, slug: str,
@@ -353,19 +359,47 @@ def _render_preview_html(*, name: str, page: str, all_pages: list, content: str,
 <script src="https://cdn.jsdelivr.net/npm/marked@11/marked.min.js"></script>
 <style>
 :root{{
-  --bg:#0d1018;--ink:#e8ecf4;--muted:#8a94a8;--line:#252d3d;--panel:#1c2230;--accent:#9b80ff;--accent2:#4dd9b8;
   --font-ui:'Syne',system-ui,sans-serif;
   --font-reading:'Source Serif 4',Georgia,serif;
   --font-mono:'JetBrains Mono',ui-monospace,monospace;
 }}
-body.light{{--bg:#f2f4f8;--ink:#1a1d28;--muted:#5f6880;--line:#d4daea;--panel:#edf0f7;--accent:#6d4aff;--accent2:#0aa882}}
+:root,body.theme-dark{{
+  --bg:#0d1018;--ink:#e8ecf4;--muted:#8a94a8;--line:#252d3d;--panel:#1c2230;
+  --accent:#9b80ff;--accent2:#4dd9b8;--shadow:rgba(0,0,0,.35);
+  --scroll-track:#0d1018;--scroll-thumb:#6957ad;--scroll-thumb-hover:#8c73e8;
+  --ref-accent:#b59cff;
+}}
+body.theme-light{{
+  --bg:#ffffff;--ink:#171b24;--muted:#526073;--line:#c4ccd9;--panel:#dfe6f0;
+  --accent:#5b3ee8;--accent2:#087f69;--shadow:rgba(17,24,39,.18);
+  --scroll-track:#ffffff;--scroll-thumb:#9aa6ba;--scroll-thumb-hover:#5b3ee8;
+  --ref-accent:#6d4aff;
+}}
+body.theme-pink{{
+  --bg:#fff0fa;--ink:#57113e;--muted:#9b4b7d;--line:#ff94d2;--panel:#ffc7e8;
+  --accent:#ff1493;--accent2:#00b8a9;--shadow:rgba(255,20,147,.18);
+  --scroll-track:#fff0fa;--scroll-thumb:#ff85cf;--scroll-thumb-hover:#ff1493;
+  --ref-accent:var(--accent2);
+}}
+body.theme-techno{{
+  --bg:#020704;--ink:#d7f4dc;--muted:#82b58a;--line:#174f25;--panel:#0b1b10;
+  --accent:#35c85a;--accent2:#8bd68f;--shadow:rgba(53,200,90,.16);
+  --scroll-track:#020704;--scroll-thumb:#247a38;--scroll-thumb-hover:#35c85a;
+  --ref-accent:var(--accent2);
+}}
+body.theme-pearl{{
+  --bg:#fffdf7;--ink:#3f3f3b;--muted:#7c7168;--line:#d8d2c4;--panel:#f3f0e8;
+  --accent:#d9480f;--accent2:#f06d3a;--shadow:rgba(217,72,15,.16);
+  --scroll-track:#fffdf7;--scroll-thumb:#d2b48c;--scroll-thumb-hover:#d9480f;
+  --ref-accent:var(--accent2);
+}}
 *{{box-sizing:border-box}}
-*{{scrollbar-width:thin;scrollbar-color:color-mix(in srgb,var(--accent) 34%,transparent) transparent}}
-*::-webkit-scrollbar{{width:10px;height:10px}}
-*::-webkit-scrollbar-track{{background:transparent}}
-*::-webkit-scrollbar-thumb{{background:color-mix(in srgb,var(--accent) 28%,transparent);
+html,body,*{{scrollbar-width:thin;scrollbar-color:var(--scroll-thumb) var(--scroll-track)}}
+html::-webkit-scrollbar,body::-webkit-scrollbar,*::-webkit-scrollbar{{width:10px;height:10px}}
+html::-webkit-scrollbar-track,body::-webkit-scrollbar-track,*::-webkit-scrollbar-track{{background:var(--scroll-track)}}
+html::-webkit-scrollbar-thumb,body::-webkit-scrollbar-thumb,*::-webkit-scrollbar-thumb{{background:var(--scroll-thumb);
   border-radius:999px;border:3px solid transparent;background-clip:content-box}}
-*:hover::-webkit-scrollbar-thumb{{background:color-mix(in srgb,var(--accent) 46%,transparent);
+html:hover::-webkit-scrollbar-thumb,body:hover::-webkit-scrollbar-thumb,*:hover::-webkit-scrollbar-thumb{{background:var(--scroll-thumb-hover);
   background-clip:content-box}}
 body{{background:var(--bg);color:var(--ink);max-width:860px;margin:0 auto;padding:24px 32px;
      font:16px/1.75 var(--font-reading)}}
@@ -383,9 +417,9 @@ h3{{font-size:18px}} h4{{font-size:16px}}
 p{{margin:.65em 0}}
 code{{background:var(--panel);padding:2px 6px;border-radius:4px;font-family:var(--font-mono);font-size:.84em}}
 pre{{background:var(--panel);padding:14px;border-radius:10px;overflow:auto;
-     box-shadow:0 2px 12px rgba(0,0,0,.35)}}
+     box-shadow:0 2px 12px var(--shadow)}}
 pre code{{font-family:var(--font-mono);font-size:13px}}
-a{{color:var(--accent)}} img{{max-width:100%;border-radius:8px;box-shadow:0 2px 12px rgba(0,0,0,.3)}}
+a{{color:var(--accent)}} img{{max-width:100%;border-radius:8px;box-shadow:0 2px 12px var(--shadow)}}
 table{{display:block;width:max-content;max-width:100%;overflow-x:auto;border-collapse:collapse;margin:14px 0;font-size:15px}}
 th,td{{border:1px solid var(--line);padding:7px 11px;text-align:left}}
 thead th{{background:var(--panel);font-family:var(--font-ui);font-size:13px;font-weight:600}}
@@ -398,17 +432,25 @@ blockquote p{{margin:5px 0}}
 .katex-display>.katex>.katex-html>.tag{{position:static;margin-left:1.2em}}
 /* An equation's own number shares the accent + tabular figures with its cross-references. */
 .katex .tag,.katex-display .tag{{color:var(--accent);font-feature-settings:"tnum" 1;font-variant-numeric:tabular-nums}}
-/* Cross-references: typeset inline links — tabular figures, hairline underline → soft hover pill. */
+/* Cross-references: colored inline labels that go quiet on hover. */
 .eq-ref,.thm-ref,.cite-ref{{font-family:var(--font-ui);font-weight:600;color:var(--accent);
   font-feature-settings:"tnum" 1;font-variant-numeric:tabular-nums;white-space:nowrap;
-  padding:0 .14em;border-radius:4px;
-  box-shadow:inset 0 -1px 0 color-mix(in srgb,var(--accent) 40%,transparent);
-  transition:background .14s ease,box-shadow .14s ease}}
-.eq-ref:hover,.thm-ref:hover,.cite-ref:hover{{background:color-mix(in srgb,var(--accent) 15%,transparent);
-  box-shadow:inset 0 -1px 0 transparent}}
+  padding:0 .14em;border-radius:4px;transition:color .14s ease}}
+.eq-ref:hover,.thm-ref:hover,.cite-ref:hover{{color:var(--ink)}}
+.text-color{{color:var(--tc)}}
 .bibitem{{display:grid;grid-template-columns:auto 1fr;gap:.65em;margin:.5em 0;line-height:1.55}}
 .bibnum{{font-family:var(--font-ui);font-weight:700;color:var(--accent);
   font-feature-settings:"tnum" 1;font-variant-numeric:tabular-nums}}
+.references-box{{margin:2.2em 0 1.2em;padding:1.05em 1.2em 1.15em;
+  border-radius:7px;background:
+    linear-gradient(135deg,color-mix(in srgb,var(--ref-accent) 13%,transparent),transparent 58%),
+    var(--panel);
+  border:1px solid color-mix(in srgb,var(--ref-accent) 32%,var(--line));
+  box-shadow:0 14px 34px -28px rgba(0,0,0,.9)}}
+.references-box h1{{margin:.05em 0 .55em;padding:0;border:none;
+  font-family:var(--font-ui);font-size:15px;font-weight:700;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--ref-accent)}}
+.references-box .bibitem:last-child{{margin-bottom:0}}
 /* Theorem / lemma / proof boxes: refined journal callouts, one jewel tone per class (--env). */
 .math-env{{--env:var(--accent);position:relative;margin:1.6em 0;padding:.85em 1.15em .85em 1.4em;
   border-radius:4px 12px 12px 4px;
@@ -432,7 +474,7 @@ blockquote p{{margin:5px 0}}
          font-family:var(--font-ui);font-size:13px;opacity:0;
          transition:opacity .2s;pointer-events:none}}
 #copied.show{{opacity:1}}
-#theme-toggle{{position:fixed;top:14px;right:16px;background:var(--panel);border:1px solid var(--line);
+#theme-cycle{{position:fixed;top:14px;right:16px;background:var(--panel);border:1px solid var(--line);
                color:var(--ink);border-radius:8px;padding:6px 12px;cursor:pointer;
                font-family:var(--font-ui);font-size:13px;font-weight:600;z-index:10}}
 #back-btn{{position:fixed;top:14px;left:16px;background:var(--panel);border:1px solid var(--line);
@@ -444,27 +486,34 @@ blockquote p{{margin:5px 0}}
 .page-credit a:hover{{color:var(--accent)}}
 @media(max-width:600px){{
   body{{padding:16px 18px}}
-  #theme-toggle,#back-btn{{top:10px;padding:5px 10px;font-size:12px}}
-  #back-btn{{left:10px}} #theme-toggle{{right:10px}}
+  #theme-cycle,#back-btn{{top:10px;padding:5px 10px;font-size:12px}}
+  #back-btn{{left:10px}} #theme-cycle{{right:10px}}
   h1{{font-size:24px}} h2{{font-size:19px}}
 }}
 </style></head><body>
 {back_btn}
-<button id="theme-toggle" onclick="toggleTheme()">☀️ Light</button>
+<button id="theme-cycle" onclick="cycleTheme()" title="Cycle theme">🌙</button>
 <nav><b>{name}</b> &nbsp;|&nbsp; {nav_links}</nav>
 <div id="content"></div>
 <footer class="page-credit">Made with 💜 + 🤖 by <a href="https://github.com/HamidrezaKmK" target="_blank" rel="noopener">HamidrezaKmK</a></footer>
 <div id="copied">🔗 Link copied</div>
 <script>
 (function(){{
-  const t=localStorage.getItem("preview_theme");
-  if(t==="light"){{document.body.classList.add("light");document.getElementById("theme-toggle").textContent="🌙 Dark";}}
+  const THEMES=["dark","light","pink","techno","pearl"];
+  const LABELS={{dark:"🌙",light:"☀️",pink:"🦄",techno:"🤖",pearl:"⚪"}};
+  window.applyPreviewTheme=function(name){{
+    const theme=THEMES.includes(name)?name:"dark";
+    document.body.classList.remove(...THEMES.map(t=>"theme-"+t),"light");
+    document.body.classList.add("theme-"+theme);
+    document.getElementById("theme-cycle").textContent=LABELS[theme];
+    localStorage.setItem("li_theme",theme);
+  }};
+  window.cycleTheme=function(){{
+    const cur=localStorage.getItem("li_theme")||localStorage.getItem("preview_theme")||"dark";
+    applyPreviewTheme(THEMES[(THEMES.indexOf(cur)+1)%THEMES.length]);
+  }};
+  applyPreviewTheme(localStorage.getItem("li_theme")||localStorage.getItem("preview_theme")||"dark");
 }})();
-function toggleTheme(){{
-  const light=document.body.classList.toggle("light");
-  document.getElementById("theme-toggle").textContent=light?"🌙 Dark":"☀️ Light";
-  localStorage.setItem("preview_theme",light?"light":"dark");
-}}
 // Render markdown + math + theorem environments.
 // Equation numbering (\\label→\\tag) was already done server-side by _preprocess_equations.
 // Theorem blocks were extracted server-side and injected as _theoStore below.
@@ -474,6 +523,9 @@ function toggleTheme(){{
   const store=[]; let s={repr(md)};
   const _macros={json.dumps(macros or {})};
   const _theoStore={json.dumps(theo_store)};
+  const escHtml=t=>String(t||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  const renderTextColor=src=>src.replace(/\\\\textcolor\\{{(#[0-9a-fA-F]{{3}}(?:[0-9a-fA-F]{{3}})?)\\}}\\{{([^{{}}\\n]*)\\}}/g,
+    (_,color,text)=>'<span class="text-color" style="--tc:'+color+'">'+escHtml(text)+'</span>');
   const renderMath=it=>{{ try{{ return katex.renderToString(it.src,{{displayMode:it.display,macros:_macros,throwOnError:false}}); }}
     catch(e){{ return '<span style="color:#ff7a7a">'+it.src+'</span>'; }} }};
   const stash=(re,display)=>{{ s=s.replace(re,(m,p1)=>{{ store.push({{src:p1,display}}); return "@@M"+(store.length-1)+"@@"; }}); }};
@@ -482,7 +534,8 @@ function toggleTheme(){{
   stash(/\\\\\\[([\\s\\S]+?)\\\\\\]/g,true);
   stash(/\\\\\\(([\\s\\S]+?)\\\\\\)/g,false);
   stash(/\\$([^\\$\\n]+?)\\$/g,false);
-  let html=marked.parse(s);
+  s=renderTextColor(s);
+  let html=marked.parse(s,{{breaks:false}});
   html=html.replace(/@@M(\\d+)@@/g,(m,i)=>renderMath(store[+i]));
   // Restore theorem/lemma/proof blocks: render inner content with math
   html=html.replace(/<p>@@TH(\\d+)@@<\\/p>/g,(m,i)=>{{
@@ -494,7 +547,8 @@ function toggleTheme(){{
     istash(/\\\\\\[([\\s\\S]+?)\\\\\\]/g,true);
     istash(/\\\\\\(([\\s\\S]+?)\\\\\\)/g,false);
     istash(/\\$([^\\$\\n]+?)\\$/g,false);
-    let ih=marked.parse(is);
+    is=renderTextColor(is);
+    let ih=marked.parse(is,{{breaks:false}});
     ih=ih.replace(/@@IM(\\d+)@@/g,(_,j)=>renderMath(istore[+j]));
     const qed=t.proof?'<div class="math-env-qed">∎</div>':'';
     return '<div class="math-env '+t.env+'"><div class="math-env-title">'+t.title+'</div>'+ih+qed+'</div>';
@@ -555,6 +609,7 @@ def build_app():
     from pydantic import BaseModel
 
     app = FastAPI(title="lockedin — research assistant")
+    landing_content = landing.load_landing()
     if CROSS_SITE:
         app.add_middleware(CORSMiddleware, allow_origins=PUBLIC_ORIGINS,
                            allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
@@ -577,6 +632,13 @@ def build_app():
 
     class ApprovalIn(BaseModel):
         approved: bool
+
+    class PremiumIn(BaseModel):
+        premium: bool
+
+    class SlackAskIn(BaseModel):
+        slug: str
+        question: str
 
     class ShareIn(BaseModel):
         active: bool
@@ -624,6 +686,12 @@ def build_app():
 
     class PageRenameIn(BaseModel):
         title: str
+
+    class PageHiddenIn(BaseModel):
+        hidden: bool
+
+    class PageOrderIn(BaseModel):
+        page_slugs: list[str]
 
     class ChatIn(BaseModel):
         messages: list[dict]
@@ -733,6 +801,10 @@ def build_app():
         # FileResponse sets no Cache-Control and browsers may serve a stale SPA.
         return FileResponse(WEB_DIR / "index.html", headers={"Cache-Control": "no-cache"})
 
+    @app.get("/api/landing")
+    def get_landing():
+        return JSONResponse(landing_content, headers={"Cache-Control": "no-cache"})
+
     @app.get("/api/help")
     def get_help():
         from . import reports as _r
@@ -757,7 +829,13 @@ def build_app():
         if not tgt:
             raise HTTPException(status_code=404, detail="This share link is not active.")
         home, slug = tgt
-        home_page = service.bubble_detail(home, slug)["home"] or "overview"
+        detail = service.bubble_detail(home, slug)
+        visible_pages = _visible_pages(detail.get("pages", []))
+        if not visible_pages:
+            raise HTTPException(status_code=404, detail="No visible pages.")
+        home_page = detail.get("home") or visible_pages[0]["page_slug"]
+        if not any(p["page_slug"] == home_page for p in visible_pages):
+            home_page = visible_pages[0]["page_slug"]
         return RedirectResponse(url=f"/share/{token}/{home_page}")
 
     @app.get("/share/{token}/{page}")
@@ -768,16 +846,17 @@ def build_app():
             raise HTTPException(status_code=404, detail="This share link is not active.")
         home, slug = tgt
         all_pages = service.list_pages(home, slug)
-        if not any(p["page_slug"] == page for p in all_pages):
+        visible_pages = _visible_pages(all_pages)
+        if not any(p["page_slug"] == page for p in visible_pages):
             raise HTTPException(status_code=404, detail="No such page.")
         html = _render_preview_html(
             name=service.bubble_detail(home, slug)["name"], page=page,
-            all_pages=all_pages, content=service.get_page(home, slug, page),
+            all_pages=visible_pages, content=service.get_page(home, slug, page),
             slug=slug, link_base=f"/share/{token}",
             asset_base=f"/share/{token}/assets", show_back=False,
             todos={t["id"]: t for t in service.list_todos(home)},  # share: styled text, no link
             macros=service.load_math_config(home).get("macros", {}),
-            refs=_bubble_refs(home, slug, all_pages))
+            refs=_bubble_refs(home, slug, visible_pages))
         return HTMLResponse(html)
 
     @app.get("/share/{token}/assets/{filename}")
@@ -802,10 +881,6 @@ def build_app():
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
         service.ensure_workspace(home_of(user))
-        if not auth.is_approved(user):
-            return JSONResponse({"pending": True, "user": user,
-                                 "message": "Account created. An admin must approve it before login."},
-                                status_code=202)
         return _auth_response(user)
 
     @app.post("/api/login")
@@ -852,8 +927,11 @@ def build_app():
 
     @app.get("/api/me")
     def me(user: str = Depends(current_user)):
+        rec = auth.load_accounts().get(user, {})
         return {"user": user, "model": service.get_model_config(home_of(user)),
-                "news_enabled": auth.is_news_enabled(user), "admin": auth.is_admin(user)}
+                "news_enabled": auth.is_news_enabled(user), "premium": auth.is_premium(user),
+                "premium_requested_at": rec.get("premium_requested_at", ""),
+                "admin": auth.is_admin(user)}
 
     @app.post("/api/account")
     def update_account(body: AccountIn, user: str = Depends(current_user)):
@@ -867,6 +945,14 @@ def build_app():
             raise HTTPException(status_code=400, detail=str(e))
         # Sessions were repointed to the new name in-memory, so the existing cookie still works.
         return {"user": final}
+
+    @app.post("/api/account/premium-request")
+    def request_premium(user: str = Depends(current_user)):
+        try:
+            requested_at = auth.request_premium(user)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        return {"premium": auth.is_premium(user), "premium_requested_at": requested_at}
 
     @app.get("/api/admin/users")
     def admin_users(user: str = Depends(current_user)):
@@ -883,6 +969,17 @@ def build_app():
             raise HTTPException(status_code=400, detail="You cannot revoke your own access.")
         try:
             auth.set_approved(target, body.approved)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        return {"users": auth.list_users()}
+
+    @app.put("/api/admin/users/{username}/premium")
+    def admin_user_premium(username: str, body: PremiumIn, user: str = Depends(current_user)):
+        if not auth.is_admin(user):
+            raise HTTPException(status_code=403, detail="Admin access required.")
+        target = username.strip().lower()
+        try:
+            auth.set_premium(target, body.premium)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
         return {"users": auth.list_users()}
@@ -911,12 +1008,17 @@ def build_app():
 
     @app.put("/api/settings/model")
     def put_model(body: ModelConfigIn, user: str = Depends(current_user)):
-        return {"config": service.save_model_config(home_of(user), body.config)}
+        try:
+            return {"config": service.save_model_config(home_of(user), body.config)}
+        except PermissionError as e:
+            raise HTTPException(status_code=403, detail=str(e))
 
     @app.put("/api/settings/model/active")
     def put_active(body: ActiveIn, user: str = Depends(current_user)):
         try:
             return {"config": service.set_active_provider(home_of(user), body.active)}
+        except PermissionError as e:
+            raise HTTPException(status_code=403, detail=str(e))
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
@@ -982,6 +1084,22 @@ def build_app():
     @app.post("/api/news/accept")
     def news_accept(user: str = Depends(require_news)):
         return service.accept_news(home_of(user))
+
+    @app.post("/api/slack/ask")
+    def slack_ask(body: SlackAskIn, user: str = Depends(current_user)):
+        """Plain-text Slack Q&A using the logged-in user's configured model and entitlements."""
+        home = home_of(user)
+        detail = service.bubble_detail(home, body.slug)
+        pages = detail.get("pages") or []
+        page = detail.get("home") or (pages[0]["page_slug"] if pages else "overview")
+        messages = [{"role": "user", "content": body.question}]
+        answer = ""
+        for ev in service.chat(home, body.slug, page, messages):
+            if ev.get("type") == "error":
+                raise HTTPException(status_code=400, detail=ev.get("detail") or "Chat failed.")
+            if ev.get("type") == "done":
+                answer = ev.get("chat_text") or ev.get("full_response") or answer
+        return {"answer": answer.strip()}
 
     @app.post("/api/news/discard")
     def news_discard(user: str = Depends(require_news)):
@@ -1208,15 +1326,18 @@ def build_app():
 
         home = home_of(user)
         all_pages = service.list_pages(home, slug)
+        visible_pages = _visible_pages(all_pages)
+        if not any(p["page_slug"] == page for p in visible_pages):
+            raise HTTPException(status_code=404, detail="No such page.")
         html = _render_preview_html(
             name=service.bubble_detail(home, slug)["name"], page=page,
-            all_pages=all_pages, content=service.get_page(home, slug, page),
+            all_pages=visible_pages, content=service.get_page(home, slug, page),
             slug=slug, link_base=f"/api/bubbles/{slug}/preview",
             asset_base=f"/api/bubbles/{slug}/assets", show_back=True,
             todos={t["id"]: t for t in service.list_todos(home)},
             todo_link_base="/#todos",  # owner is logged in → link opens the SPA TODO manager
             macros=service.load_math_config(home).get("macros", {}),
-            refs=_bubble_refs(home, slug, all_pages))
+            refs=_bubble_refs(home, slug, visible_pages))
         return HTMLResponse(html)
 
     @app.post("/api/bubbles/{slug}/pages")
@@ -1244,6 +1365,23 @@ def build_app():
     @app.patch("/api/bubbles/{slug}/pages/{page}")
     def patch_page(slug: str, page: str, body: PageRenameIn, user: str = Depends(current_user)):
         service.rename_page(home_of(user), slug, page, body.title)
+        return {"ok": True}
+
+    @app.patch("/api/bubbles/{slug}/pages/{page}/hidden")
+    def patch_page_hidden(slug: str, page: str, body: PageHiddenIn,
+                          user: str = Depends(current_user)):
+        try:
+            service.set_page_hidden(home_of(user), slug, page, body.hidden)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="No such page.")
+        return {"ok": True, "hidden": body.hidden}
+
+    @app.post("/api/bubbles/{slug}/pages/order")
+    def reorder_pages(slug: str, body: PageOrderIn, user: str = Depends(current_user)):
+        try:
+            service.reorder_pages(home_of(user), slug, body.page_slugs)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
         return {"ok": True}
 
     @app.delete("/api/bubbles/{slug}/pages/{page}")
