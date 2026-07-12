@@ -55,6 +55,9 @@ context. Higher-relevance papers should be prioritized for reading, retrieval, c
 citation unless the user explicitly asks otherwise. Web search is allowed for discovery and
 external context; local asset confinement does not prohibit online research.
 
+Terminal replies use plain language and readable Unicode math rather than raw LaTeX. LaTeX is
+reserved for report-file edits and the exact text of an approved report edit.
+
 ## Useful Commands
 
 ```bash

@@ -213,6 +213,15 @@
      focus/scrollIntoView inside the editor can't programmatically scroll these layout boxes and
      leave them stuck (the editor's own internal scroller absorbs it instead). */
   #main.detailmode{overflow:hidden;overflow:clip;display:flex;flex-direction:column;padding-bottom:0;min-height:0}
+  /* Focused bubble workspace: retain the page/editor controls while giving the document the
+     entire application frame. The exit control stays in the page toolbar. */
+  #app.bubble-focus{grid-template-rows:minmax(0,1fr);grid-template-columns:minmax(0,1fr);
+    grid-template-areas:"main"}
+  #app.bubble-focus #topbar,#app.bubble-focus #side,#app.bubble-focus .bubble-title{display:none}
+  #app.bubble-focus #main.detailmode{padding:0}
+  #app.bubble-focus #detail{grid-template-columns:minmax(0,1fr);gap:0}
+  #app.bubble-focus .pane{border:0;border-radius:0}
+  #app.bubble-focus .chat-pane,#app.bubble-focus .focus-hide{display:none!important}
   .navbtn{display:block;width:100%;text-align:left;border:none;background:transparent;
           padding:10px 12px;border-radius:8px;color:var(--muted);margin-bottom:2px;
           font-size:13px;font-weight:600;letter-spacing:.01em;transition:color .15s,background .15s}
@@ -537,6 +546,10 @@
     /* main scrolls with the page */
     #main{height:auto;overflow:visible;padding:14px 12px}
     #main.detailmode{height:auto;overflow:visible;min-height:0;padding:12px 10px 84px}
+    #app.bubble-focus{height:var(--vvh);min-height:var(--vvh);overflow:hidden}
+    #app.bubble-focus #main.detailmode{height:var(--vvh);min-height:var(--vvh);padding:0;overflow:hidden}
+    #app.bubble-focus #detail>.editor-pane{height:calc(var(--vvh) - 50px);min-height:0}
+    #app.bubble-focus .mobile-bubble-actions{display:none}
     #detail{display:block;min-height:0}
     .pane{height:auto;min-height:0}
     #detail>.editor-pane{height:calc(var(--vvh) - 154px - env(safe-area-inset-top));min-height:min(380px, calc(var(--vvh) - 154px))}
@@ -778,6 +791,31 @@
   document.querySelectorAll(".navbtn").forEach(b=>b.addEventListener("click",()=>{
     if(window.innerWidth<=700) document.getElementById("app").classList.remove("side-open");
   }));
+
+  function setBubbleFocus(active){
+    const app=document.getElementById("app");
+    const enabled=!!active&&!!S.bubble;
+    S.bubbleFocus=enabled;
+    app.classList.toggle("bubble-focus",enabled);
+    if(enabled){
+      // The sidebar preference stores column widths inline, which would otherwise override
+      // the focused layout's single full-width grid track.
+      app.style.gridTemplateColumns="minmax(0,1fr)";
+      app.style.gridTemplateRows="minmax(0,1fr)";
+    }else{
+      app.classList.remove("side-open");
+      app.style.gridTemplateColumns="";
+      app.style.gridTemplateRows="";
+      applySideCollapsed(localStorage.getItem("li_side")==="1");
+    }
+    const focusBtn=document.getElementById("bubbleFocusToggle");
+    if(focusBtn){
+      focusBtn.textContent=enabled?"⤢":"⛶";
+      focusBtn.title=enabled?"Exit focused workspace":"Enter focused workspace";
+      focusBtn.setAttribute("aria-label",focusBtn.title);
+    }
+    window.dispatchEvent(new Event("resize"));
+  }
 
   // ---------- hash routing ----------
   function pushRoute(hash){history.pushState(null,"",hash?"#"+hash:"#");}
@@ -1095,8 +1133,29 @@
     detailWrap:null,
     refAc:null,
     healthTimer:null, healthSeq:0, verifiedActive:null,
-    shareActive:false, shareToken:""
+    shareActive:false, shareToken:"", bubbleFocus:false, renderVersion:0
   };
+
+  // Every main-screen render owns a monotonically increasing version. Async requests from a
+  // screen that has since been replaced can finish, but they are no longer allowed to repaint it.
+  function beginMainRender({detail=false}={}){
+    const m=$("#main"), version=++S.renderVersion;
+    m.innerHTML="";
+    m.dataset.renderVersion=String(version);
+    m.classList.toggle("detailmode",detail);
+    return {m,version};
+  }
+  const isCurrentRender=version=>version===S.renderVersion;
+
+  function leaveBubbleWorkspace(){
+    setBubbleFocus(false);
+    S.openToken=(S.openToken||0)+1;
+    stopPolling();
+    if(S.editor){ try{S.editor.destroy();}catch(e){} }
+    S.editor=null; S.bubble=null; S.page=null; S.pages=[]; S.previewEl=null;
+    S.chatPane=null; S.detailWrap=null; S.papersMenu=null;
+    S.remoteChangePending=false; S.sessionId=null; S.sessionTitle=null;
+  }
 
   // ================= AUTH =================
   async function doAuth(kind){
@@ -1338,7 +1397,7 @@
   }
 
   async function viewSettings({checkHealth=true}={}){
-    const m=$("#main"); m.innerHTML="";
+    const {m}=beginMainRender();
     m.append(el("h2",{class:"section-title"},"⚙️ Settings"));
     const grid=el("div",{class:"grid"});
     PROV.forEach(p=>{
@@ -1475,6 +1534,7 @@
   }
 
   async function renderUserAccess(main){
+    const renderVersion=main.dataset.renderVersion;
     const old=$("#userAccess");
     if(old)old.remove();
     const box=el("div",{id:"userAccess",class:"card col",style:"margin-top:20px"});
@@ -1489,6 +1549,7 @@
     else main.append(box);
     try{
       const r=await api("/api/admin/users");
+      if(main.dataset.renderVersion!==renderVersion)return;
       body.innerHTML="";
       r.users.forEach(u=>{
         const row=el("div",{class:"row",style:"gap:8px;align-items:center;border-top:1px solid var(--line);padding-top:8px;flex-wrap:wrap"},
@@ -1520,6 +1581,7 @@
         body.append(row);
       });
     }catch(e){
+      if(main.dataset.renderVersion!==renderVersion)return;
       body.innerHTML="";
       body.append(el("div",{class:"err"},e.message));
     }
@@ -1528,9 +1590,8 @@
   // ================= NAV =================
   document.querySelectorAll(".navbtn").forEach(b=>b.onclick=()=>switchView(b.dataset.view));
   function switchView(v,{noRoute=false}={}){
-    S.view=v; S.bubble=null;
-    stopPolling(); stopNewsLive();
-    document.getElementById("main").classList.remove("detailmode");
+    leaveBubbleWorkspace();
+    S.view=v; stopNewsLive();
     $("#previewArrow").classList.add("hide");   // left the bubble → hide the mobile preview link
     document.querySelectorAll(".navbtn").forEach(b=>b.classList.toggle("active",b.dataset.view===v));
     if(!noRoute)pushRoute(v==="assets"?"":v);
@@ -1550,7 +1611,7 @@
 
   // ================= ASSETS =================
   async function viewAssets(){
-    const m=$("#main"); m.innerHTML="";
+    const {m,version}=beginMainRender();
     m.append(el("h2",{class:"section-title"},"📚 Assets"));
 
     // upload form
@@ -1563,6 +1624,7 @@
     const title=el("input",{placeholder:"Title (optional)"});
     let bubbles=[];
     try{ bubbles=(await api("/api/bubbles")).bubbles||[]; }catch(e){}
+    if(!isCurrentRender(version))return;
     const url=el("input",{placeholder:"Paste a PDF link to fetch it automatically"});
     const applyUploadMode=mode=>{
       uploadMode=mode; S.assetUploadMode=mode;
@@ -1601,6 +1663,7 @@
     m.append(f, el("div",{style:"height:16px"}));
 
     const r=await api("/api/assets");
+    if(!isCurrentRender(version))return;
     if(!r.assets.length){ m.append(el("div",{class:"muted"},"No assets yet. Upload your first PDF above.")); return; }
     const filterText=el("input",{placeholder:"Search assets by title, filename, tag, notes, or BibTeX key…"});
     filterText.value=S.assetSearch||"";
@@ -1689,10 +1752,14 @@
   }
   async function openAssetById(pdfId,{noRoute=false}={}){
     if(!noRoute)pushRoute("asset/"+encodeURIComponent(pdfId));
+    leaveBubbleWorkspace();
+    const {version}=beginMainRender();
     try{
       const r=await api("/api/assets/"+encodeURIComponent(pdfId));
-      await openAssetEditor(r.meta,{returnTo:"assets",noRoute:true});
+      if(!isCurrentRender(version))return;
+      await openAssetEditor(r.meta,{returnTo:"assets",noRoute:true,renderVersion:version});
     }catch(e){
+      if(!isCurrentRender(version))return;
       toast(e.message);
       switchView("assets",{noRoute:true});
     }
@@ -1701,14 +1768,19 @@
     const returnTo=opts.returnTo||"assets";
     const goBack=()=>returnTo==="attention"?viewAttention():viewAssets();
     if(!opts.noRoute)pushRoute("asset/"+encodeURIComponent(a.pdf_id));
-    const m=$("#main"); m.innerHTML="";
+    if(opts.renderVersion==null)leaveBubbleWorkspace();
+    const render=opts.renderVersion==null?beginMainRender():{m:$("#main"),version:opts.renderVersion};
+    const {m,version}=render;
+    if(!isCurrentRender(version))return;
     m.append(el("button",{class:"ghost small",onclick:goBack},returnTo==="attention"?"← Attention":"← Assets"));
     const box=el("div",{class:"card col",style:"margin-top:12px;max-width:720px"});
     const title=el("input",{value:a.title||""});
     const notes=el("textarea",{rows:"4"}); notes.value=a.notes||"";
     const url=el("input",{value:a.url_source||""});
     let allBubbles=[]; try{ allBubbles=(await api("/api/bubbles")).bubbles||[]; }catch(e){}
+    if(!isCurrentRender(version))return;
     try{ a=(await api("/api/assets/"+a.pdf_id)).meta; }catch(e){}
+    if(!isCurrentRender(version))return;
     const memberships=el("div",{class:"col",style:"gap:6px"});
     const refreshAssetMemberships=async()=>{
       try{ a=(await api("/api/assets/"+a.pdf_id)).meta; }catch(e){}
@@ -1893,12 +1965,13 @@
     return "last edited "+years+" year"+(years===1?"":"s")+" ago";
   }
   async function viewBubbles(){
-    const m=$("#main"); m.innerHTML="";
+    const {m,version}=beginMainRender();
     const head=el("div",{class:"row"}, el("h2",{class:"section-title",style:"margin:0"},"🫧 Bubbles"),
       el("span",{class:"spacer"}),
       el("button",{class:"primary small",onclick:newBubble},"+ New bubble"));
     m.append(head, el("div",{style:"height:14px"}));
     const r=await api("/api/bubbles");
+    if(!isCurrentRender(version))return;
     if(!r.bubbles.length){ m.append(el("div",{class:"muted"},"No bubbles yet. Tag a PDF or create one.")); return; }
     const grid=el("div",{class:"grid"});
     r.bubbles.forEach(b=>{
@@ -1960,8 +2033,9 @@
     return S.todos;
   }
   async function viewTodos(){
-    const m=$("#main"); m.innerHTML="";
+    const {m,version}=beginMainRender();
     await loadTodos();
+    if(!isCurrentRender(version))return;
     const filter=S.todoFilter||"open";
     const head=el("div",{class:"row"},
       el("h2",{class:"section-title",style:"margin:0"},"✅ TODOs"),
@@ -1991,15 +2065,16 @@
   }
   // Detail view — the shared landing for both an @<id> click and a TODO-list card click.
   async function viewTodo(id){
-    S.view="todos"; S.bubble=null; stopPolling(); if(typeof stopNewsLive==="function")stopNewsLive();
-    document.getElementById("main").classList.remove("detailmode");
+    leaveBubbleWorkspace();
+    S.view="todos"; if(typeof stopNewsLive==="function")stopNewsLive();
     $("#previewArrow").classList.add("hide");   // left the bubble → hide the mobile preview link
     document.querySelectorAll(".navbtn").forEach(b=>b.classList.toggle("active",b.dataset.view==="todos"));
     pushRoute("todos/"+id);
-    const m=$("#main"); m.innerHTML="";
+    const {m,version}=beginMainRender();
     let t;
     try{ t=(await api("/api/todos/"+id)).todo; }
-    catch(e){ m.append(el("div",{class:"err"},"TODO not found.")); return; }
+    catch(e){ if(isCurrentRender(version))m.append(el("div",{class:"err"},"TODO not found.")); return; }
+    if(!isCurrentRender(version))return;
     S.todosById[t.id]=t;
     m.append(el("a",{class:"wikilink",style:"font-size:13px",onclick:()=>{S.todoFilter="open";viewTodos();}},"← All TODOs"));
 
@@ -2125,17 +2200,16 @@
     // Re-entrancy guard: if two openBubble calls race (e.g. a quick click then another nav),
     // a superseded in-flight call could still build a stale workspace/editor over the new one.
     // A newer call bumps the token so the older one bails after its await.
+    leaveBubbleWorkspace();
     const token=S.openToken=(S.openToken||0)+1;
     if(!noRoute)pushRoute("bubble/"+slug);
-    if(S.editor){ try{S.editor.destroy();}catch(e){} S.editor=null; }
-    stopPolling();
     S.bubble=slug; S.chat=[]; S.page=null; S.pages=[]; S.sessionId=null; S.sessionTitle=null;
     S.previewEl=null; S.remoteChangePending=false; S.papersMenu=null; S.chatPane=null; S.detailWrap=null;
     S.baseMtime=null; S.saving=false; S.syncState="synced";
     S.shareActive=false; S.shareToken=""; S.editingTitles=false; S.nameInput=null;
-    const m=$("#main"); m.innerHTML=""; m.classList.add("detailmode");
+    const {m,version}=beginMainRender({detail:true});
     const b=(await api("/api/bubbles/"+slug)).bubble;
-    if(S.openToken!==token) return;   // a newer navigation started while we awaited — bail
+    if(S.openToken!==token||!isCurrentRender(version)) return;   // a newer navigation started while we awaited — bail
     // Load TODOs so the preview can resolve @<id> refs; re-render once they're in.
     loadTodos().then(()=>{ if(S.bubble===slug && S.editor) updatePreview(); });
     S.bubbleAssets=b.assets||[];
@@ -2145,7 +2219,7 @@
     // page tabs, so they keep an inline rename pencil here.
     const nameSpan=el("span",{class:"truncate",style:"max-width:60vw"},b.name+(b.approved?"":" (suggested)"));
     S.nameSpan=nameSpan;
-    const titleRow=el("div",{class:"row",style:"margin:10px 0 12px;align-items:center;gap:8px;flex-wrap:wrap"},
+    const titleRow=el("div",{class:"row bubble-title",style:"margin:10px 0 12px;align-items:center;gap:8px;flex-wrap:wrap"},
       el("h2",{class:"section-title",style:"margin:0"},"🫧 "), nameSpan);
     if(!b.approved){
       titleRow.append(el("button",{class:"ghost small",title:"Rename bubble",
@@ -2854,8 +2928,11 @@
       setViewMode(v);
     };
     controls.append(vm);
+    controls.append(el("button",{class:"small ghost",id:"bubbleFocusToggle",
+      title:"Enter focused workspace", "aria-label":"Enter focused workspace",
+      onclick:()=>setBubbleFocus(!S.bubbleFocus)},"⛶"));
     // chat-pane toggle
-    controls.append(el("button",{class:"small ghost desktop-only-tool",title:S.chatCollapsed?"Show chat":"Hide chat",
+    controls.append(el("button",{class:"small ghost desktop-only-tool focus-hide",title:S.chatCollapsed?"Show chat":"Hide chat",
       onclick:toggleChat},S.chatCollapsed?"💬 >":"💬 <"));
   }
   function closePapersMenu(){
@@ -3345,8 +3422,9 @@
 
   // ================= ATTENTION =================
   async function viewAttention(){
-    const m=$("#main"); m.innerHTML=""; m.append(el("h2",{class:"section-title"},"🔔 Attention Queue"));
+    const {m,version}=beginMainRender(); m.append(el("h2",{class:"section-title"},"🔔 Attention Queue"));
     const r=await api("/api/attention");
+    if(!isCurrentRender(version))return;
     if(!r.assets.length){ m.append(el("div",{class:"muted"},"Nothing needs your attention. 🎉")); return; }
     const grid=el("div",{class:"grid"});
     r.assets.forEach(a=>{
@@ -3428,7 +3506,7 @@
   }
   async function viewNews(){
     stopNewsLive();
-    const m=$("#main"); m.innerHTML=""; S._nf=0; S.newsBusy=false;
+    const {m,version}=beginMainRender(); S._nf=0; S.newsBusy=false;
     const title=el("h2",{class:"section-title",style:"margin:0"},"📰 News"); S.newsTitle=title;
     m.append(el("div",{class:"row"}, title,
       el("span",{class:"spacer"}),
@@ -3441,7 +3519,9 @@
     m.append(feed, chatWrap);
     let r={items:[],bubbles:[]}, st={};
     try{ r=await api("/api/news"); }catch(e){}
+    if(!isCurrentRender(version))return;
     try{ st=await api("/api/news/status"); }catch(e){}
+    if(!isCurrentRender(version))return;
     renderNewsFeed(feed, r);
     updateNewsTitle();
     buildNewsChat(chatWrap, st);
