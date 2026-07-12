@@ -39,9 +39,10 @@ On phones, tap **☰** (top-left) to open the sidebar.
 
 ## Theme modes
 
-Use the theme button in the top bar to cycle the colour scheme:
-**🌙 Dark → ☀️ Light → 🦄 Pony → 🤖 Matrix → ⚪ Pearl**. The same theme is remembered for
-the main app, owner previews, and public share links.
+Use the theme button in the top bar to cycle the colour scheme. Open
+**⚙️ Settings → Aesthetics** to choose which of **🌙 Dark, ☀️ Light, 🦄 Pink, 🤖 Techno,**
+and **⚪ Pearl** appear in that cycle. Your selection is remembered for your workspace and
+also limits the theme switcher on every public page you share. The landing page is always Dark.
 
 ## Your account
 
@@ -139,8 +140,13 @@ Each bubble has a mini-wiki. The tabs at the top of the editor list all pages.
 
 - **+ Page** — create a new page
 - Click a tab to switch pages (the current page auto-saves first)
+- Drag a tab to reorder pages; page order controls wiki navigation and bubble-wide numbering
 - **✕** on a tab deletes that page (the overview page cannot be deleted)
 - Pick **🏷️ Edit titles** in the view dropdown to rename pages (and the bubble itself)
+
+The eye icon beside **Insert link** in the editor toolbar hides or shows the current page in
+read-only previews and public shares. Hidden pages remain editable for you but are not visible
+to readers.
 
 Renaming a page updates its display everywhere — existing links that used the old title
 are rewritten automatically.
@@ -153,7 +159,7 @@ Anyone with the link can browse all pages (no login needed). Toggle off to revok
 immediately; toggle back on to restore the same URL.
 
 Hovering a heading on the shared page reveals a 🔗 anchor for deep-linking to a section.
-Shared pages also have the same theme-cycle button as the main app.
+Shared pages have a theme-cycle button, restricted to the themes you enabled in **Aesthetics**.
 """,
     },
     {
@@ -168,7 +174,7 @@ a **title**, an optional Markdown **note**, and a **done** flag.
 
 Open the **✅ TODOs** view in the sidebar.
 
-- **+ New TODO** — creates a new item; give it a title and optional note
+- **+ New TODO** — opens a title form and creates a new item
 - Click a TODO to expand and edit its note
 - The **Open / Done** toggle at the top filters the list
 - Check the checkbox to mark done (it moves to the Done list)
@@ -298,14 +304,20 @@ Open any bubble and use the view dropdown in the toolbar:
 - **🏷️ Edit titles** — rename the bubble and its pages inline; pick another view (or press
   Enter in a title) to save
 
-**Save**: click the **⟳ synced** badge, or press **Ctrl/⌘+S**.
+**Save**: click the sync icon beside **Insert link**, or press **Ctrl/⌘+S**. It changes to
+**✎** while there are unsaved edits and **⚠** when a disk conflict needs attention.
 
-The editor toolbar shows: **↶ undo**, **↷ redo**, insert table, insert image, insert link.
+The editor toolbar shows: **↶ undo**, **↷ redo**, text colour, insert table, insert image,
+insert link, the page visibility eye, and the sync icon. The eye hides or shows the current
+page in read-only previews and public shares.
+
+Use **⛶** in the page controls to enter a focused workspace that hides the navigation and chat;
+click it again to exit.
 
 ### On mobile
 
-The bubble page is streamlined to the essentials: the page tabs, the **⟳ synced** badge, and
-the view dropdown. Switch between **👁 Read** and **✏️ Edit** right from that dropdown. A small
+The bubble page is streamlined to the essentials: page tabs, the editor toolbar, and the view
+dropdown. Switch between **👁 Read** and **✏️ Edit** right from that dropdown. A small
 **↗** link in the top-right corner opens the read-only preview of the current page. Papers and
 the research chat live behind the floating **📚** and **💬** buttons. (Sharing is done from a
 larger screen.)
@@ -470,8 +482,9 @@ APP_USAGE_BRIEF = (
     "ABOUT THIS APP (use these facts to answer usage questions):\n"
     "- Reports are multi-page Markdown wikis, one per bubble; the editor is on the left, a "
     "live preview on the right. The user writes the reports themselves.\n"
-    "- The top-bar theme button cycles 🌙 Dark, ☀️ Light, 🦄 Pony, 🤖 Matrix, and ⚪ Pearl modes; "
-    "the same theme applies to owner previews and public share links.\n"
+    "- In Settings → Aesthetics, users choose which themes appear in their top-bar cycle. Those "
+    "same enabled themes are the only choices on owner previews and public share links; the "
+    "landing page is always Dark.\n"
     "- Math: $...$ inline, $$...$$ display. Number a display equation by putting \\label{name} "
     "inside its $$ block, then reference it with \\eqref{name} (renders as its number). Equation "
     "and theorem (\\thmref) numbers/refs are bubble-wide — they work across pages and inside math.\n"
@@ -481,8 +494,9 @@ APP_USAGE_BRIEF = (
     "keys from assets attached to that bubble. Asset cards with BibTeX show a ✓ BibTeX badge, "
     "and the Assets page can filter by search text plus bubble.\n"
     "- Link to another page in the same bubble by its title in double brackets, e.g. [[Overview]].\n"
-    "- The synced/unsynced badge saves the current page; the preview toggle shows/hides the "
-    "preview; the chat pane can be collapsed; the magnifier opens a full-page preview.\n"
+    "- The sync icon beside Insert link saves the current page; the eye beside it hides/shows "
+    "the current page in previews and shares; the chat pane can be collapsed; the magnifier "
+    "opens a full-page preview.\n"
     "- This chat is read-only: it discusses but cannot edit pages. Deep-read attaches a paper's "
     "full text to the conversation.\n"
     "- Click 🔗 Share in a bubble's header to publish an unlisted read-only link (a 📋 Copy-link "

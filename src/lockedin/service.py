@@ -542,6 +542,34 @@ def save_math_config(home: Path, cfg: dict) -> dict:
     return cfg
 
 
+# ---- aesthetics config ----
+THEMES = ("dark", "light", "pink", "techno", "pearl")
+
+
+def load_aesthetics_config(home: Path) -> dict:
+    """Return the themes this user makes available in the app and shared pages."""
+    with paths.use_root(home):
+        p = paths.AESTHETICS_CONFIG_YAML
+        data = yaml.safe_load(p.read_text()) if p.exists() else {}
+    enabled = data.get("themes") if isinstance(data, dict) else None
+    if not isinstance(enabled, list):
+        enabled = list(THEMES)
+    enabled = [theme for theme in THEMES if theme in enabled]
+    return {"themes": enabled or list(THEMES)}
+
+
+def save_aesthetics_config(home: Path, themes: list[str]) -> dict:
+    enabled = [theme for theme in THEMES if theme in themes]
+    if not enabled:
+        raise ValueError("Choose at least one theme.")
+    cfg = {"themes": enabled}
+    with paths.use_root(home):
+        p = paths.AESTHETICS_CONFIG_YAML
+        p.parent.mkdir(parents=True, exist_ok=True)
+        bubbles._atomic_write(p, yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True))
+    return cfg
+
+
 def news_chat(home: Path, message: str, model: str | None = None,
               since: str | None = None, until: str | None = None):
     # generator manages its own use_root (it must survive across yields), like reports.chat_stream

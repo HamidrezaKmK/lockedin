@@ -436,6 +436,16 @@
   .diffbox{background:var(--panel);border:1px solid var(--line);border-radius:12px;
            width:min(840px,93vw);max-height:85vh;display:flex;flex-direction:column}
   .diffbody{overflow:auto;padding:10px 12px;line-height:1.5}
+  /* Compact creation dialogs mirror the Help panel's clean header/body/footer rhythm. */
+  .create-dialog{width:min(420px,calc(100vw - 28px));overflow:hidden;box-shadow:var(--shadow)}
+  .create-dialog-header,.create-dialog-footer{padding:12px 16px;display:flex;align-items:center;gap:8px;flex-shrink:0}
+  .create-dialog-header{border-bottom:1px solid var(--line)}
+  .create-dialog-header b{font-family:var(--font-ui);font-size:15px}
+  .create-dialog-body{padding:20px;display:flex;flex-direction:column;gap:8px;overflow:visible}
+  .create-dialog-body label{font-size:12px;font-weight:600}
+  .create-dialog-body input{min-height:42px}
+  .create-dialog-footer{border-top:1px solid var(--line);justify-content:flex-end}
+  .create-dialog-footer button{min-width:88px}
 
   /* chat pane collapse */
   #detail.chat-collapsed{grid-template-columns:1fr}
@@ -1133,7 +1143,8 @@
     detailWrap:null,
     refAc:null,
     healthTimer:null, healthSeq:0, verifiedActive:null,
-    shareActive:false, shareToken:"", bubbleFocus:false, renderVersion:0
+    shareActive:false, shareToken:"", bubbleFocus:false, renderVersion:0,
+    availableThemes:["dark","light","pink","techno","pearl"]
   };
 
   // Every main-screen render owns a monotonically increasing version. Async requests from a
@@ -1250,18 +1261,27 @@
   $("#helpModal").onclick=e=>{ if(e.target===e.currentTarget)$("#helpModal").classList.add("hide"); };
   const THEMES=["dark","light","pink","techno","pearl"];
   const THEME_LABELS={dark:"🌙",light:"☀️",pink:"🦄",techno:"🤖",pearl:"⚪"};
+  const THEME_NAMES={dark:"Dark",light:"Light",pink:"Pink",techno:"Techno",pearl:"Pearl"};
+  function availableThemes(){
+    const enabled=(S.availableThemes||[]).filter(t=>THEMES.includes(t));
+    return enabled.length?enabled:["dark"];
+  }
   function applyTheme(name){
-    const theme=THEMES.includes(name)?name:"dark";
+    const enabled=availableThemes();
+    const theme=enabled.includes(name)?name:enabled[0];
     document.body.classList.remove(...THEMES.map(t=>"theme-"+t), "light");
     document.body.classList.add("theme-"+theme);
     $("#themeCycle").textContent=THEME_LABELS[theme];
     localStorage.setItem("li_theme",theme);
   }
   $("#themeCycle").onclick=()=>{
+    const enabled=availableThemes();
     const cur=localStorage.getItem("li_theme")||"dark";
-    applyTheme(THEMES[(THEMES.indexOf(cur)+1)%THEMES.length]);
+    applyTheme(enabled[(enabled.indexOf(cur)+1)%enabled.length]);
   };
-  applyTheme(localStorage.getItem("li_theme")||"dark");
+  // The public landing screen is deliberately always dark. Once authenticated, boot() restores
+  // the account's allowed saved theme for the private workspace.
+  applyTheme("dark");
   // Mobile-only ↗ in the topbar → open the current bubble page's read-only preview in a new tab.
   $("#previewArrow").onclick=()=>{ if(S.bubble) window.open(
     "/api/bubbles/"+S.bubble+"/preview/"+(S.page||S.home||"overview"),"_blank"); };
@@ -1270,7 +1290,9 @@
     let me; try{ me=await api("/api/me"); }catch(e){ return; }
     S.user=me.user; S.model=me.model; S.newsEnabled=!!me.news_enabled; S.premium=!!me.premium;
     S.premiumRequestedAt=me.premium_requested_at||""; S.admin=!!me.admin;
+    S.availableThemes=Array.isArray(me.themes)?me.themes:THEMES.slice();
     $("#auth").style.display="none"; $("#app").style.display="grid";
+    applyTheme(localStorage.getItem("li_theme")||"dark");
     refreshAccountButton();
     if(S.newsEnabled){ $("#newsNav").style.display=""; refreshNewsCount(); }
     applySideCollapsed(localStorage.getItem("li_side")==="1");
@@ -1435,10 +1457,42 @@
       el("div",{id:"settingsHealth",class:"muted",style:"margin-top:14px"}),
       el("pre",{id:"settingsHealthDetails",class:"hide",
         style:"white-space:pre-wrap;overflow:auto;margin-top:8px;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--panel);font-size:12px"}));
+    renderAesthetics(m);
     renderMathMacros(m);
     if(S.admin) renderUserAccess(m);
     renderAccountSection(m);
     if(checkHealth)scheduleLiveHealth(S.model.active);
+  }
+
+  function renderAesthetics(main){
+    const old=$("#aestheticsSection"); if(old)old.remove();
+    const box=el("div",{id:"aestheticsSection",class:"card col",style:"margin-top:20px;gap:10px"});
+    box.append(el("b",{},"Aesthetics"));
+    box.append(el("div",{class:"muted",style:"font-size:12px"},
+      "Choose the themes available from the top-bar switcher. These same choices apply to every public page you share."));
+    const choices=el("div",{class:"col",style:"gap:6px"});
+    const checks={};
+    THEMES.forEach(theme=>{
+      const check=el("input",{type:"checkbox",checked:availableThemes().includes(theme),style:"width:auto"});
+      checks[theme]=check;
+      choices.append(el("label",{class:"row",style:"gap:8px;cursor:pointer"},
+        check,el("span",{},THEME_LABELS[theme]+" "+THEME_NAMES[theme])));
+    });
+    const status=el("span",{class:"muted",style:"font-size:12px"});
+    const save=el("button",{class:"primary small",onclick:async()=>{
+      const themes=THEMES.filter(theme=>checks[theme].checked);
+      if(!themes.length){status.textContent="Choose at least one theme.";return;}
+      save.disabled=true; status.textContent="Saving…";
+      try{
+        const r=await api("/api/settings/aesthetics",{method:"PUT",body:JSON.stringify({themes})});
+        S.availableThemes=r.themes||themes;
+        applyTheme(localStorage.getItem("li_theme")||"dark");
+        status.textContent="Saved"; toast("Aesthetics saved");
+      }catch(e){ status.textContent=e.message; }
+      finally{save.disabled=false;}
+    }},"Save themes");
+    box.append(choices,el("div",{class:"row"},status,el("span",{class:"spacer"}),save));
+    main.append(box);
   }
 
   function renderAccountSection(main){
@@ -1993,10 +2047,36 @@
     });
     m.append(grid);
   }
+  function requestTextDialog({title,label,placeholder,submitLabel}){
+    return new Promise(resolve=>{
+      const overlay=el("div",{class:"overlay",role:"dialog","aria-modal":"true","aria-label":title});
+      const box=el("div",{class:"diffbox create-dialog"});
+      const input=el("input",{type:"text",placeholder:placeholder||"",maxlength:"120",autocomplete:"off"});
+      let settled=false;
+      const finish=value=>{ if(settled)return; settled=true; overlay.remove(); resolve(value); };
+      const cancel=el("button",{type:"button",class:"ghost",onclick:()=>finish(null)},"Cancel");
+      const submit=()=>{ const value=input.value.trim(); if(!value){input.focus();return;} finish(value); };
+      const create=el("button",{type:"button",class:"primary",onclick:submit},submitLabel||"Create");
+      input.onkeydown=e=>{
+        if(e.key==="Enter"){e.preventDefault();submit();}
+        if(e.key==="Escape")finish(null);
+      };
+      box.append(el("div",{class:"create-dialog-header"},el("b",{},title)));
+      box.append(el("div",{class:"diffbody create-dialog-body"},el("label",{class:"muted"},label),input));
+      box.append(el("div",{class:"create-dialog-footer"},cancel,create));
+      overlay.append(box); overlay.onclick=e=>{if(e.target===overlay)finish(null);};
+      document.body.append(overlay);
+      setTimeout(()=>input.focus(),0);
+    });
+  }
   async function newBubble(){
-    const name=prompt("Name your bubble (e.g. 'optimal transport'):"); if(!name)return;
-    const r=await api("/api/bubbles",{method:"POST",body:JSON.stringify({name})});
-    openBubble(r.slug);
+    const name=await requestTextDialog({title:"New bubble",label:"Bubble name",
+      placeholder:"e.g. optimal transport",submitLabel:"Create bubble"});
+    if(!name)return;
+    try{
+      const r=await api("/api/bubbles",{method:"POST",body:JSON.stringify({name})});
+      openBubble(r.slug);
+    }catch(e){toast("Could not create bubble: "+e.message);}
   }
   async function deleteBubble(slug, name, onDone){
     if(!confirm(`Delete the bubble "${name}"?\n\nThis permanently removes all its report pages and figures. PDFs tagged with it will have this tag removed. This cannot be undone.`)) return;
@@ -2058,7 +2138,9 @@
     m.append(grid);
   }
   async function newTodo(){
-    const title=prompt("Title for the new TODO:"); if(!title)return;
+    const title=await requestTextDialog({title:"New TODO",label:"TODO title",
+      placeholder:"What needs to be done?",submitLabel:"Create TODO"});
+    if(!title)return;
     try{ const r=await api("/api/todos",{method:"POST",body:JSON.stringify({title,note:""})});
       await loadTodos(); viewTodo(r.todo.id); }
     catch(e){ toast(e.message); }
@@ -2404,6 +2486,12 @@
         {name:"undo",tooltip:"Undo (Ctrl+Z)",el:histBtn("↶","Undo",false)});
       S.editor.insertToolbarItem({groupIndex:0,itemIndex:2},
         {name:"text-color",tooltip:"Color selected text",el:buildColorTool()});
+      // Keep page-specific status controls alongside the built-in Insert link button.
+      // Their handlers prevent focus loss, so they do not disturb the editor selection.
+      S.editor.insertToolbarItem({groupIndex:0,itemIndex:6},
+        {name:"page-visibility",tooltip:"Toggle page visibility",el:buildPageVisibilityTool()});
+      S.editor.insertToolbarItem({groupIndex:0,itemIndex:7},
+        {name:"page-sync",tooltip:"Page sync status",el:buildSyncTool()});
     }catch(e){}
     installReferenceAutocomplete(host);
     // Ctrl/Cmd+S should save the page. The editor maps Mod-s to strikethrough, so we
@@ -2898,16 +2986,9 @@
       }
       tabScroll.append(t);
     });
-    if(!S.editingTitles) tabScroll.append(el("button",{class:"small ghost",onclick:newPage},"+ Page"));
-    // sync badge lives here in the editor toolbar (state in S.syncState; autosaves on idle)
-    const st=S.syncState||"synced";
-    controls.append(el("span",{class:"synced "+st,id:"syncedBadge",
-      title:st==="conflict"?"Changed on disk — click to resolve":"Saved automatically; click to save now",
-      style:"cursor:pointer",onclick:clickSave},SYNC_LABEL[st]));
-    const curPage=currentPageMeta();
-    controls.append(el("button",{class:"small ghost desktop-only-tool page-visibility-btn"+(curPage&&curPage.hidden?" hidden-page":""),
-      title:curPage&&curPage.hidden?"Hidden from preview/share — click to show":"Visible in preview/share — click to hide",
-      onclick:toggleCurrentPageHidden}, pageVisibilityIcon()));
+    // Keep page creation outside the horizontally scrolling tab list.  Once a bubble has
+    // enough tabs, a button in that list can be clipped/off-screen and become unreachable.
+    if(!S.editingTitles) controls.append(el("button",{type:"button",class:"small ghost",onclick:newPage},"+ Page"));
     const papersBtn=el("button",{class:"small ghost desktop-only-tool","data-papers-toggle":"1",title:"Papers in this bubble",
       onclick:(e)=>{ e.stopPropagation(); togglePapersMenu(controls); }},"📚 Papers");
     controls.append(papersBtn);
@@ -2934,6 +3015,7 @@
     // chat-pane toggle
     controls.append(el("button",{class:"small ghost desktop-only-tool focus-hide",title:S.chatCollapsed?"Show chat":"Hide chat",
       onclick:toggleChat},S.chatCollapsed?"💬 >":"💬 <"));
+    refreshPageVisibilityTool();
   }
   function closePapersMenu(){
     if(S.papersMenu){ S.papersMenu.remove(); S.papersMenu=null; }
@@ -2960,6 +3042,7 @@
         {method:"PATCH",body:JSON.stringify({hidden:next})});
       p.hidden=!!r.hidden;
       refreshTabs();
+      refreshPageVisibilityTool();
       await fetchRefs();
       updatePreview();
       toast(p.hidden?"Hidden from preview/share":"Visible in preview/share");
@@ -3150,15 +3233,50 @@
     primeSync();
   }
   async function newPage(){
-    const title=prompt("New page title:"); if(!title)return;
-    await savePage();
-    const ps=(await api("/api/bubbles/"+S.bubble+"/pages",{method:"POST",body:JSON.stringify({title})})).page_slug;
-    S.pages.push({page_slug:ps,title}); S.page=ps; S.remoteChangePending=false;
-    pushRoute("bubble/"+S.bubble+"/"+S.page);
-    await primeSync();                          // base off the just-created file
-    S.editor.setMarkdown("# "+title+"\n\n");    // a real edit -> autosaves on idle
-    setTimeout(resetEditorHistory,200);         // don't let Ctrl+Z wipe the new page
-    refreshTabs(); fetchRefs().then(()=>updatePreview());   // page set changed → renumber
+    if(!S.bubble||!S.editor)return;
+    // Native window.prompt() is suppressed by some embedded/mobile browser contexts.  Use an
+    // in-app dialog so a click on + Page always exposes a usable title field.
+    const overlay=el("div",{class:"overlay",role:"dialog","aria-modal":"true","aria-label":"Create page"});
+    const box=el("div",{class:"diffbox create-dialog"});
+    const titleInput=el("input",{type:"text",placeholder:"Page title",maxlength:"120",autocomplete:"off"});
+    const cancel=el("button",{type:"button",class:"ghost",onclick:()=>overlay.remove()},"Cancel");
+    const create=el("button",{type:"button",class:"primary"},"Create page");
+    const submit=async()=>{
+      const title=titleInput.value.trim();
+      if(!title){ titleInput.focus(); return; }
+      create.disabled=true; cancel.disabled=true;
+      try{
+        await createPage(title);
+        overlay.remove();
+      }catch(e){
+        create.disabled=false; cancel.disabled=false;
+        toast("Could not create page: "+e.message);
+      }
+    };
+    create.onclick=submit;
+    titleInput.onkeydown=e=>{
+      if(e.key==="Enter"){ e.preventDefault(); submit(); }
+      if(e.key==="Escape")overlay.remove();
+    };
+    box.append(el("div",{class:"create-dialog-header"},el("b",{},"New page")));
+    box.append(el("div",{class:"diffbody create-dialog-body"},el("label",{class:"muted"},"Page title"),titleInput));
+    box.append(el("div",{class:"create-dialog-footer"},cancel,create));
+    overlay.append(box); overlay.onclick=e=>{ if(e.target===overlay)overlay.remove(); };
+    document.body.append(overlay);
+    setTimeout(()=>titleInput.focus(),0);
+  }
+  async function createPage(title){
+    try{
+      await savePage();
+      const ps=(await api("/api/bubbles/"+S.bubble+"/pages",
+        {method:"POST",body:JSON.stringify({title})})).page_slug;
+      S.pages.push({page_slug:ps,title}); S.page=ps; S.remoteChangePending=false;
+      pushRoute("bubble/"+S.bubble+"/"+S.page);
+      await primeSync();                          // base off the just-created file
+      S.editor.setMarkdown("# "+title+"\n\n");    // a real edit -> autosaves on idle
+      setTimeout(resetEditorHistory,200);         // don't let Ctrl+Z wipe the new page
+      refreshTabs(); fetchRefs().then(()=>updatePreview()); // page set changed → renumber
+    }catch(e){ throw e; }
   }
   async function deletePage(ps){
     if(!confirm("Delete this page?"))return;
@@ -3172,11 +3290,40 @@
     refreshTabs(); fetchRefs().then(()=>updatePreview());   // page removed → renumber
   }
   const SYNC_LABEL={synced:"⟳ synced",stale:"✎ unsaved",saving:"⟳ saving…",conflict:"⚠ unsynced"};
+  const SYNC_ICON={synced:"⟳",stale:"✎",saving:"⟳",conflict:"⚠"};
+  function editorToolButton(id,title,onClick){
+    const b=document.createElement("button");
+    b.type="button"; b.id=id; b.title=title; b.setAttribute("aria-label",title);
+    b.style.cssText="font:inherit;font-size:16px;line-height:1;background:none;border:none;color:inherit;cursor:pointer;margin:0;padding:0 3px";
+    b.addEventListener("mousedown",e=>e.preventDefault());
+    b.addEventListener("click",e=>{ e.preventDefault(); onClick(); });
+    return b;
+  }
+  function buildSyncTool(){
+    const b=editorToolButton("syncToolbarButton","Saved automatically; click to save now",clickSave);
+    b.textContent=SYNC_ICON[S.syncState||"synced"];
+    return b;
+  }
+  function buildPageVisibilityTool(){
+    const b=editorToolButton("pageVisibilityToolbarButton","Toggle page visibility",toggleCurrentPageHidden);
+    b.classList.add("page-visibility-btn");
+    b.append(pageVisibilityIcon());
+    return b;
+  }
+  function refreshPageVisibilityTool(){
+    const b=$("#pageVisibilityToolbarButton"); if(!b)return;
+    const p=currentPageMeta(), hidden=!!(p&&p.hidden);
+    b.classList.toggle("hidden-page",hidden);
+    b.title=hidden?"Hidden from preview/share — click to show":"Visible in preview/share — click to hide";
+    b.setAttribute("aria-label",b.title);
+    b.replaceChildren(pageVisibilityIcon());
+  }
   function setSync(state){
     S.syncState=state;
-    const s=$("#syncedBadge");
-    if(s){ s.className="synced "+state; s.textContent=SYNC_LABEL[state];
-      s.title=state==="conflict"?"Changed on disk — click to resolve":"Saved automatically; click to save now"; }
+    const s=$("#syncToolbarButton");
+    if(s){ s.textContent=SYNC_ICON[state]; s.className="sync-toolbar "+state;
+      s.title=state==="conflict"?"Changed on disk — click to resolve":"Saved automatically; click to save now";
+      s.setAttribute("aria-label",s.title); }
   }
   function markStale(){ if(S.syncState!=="conflict")setSync("stale"); }  // keep conflict sticky
   function markSaving(){ setSync("saving"); }

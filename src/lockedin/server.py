@@ -268,7 +268,8 @@ def _render_preview_html(*, name: str, page: str, all_pages: list, content: str,
                          todos: "dict | None" = None,
                          todo_link_base: "str | None" = None,
                          macros: "dict | None" = None,
-                         refs: "dict | None" = None) -> str:
+                         refs: "dict | None" = None,
+                         themes: "list[str] | None" = None) -> str:
     """Build the standalone rendered-page HTML shared by the owner preview and public share pages.
 
     ``link_base``  — prefix for intra-bubble nav + wikilinks (e.g. ``/api/bubbles/<slug>/preview``
@@ -499,10 +500,10 @@ blockquote p{{margin:5px 0}}
 <div id="copied">🔗 Link copied</div>
 <script>
 (function(){{
-  const THEMES=["dark","light","pink","techno","pearl"];
+  const THEMES={json.dumps(themes or list(service.THEMES))};
   const LABELS={{dark:"🌙",light:"☀️",pink:"🦄",techno:"🤖",pearl:"⚪"}};
   window.applyPreviewTheme=function(name){{
-    const theme=THEMES.includes(name)?name:"dark";
+    const theme=THEMES.includes(name)?name:THEMES[0];
     document.body.classList.remove(...THEMES.map(t=>"theme-"+t),"light");
     document.body.classList.add("theme-"+theme);
     document.getElementById("theme-cycle").textContent=LABELS[theme];
@@ -717,6 +718,9 @@ def build_app():
     class MathConfigIn(BaseModel):
         macros: dict
 
+    class AestheticsConfigIn(BaseModel):
+        themes: list[str] = []
+
     class NewsInstructionsIn(BaseModel):
         instructions: list[dict]
 
@@ -860,7 +864,8 @@ def build_app():
             asset_base=f"/share/{token}/assets", show_back=False,
             todos={t["id"]: t for t in service.list_todos(home)},  # share: styled text, no link
             macros=service.load_math_config(home).get("macros", {}),
-            refs=_bubble_refs(home, slug, visible_pages))
+            refs=_bubble_refs(home, slug, visible_pages),
+            themes=service.load_aesthetics_config(home)["themes"])
         return HTMLResponse(html)
 
     @app.get("/share/{token}/assets/{filename}")
@@ -935,7 +940,8 @@ def build_app():
         return {"user": user, "model": service.get_model_config(home_of(user)),
                 "news_enabled": auth.is_news_enabled(user), "premium": auth.is_premium(user),
                 "premium_requested_at": rec.get("premium_requested_at", ""),
-                "admin": auth.is_admin(user)}
+                "admin": auth.is_admin(user),
+                "themes": service.load_aesthetics_config(home_of(user))["themes"]}
 
     @app.post("/api/account")
     def update_account(body: AccountIn, user: str = Depends(current_user)):
@@ -1034,6 +1040,18 @@ def build_app():
     @app.put("/api/settings/math")
     def put_math(body: MathConfigIn, user: str = Depends(current_user)):
         return service.save_math_config(home_of(user), {"macros": body.macros})
+
+    # ---- aesthetics settings ----
+    @app.get("/api/settings/aesthetics")
+    def get_aesthetics(user: str = Depends(current_user)):
+        return service.load_aesthetics_config(home_of(user))
+
+    @app.put("/api/settings/aesthetics")
+    def put_aesthetics(body: AestheticsConfigIn, user: str = Depends(current_user)):
+        try:
+            return service.save_aesthetics_config(home_of(user), body.themes)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
 
     # ---- news (premium background crawler) ----
     @app.get("/api/news")
@@ -1353,7 +1371,8 @@ def build_app():
             todos={t["id"]: t for t in service.list_todos(home)},
             todo_link_base="/#todos",  # owner is logged in → link opens the SPA TODO manager
             macros=service.load_math_config(home).get("macros", {}),
-            refs=_bubble_refs(home, slug, visible_pages))
+            refs=_bubble_refs(home, slug, visible_pages),
+            themes=service.load_aesthetics_config(home)["themes"])
         return HTMLResponse(html)
 
     @app.post("/api/bubbles/{slug}/pages")
