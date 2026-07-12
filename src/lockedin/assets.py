@@ -4,7 +4,7 @@ Each asset dir holds:
   paper.pdf    the uploaded file
   text.txt     cached full text (pypdf) — written by the ingest task
   summary.md   cached LLM summary — written by the ingest task
-  meta.yaml    metadata (title, tags, idea_bubbles, flags, notes)
+  meta.yaml    metadata (title, tags, idea_bubbles, bubble_scores, flags, notes)
 
 All paths resolve against the active per-user context root (see :mod:`lockedin.paths`),
 so callers wrap operations in ``paths.use_root(home)``.
@@ -85,7 +85,8 @@ def save_asset(pdf_bytes: bytes, filename: str, title: str = "",
         "url_source": url_source.strip(),
         "tags": tags,
         "idea_bubbles": [slug_of(t) for t in tags],
-        "attention_flag": False,
+        "bubble_scores": {slug_of(t): 5 for t in tags},
+        "attention_flag": True,
         "suggested_tags": [],
         "summarized": False,
         "notes": "",
@@ -138,14 +139,39 @@ def update_asset(pdf_id: str, **fields) -> dict:
     meta = load_meta(pdf_id)
     if "tags" in fields and fields["tags"] is not None:
         tags = [t.strip() for t in fields["tags"] if t.strip()]
+        old_scores = bubble_scores(meta)
+        slugs = [slug_of(t) for t in tags]
         meta["tags"] = tags
-        meta["idea_bubbles"] = [slug_of(t) for t in tags]
+        meta["idea_bubbles"] = slugs
+        meta["bubble_scores"] = {slug: int(old_scores.get(slug, 5)) for slug in slugs}
         fields.pop("tags")
     for k in ("title", "notes", "url_source", "attention_flag", "suggested_tags", "bibliography"):
         if k in fields and fields[k] is not None:
             meta[k] = fields[k]
     save_meta(pdf_id, meta)
     return meta
+
+
+def bubble_scores(meta: dict) -> dict[str, int]:
+    """Return normalized per-bubble relevance scores for an asset.
+
+    ``idea_bubbles`` remains the membership source of truth for compatibility. Missing legacy
+    scores default to 5 so existing tagged papers keep maximum relevance until the user edits
+    them.
+    """
+    raw = meta.get("bubble_scores") or {}
+    out: dict[str, int] = {}
+    for slug in meta.get("idea_bubbles", []) or []:
+        try:
+            score = int(raw.get(slug, 5))
+        except (TypeError, ValueError):
+            score = 5
+        out[slug] = max(1, min(5, score))
+    return out
+
+
+def score_for_bubble(meta: dict, slug: str) -> int:
+    return bubble_scores(meta).get(slug, 5)
 
 
 # --------------------------------------------------------------------------- #

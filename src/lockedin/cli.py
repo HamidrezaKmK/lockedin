@@ -6,12 +6,34 @@
 from __future__ import annotations
 
 import logging
+import json
 
 import typer
 
 app = typer.Typer(add_completion=False,
                   help="lockedin — the ultimate research assistant for grad students.")
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+
+
+def _dev_auth():
+    """Authenticate DEV_USERNAME/DEV_PASSWORD and return (user, home)."""
+    import os
+
+    from dotenv import load_dotenv
+
+    from . import auth, paths
+
+    load_dotenv(paths.base_root() / ".env")
+    user = (os.environ.get("DEV_USERNAME") or "").strip().lower()
+    pw = os.environ.get("DEV_PASSWORD") or ""
+    if not user or not pw:
+        typer.secho("✗ Set DEV_USERNAME and DEV_PASSWORD in a project-root .env "
+                    "(copy .env.example). ", fg="red")
+        raise typer.Exit(1)
+    if not auth.verify_password(user, pw):
+        typer.secho(f"✗ Wrong username or password for '{user}'.", fg="red")
+        raise typer.Exit(1)
+    return user, paths.user_home(user)
 
 
 @app.command()
@@ -67,24 +89,9 @@ def devmode():
     gated on the account password. Reads a project-root ``.env``. Exits non-zero on mismatch.
     See DEV_MODE.md.
     """
-    import os
+    from . import assets, bubbles, models, paths
 
-    from dotenv import load_dotenv
-
-    from . import assets, auth, bubbles, models, paths
-
-    load_dotenv(paths.base_root() / ".env")
-    user = (os.environ.get("DEV_USERNAME") or "").strip().lower()
-    pw = os.environ.get("DEV_PASSWORD") or ""
-    if not user or not pw:
-        typer.secho("✗ Set DEV_USERNAME and DEV_PASSWORD in a project-root .env "
-                    "(copy .env.example). ", fg="red")
-        raise typer.Exit(1)
-    if not auth.verify_password(user, pw):
-        typer.secho(f"✗ Wrong username or password for '{user}'.", fg="red")
-        raise typer.Exit(1)
-
-    home = paths.user_home(user)
+    user, home = _dev_auth()
     typer.secho(f"✓ Authenticated as '{user}'.", fg="green")
     with paths.use_root(home):
         model = models.get_active_config(home).active
@@ -107,6 +114,75 @@ def devmode():
         typer.echo("    (none approved yet — approve a bubble in the app first)")
     typer.echo("  citation BibTeX is not embedded here; read only the selected bubble's "
                "REPORTS/<slug>/_lockedin_citations.md when citations are needed.")
+
+
+def _approved_bubble_rows(home):
+    from . import bubbles, paths
+
+    with paths.use_root(home):
+        rows = []
+        for b in bubbles.all_bubbles():
+            if not b.get("approved"):
+                continue
+            rows.append({
+                "slug": b["slug"],
+                "name": b.get("name") or b["slug"],
+                "pages": len(bubbles.list_pages(b["slug"])),
+                "papers": b.get("pdf_count", 0),
+            })
+        return rows
+
+
+@app.command(name="scientist-list")
+def scientist_list(json_out: bool = typer.Option(False, "--json", help="Print JSON.")):
+    """Authenticate and list approved bubbles for scientist sessions."""
+    user, home = _dev_auth()
+    rows = _approved_bubble_rows(home)
+    if json_out:
+        typer.echo(json.dumps({"user": user, "home": str(home), "bubbles": rows}))
+        return
+    typer.secho(f"✓ Authenticated as '{user}'.", fg="green")
+    typer.echo("Approved bubbles:")
+    if not rows:
+        typer.echo("  (none approved yet)")
+    for b in rows:
+        typer.echo(f"  - {b['name']} — {b['slug']} ({b['pages']} pages; {b['papers']} papers)")
+
+
+def _resolve_bubble(home, raw: str) -> str:
+    from slugify import slugify
+
+    rows = _approved_bubble_rows(home)
+    raw = raw.strip()
+    if not raw:
+        raise ValueError("Bubble slug/name cannot be empty.")
+    exact = [b for b in rows if b["slug"] == raw]
+    if len(exact) == 1:
+        return exact[0]["slug"]
+    wanted = slugify(raw)
+    hits = [b for b in rows if b["slug"] == wanted or slugify(b["name"]) == wanted]
+    if len(hits) == 1:
+        return hits[0]["slug"]
+    if len(hits) > 1:
+        raise ValueError(f"Bubble name {raw!r} is ambiguous; use the exact slug.")
+    raise ValueError(f"No approved bubble matches {raw!r}.")
+
+
+@app.command(name="scientist-context")
+def scientist_context_cmd(bubble: str = typer.Argument(..., help="Bubble slug or exact name.")):
+    """Print generated bubble-scoped context for scientist sessions."""
+    from . import bubbles, reports, paths
+
+    user, home = _dev_auth()
+    try:
+        slug = _resolve_bubble(home, bubble)
+    except ValueError as e:
+        typer.secho(f"✗ {e}", fg="red")
+        raise typer.Exit(1)
+    with paths.use_root(home):
+        bubbles.refresh_citation_files([slug])
+        typer.echo(f"Authenticated user: {user}")
+        typer.echo(reports.scientist_context(slug))
 
 
 @app.command()

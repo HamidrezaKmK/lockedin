@@ -10,8 +10,9 @@ project (contextvar per-user roots, PBKDF2 auth, OpenAI-compatible model layer, 
 no-build SPA).
 
 A plain `claude` session in this repo is for **developing lockedin**. Separately, the
-`./claude_scientist.sh` launcher runs Claude as a *report assistant* for one user (it injects
-that role via `--append-system-prompt`, so the base command is unaffected) — see
+`./scientist.sh` launcher can run Claude, Codex, or agy as a *report assistant* for one user
+(it authenticates from `.env` and injects bubble-scoped context, so the base commands are
+unaffected) — see
 [`docs/DEV_MODE.md`](docs/DEV_MODE.md).
 
 ## Run / test

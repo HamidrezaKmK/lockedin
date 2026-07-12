@@ -54,12 +54,20 @@ def fetch_and_save_asset(home: Path, url: str, title: str = "",
 
 def list_assets(home: Path) -> list[dict]:
     with paths.use_root(home):
-        return assets.list_assets()
+        out = []
+        for meta in assets.list_assets():
+            meta = dict(meta)
+            meta["bubble_scores"] = assets.bubble_scores(meta)
+            out.append(meta)
+        return out
 
 
 def get_asset(home: Path, pdf_id: str) -> dict:
     with paths.use_root(home):
-        return assets.load_meta(pdf_id)
+        meta = assets.load_meta(pdf_id)
+        meta["bubble_scores"] = assets.bubble_scores(meta)
+        meta["bubble_memberships"] = bubbles.memberships_for_asset(pdf_id)
+        return meta
 
 
 def update_asset(home: Path, pdf_id: str, **fields) -> dict:
@@ -162,6 +170,12 @@ def remove_pdf_from_bubble(home: Path, slug: str, pdf_id: str) -> dict:
     """Untag a PDF so it leaves this bubble; returns the refreshed bubble detail."""
     with paths.use_root(home):
         bubbles.remove_pdf_from_bubble(slug, pdf_id)
+        return bubbles.bubble_detail(slug)
+
+
+def set_pdf_bubble_score(home: Path, slug: str, pdf_id: str, score: int) -> dict:
+    with paths.use_root(home):
+        bubbles.set_pdf_bubble_score(slug, pdf_id, score)
         return bubbles.bubble_detail(slug)
 
 

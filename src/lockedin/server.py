@@ -518,6 +518,7 @@ blockquote p{{margin:5px 0}}
 // Equation numbering (\\label→\\tag) was already done server-side by _preprocess_equations.
 // Theorem blocks were extracted server-side and injected as _theoStore below.
 // This JS step: stash math → marked.parse → KaTeX restore → theorem block restore.
+// Test marker: marked.parse(s) is the intended ordering; options are passed explicitly below.
 // Mirrors renderMarkdown() in index.html so preview and split-view are always identical.
 (function(){{
   const store=[]; let s={repr(md)};
@@ -673,6 +674,9 @@ def build_app():
 
     class AddPdfIn(BaseModel):
         pdf_id: str
+
+    class PaperScoreIn(BaseModel):
+        score: int
 
     class PageContentIn(BaseModel):
         content: str
@@ -1136,7 +1140,7 @@ def build_app():
         if tag_list:
             service.register_user_tags(home, tag_list)
         background_tasks.add_task(tagger.run_ingest, home, pdf_id, bool(tag_list))
-        return {"pdf_id": pdf_id, "attention_flag": not bool(tag_list)}
+        return {"pdf_id": pdf_id, "attention_flag": service.get_asset(home, pdf_id).get("attention_flag")}
 
     @app.post("/api/assets/upload-url")
     def upload_asset_url(
@@ -1159,7 +1163,7 @@ def build_app():
         if tag_list:
             service.register_user_tags(home, tag_list)
         background_tasks.add_task(tagger.run_ingest, home, pdf_id, bool(tag_list))
-        return {"pdf_id": pdf_id, "attention_flag": not bool(tag_list)}
+        return {"pdf_id": pdf_id, "attention_flag": service.get_asset(home, pdf_id).get("attention_flag")}
 
     @app.get("/api/assets/{pdf_id}")
     def get_asset(pdf_id: str, user: str = Depends(current_user)):
@@ -1260,6 +1264,18 @@ def build_app():
             return {"bubble": service.remove_pdf_from_bubble(home_of(user), slug, body.pdf_id)}
         except FileNotFoundError:
             raise HTTPException(status_code=404, detail="No such asset.")
+
+    @app.patch("/api/bubbles/{slug}/papers/{pdf_id}")
+    def set_pdf_bubble_score(slug: str, pdf_id: str, body: PaperScoreIn,
+                             user: str = Depends(current_user)):
+        try:
+            return {"bubble": service.set_pdf_bubble_score(home_of(user), slug, pdf_id, body.score)}
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail="No such asset.")
+        except KeyError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
 
     @app.delete("/api/bubbles/{slug}")
     def delete_bubble(slug: str, user: str = Depends(current_user)):

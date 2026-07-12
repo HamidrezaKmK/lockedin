@@ -167,6 +167,96 @@ class BubbleIdentity(unittest.TestCase):
         self.assertEqual(assets.slug_of(tag), slug)
 
 
+class BubbleRelevance(unittest.TestCase):
+    def test_legacy_membership_defaults_to_score_five_and_sorts(self):
+        with temp_home() as home:
+            slug = make_bubble(home)
+            with paths.use_root(home):
+                low = assets.save_asset(b"%PDF-1", "b.pdf", title="B", tags=["Diffusion Models"])
+                high = assets.save_asset(b"%PDF-1", "a.pdf", title="A", tags=["Diffusion Models"])
+                bubbles.set_pdf_bubble_score(slug, low, 2)
+                detail = bubbles.bubble_detail(slug)
+        self.assertEqual(detail["assets"][0]["pdf_id"], high)
+        self.assertEqual(detail["assets"][0]["bubble_score"], 5)
+        self.assertEqual(detail["assets"][1]["pdf_id"], low)
+        self.assertEqual(detail["assets"][1]["bubble_score"], 2)
+
+    def test_add_remove_and_score_update_maintain_bubble_scores(self):
+        with temp_home() as home:
+            slug = make_bubble(home)
+            with paths.use_root(home):
+                pid = assets.save_asset(b"%PDF-1", "a.pdf", title="A")
+                bubbles.add_pdf_to_bubble(slug, pid)
+                meta = assets.load_meta(pid)
+                self.assertIn(slug, meta["idea_bubbles"])
+                self.assertEqual(assets.bubble_scores(meta)[slug], 5)
+                bubbles.set_pdf_bubble_score(slug, pid, 3)
+                self.assertEqual(assets.load_meta(pid)["bubble_scores"][slug], 3)
+                bubbles.remove_pdf_from_bubble(slug, pid)
+                meta = assets.load_meta(pid)
+        self.assertNotIn(slug, meta.get("idea_bubbles", []))
+        self.assertNotIn(slug, meta.get("bubble_scores", {}))
+
+    def test_invalid_score_is_rejected(self):
+        with temp_home() as home:
+            slug = make_bubble(home)
+            with paths.use_root(home):
+                pid = assets.save_asset(b"%PDF-1", "a.pdf", title="A", tags=["Diffusion Models"])
+                with self.assertRaises(ValueError):
+                    bubbles.set_pdf_bubble_score(slug, pid, 6)
+
+    def test_scientist_context_only_lists_current_bubble_papers(self):
+        with temp_home() as home:
+            slug = make_bubble(home)
+            other = service.create_bubble(home, "Other Topic")
+            p1 = service.save_asset(home, b"%PDF-1", "a.pdf", title="Attached",
+                                    tags=["Diffusion Models"])
+            p2 = service.save_asset(home, b"%PDF-1", "b.pdf", title="Unrelated",
+                                    tags=["Other Topic"])
+            with paths.use_root(home):
+                assets.save_summary(p1, "attached summary")
+                assets.save_summary(p2, "unrelated summary")
+                ctx = reports.scientist_context(slug)
+        self.assertIn("Attached", ctx)
+        self.assertIn("Relevance 5", ctx)
+        self.assertNotIn("Unrelated", ctx)
+        self.assertNotIn("unrelated summary", ctx)
+
+    def test_chat_context_uses_relevance_labels(self):
+        captured = {}
+
+        def fake(home, messages, system=None, temperature=0.3, *, claude_token=""):
+            captured["system"] = system or ""
+            yield "ok"
+
+        orig = models.stream_chat
+        models.stream_chat = fake
+        try:
+            with temp_home() as home:
+                slug = make_bubble(home)
+                pid = service.save_asset(home, b"%PDF-1", "a.pdf", title="Attached",
+                                         tags=["Diffusion Models"])
+                with paths.use_root(home):
+                    assets.save_summary(pid, "attached summary")
+                run_chat(home, slug, "summarize", PAGE)
+        finally:
+            models.stream_chat = orig
+        self.assertIn("## Relevance 5", captured["system"])
+        self.assertIn("### [Relevance 5] Attached", captured["system"])
+
+
+class AssetAttentionDefaults(unittest.TestCase):
+    def test_new_assets_start_in_attention_queue_until_explicitly_cleared(self):
+        with temp_home() as home:
+            pid = service.save_asset(home, b"%PDF-1", "a.pdf", title="A",
+                                     tags=["Diffusion Models"])
+            meta = service.get_asset(home, pid)
+            self.assertTrue(meta["attention_flag"])
+            self.assertEqual([a["pdf_id"] for a in service.attention_queue(home)], [pid])
+            service.update_asset(home, pid, attention_flag=False)
+            self.assertEqual(service.attention_queue(home), [])
+
+
 # --------------------------------------------------------------------------- #
 # Autosave optimistic-concurrency guard (bubbles.save_page base_mtime)
 # --------------------------------------------------------------------------- #

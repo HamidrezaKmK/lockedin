@@ -567,6 +567,75 @@ def _report_context(slug: str, page_slug: str, cur_content: str, cur_title: str)
     return "\n\n".join(blocks) or "(no report pages yet)"
 
 
+def bubble_paper_context(slug: str, *, include_paths: bool = False,
+                         summary_budget: int | None = None) -> str:
+    """Paper context for one bubble only, sorted by relevance.
+
+    This is the shared source for web chat and scientist sessions. It deliberately starts from
+    ``bubbles.pdfs_for_bubble`` so unrelated assets in the user's global ASSETS directory never
+    enter the generated context.
+    """
+    pdfs = bubbles.pdfs_for_bubble(slug)
+    if not pdfs:
+        return "(no PDFs tagged yet)"
+    lines: list[str] = []
+    current_score: int | None = None
+    for meta in pdfs:
+        score = int(meta.get("bubble_score", 5))
+        if score != current_score:
+            if lines:
+                lines.append("")
+            lines.append(f"## Relevance {score}")
+            current_score = score
+        pdf_id = meta.get("pdf_id", "")
+        title = meta.get("title") or meta.get("filename") or pdf_id
+        lines.append("")
+        lines.append(f"### [Relevance {score}] {title}")
+        lines.append(f"- Asset id: `{pdf_id}`")
+        if include_paths and pdf_id:
+            adir = paths.asset_dir(pdf_id)
+            lines.append(f"- Allowed summary path: `{adir / 'summary.md'}`")
+            lines.append(f"- Allowed text path: `{adir / 'text.txt'}`")
+            lines.append(f"- Allowed PDF path: `{adir / 'paper.pdf'}`")
+        bib_keys = assets.bibtex_keys(meta.get("bibliography", ""))
+        if bib_keys:
+            lines.append(f"- BibTeX keys: {', '.join(bib_keys)}")
+        summary = assets.get_summary(pdf_id) if pdf_id else ""
+        if summary_budget is not None:
+            summary = _clip(summary, summary_budget, "paper summary")
+        lines.append(summary or "(no summary)")
+    return "\n".join(lines)
+
+
+def scientist_context(slug: str) -> str:
+    """Generated context artifact for a scientist session scoped to one bubble."""
+    name = bubbles.slug_to_name(slug)
+    pages = bubbles.list_pages(slug)
+    citations = paths.bubble_dir(slug) / "_lockedin_citations.md"
+    lines = [
+        f"# lockedin Scientist Context: {name}",
+        "",
+        f"- Bubble slug: `{slug}`",
+        f"- Bubble report dir: `{paths.bubble_dir(slug)}`",
+        f"- Citation file: `{citations}`",
+        "",
+        "Use only this bubble's report pages and the attached papers listed below. Higher",
+        "relevance scores should be prioritized for reading, retrieval, comparison, and citation.",
+        "",
+        "## Report Pages",
+    ]
+    if pages:
+        for p in pages:
+            page_path = paths.bubble_page_path(slug, p["page_slug"])
+            hidden = " hidden" if p.get("hidden") else ""
+            lines.append(f"- {p['title']} (`{p['page_slug']}`{hidden}): `{page_path}`")
+    else:
+        lines.append("- (no report pages yet)")
+    lines.extend(["", "## Attached Papers", "",
+                  bubble_paper_context(slug, include_paths=True, summary_budget=500)])
+    return "\n".join(lines)
+
+
 # --------------------------------------------------------------------------- #
 # Read-only research chat
 # --------------------------------------------------------------------------- #
@@ -592,10 +661,7 @@ def chat_stream(home: Path, slug: str, page_slug: str, messages: list[dict],
 
         report_ctx = _report_context(slug, page_slug, cur_content, cur_title)
 
-        pdfs = bubbles.pdfs_for_bubble(slug)
-        summaries = "\n\n".join(
-            f"### {m.get('title', m['pdf_id'])}\n{assets.get_summary(m['pdf_id']) or '(no summary)'}"
-            for m in pdfs) or "(no PDFs tagged yet)"
+        summaries = bubble_paper_context(slug)
 
         system = (
             f"{CHAT_SYSTEM}\n\nIdea bubble: **{name}** — the user is currently viewing the page "

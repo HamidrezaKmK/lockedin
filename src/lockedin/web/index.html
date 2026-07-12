@@ -496,11 +496,19 @@
              padding:2px 9px;font-size:12px;color:var(--accent2);text-decoration:none}
   .paperchip:hover{border-color:var(--accent);color:var(--accent)}
   .paperchip .lbl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
-  .paperchip .x{opacity:.6;cursor:pointer;flex:0 0 auto}
-  .paperchip .x:hover{opacity:1;color:var(--bad)}
-  /* In the editor's inline strip, show ~2 rows of pills then scroll
-     (the mobile Papers sheet reuses the same list but isn't capped — it has room). */
-  .bubble-papers-inline .bubble-pdf-list{max-height:60px;overflow:auto}
+  .score-group{width:100%;display:flex;flex-direction:column;gap:5px;margin-top:6px}
+  .score-heading{font-size:11px;text-transform:uppercase;letter-spacing:0;color:var(--muted);
+    border-top:1px solid var(--line);padding-top:6px}
+  .papers-menu{position:absolute;right:10px;top:42px;z-index:30;width:min(460px,calc(100vw - 32px));
+    max-height:280px;overflow:auto;background:var(--panel);border:1px solid var(--line);
+    border-radius:8px;box-shadow:var(--shadow);padding:8px}
+  .papers-menu .bubble-pdf-list{display:block}
+  .papers-menu .score-group{margin-top:4px}
+  .papers-menu .score-heading{padding-top:5px;margin-bottom:4px}
+  .papers-menu .paperchip{display:flex;max-width:none;margin:3px 0;border-radius:7px}
+  .membership-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto auto;gap:6px;
+    align-items:center;border:1px solid var(--line);border-radius:8px;padding:7px 8px;background:var(--panel2)}
+  .membership-row .score{font-variant-numeric:tabular-nums;color:var(--muted);white-space:nowrap}
   .mobile-bubble-actions,.mobile-sheet{display:none}
 
   /* ── Mobile ── */
@@ -532,7 +540,8 @@
     #detail{display:block;min-height:0}
     .pane{height:auto;min-height:0}
     #detail>.editor-pane{height:calc(var(--vvh) - 154px - env(safe-area-inset-top));min-height:min(380px, calc(var(--vvh) - 154px))}
-    #detail>.chat-pane,.bubble-papers-inline,.desktop-only-tool{display:none!important}
+    #detail>.chat-pane,.desktop-only-tool{display:none!important}
+    #previewArrow{display:none!important}
     .mobile-only{display:inline-flex;align-items:center}
     /* Mobile respects the chosen view mode (the Split/Edit/Read selector is visible here now).
        Panes stack vertically; the .mode-view/.mode-edit rules above hide whichever pane isn't
@@ -723,7 +732,9 @@
   const $ = s => document.querySelector(s);
   const el = (t,a={},...kids)=>{const e=document.createElement(t);
     for(const k in a){ if(k==="class")e.className=a[k]; else if(k==="html")e.innerHTML=a[k];
-      else if(k.startsWith("on"))e.addEventListener(k.slice(2),a[k]); else e.setAttribute(k,a[k]); }
+      else if(k.startsWith("on"))e.addEventListener(k.slice(2),a[k]);
+      else if(typeof a[k]==="boolean"){ if(k in e)e[k]=a[k]; if(a[k])e.setAttribute(k,k); }
+      else e.setAttribute(k,a[k]); }
     for(const c of kids){ if(c==null)continue; e.append(c.nodeType?c:document.createTextNode(c)); }
     return e;};
   const toast = (m)=>{const t=$("#toast"); t.textContent=m; t.classList.remove("hide");
@@ -780,6 +791,8 @@
     if(h==="todos"){switchView("todos",{noRoute:true});return;}
     const tm=h.match(/^todos\/(\d+)$/);
     if(tm){viewTodo(+tm[1]);return;}
+    const am=h.match(/^asset\/([^/]+)$/);
+    if(am){openAssetById(decodeURIComponent(am[1]),{noRoute:true});return;}
     const m=h.match(/^bubble\/([^/]+)(?:\/([^/]+))?$/);
     if(m){openBubble(m[1],{noRoute:true,page:m[2]||null});return;}
     switchView("assets",{noRoute:true});
@@ -1078,7 +1091,7 @@
     chatCollapsed:false,  // persisted in li_chat
     pollTimer:null, lastPageMtime:null, lastManifestMtime:null,
     baseMtime:null, autosaveTimer:null, saving:false, syncState:"synced", applyingRemote:false,
-    previewEl:null, remoteChangePending:false, papersPane:null, chatPane:null,
+    previewEl:null, remoteChangePending:false, papersMenu:null, chatPane:null,
     detailWrap:null,
     refAc:null,
     healthTimer:null, healthSeq:0, verifiedActive:null,
@@ -1148,6 +1161,7 @@
   document.addEventListener("click",e=>{
     const wrap=document.querySelector(".account-quick");
     if(wrap&&!wrap.contains(e.target)) $("#accountMenu").classList.add("hide");
+    if(S.papersMenu&&!e.target.closest(".papers-menu")&&!e.target.closest("[data-papers-toggle]")) closePapersMenu();
   });
   // ---------- help modal (multi-section) ----------
   let _helpSections=null;
@@ -1547,18 +1561,8 @@
     const modeSeg=el("div",{class:"seg"},fileMode,linkMode);
     const file=el("input",{type:"file",accept:"application/pdf"});
     const title=el("input",{placeholder:"Title (optional)"});
-    const tags=el("input",{placeholder:"Idea-bubble tags, comma-separated (leave blank to auto-tag)"});
-    // dropdown of existing bubbles — pick one instead of typing the tag at upload time
-    const bubbleSel=el("select");
-    bubbleSel.append(el("option",{value:""},"➕ Pick an existing bubble…"));
-    // option label = display name; value = the bubble's stable membership tag (slugifies to its
-    // slug) so picking a *renamed* bubble still tags the paper into that same bubble, not a phantom.
     let bubbles=[];
     try{ bubbles=(await api("/api/bubbles")).bubbles||[]; }catch(e){}
-    bubbles.forEach(b=>bubbleSel.append(el("option",{value:b.tag||b.name},b.name)));
-    bubbleSel.onchange=()=>{ const name=bubbleSel.value; bubbleSel.value=""; if(!name)return;
-      const cur=tags.value.split(",").map(s=>s.trim()).filter(Boolean);
-      if(!cur.some(t=>t.toLowerCase()===name.toLowerCase())){ cur.push(name); tags.value=cur.join(", "); } };
     const url=el("input",{placeholder:"Paste a PDF link to fetch it automatically"});
     const applyUploadMode=mode=>{
       uploadMode=mode; S.assetUploadMode=mode;
@@ -1581,19 +1585,19 @@
         let d;
         if(uploadMode==="file"){
           const fd=new FormData(); fd.append("file",file.files[0]);
-          fd.append("title",title.value); fd.append("tags",tags.value); fd.append("url_source","");
+          fd.append("title",title.value); fd.append("tags",""); fd.append("url_source","");
           const r=await fetch("/api/assets/upload",{method:"POST",credentials:"include",body:fd});
           if(!r.ok)throw new Error((await r.json()).detail);
           d=await r.json();
         }else{
-          d=await api("/api/assets/upload-url",{method:"POST",body:JSON.stringify({url:link,title:title.value,tags:tags.value})});
+          d=await api("/api/assets/upload-url",{method:"POST",body:JSON.stringify({url:link,title:title.value,tags:""})});
         }
         toast(d.attention_flag?"Added — auto-tagging in background…":"Added — summarizing in background…");
-        file.value="";title.value="";tags.value="";url.value="";
+        file.value="";title.value="";url.value="";
         viewAssets();
       }catch(e){toast(e.message);} finally{btn.disabled=false;btn.textContent="Add paper";}
     };
-    f.append(el("b",{},"Add a PDF"),modeSeg,file,url,title,tags,bubbleSel,btn);
+    f.append(el("b",{},"Add a PDF"),modeSeg,file,url,title,btn);
     m.append(f, el("div",{style:"height:16px"}));
 
     const r=await api("/api/assets");
@@ -1683,28 +1687,76 @@
     wrap.append(summary);
     return wrap;
   }
+  async function openAssetById(pdfId,{noRoute=false}={}){
+    if(!noRoute)pushRoute("asset/"+encodeURIComponent(pdfId));
+    try{
+      const r=await api("/api/assets/"+encodeURIComponent(pdfId));
+      await openAssetEditor(r.meta,{returnTo:"assets",noRoute:true});
+    }catch(e){
+      toast(e.message);
+      switchView("assets",{noRoute:true});
+    }
+  }
   async function openAssetEditor(a, opts={}){
     const returnTo=opts.returnTo||"assets";
     const goBack=()=>returnTo==="attention"?viewAttention():viewAssets();
+    if(!opts.noRoute)pushRoute("asset/"+encodeURIComponent(a.pdf_id));
     const m=$("#main"); m.innerHTML="";
     m.append(el("button",{class:"ghost small",onclick:goBack},returnTo==="attention"?"← Attention":"← Assets"));
     const box=el("div",{class:"card col",style:"margin-top:12px;max-width:720px"});
     const title=el("input",{value:a.title||""});
-    const tags=el("input",{value:(a.tags||[]).join(", ")});
     const notes=el("textarea",{rows:"4"}); notes.value=a.notes||"";
     const url=el("input",{value:a.url_source||""});
-    // dropdown of existing bubbles — pick one instead of retyping its name every time
-    const bubbleSel=el("select");
-    bubbleSel.append(el("option",{value:""},"➕ Pick an existing bubble…"));
-    // option label = display name; value = the bubble's stable membership tag (slugifies to its
-    // slug) so picking a *renamed* bubble still tags the paper into that same bubble, not a phantom.
-    try{ (await api("/api/bubbles")).bubbles.forEach(b=>bubbleSel.append(el("option",{value:b.tag||b.name},b.name))); }catch(e){}
-    bubbleSel.onchange=()=>{ const name=bubbleSel.value; bubbleSel.value=""; if(!name)return;
-      const cur=tags.value.split(",").map(s=>s.trim()).filter(Boolean);
-      if(!cur.some(t=>t.toLowerCase()===name.toLowerCase())){ cur.push(name); tags.value=cur.join(", "); } };
+    let allBubbles=[]; try{ allBubbles=(await api("/api/bubbles")).bubbles||[]; }catch(e){}
+    try{ a=(await api("/api/assets/"+a.pdf_id)).meta; }catch(e){}
+    const memberships=el("div",{class:"col",style:"gap:6px"});
+    const refreshAssetMemberships=async()=>{
+      try{ a=(await api("/api/assets/"+a.pdf_id)).meta; }catch(e){}
+      renderAssetMembershipPanel();
+    };
+    const renderAssetMembershipPanel=()=>{
+      memberships.innerHTML="";
+      memberships.append(el("b",{},"Bubbles it belongs to:"));
+      const rows=(a.bubble_memberships||[]).filter(x=>x.approved!==false);
+      if(!rows.length)memberships.append(el("div",{class:"muted"},"This paper is not in any bubble yet."));
+      rows.forEach(mem=>{
+        const score=Number(mem.score||5);
+        const row=el("div",{class:"membership-row"},
+          el("span",{class:"truncate",title:mem.slug},(mem.name||mem.slug)+"  <"+mem.slug+">"),
+          el("span",{class:"score"},"Score "+score),
+          el("button",{class:"ghost small",type:"button",title:"Promote relevance",disabled:score>=5,
+            onclick:async()=>{ try{ await api("/api/bubbles/"+mem.slug+"/papers/"+a.pdf_id,
+              {method:"PATCH",body:JSON.stringify({score:score+1})}); await refreshAssetMemberships();
+              toast("Relevance set to "+(score+1)); }
+              catch(e){ toast(e.message); } }},"+"),
+          el("button",{class:"ghost small",type:"button",title:"Demote relevance",disabled:score<=1,
+            onclick:async()=>{ try{ await api("/api/bubbles/"+mem.slug+"/papers/"+a.pdf_id,
+              {method:"PATCH",body:JSON.stringify({score:score-1})}); await refreshAssetMemberships();
+              toast("Relevance set to "+(score-1)); }
+              catch(e){ toast(e.message); } }},"-"),
+          el("button",{class:"ghost small",type:"button",title:"Remove from bubble",
+            onclick:async()=>{ if(!confirm('Remove this paper from "'+(mem.name||mem.slug)+'"?'))return;
+              try{ await api("/api/bubbles/"+mem.slug+"/remove-pdf",
+                {method:"POST",body:JSON.stringify({pdf_id:a.pdf_id})}); await refreshAssetMemberships(); }
+              catch(e){ toast(e.message); } }},"Remove"));
+        memberships.append(row);
+      });
+      const have=new Set(rows.map(x=>x.slug));
+      const addSel=el("select");
+      addSel.append(el("option",{value:""},"Add to bubble…"));
+      allBubbles.filter(b=>!have.has(b.slug)).forEach(b=>addSel.append(el("option",{value:b.slug},b.name||b.slug)));
+      addSel.onchange=async()=>{
+        const slug=addSel.value; addSel.value=""; if(!slug)return;
+        try{ await api("/api/bubbles/"+slug+"/add-pdf",{method:"POST",body:JSON.stringify({pdf_id:a.pdf_id})});
+          await refreshAssetMemberships(); toast("Added to bubble"); }
+        catch(e){ toast(e.message); }
+      };
+      memberships.append(addSel);
+    };
+    renderAssetMembershipPanel();
     box.append(el("b",{},"Edit asset"),
       el("label",{class:"muted"},"Title"),title,
-      el("label",{class:"muted"},"Tags (comma-separated)"),tags,bubbleSel,
+      memberships,
       el("label",{class:"muted"},"Notes"),notes,
       el("label",{class:"muted"},"Source URL"),url);
     const bibPanel=el("div",{class:"col",style:"border-top:1px solid var(--line);padding-top:12px"});
@@ -1781,19 +1833,21 @@
         el("button",{class:"ghost",onclick:closeBibEdit},"Cancel")));
     bibPanel.append(bibSummary,bibEdit);
     box.append(bibPanel);
-    // suggestions are only a hint while a paper is still un-tagged
-    if(!(a.tags||[]).length && (a.suggested_tags||[]).length){
+    // suggestions are only a hint while a paper is still unassigned
+    if(!(a.idea_bubbles||[]).length && (a.suggested_tags||[]).length){
       const sg=el("div",{class:"row"},el("span",{class:"muted"},"Suggested:"));
       a.suggested_tags.forEach(t=>{ const p=el("span",{class:"pill suggest",style:"cursor:pointer"},"+ "+t);
-        p.onclick=()=>{ tags.value=(tags.value?tags.value+", ":"")+t; }; sg.append(p); });
+        p.onclick=async()=>{ try{
+          const r=await api("/api/bubbles",{method:"POST",body:JSON.stringify({name:t})});
+          await api("/api/bubbles/"+r.slug+"/add-pdf",{method:"POST",body:JSON.stringify({pdf_id:a.pdf_id})});
+          await refreshAssetMemberships(); toast("Added to bubble");
+        }catch(e){ toast(e.message); } }; sg.append(p); });
       box.append(sg);
     }
     const saveAsset=async(attentionFlag)=>{
-      const tagList=tags.value.split(",").map(s=>s.trim()).filter(Boolean);
-      const payload={title:title.value,tags:tagList,notes:notes.value,url_source:url.value,suggested_tags:[]};
+      const payload={title:title.value,notes:notes.value,url_source:url.value,suggested_tags:[]};
       if(attentionFlag!==undefined)payload.attention_flag=attentionFlag;
       await api("/api/assets/"+a.pdf_id,{method:"PATCH",body:JSON.stringify(payload)});
-      for(const t of tagList){ await api("/api/bubbles",{method:"POST",body:JSON.stringify({name:t})}); }
       toast(attentionFlag===false?"Saved and cleared from attention queue":attentionFlag===true?"Saved and moved to attention queue":"Saved");
       goBack(); refreshAttnCount();
     };
@@ -2076,7 +2130,7 @@
     if(S.editor){ try{S.editor.destroy();}catch(e){} S.editor=null; }
     stopPolling();
     S.bubble=slug; S.chat=[]; S.page=null; S.pages=[]; S.sessionId=null; S.sessionTitle=null;
-    S.previewEl=null; S.remoteChangePending=false; S.papersPane=null; S.chatPane=null; S.detailWrap=null;
+    S.previewEl=null; S.remoteChangePending=false; S.papersMenu=null; S.chatPane=null; S.detailWrap=null;
     S.baseMtime=null; S.saving=false; S.syncState="synced";
     S.shareActive=false; S.shareToken=""; S.editingTitles=false; S.nameInput=null;
     const m=$("#main"); m.innerHTML=""; m.classList.add("detailmode");
@@ -2157,15 +2211,6 @@
     host.append(editorWrap, S.previewEl);
     left.append(tabs,host);
 
-    // PDFs strip (pencil toggles an edit mode for adding/removing papers). Only relevant when
-    // editing, so it's hidden in pure reading view and shown in edit / split.
-    const pdfs=el("div",{class:"bd bubble-papers-inline",
-      style:"flex:0 0 auto;border-top:1px solid var(--line);max-height:200px;overflow:auto"});
-    S.papersPane=pdfs;
-    pdfs.classList.toggle("hide", S.viewMode==="view");
-    renderBubblePdfs(pdfs,b,false);
-    left.append(pdfs);
-
     // init editor with the home page content
     initEditor(editorWrap, b.content||"");
     S.page=b.home; S.syncState="synced";
@@ -2208,7 +2253,7 @@
     const papersSheet=buildMobileSheet("Papers");
     const papersBody=el("div",{class:"bd"});
     papersSheet._body.append(papersBody);
-    renderBubblePdfs(papersBody,b,true);
+    renderBubblePdfs(papersBody,b);
 
     const chatSheet=buildMobileSheet("Chat");
     const controlsBtn=el("button",{class:"ghost small",title:"Chat history and deep-read papers",
@@ -2235,70 +2280,29 @@
     main.append(actions,papersSheet,chatSheet);
   }
 
-  // Render the "Papers in this bubble" strip. editMode shows a remove ✕ per paper plus a
-  // picker of papers from other bubbles to add. Mutates b.assets in place on change so the
-  // chat pane's deep-read selector (which closes over the same b.assets) stays in sync.
-  async function renderBubblePdfs(container, b, editMode){
+  // Render the "Papers in this bubble" strip. Paper chips open the full asset editor in a new tab;
+  // membership and relevance edits live there so this pane stays compact and read-only.
+  function renderBubblePdfs(container, b){
     if(!Array.isArray(b.assets)) b.assets=[];
     container.innerHTML="";
-    const editBtn=el("button",{class:"ghost small",style:"padding:2px 9px;line-height:1",
-      title:editMode?"Done editing papers":"Add or remove papers",
-      onclick:()=>renderBubblePdfs(container,b,!editMode)}, editMode?"✓ Done":"✏️");
     container.append(el("div",{class:"row",style:"align-items:center;gap:6px"},
-      el("b",{},"Papers in this bubble"),el("span",{class:"spacer"}),editBtn));
-
-    const applied=(fresh)=>{ // sync b.assets in place, then re-render staying in edit mode
-      b.assets.length=0; (fresh.assets||[]).forEach(a=>b.assets.push(a));
-      renderBubblePdfs(container,b,true);
-    };
+      el("b",{},"Papers in this bubble"),el("span",{class:"spacer"})));
 
     const list=el("div",{class:"bubble-pdf-list"});
-    b.assets.forEach(a=>{
-      // Each paper is a pressable pill linking to the PDF. The remove ✕ only shows in edit
-      // mode so a stray click on the pill never accidentally un-tags the paper.
-      const chip=el("a",{class:"paperchip",href:"/api/assets/"+a.pdf_id+"/pdf",
-        target:"_blank",title:a.title||a.pdf_id},
-        el("span",{class:"lbl"},a.title||a.pdf_id));
-      if(editMode){
-        chip.append(el("span",{class:"x",title:"Remove from this bubble",
-          onclick:async(e)=>{
-            e.preventDefault(); e.stopPropagation();   // don't open the PDF when removing
-            if(!confirm('Remove "'+(a.title||a.pdf_id)+'" from this bubble?\n\nThe paper stays in your Assets and any other bubbles — it is only un-tagged here.'))return;
-            try{ const r=await api("/api/bubbles/"+b.slug+"/remove-pdf",{method:"POST",body:JSON.stringify({pdf_id:a.pdf_id})});
-              toast("Removed"); applied(r.bubble); }
-            catch(e2){ toast("Error: "+e2.message); }
-          }},"✕"));
-      }
-      list.append(chip);
-    });
-    if(!b.assets.length)list.append(el("div",{class:"muted"},"None yet — tag a PDF with this bubble."));
+    for(let score=5;score>=1;score--){
+      const group=(b.assets||[]).filter(a=>Number(a.bubble_score||5)===score);
+      if(!group.length)continue;
+      const sec=el("div",{class:"score-group"},el("div",{class:"score-heading"},"Relevance "+score));
+      group.forEach(a=>{
+        const chip=el("a",{class:"paperchip",href:"#asset/"+encodeURIComponent(a.pdf_id),
+          target:"_blank",title:"Edit asset: "+(a.title||a.pdf_id)},
+          el("span",{class:"lbl"},a.title||a.pdf_id));
+        sec.append(chip);
+      });
+      list.append(sec);
+    }
+    if(!b.assets.length)list.append(el("div",{class:"muted"},"None yet — add this paper from its asset editor."));
     container.append(list);
-
-    if(!editMode)return;
-    // add picker: papers from your other bubbles not already here
-    const picker=el("div",{class:"col",
-      style:"margin-top:8px;border-top:1px dashed var(--line);padding-top:8px;gap:2px"});
-    picker.append(el("div",{class:"muted",style:"font-size:12px"},"Loading other papers…"));
-    container.append(picker);
-    let all=[];
-    try{ all=(await api("/api/assets")).assets||[]; }
-    catch(e){ picker.innerHTML=""; picker.append(el("div",{class:"muted"},"Failed to load papers.")); return; }
-    const have=new Set(b.assets.map(a=>a.pdf_id));
-    const avail=all.filter(a=>!have.has(a.pdf_id));
-    picker.innerHTML="";
-    picker.append(el("div",{class:"muted",style:"font-size:12px"},
-      avail.length?"Add a paper from your other bubbles:":"No other papers available to add."));
-    avail.forEach(a=>{
-      const hint=(a.tags||[]).length?"  ·  "+a.tags.join(", "):"";
-      const row=el("div",{class:"truncate",style:"font-size:12px;cursor:pointer;padding:2px 0",
-        title:(a.title||a.pdf_id)+hint},"＋ "+(a.title||a.pdf_id)+hint);
-      row.onclick=async()=>{
-        try{ const r=await api("/api/bubbles/"+b.slug+"/add-pdf",{method:"POST",body:JSON.stringify({pdf_id:a.pdf_id})});
-          toast("Added to bubble"); applied(r.bubble); }
-        catch(e){ toast("Error: "+e.message); }
-      };
-      picker.append(row);
-    });
   }
 
   function initEditor(host, initialValue){
@@ -2827,9 +2831,12 @@
       title:st==="conflict"?"Changed on disk — click to resolve":"Saved automatically; click to save now",
       style:"cursor:pointer",onclick:clickSave},SYNC_LABEL[st]));
     const curPage=currentPageMeta();
-    controls.append(el("button",{class:"small ghost page-visibility-btn"+(curPage&&curPage.hidden?" hidden-page":""),
+    controls.append(el("button",{class:"small ghost desktop-only-tool page-visibility-btn"+(curPage&&curPage.hidden?" hidden-page":""),
       title:curPage&&curPage.hidden?"Hidden from preview/share — click to show":"Visible in preview/share — click to hide",
       onclick:toggleCurrentPageHidden}, pageVisibilityIcon()));
+    const papersBtn=el("button",{class:"small ghost desktop-only-tool","data-papers-toggle":"1",title:"Papers in this bubble",
+      onclick:(e)=>{ e.stopPropagation(); togglePapersMenu(controls); }},"📚 Papers");
+    controls.append(papersBtn);
     // view-mode selector — also the home of "Edit titles" (folded in as a 4th option). Visible on
     // mobile too, so phones can switch between Read and Edit. Selecting "Edit titles" enters
     // rename mode (page titles + bubble name); picking any real view mode while renaming saves
@@ -2850,6 +2857,17 @@
     // chat-pane toggle
     controls.append(el("button",{class:"small ghost desktop-only-tool",title:S.chatCollapsed?"Show chat":"Hide chat",
       onclick:toggleChat},S.chatCollapsed?"💬 >":"💬 <"));
+  }
+  function closePapersMenu(){
+    if(S.papersMenu){ S.papersMenu.remove(); S.papersMenu=null; }
+  }
+  function togglePapersMenu(anchor){
+    if(S.papersMenu){ closePapersMenu(); return; }
+    const menu=el("div",{class:"papers-menu"});
+    renderBubblePdfs(menu,{slug:S.bubble,assets:S.bubbleAssets||[]});
+    anchor.style.position=anchor.style.position||"relative";
+    anchor.append(menu);
+    S.papersMenu=menu;
   }
   function pageVisibilityIcon(){
     const span=document.createElement("span");
@@ -3145,14 +3163,13 @@
   }
   async function setViewMode(mode){
     const host=$("#editorHost"); if(!host||!S.editor)return;
+    closePapersMenu();
     // entering pure reading view from an editing mode -> persist first
     if(mode==="view" && S.viewMode!=="view") await savePage();
     S.viewMode=mode;
     saveViewMode(S.bubble,mode);
     host.classList.remove("mode-view","mode-edit","mode-split");
     host.classList.add("mode-"+mode);
-    // papers strip is only relevant while editing
-    if(S.papersPane) S.papersPane.classList.toggle("hide", mode==="view");
     updatePreview();                       // keep the rendered side current (view + split)
     if(mode!=="view"){
       // the editor may have been laid out while hidden; nudge CodeMirror to recompute, then focus
@@ -3213,10 +3230,11 @@
     const refreshDrSel=()=>{
       drSel.innerHTML=""; drSel.append(el("option",{value:""},"📎 Add paper to deep-read…"));
       (b.assets||[]).filter(a=>!right._deepIds.includes(a.pdf_id))
-        .forEach(a=>drSel.append(el("option",{value:a.pdf_id},a.title||a.pdf_id)));
+        .forEach(a=>drSel.append(el("option",{value:a.pdf_id},
+          "R"+(a.bubble_score||5)+" · "+(a.title||a.pdf_id))));
     };
     const addPill=(a)=>{
-      const pill=el("span",{class:"drpill"},a.title||a.pdf_id,
+      const pill=el("span",{class:"drpill"},"R"+(a.bubble_score||5)+" · "+(a.title||a.pdf_id),
         el("span",{class:"x",onclick:()=>{ right._deepIds=right._deepIds.filter(id=>id!==a.pdf_id);
           pill.remove(); refreshDrSel(); }},"✕"));
       pills.append(pill);

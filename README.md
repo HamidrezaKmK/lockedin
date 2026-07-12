@@ -158,14 +158,12 @@ Revoke access with: `uv run lockedin news-revoke <username>`
 For hands-on editing via CLI agents without the web server.
 
 ```bash
-./claude_scientist.sh
-./agy_scientist.sh
-./codex_scientist.sh
+./scientist.sh
 ```
-To resume a session:
-```bash
-./claude_scientist.sh resume
-```
+The launcher authenticates from `.env`, lists approved bubbles, then accepts
+`<model> <bubble-slug>` where model is `codex`, `claude`, or `agy`. It injects a
+backend-generated context for that bubble only, with papers ordered by relevance. Scientist
+sessions can still use web search for new resources and recent external context.
 See [docs/DEV_MODE.md](docs/DEV_MODE.md).
 </details>
 

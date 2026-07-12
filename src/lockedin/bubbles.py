@@ -198,6 +198,9 @@ def delete_bubble(slug: str) -> None:
             else:
                 # fall back: remove any tag whose slug matches
                 m["tags"] = [t for t in m.get("tags", []) if slugify(t) != slug]
+            scores = dict(m.get("bubble_scores") or {})
+            scores.pop(slug, None)
+            m["bubble_scores"] = {s: scores[s] for s in m.get("idea_bubbles", []) if s in scores}
             assets.save_meta(m["pdf_id"], m)
 
 
@@ -251,8 +254,24 @@ def tag_for_slug(slug: str) -> str:
     return readable if assets.slug_of(readable) == slug else slug
 
 
+def _with_bubble_score(meta: dict, slug: str) -> dict:
+    out = dict(meta)
+    scores = assets.bubble_scores(out)
+    out["bubble_scores"] = scores
+    out["bubble_score"] = scores.get(slug, 5)
+    return out
+
+
+def _paper_sort_key(meta: dict) -> tuple[int, str, str]:
+    title = (meta.get("title") or meta.get("filename") or "").lower()
+    return (-int(meta.get("bubble_score", 5)), title, meta.get("pdf_id", ""))
+
+
 def pdfs_for_bubble(slug: str) -> list[dict]:
-    return [m for m in assets.list_assets() if slug in m.get("idea_bubbles", [])]
+    pdfs = [_with_bubble_score(m, slug) for m in assets.list_assets()
+            if slug in m.get("idea_bubbles", [])]
+    pdfs.sort(key=_paper_sort_key)
+    return pdfs
 
 
 def add_pdf_to_bubble(slug: str, pdf_id: str) -> dict:
@@ -266,13 +285,21 @@ def add_pdf_to_bubble(slug: str, pdf_id: str) -> dict:
     """
     meta = assets.load_meta(pdf_id)
     if slug in meta.get("idea_bubbles", []):
-        return meta
+        scores = assets.bubble_scores(meta)
+        if slug not in (meta.get("bubble_scores") or {}):
+            meta["bubble_scores"] = scores
+            assets.save_meta(pdf_id, meta)
+        return _with_bubble_score(meta, slug)
     tags = list(meta.get("tags", []))
     tags.append(tag_for_slug(slug))
     updated = assets.update_asset(pdf_id, tags=tags)
+    scores = assets.bubble_scores(updated)
+    scores[slug] = 5
+    updated["bubble_scores"] = scores
+    assets.save_meta(pdf_id, updated)
     touch_bubble(slug)
     write_citation_file(slug)
-    return updated
+    return _with_bubble_score(updated, slug)
 
 
 def remove_pdf_from_bubble(slug: str, pdf_id: str) -> dict:
@@ -283,9 +310,45 @@ def remove_pdf_from_bubble(slug: str, pdf_id: str) -> dict:
         return meta
     tags = [t for t in meta.get("tags", []) if assets.slug_of(t) != slug]
     updated = assets.update_asset(pdf_id, tags=tags)
+    scores = assets.bubble_scores(updated)
+    scores.pop(slug, None)
+    updated["bubble_scores"] = scores
+    assets.save_meta(pdf_id, updated)
     touch_bubble(slug)
     write_citation_file(slug)
     return updated
+
+
+def set_pdf_bubble_score(slug: str, pdf_id: str, score: int) -> dict:
+    """Set a PDF's relevance score inside a bubble, preserving membership."""
+    if score < 1 or score > 5:
+        raise ValueError("Relevance score must be an integer from 1 to 5.")
+    meta = assets.load_meta(pdf_id)
+    if slug not in meta.get("idea_bubbles", []):
+        raise KeyError(f"Asset {pdf_id!r} is not attached to bubble {slug!r}.")
+    scores = assets.bubble_scores(meta)
+    scores[slug] = int(score)
+    meta["bubble_scores"] = scores
+    assets.save_meta(pdf_id, meta)
+    touch_bubble(slug)
+    return _with_bubble_score(meta, slug)
+
+
+def memberships_for_asset(pdf_id: str) -> list[dict]:
+    """Return approved bubble memberships for one asset, including relevance."""
+    meta = assets.load_meta(pdf_id)
+    scores = assets.bubble_scores(meta)
+    out = []
+    for slug in meta.get("idea_bubbles", []) or []:
+        out.append({
+            "slug": slug,
+            "name": slug_to_name(slug),
+            "tag": tag_for_slug(slug),
+            "score": scores.get(slug, 5),
+            "approved": is_approved(slug),
+        })
+    out.sort(key=lambda x: (-int(x.get("score", 5)), x.get("name", "").lower(), x.get("slug", "")))
+    return out
 
 
 def all_bubbles() -> list[dict]:
