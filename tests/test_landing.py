@@ -29,6 +29,7 @@ class LandingConfigTest(unittest.TestCase):
         cfg = landing.load_landing()
         self.assertEqual(cfg["hero"]["title_accent"], "locked")
         self.assertGreaterEqual(len(cfg["components"]["features"]), 1)
+        self.assertIn("curl -fsSL", cfg["scientist"]["platforms"][0]["command"])
 
     def test_partial_yaml_merges_with_defaults(self):
         self.write_landing("""
@@ -41,6 +42,24 @@ footer: "Custom footer"
         self.assertEqual(cfg["footer"], "Custom footer")
         self.assertEqual(cfg["hero"]["title_rest"], "in")
         self.assertGreaterEqual(len(cfg["workflow"]["steps"]), 1)
+
+    def test_scientist_install_section_is_configurable(self):
+        self.write_landing("""
+scientist:
+  title: "Custom CLI"
+  platforms:
+    - title: "Unix"
+      text: "A shell"
+      command: "install-me"
+  steps:
+    - title: "Go"
+      text: "Do it"
+      command: "run-me"
+""")
+        cfg = landing.load_landing()
+        self.assertEqual(cfg["scientist"]["title"], "Custom CLI")
+        self.assertEqual(cfg["scientist"]["platforms"], [{"title": "Unix", "text": "A shell", "command": "install-me"}])
+        self.assertEqual(cfg["scientist"]["steps"], [{"title": "Go", "text": "Do it", "command": "run-me"}])
 
     def test_invalid_yaml_falls_back_to_defaults(self):
         self.write_landing("hero: [")

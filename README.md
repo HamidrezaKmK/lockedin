@@ -217,6 +217,19 @@ hero:
     - title: "Paper-first"
       text: "Keep PDFs, tags, notes, summaries, and BibTeX together."
 
+scientist:
+  title: "Bring Scientist to your computer"
+  intro: "Optional local companion for your coding CLI."
+  platforms:
+    - title: "macOS or Linux"
+      text: "Python 3.11+ required."
+      command: "curl -fsSL https://example/install.sh | bash"
+  steps:
+    - title: "Authorize"
+      text: "Sign in once in your browser."
+      command: "lockedin-scientist login --server https://lockedin.codes"
+  note: "This changes landing-page copy only."
+
 auth:
   title: "Enter your workspace"
   note: "Log in, or create an account."

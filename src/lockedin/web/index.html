@@ -188,14 +188,18 @@
   /* Installed Scientist client — commands have their own responsive treatment instead of
      inheriting the generic feature-card typography.  In particular, long URLs must wrap
      inside a card rather than widening the landing page. */
-  .scientist-install{background:linear-gradient(135deg,color-mix(in srgb,var(--accent) 11%,var(--panel)),var(--panel));
-    border:1px solid color-mix(in srgb,var(--accent) 32%,var(--line));border-radius:12px;padding:clamp(18px,3vw,30px);
+  .scientist-install{position:relative;background:linear-gradient(135deg,color-mix(in srgb,var(--accent) 13%,var(--panel)),var(--panel));
+    border:1px solid color-mix(in srgb,var(--accent) 35%,var(--line));border-radius:14px;padding:clamp(18px,3vw,30px);
     box-shadow:var(--shadow);overflow:hidden}
+  .scientist-install::before{content:"";position:absolute;inset:auto -12% -80% 45%;height:260px;pointer-events:none;
+    background:radial-gradient(ellipse,color-mix(in srgb,var(--accent2) 19%,transparent),transparent 67%)}
+  .scientist-install>*{position:relative}
   .scientist-install .landing-section-head{margin-bottom:22px}
   .scientist-install .landing-section-head p{max-width:620px;line-height:1.55}
   .scientist-platforms{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:18px}
   .scientist-platform{min-width:0;background:color-mix(in srgb,var(--panel) 90%,transparent);border:1px solid var(--line);
-    border-radius:9px;padding:15px}
+    border-radius:10px;padding:15px;transition:transform .16s ease,border-color .16s ease,box-shadow .16s ease}
+  .scientist-platform:hover{transform:translateY(-2px);border-color:color-mix(in srgb,var(--accent2) 56%,var(--line));box-shadow:var(--shadow-sm)}
   .scientist-platform h3{margin:0 0 5px;font-size:15px}
   .scientist-platform p{margin:0 0 12px;color:var(--muted);font-size:12px;line-height:1.45}
   .command{display:block;min-width:0;margin:0;padding:11px 12px;border-radius:7px;background:#101218;
@@ -1001,7 +1005,7 @@
       el("br"),
       el("span",{},f.text||"")));
 
-    const privacy=c.privacy||{};
+      const privacy=c.privacy||{};
     setText("#privacy-title",privacy.title);
     const privacyText=$("#privacy-title")&&$("#privacy-title").parentElement.querySelector("p");
     if(privacyText&&privacy.text!=null) privacyText.textContent=privacy.text;
@@ -1010,6 +1014,16 @@
       list.innerHTML="";
       privacy.bullets.forEach(b=>list.append(el("li",{},b||"")));
     }
+
+    const scientist=c.scientist||{};
+    setText("#scientist-install-title",scientist.title);
+    const scientistIntro=$("#scientist-install-title")&&$("#scientist-install-title").parentElement.querySelector("p");
+    if(scientistIntro&&scientist.intro!=null)scientistIntro.textContent=scientist.intro;
+    cards(".scientist-platforms",scientist.platforms,(p)=>el("article",{class:"scientist-platform"},
+      el("h3",{},p.title||""),el("p",{},p.text||""),el("code",{class:"command"},p.command||"")));
+    cards(".scientist-steps",scientist.steps,(s)=>el("li",{},
+      el("b",{},s.title||""),document.createTextNode(s.text||""),el("code",{class:"command"},s.command||"")));
+    setText(".scientist-note",scientist.note);
     setText(".landing-footer",c.footer);
   }
 

@@ -63,6 +63,27 @@ DEFAULT_LANDING: dict[str, Any] = {
             "For remote access, run the app behind your own HTTPS tunnel or domain setup instead of exposing the local server directly.",
         ],
     },
+    "scientist": {
+        "title": "Use Scientist from your computer",
+        "intro": "A small, dependency-free companion for your installed Codex, Claude, or Antigravity CLI. It mirrors only your authorized workspace and keeps it synchronized while you work.",
+        "platforms": [
+            {"title": "macOS or Linux", "text": "Requires Python 3.11+ and adds one command to ~/.local/bin.",
+             "command": "curl -fsSL https://raw.githubusercontent.com/HamidrezaKmK/lockedin/scientist/install.sh | bash"},
+            {"title": "Windows PowerShell", "text": "Requires Python 3.11+ and installs the client under your local app data folder.",
+             "command": "irm https://raw.githubusercontent.com/HamidrezaKmK/lockedin/scientist/install.ps1 | iex"},
+        ],
+        "steps": [
+            {"title": "Sign in once", "text": "Authorize this device in your browser.",
+             "command": "lockedin-scientist login --server https://lockedin.codes"},
+            {"title": "Choose a bubble", "text": "See the active bubble names and slugs you may use.",
+             "command": "lockedin-scientist bubbles"},
+            {"title": "Sync any time", "text": "Pull/push once without starting an assistant.",
+             "command": "lockedin-scientist sync"},
+            {"title": "Start your assistant", "text": "Use its slug with Codex, Claude, or Antigravity.",
+             "command": "lockedin-scientist <codex|claude|agy> <bubble-slug>"},
+        ],
+        "note": "Your server URL is chosen at login; the installer does not install the LockedIn server.",
+    },
     "footer": "Made for focused research sessions by HamidrezaKmK.",
 }
 
@@ -122,6 +143,10 @@ def normalize_landing(data: Any) -> dict[str, Any]:
             "features": {"icon": "", "title": "", "text": ""},
         }),
         "privacy": _section(data.get("privacy"), d["privacy"]),
+        "scientist": _section(data.get("scientist"), d["scientist"], {
+            "platforms": {"title": "", "text": "", "command": ""},
+            "steps": {"title": "", "text": "", "command": ""},
+        }),
         "footer": _text(data.get("footer"), d["footer"]),
     }
 
