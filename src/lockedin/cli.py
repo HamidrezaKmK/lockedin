@@ -260,31 +260,5 @@ def slackbot():
     run(slack_bot_token=bot_token, slack_app_token=app_token)
 
 
-@app.command(name="news-grant")
-def news_grant(username: str = typer.Argument(..., help="Username to grant premium news.")):
-    """Enable the premium news crawler for a user."""
-    from . import auth
-
-    try:
-        auth.set_news_enabled(username, True)
-    except ValueError as e:
-        typer.secho(f"✗ {e}", fg="red")
-        raise typer.Exit(1)
-    typer.secho(f"✓ News enabled for '{username.strip().lower()}'.", fg="green")
-
-
-@app.command(name="news-revoke")
-def news_revoke(username: str = typer.Argument(..., help="Username to revoke premium news.")):
-    """Disable the premium news crawler for a user."""
-    from . import auth
-
-    try:
-        auth.set_news_enabled(username, False)
-    except ValueError as e:
-        typer.secho(f"✗ {e}", fg="red")
-        raise typer.Exit(1)
-    typer.secho(f"✓ News disabled for '{username.strip().lower()}'.", fg="green")
-
-
 if __name__ == "__main__":
     app()

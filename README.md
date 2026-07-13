@@ -19,7 +19,6 @@ By default, the deployment is private and local-only (`127.0.0.1`). For web acce
 - **🤖 Switchable LLMs:** Easily switch between local models (Qwen via Ollama) and cloud models (OpenAI, Claude, Gemini).
 - **🔌 Optional Integrations:**
   - Slack bot (via Socket Mode)
-  - Claude-powered News crawler for granted users
   - Unlisted read-only sharing links for specific bubbles
 
 *(Note: The browser requires internet access for CDN-hosted frontend libraries, which are not vendored.)*
@@ -169,19 +168,6 @@ systemctl --user enable --now lockedin-slackbot.service
 For persistent logins, use an HTTPS URL for `LOCKEDIN_URL` and share `LOCKEDIN_SLACK_SHARED_SECRET` between server and bot. 
 Full setup: [docs/SLACKBOT_SETUP.md](docs/SLACKBOT_SETUP.md).
 </details>
-
-<details>
-<summary><b>News Crawler</b></summary>
-
-Opt-in feature using the host `claude` CLI.
-```bash
-uv run lockedin news-grant <username>
-LOCKEDIN_NEWS_ENABLED=1 uv run lockedin serve
-```
-Revoke access with: `uv run lockedin news-revoke <username>`
-</details>
-
----
 
 ## 🛡️ Security
 

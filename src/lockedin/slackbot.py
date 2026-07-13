@@ -27,11 +27,9 @@ _HELP = (
     "Commands:\n"
     "• `select` — choose your active bubble\n"
     "• `list` — show all bubbles\n"
-    "• `news` — list retrieved news + why each is relevant (premium)\n"
-    "• `crawl` — search the web for new papers for your bubbles (premium)\n"
     "• `todos` — list your open TODOs and add / edit / complete / remove them\n"
-    "• Attach a PDF — uploads it to your assets queue\n"
-    "• Send a PDF link — downloads it into your assets queue\n"
+    "• Attach a PDF — uploads it to your Library queue\n"
+    "• Send a PDF link — downloads it into your Library queue\n"
     "• Anything else — asks your configured model about your active bubble"
 )
 
@@ -42,16 +40,10 @@ _auth:           dict[str, str | None]   = {}   # uid → None (need username) |
 _usernames:      dict[str, str]          = {}   # uid → lockedin username for reauth prompts
 _active_bubble:  dict[str, dict]         = {}   # uid → active bubble dict
 _selecting:      dict[str, list[dict]]   = {}   # uid → bubble list (awaiting number reply)
-_news_flow:      dict[str, dict]         = {}   # uid → {stage:'from'|'to', since, until} (crawl wizard)
-_news_steer:     set[str]                = set()  # uids steering an open crawl session
 _todo_flow:      dict[str, dict]         = {}   # uid → {stage, id, title, ...} (todos wizard)
 
 _CONFIRM_RE = re.compile(r"^(ok|okay|yes|y|confirm|keep|default|same)$", re.IGNORECASE)
-_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _CANCEL_RE = re.compile(r"^(cancel|exit|quit|no|stop)$", re.IGNORECASE)
-_STEER_STOP_RE = re.compile(r"^(stop|exit|leave|quit|cancel|nevermind|never mind)$", re.IGNORECASE)
-_STEER_ACCEPT_RE = re.compile(r"^(accept|save|done|i'?m happy|looks good|that'?s enough|good enough)$",
-                              re.IGNORECASE)
 
 
 def _slack_headers() -> dict[str, str]:
@@ -107,8 +99,6 @@ def _forget_session(uid: str) -> None:
         old.close()
     _active_bubble.pop(uid, None)
     _selecting.pop(uid, None)
-    _news_flow.pop(uid, None)
-    _news_steer.discard(uid)
     _todo_flow.pop(uid, None)
 
 
@@ -477,7 +467,7 @@ def handle(event: dict, say) -> None:
         return
 
     # ── crawl wizard: collect the from/to date range, then run ────────────────
-    if uid in _news_flow:
+    if False:  # retired feature; retained temporarily only to avoid disrupting old running workers
         flow = _news_flow[uid]
         if _CANCEL_RE.match(text):
             del _news_flow[uid]
@@ -509,7 +499,7 @@ def handle(event: dict, say) -> None:
         return
 
     # ── crawl steering: free-text follow-ups drive the open crawl session ─────
-    if uid in _news_steer and text:
+    if False:
         if _STEER_STOP_RE.match(text):
             _news_steer.discard(uid)
             say("Left the crawl. Your session stays open — send `crawl` to resume, or use the web app.")
@@ -567,12 +557,12 @@ def handle(event: dict, say) -> None:
         return
 
     # ── news: list retrieved items + why they're relevant (premium) ───────────
-    if re.match(r"^news$", text, re.IGNORECASE):
+    if False:
         _news_list(http, say)
         return
 
     # ── crawl: start the date-range wizard (or resume an open session) ────────
-    if re.match(r"^crawl$", text, re.IGNORECASE):
+    if False:
         try:
             r = http.get(f"{URL}/api/news/status")
             if r.status_code == 403:

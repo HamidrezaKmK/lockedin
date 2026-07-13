@@ -12,7 +12,7 @@ from pathlib import Path
 
 import yaml
 
-from . import assets, auth, bubbles, models, news, paths, reports, sharing, todos
+from . import assets, auth, bubbles, models, paths, reports, sharing, todos
 
 
 _CITE_REF_RE = re.compile(r"\\cite\{([^}]+)\}")
@@ -504,27 +504,6 @@ def model_health(home: Path, *, live: bool = False) -> dict:
     return models.health_check(home, live=live)
 
 
-# ---- news (premium background crawler) ----
-def list_news(home: Path) -> dict:
-    with paths.use_root(home):
-        return {"items": news.list_items(), "bubbles": bubbles.all_bubbles()}
-
-
-def dismiss_news(home: Path, item_id: str) -> bool:
-    with paths.use_root(home):
-        return news.dismiss_item(item_id)
-
-
-def get_news_instructions(home: Path) -> list[dict]:
-    with paths.use_root(home):
-        return news.load_instructions()
-
-
-def save_news_instructions(home: Path, entries: list[dict]) -> list[dict]:
-    with paths.use_root(home):
-        return news.set_instructions(entries)
-
-
 # ---- math config ----
 def load_math_config(home: Path) -> dict:
     with paths.use_root(home):
@@ -540,7 +519,6 @@ def save_math_config(home: Path, cfg: dict) -> dict:
         p.parent.mkdir(parents=True, exist_ok=True)
         bubbles._atomic_write(p, yaml.dump(cfg, allow_unicode=True))
     return cfg
-
 
 # ---- aesthetics config ----
 THEMES = ("dark", "light", "pink", "techno", "pearl")
@@ -568,48 +546,3 @@ def save_aesthetics_config(home: Path, themes: list[str]) -> dict:
         p.parent.mkdir(parents=True, exist_ok=True)
         bubbles._atomic_write(p, yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True))
     return cfg
-
-
-def news_chat(home: Path, message: str, model: str | None = None,
-              since: str | None = None, until: str | None = None):
-    # generator manages its own use_root (it must survive across yields), like reports.chat_stream
-    return news.chat_stream(home, message, model, since, until)
-
-
-def accept_news(home: Path) -> dict:
-    with paths.use_root(home):
-        return news.accept_session()
-
-
-def discard_news(home: Path) -> dict:
-    with paths.use_root(home):
-        return news.discard_session()
-
-
-def news_session(home: Path) -> dict | None:
-    with paths.use_root(home):
-        return news.get_session()
-
-
-def news_models() -> list[dict]:
-    return news.model_options()
-
-
-def list_news_chats(home: Path) -> list[dict]:
-    with paths.use_root(home):
-        return news.list_chat_sessions()
-
-
-def get_news_chat(home: Path, sid: str) -> dict | None:
-    with paths.use_root(home):
-        return news.get_chat_session(sid)
-
-
-def delete_news_chat(home: Path, sid: str) -> bool:
-    with paths.use_root(home):
-        return news.delete_chat_session(sid)
-
-
-def news_status(home: Path) -> dict:
-    with paths.use_root(home):
-        return news.status()

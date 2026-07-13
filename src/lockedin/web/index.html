@@ -312,6 +312,21 @@
          color:var(--warn);flex-shrink:0;white-space:nowrap}
   .badge.bib{border-color:var(--accent2);color:var(--accent2)}
 
+  /* View loading states. Skeletons keep an asset-heavy screen feeling responsive while its
+     metadata arrives, and respect the user's reduced-motion preference. */
+  .view-loading{padding:12px 0;color:var(--muted)}
+  .view-loading-status{display:flex;align-items:center;gap:9px;margin:0 0 14px;font-size:13px}
+  .loading-spinner{width:16px;height:16px;border:2px solid color-mix(in srgb,var(--accent) 24%,transparent);
+    border-top-color:var(--accent);border-radius:50%;animation:loading-spin .75s linear infinite;flex:0 0 auto}
+  .skeleton-card{height:164px;border:1px solid var(--line);border-radius:var(--radius);padding:16px;
+    background:linear-gradient(100deg,var(--panel) 32%,color-mix(in srgb,var(--panel2) 72%,var(--panel)) 48%,var(--panel) 64%);
+    background-size:220% 100%;animation:skeleton-shimmer 1.25s ease-in-out infinite}
+  .skeleton-line{height:11px;border-radius:999px;background:color-mix(in srgb,var(--line) 72%,transparent);margin-bottom:12px}
+  .skeleton-line.short{width:48%}.skeleton-line.medium{width:70%}.skeleton-line:last-child{margin-top:35px;margin-bottom:0}
+  @keyframes loading-spin{to{transform:rotate(360deg)}}
+  @keyframes skeleton-shimmer{to{background-position:-220% 0}}
+  @media (prefers-reduced-motion:reduce){.loading-spinner,.skeleton-card{animation:none}}
+
   /* bubble detail */
   #detail{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(0,1fr);gap:16px;flex:1;
           min-height:0;min-width:0}
@@ -681,7 +696,7 @@
           <p class="landing-lede">A calm command center for papers, math notes, topic wikis, research chat, and the small TODOs that keep a project moving.</p>
           <p class="landing-copy">Upload PDFs, organize them into bubbles, write math-aware reports, cite your own library, and keep model-powered research help close to the work without moving your notes into a public platform.</p>
           <div class="landing-points">
-            <div class="landing-point"><b>Paper-first</b><span>Assets keep source PDFs, tags, notes, summaries, and BibTeX together.</span></div>
+            <div class="landing-point"><b>Paper-first</b><span>Your library keeps source PDFs, tags, notes, summaries, and BibTeX together.</span></div>
             <div class="landing-point"><b>Math-aware</b><span>Reports render equations, theorem boxes, citations, wikilinks, and TODO references.</span></div>
             <div class="landing-point"><b>Private by default</b><span>Run locally or expose it only through your own HTTPS tunnel when needed.</span></div>
           </div>
@@ -734,7 +749,7 @@
         </div>
         <div class="workflow-grid">
           <div class="workflow-step"><span class="workflow-num">01</span><b>Upload papers</b><span>Add PDFs or PDF links, then capture titles, tags, source URLs, summaries, notes, and BibTeX.</span></div>
-          <div class="workflow-step"><span class="workflow-num">02</span><b>Organize into bubbles</b><span>Group assets into approved topic spaces with their own multi-page wiki and attached papers.</span></div>
+          <div class="workflow-step"><span class="workflow-num">02</span><b>Organize into bubbles</b><span>Group papers into approved topic spaces with their own multi-page wiki and attached papers.</span></div>
           <div class="workflow-step"><span class="workflow-num">03</span><b>Write reports</b><span>Use Markdown with KaTeX equations, labels, theorem environments, citations, TODO refs, and wikilinks.</span></div>
           <div class="workflow-step"><span class="workflow-num">04</span><b>Chat, share, track</b><span>Discuss a bubble with grounded research chat, publish read-only links, and keep TODOs connected to notes.</span></div>
         </div>
@@ -746,13 +761,12 @@
           <p>Every view is built around repeated research work rather than a separate marketing funnel.</p>
         </div>
         <div class="feature-grid">
-          <div class="feature-card"><div class="feature-icon">📚</div><b>Assets</b><br><span>Your complete paper inventory with upload, URL fetch, filters, notes, tags, summaries, and BibTeX validation.</span></div>
+          <div class="feature-card"><div class="feature-icon">📚</div><b>Library</b><br><span>Your complete paper collection with upload, URL fetch, filters, notes, tags, summaries, and BibTeX validation.</span></div>
           <div class="feature-card"><div class="feature-icon">🫧</div><b>Bubbles</b><br><span>Topic workspaces that bind papers, pages, chat sessions, citations, and share settings.</span></div>
           <div class="feature-card"><div class="feature-icon">∑</div><b>Reports</b><br><span>Markdown pages with rendered math, numbered equations, theorem boxes, references, images, and tables.</span></div>
           <div class="feature-card"><div class="feature-icon">✅</div><b>TODOs</b><br><span>Issue-style tasks with report references, open/done filters, notes, and automatic reference cleanup.</span></div>
           <div class="feature-card"><div class="feature-icon">💬</div><b>Research Chat</b><br><span>A read-only assistant grounded in the current bubble, paper summaries, and selected deep-read PDFs.</span></div>
-          <div class="feature-card"><div class="feature-icon">📰</div><b>News</b><br><span>Premium crawling for recent papers, with steerable review sessions and accept or discard controls.</span></div>
-          <div class="feature-card"><div class="feature-icon">#</div><b>Slackbot</b><br><span>Use Slack to select bubbles, ask questions, upload papers, manage TODOs, and trigger news crawls.</span></div>
+          <div class="feature-card"><div class="feature-icon">#</div><b>Slackbot</b><br><span>Use Slack to select bubbles, ask questions, add papers, and manage TODOs.</span></div>
           <div class="feature-card"><div class="feature-icon">⚙️</div><b>Model Settings</b><br><span>Switch between Qwen, OpenAI, Claude, and Gemini, configure keys, and manage math macros.</span></div>
           <div class="feature-card"><div class="feature-icon">🔗</div><b>Sharing</b><br><span>Publish unlisted read-only bubble links, copy them, and revoke access without changing the private workspace.</span></div>
         </div>
@@ -766,7 +780,7 @@
           </div>
           <ul class="privacy-list">
             <li>User data stays behind login; public share pages are unlisted and read-only.</li>
-            <li>Standard accounts can bring their own OpenAI, Claude, or Gemini API key. Server-side Qwen and News can be limited to premium users.</li>
+            <li>Standard accounts can bring their own OpenAI, Claude, or Gemini API key. Server-side Qwen can be limited to premium users.</li>
             <li>For remote access, run the app behind your own HTTPS tunnel or domain setup instead of exposing the local server directly.</li>
           </ul>
         </div>
@@ -795,11 +809,10 @@
   </div>
 
   <div id="side">
-    <button class="navbtn active" data-view="assets">📚 Assets</button>
+    <button class="navbtn active" data-view="assets">📚 Library</button>
     <button class="navbtn" data-view="bubbles">🫧 Bubbles</button>
     <button class="navbtn" data-view="attention">🔔 Attention <span id="attnCount" class="muted"></span></button>
     <button class="navbtn" data-view="todos">✅ TODOs</button>
-    <button class="navbtn" data-view="news" id="newsNav" style="display:none">📰 News <span id="newsCount" class="muted"></span></button>
     <button class="navbtn" data-view="settings">⚙️ Settings</button>
     <div class="side-credit">Made with 💜 + 🤖 by <a href="https://github.com/HamidrezaKmK" target="_blank" rel="noopener">HamidrezaKmK</a></div>
   </div>
@@ -907,7 +920,6 @@
     if(!h||h==="assets"){switchView("assets",{noRoute:true});return;}
     if(h==="bubbles"){switchView("bubbles",{noRoute:true});return;}
     if(h==="attention"){switchView("attention",{noRoute:true});return;}
-    if(h==="news"){switchView("news",{noRoute:true});return;}
     if(h==="settings"){switchView("settings",{noRoute:true});return;}
     if(h==="todos"){switchView("todos",{noRoute:true});return;}
     const tm=h.match(/^todos\/(\d+)$/);
@@ -1205,7 +1217,7 @@
 
   // ---------- state ----------
   const S = { user:null, model:null, premium:false, premiumRequestedAt:"", admin:false,
-    newsEnabled:false, mathMacros:{}, refs:null, view:"assets", bubble:null, chat:[],
+    mathMacros:{}, refs:null, view:"assets", bubble:null, chat:[],
     editor:null, page:null, pages:[], home:null, bubbleInstr:"", bubbleAssets:[],
     sessionId:null, sessionTitle:null,
     todos:[], todosById:{}, todoFilter:"open",
@@ -1230,6 +1242,35 @@
     return {m,version};
   }
   const isCurrentRender=version=>version===S.renderVersion;
+
+  function viewLoading(label="Loading…", cards=0){
+    const status=el("div",{class:"view-loading-status",role:"status","aria-live":"polite"},
+      el("span",{class:"loading-spinner","aria-hidden":"true"}),el("span",{},label));
+    const wrap=el("div",{class:"view-loading"},status);
+    if(cards){
+      const grid=el("div",{class:"grid","aria-hidden":"true"});
+      for(let i=0;i<cards;i++) grid.append(el("div",{class:"skeleton-card"},
+        el("div",{class:"skeleton-line medium"}),el("div",{class:"skeleton-line"}),
+        el("div",{class:"skeleton-line short"}),el("div",{class:"skeleton-line medium"})));
+      wrap.append(grid);
+    }
+    return wrap;
+  }
+
+  // Yield between groups of cards so a large paper library remains scrollable and responsive
+  // while it is being drawn. The render id prevents an old search from appending after a newer one.
+  function appendCardsInFrames(grid, items, makeCard, version, renderId, currentRender){
+    let index=0;
+    const add=()=>{
+      if(!isCurrentRender(version)||renderId!==currentRender())return;
+      const end=Math.min(index+24,items.length);
+      const fragment=document.createDocumentFragment();
+      while(index<end)fragment.append(makeCard(items[index++]));
+      grid.append(fragment);
+      if(index<items.length)requestAnimationFrame(add);
+    };
+    requestAnimationFrame(add);
+  }
 
   function leaveBubbleWorkspace({preserveFocus=false}={}){
     setBubbleFocus(false,{persist:!preserveFocus});
@@ -1276,7 +1317,7 @@
       menu.append(el("div",{class:"acct-row"},
         S.premiumRequestedAt
           ? "Premium requested "+S.premiumRequestedAt.slice(0,10)+"."
-          : "Premium unlocks server-side Qwen and news crawling."));
+          : "Premium unlocks server-side Qwen."));
     }
     const actions=el("div",{class:"acct-actions"});
     if(!S.premium){
@@ -1361,13 +1402,12 @@
 
   async function boot(){
     let me; try{ me=await api("/api/me"); }catch(e){ return; }
-    S.user=me.user; S.model=me.model; S.newsEnabled=!!me.news_enabled; S.premium=!!me.premium;
+    S.user=me.user; S.model=me.model; S.premium=!!me.premium;
     S.premiumRequestedAt=me.premium_requested_at||""; S.admin=!!me.admin;
     S.availableThemes=Array.isArray(me.themes)?me.themes:THEMES.slice();
     $("#auth").style.display="none"; $("#app").style.display="grid";
     applyTheme(localStorage.getItem("li_theme")||"dark");
     refreshAccountButton();
-    if(S.newsEnabled){ $("#newsNav").style.display=""; refreshNewsCount(); }
     applySideCollapsed(localStorage.getItem("li_side")==="1");
     renderModelTabs(); refreshHealth(); applyHash();
     const deviceCode=new URLSearchParams(location.search).get("scientist_device");
@@ -1726,7 +1766,7 @@
   document.querySelectorAll(".navbtn").forEach(b=>b.onclick=()=>switchView(b.dataset.view));
   function switchView(v,{noRoute=false}={}){
     leaveBubbleWorkspace();
-    S.view=v; stopNewsLive();
+    S.view=v;
     $("#previewArrow").classList.add("hide");   // left the bubble → hide the mobile preview link
     document.querySelectorAll(".navbtn").forEach(b=>b.classList.toggle("active",b.dataset.view===v));
     if(!noRoute)pushRoute(v==="assets"?"":v);
@@ -1734,10 +1774,8 @@
     else if(v==="bubbles")viewBubbles();
     else if(v==="attention")viewAttention();
     else if(v==="todos")viewTodos();
-    else if(v==="news")viewNews();
     else if(v==="settings")viewSettings();
     refreshAttnCount();
-    if(S.newsEnabled)refreshNewsCount();
   }
   async function refreshAttnCount(){
     try{ const r=await api("/api/attention"); $("#attnCount").textContent=r.assets.length?`(${r.assets.length})`:""; }
@@ -1747,7 +1785,13 @@
   // ================= ASSETS =================
   async function viewAssets(){
     const {m,version}=beginMainRender();
-    m.append(el("h2",{class:"section-title"},"📚 Assets"));
+    m.append(el("h2",{class:"section-title"},"📚 Library"));
+    // Start both reads immediately: the bubble list populates the upload selector, while the
+    // asset request is often the expensive one for a large library.
+    const bubblesRequest=api("/api/bubbles");
+    const assetsRequest=api("/api/assets");
+    const loading=viewLoading("Loading your library…",8);
+    m.append(loading);
 
     // upload form
     const f=el("div",{class:"card col"});
@@ -1758,7 +1802,7 @@
     const file=el("input",{type:"file",accept:"application/pdf"});
     const title=el("input",{placeholder:"Title (optional)"});
     let bubbles=[];
-    try{ bubbles=(await api("/api/bubbles")).bubbles||[]; }catch(e){}
+    try{ bubbles=(await bubblesRequest).bubbles||[]; }catch(e){}
     if(!isCurrentRender(version))return;
     const url=el("input",{placeholder:"Paste a PDF link to fetch it automatically"});
     const applyUploadMode=mode=>{
@@ -1795,12 +1839,21 @@
       }catch(e){toast(e.message);} finally{btn.disabled=false;btn.textContent="Add paper";}
     };
     f.append(el("b",{},"Add a PDF"),modeSeg,file,url,title,btn);
-    m.append(f, el("div",{style:"height:16px"}));
+    m.insertBefore(f,loading);
+    m.insertBefore(el("div",{style:"height:16px"}),loading);
 
-    const r=await api("/api/assets");
+    let r;
+    try{ r=await assetsRequest; }
+    catch(e){
+      if(isCurrentRender(version)){
+        loading.replaceWith(el("div",{class:"err"},"Could not load library: "+e.message));
+      }
+      return;
+    }
     if(!isCurrentRender(version))return;
-    if(!r.assets.length){ m.append(el("div",{class:"muted"},"No assets yet. Upload your first PDF above.")); return; }
-    const filterText=el("input",{placeholder:"Search assets by title, author, tag, notes, or BibTeX key…"});
+    loading.remove();
+    if(!r.assets.length){ m.append(el("div",{class:"muted"},"Your library is empty. Add your first PDF above.")); return; }
+    const filterText=el("input",{placeholder:"Search your library by title, author, tag, notes, or BibTeX key…"});
     filterText.value=S.assetSearch||"";
     const filterBubble=el("select");
     filterBubble.append(el("option",{value:""},"All bubbles"));
@@ -1817,7 +1870,9 @@
       ...(a.tags||[]),...(a.suggested_tags||[]),
       ...(a.bibliography||"").match(/@\w+\s*\{\s*([^,\s}]+)/g)||[]
     ].filter(Boolean).join(" ").toLowerCase();
+    let filterRender=0;
     const renderFiltered=()=>{
+      const renderId=++filterRender;
       S.assetSearch=filterText.value;
       S.assetBubble=filterBubble.value;
       const q=filterText.value.trim().toLowerCase();
@@ -1827,9 +1882,9 @@
         return !q || haystack(a).includes(q);
       });
       grid.innerHTML="";
-      shown.forEach(a=>grid.append(assetCard(a)));
-      count.textContent=shown.length===r.assets.length?`${shown.length} assets`:`${shown.length} of ${r.assets.length}`;
-      if(!shown.length) grid.append(el("div",{class:"muted"},"No assets match these filters."));
+      count.textContent=shown.length===r.assets.length?`${shown.length} papers`:`${shown.length} of ${r.assets.length} papers`;
+      if(!shown.length){ grid.append(el("div",{class:"muted"},"No papers match these filters.")); return; }
+      appendCardsInFrames(grid,shown,assetCard,version,renderId,()=>filterRender);
     };
     filterText.addEventListener("input",renderFiltered);
     filterBubble.addEventListener("change",renderFiltered);
@@ -1910,7 +1965,7 @@
     const render=opts.renderVersion==null?beginMainRender():{m:$("#main"),version:opts.renderVersion};
     const {m,version}=render;
     if(!isCurrentRender(version))return;
-    m.append(el("button",{class:"ghost small",onclick:goBack},returnTo==="attention"?"← Attention":"← Assets"));
+    m.append(el("button",{class:"ghost small",onclick:goBack},returnTo==="attention"?"← Attention":"← Library"));
     const box=el("div",{class:"card col",style:"margin-top:12px;max-width:720px"});
     const title=el("input",{value:a.title||""});
     const notes=el("textarea",{rows:"4"}); notes.value=a.notes||"";
@@ -2107,9 +2162,13 @@
     const head=el("div",{class:"row"}, el("h2",{class:"section-title",style:"margin:0"},"🫧 Bubbles"),
       el("span",{class:"spacer"}),
       el("button",{class:"primary small",onclick:newBubble},"+ New bubble"));
-    m.append(head, el("div",{style:"height:14px"}));
-    const r=await api("/api/bubbles");
+    const loading=viewLoading("Loading bubbles…",4);
+    m.append(head, el("div",{style:"height:14px"}),loading);
+    let r;
+    try{ r=await api("/api/bubbles"); }
+    catch(e){ if(isCurrentRender(version))loading.replaceWith(el("div",{class:"err"},e.message)); return; }
     if(!isCurrentRender(version))return;
+    loading.remove();
     if(!r.bubbles.length){ m.append(el("div",{class:"muted"},"No bubbles yet. Tag a PDF or create one.")); return; }
     const grid=el("div",{class:"grid"});
     r.bubbles.forEach(b=>{
@@ -2198,8 +2257,10 @@
   }
   async function viewTodos(){
     const {m,version}=beginMainRender();
+    const loading=viewLoading("Loading TODOs…",3); m.append(loading);
     await loadTodos();
     if(!isCurrentRender(version))return;
+    loading.remove();
     const filter=S.todoFilter||"open";
     const head=el("div",{class:"row"},
       el("h2",{class:"section-title",style:"margin:0"},"✅ TODOs"),
@@ -2232,7 +2293,7 @@
   // Detail view — the shared landing for both an @<id> click and a TODO-list card click.
   async function viewTodo(id){
     leaveBubbleWorkspace();
-    S.view="todos"; if(typeof stopNewsLive==="function")stopNewsLive();
+    S.view="todos";
     $("#previewArrow").classList.add("hide");   // left the bubble → hide the mobile preview link
     document.querySelectorAll(".navbtn").forEach(b=>b.classList.toggle("active",b.dataset.view==="todos"));
     pushRoute("todos/"+id);
@@ -2374,8 +2435,12 @@
     S.baseMtime=null; S.saving=false; S.syncState="synced";
     S.shareActive=false; S.shareToken=""; S.editingTitles=false; S.nameInput=null; S.showHiddenPages=false;
     const {m,version}=beginMainRender({detail:true});
-    const b=(await api("/api/bubbles/"+slug)).bubble;
+    const loading=viewLoading("Loading bubble workspace…",3); m.append(loading);
+    let b;
+    try{ b=(await api("/api/bubbles/"+slug)).bubble; }
+    catch(e){ if(S.openToken===token&&isCurrentRender(version))loading.replaceWith(el("div",{class:"err"},"Could not load bubble: "+e.message)); return; }
     if(S.openToken!==token||!isCurrentRender(version)) return;   // a newer navigation started while we awaited — bail
+    loading.remove();
     // Load TODOs so the preview can resolve @<id> refs; re-render once they're in.
     loadTodos().then(()=>{ if(S.bubble===slug && S.editor) updatePreview(); });
     S.bubbleAssets=b.assets||[];
@@ -3752,8 +3817,12 @@
   // ================= ATTENTION =================
   async function viewAttention(){
     const {m,version}=beginMainRender(); m.append(el("h2",{class:"section-title"},"🔔 Attention Queue"));
-    const r=await api("/api/attention");
+    const loading=viewLoading("Loading review queue…",4); m.append(loading);
+    let r;
+    try{ r=await api("/api/attention"); }
+    catch(e){ if(isCurrentRender(version))loading.replaceWith(el("div",{class:"err"},e.message)); return; }
     if(!isCurrentRender(version))return;
+    loading.remove();
     if(!r.assets.length){ m.append(el("div",{class:"muted"},"Nothing needs your attention. 🎉")); return; }
     const grid=el("div",{class:"grid"});
     r.assets.forEach(a=>{
@@ -3793,7 +3862,7 @@
   function updateNewsTitle(){
     if(!S.newsTitle)return;
     const n=S.newsFeed?S.newsFeed.querySelectorAll(".acard").length:0;
-    S.newsTitle.textContent="📰 News ("+n+")";
+    S.newsTitle.textContent="Archive ("+n+")";
   }
   // drop a bubble's heading + grid once its last paper is gone (zero ≠ shown)
   function pruneEmptyNewsGroups(){
@@ -3845,12 +3914,14 @@
       "border-radius:10px;padding:10px 12px;margin-top:10px"});
     const chatWrap=el("div",{class:"col",style:"margin-top:12px;border:1px solid var(--line);"+
       "border-radius:10px;padding:10px 12px;gap:8px"});
-    m.append(feed, chatWrap);
+    const loading=viewLoading("Loading news…",3);
+    m.append(feed, chatWrap, loading);
     let r={items:[],bubbles:[]}, st={};
     try{ r=await api("/api/news"); }catch(e){}
     if(!isCurrentRender(version))return;
     try{ st=await api("/api/news/status"); }catch(e){}
     if(!isCurrentRender(version))return;
+    loading.remove();
     renderNewsFeed(feed, r);
     updateNewsTitle();
     buildNewsChat(chatWrap, st);

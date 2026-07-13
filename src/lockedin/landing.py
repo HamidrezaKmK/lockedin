@@ -21,7 +21,7 @@ DEFAULT_LANDING: dict[str, Any] = {
         "lede": "A calm command center for papers, math notes, topic wikis, research chat, and the small TODOs that keep a project moving.",
         "copy": "Upload PDFs, organize them into bubbles, write math-aware reports, cite your own library, and keep model-powered research help close to the work without moving your notes into a public platform.",
         "points": [
-            {"title": "Paper-first", "text": "Assets keep source PDFs, tags, notes, summaries, and BibTeX together."},
+            {"title": "Paper-first", "text": "Your library keeps source PDFs, tags, notes, summaries, and BibTeX together."},
             {"title": "Math-aware", "text": "Reports render equations, theorem boxes, citations, wikilinks, and TODO references."},
             {"title": "Private by default", "text": "Run locally or expose it only through your own HTTPS tunnel when needed."},
         ],
@@ -35,7 +35,7 @@ DEFAULT_LANDING: dict[str, Any] = {
         "intro": "lockedin follows the everyday research loop: collect sources, shape topic clusters, write technical notes, then use chat, sharing, and tasks to keep context alive.",
         "steps": [
             {"number": "01", "title": "Upload papers", "text": "Add PDFs or PDF links, then capture titles, tags, source URLs, summaries, notes, and BibTeX."},
-            {"number": "02", "title": "Organize into bubbles", "text": "Group assets into approved topic spaces with their own multi-page wiki and attached papers."},
+            {"number": "02", "title": "Organize into bubbles", "text": "Group papers into approved topic spaces with their own multi-page wiki and attached papers."},
             {"number": "03", "title": "Write reports", "text": "Use Markdown with KaTeX equations, labels, theorem environments, citations, TODO refs, and wikilinks."},
             {"number": "04", "title": "Chat, share, track", "text": "Discuss a bubble with grounded research chat, publish read-only links, and keep TODOs connected to notes."},
         ],
@@ -44,13 +44,12 @@ DEFAULT_LANDING: dict[str, Any] = {
         "title": "The pieces that stay connected",
         "intro": "Every view is built around repeated research work rather than a separate marketing funnel.",
         "features": [
-            {"icon": "📚", "title": "Assets", "text": "Your complete paper inventory with upload, URL fetch, filters, notes, tags, summaries, and BibTeX validation."},
+            {"icon": "📚", "title": "Library", "text": "Your complete paper collection with upload, URL fetch, filters, notes, tags, summaries, and BibTeX validation."},
             {"icon": "🫧", "title": "Bubbles", "text": "Topic workspaces that bind papers, pages, chat sessions, citations, and share settings."},
             {"icon": "∑", "title": "Reports", "text": "Markdown pages with rendered math, numbered equations, theorem boxes, references, images, and tables."},
             {"icon": "✅", "title": "TODOs", "text": "Issue-style tasks with report references, open/done filters, notes, and automatic reference cleanup."},
             {"icon": "💬", "title": "Research Chat", "text": "A read-only assistant grounded in the current bubble, paper summaries, and selected deep-read PDFs."},
-            {"icon": "📰", "title": "News", "text": "Premium crawling for recent papers, with steerable review sessions and accept or discard controls."},
-            {"icon": "#", "title": "Slackbot", "text": "Use Slack to select bubbles, ask questions, upload papers, manage TODOs, and trigger news crawls."},
+            {"icon": "#", "title": "Slackbot", "text": "Use Slack to select bubbles, ask questions, add papers, and manage TODOs."},
             {"icon": "⚙️", "title": "Model Settings", "text": "Switch between Qwen, OpenAI, Claude, and Gemini, configure keys, and manage math macros."},
             {"icon": "🔗", "title": "Sharing", "text": "Publish unlisted read-only bubble links, copy them, and revoke access without changing the private workspace."},
         ],
@@ -60,7 +59,7 @@ DEFAULT_LANDING: dict[str, Any] = {
         "text": "lockedin is designed for research notes that should stay close to the machine, account, and model configuration you control.",
         "bullets": [
             "User data stays behind login; public share pages are unlisted and read-only.",
-            "Standard accounts can bring their own OpenAI, Claude, or Gemini API key. Server-side Qwen and News can be limited to premium users.",
+            "Standard accounts can bring their own OpenAI, Claude, or Gemini API key. Server-side Qwen can be limited to premium users.",
             "For remote access, run the app behind your own HTTPS tunnel or domain setup instead of exposing the local server directly.",
         ],
     },

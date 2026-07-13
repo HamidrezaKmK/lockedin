@@ -56,7 +56,7 @@ logged in.
 ## Admin: managing users
 
 Admins see a **User access** card in Settings. From there you can:
-- **Upgrade to premium** for users who should be allowed to use server-side Qwen and News
+- **Upgrade to premium** for users who should be allowed to use server-side Qwen
 - **Remove premium** to move an account back to bring-your-own-key model usage
 - **Delete** a user permanently
 
@@ -106,12 +106,6 @@ With Claude the actual PDF is sent; with other models the extracted text is used
 **Sessions** — chat history is saved automatically. The session dropdown at the top of the
 chat pane lets you switch between or delete saved conversations.
 
-## News crawler (premium)
-
-If your account is premium, a **📰 News** view appears in the sidebar. Click **Crawl now**
-to search the web for recent papers relevant to your approved bubbles. Found papers stream
-into the feed; steer with follow-up messages, then **accept** (advances the date pointer)
-or **discard** the batch. Standard users can request premium from the top-right account menu.
 """,
     },
     {
@@ -202,11 +196,11 @@ of the editor. Use ↑/↓ to move, Enter/Tab to insert, or click an item.
 """,
     },
     {
-        "title": "Assets",
+        "title": "Library",
         "content": """\
 ## Uploading papers
 
-Use **📚 Assets** to add a PDF or a paper URL. You can optionally set:
+Use **📚 Library** to add a PDF or a paper URL. You can optionally set:
 - **Title** — defaults to the filename
 - **Extracted metadata** — the active model records a canonical paper title and author list
   from the PDF during background processing; your chosen asset title is preserved
@@ -229,15 +223,15 @@ After upload, papers without tags are summarised and given suggested tags. They 
 **🔔 Attention** until you review the suggestions. Auto-suggested bubbles also appear there
 until approved.
 
-The Assets view is always your full paper inventory. Attention is just a queue toggle on
-those same assets: every paper stays visible in Assets whether or not it is in Attention.
+The Library view is always your full paper inventory. Attention is just a queue toggle on
+those same papers: every paper stays visible in Library whether or not it is in Attention.
 
-## Finding assets
+## Finding papers
 
-The Assets page has filters above the card grid:
+The Library page has filters above the card grid:
 - **Search** — matches your title, extracted paper title, authors, filename, PDF id, source URL,
   notes, tags, suggested tags, and BibTeX keys
-- **Bubble** — limits results to assets attached to that bubble
+- **Bubble** — limits results to papers attached to that bubble
 
 You can combine both filters, for example selecting a bubble and typing part of a paper
 title. Asset cards with saved BibTeX show a small **✓ BibTeX** badge.
@@ -291,11 +285,9 @@ You only need to log in again if you change your lockedin username or password.
 - **`select`** — choose the active bubble for questions
 - **`list`** — show your bubbles
 - **Ask a question** — the bot answers using your active bubble's reports and paper summaries
-- **Attach a PDF** — uploads it to your Assets queue
+- **Attach a PDF** — uploads it to your Library queue
 - **Send a PDF link** — fetches and uploads the paper when the link resolves to a PDF
 - **`todos`** — list, add, edit, complete, or remove open TODOs
-- **`news`** — list retrieved news items and why they match your bubbles, if News is enabled
-- **`crawl`** — run the premium News crawler from Slack, if enabled
 
 The Slackbot follows the same account, premium, and per-user workspace rules as the website.
 Questions use your configured model. Qwen from Slack also requires premium; otherwise configure

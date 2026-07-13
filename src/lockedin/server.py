@@ -21,7 +21,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from . import assets, auth, bubbles, landing, news, paths, service, tagger
+from . import assets, auth, bubbles, landing, paths, service, tagger
 from . import scientist_sync
 
 
@@ -725,15 +725,6 @@ def build_app():
     class AestheticsConfigIn(BaseModel):
         themes: list[str] = []
 
-    class NewsInstructionsIn(BaseModel):
-        instructions: list[dict]
-
-    class NewsChatIn(BaseModel):
-        message: str = ""
-        model: Optional[str] = None
-        since: Optional[str] = None
-        until: Optional[str] = None
-
     class TodoIn(BaseModel):
         title: str
         note: str = ""
@@ -764,13 +755,6 @@ def build_app():
 
     def home_of(user: str) -> Path:
         return paths.user_home(user)
-
-    def require_news(user: str = Depends(current_user)) -> str:
-        """Gate the premium news feature; viewing is allowed, crawling additionally needs the switch."""
-        if not auth.is_news_enabled(user):
-            raise HTTPException(status_code=403,
-                                detail="News is a premium feature not enabled for this account.")
-        return user
 
     def scientist_user(authorization: Optional[str] = Header(default=None)) -> str:
         token = (authorization or "").removeprefix("Bearer ").strip()
@@ -958,7 +942,7 @@ def build_app():
     def me(user: str = Depends(current_user)):
         rec = auth.load_accounts().get(user, {})
         return {"user": user, "model": service.get_model_config(home_of(user)),
-                "news_enabled": auth.is_news_enabled(user), "premium": auth.is_premium(user),
+                "premium": auth.is_premium(user),
                 "premium_requested_at": rec.get("premium_requested_at", ""),
                 "admin": auth.is_admin(user),
                 "themes": service.load_aesthetics_config(home_of(user))["themes"]}
@@ -1073,60 +1057,6 @@ def build_app():
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
-    # ---- news (premium background crawler) ----
-    @app.get("/api/news")
-    def get_news(user: str = Depends(require_news)):
-        return service.list_news(home_of(user))
-
-    @app.get("/api/news/status")
-    def news_status(user: str = Depends(require_news)):
-        return service.news_status(home_of(user))
-
-    @app.get("/api/news/models")
-    def news_models(user: str = Depends(require_news)):
-        return {"models": service.news_models()}
-
-    @app.get("/api/news/instructions")
-    def get_news_instructions(user: str = Depends(require_news)):
-        return {"instructions": service.get_news_instructions(home_of(user))}
-
-    @app.put("/api/news/instructions")
-    def put_news_instructions(body: NewsInstructionsIn, user: str = Depends(require_news)):
-        return {"instructions": service.save_news_instructions(home_of(user), body.instructions)}
-
-    @app.get("/api/news/session")
-    def news_session(user: str = Depends(require_news)):
-        return {"session": service.news_session(home_of(user))}
-
-    @app.get("/api/news/chats")
-    def news_chats_list(user: str = Depends(require_news)):
-        return {"chats": service.list_news_chats(home_of(user))}
-
-    @app.get("/api/news/chats/{sid}")
-    def news_chat_get(sid: str, user: str = Depends(require_news)):
-        rec = service.get_news_chat(home_of(user), sid)
-        if not rec:
-            raise HTTPException(status_code=404, detail="No such crawl chat.")
-        return {"chat": rec}
-
-    @app.delete("/api/news/chats/{sid}")
-    def news_chat_delete(sid: str, user: str = Depends(require_news)):
-        service.delete_news_chat(home_of(user), sid)
-        return {"ok": True}
-
-    @app.post("/api/news/chat")
-    def news_chat(body: NewsChatIn, user: str = Depends(require_news)):
-        if not news.news_globally_enabled():
-            raise HTTPException(status_code=503,
-                                detail="News is off. Start the server with LOCKEDIN_NEWS_ENABLED=1.")
-        home = home_of(user)
-        return _stream(lambda: service.news_chat(home, body.message, body.model,
-                                                 body.since, body.until))
-
-    @app.post("/api/news/accept")
-    def news_accept(user: str = Depends(require_news)):
-        return service.accept_news(home_of(user))
-
     @app.post("/api/slack/ask")
     def slack_ask(body: SlackAskIn, user: str = Depends(current_user)):
         """Plain-text Slack Q&A using the logged-in user's configured model and entitlements."""
@@ -1142,16 +1072,6 @@ def build_app():
             if ev.get("type") == "done":
                 answer = ev.get("chat_text") or ev.get("full_response") or answer
         return {"answer": answer.strip()}
-
-    @app.post("/api/news/discard")
-    def news_discard(user: str = Depends(require_news)):
-        return service.discard_news(home_of(user))
-
-    @app.post("/api/news/{item_id}/dismiss")
-    def dismiss_news(item_id: str, user: str = Depends(require_news)):
-        if not service.dismiss_news(home_of(user), item_id):
-            raise HTTPException(status_code=404, detail="No such news item.")
-        return {"ok": True}
 
     # ---- assets ----
     @app.get("/api/assets")

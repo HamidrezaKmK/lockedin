@@ -29,20 +29,6 @@ Sharing: a Cloudflare quick tunnel (`cloudflared tunnel --url http://localhost:<
 temporary public HTTPS URL with no domain/account — see README. Use `lockedin-scientist` for
 agent-driven report editing through an authorized, synchronized local mirror.
 
-News crawler (premium, opt-in): grant a user, then run the server with the switch on. Crawling
-happens entirely in-app via the **Crawl now** button (no daemon). Uses the host `claude` CLI's
-own login — log it into your Claude subscription first.
-
-```bash
-uv run lockedin news-grant <user>                  # accounts.yaml: news_enabled=true
-LOCKEDIN_NEWS_ENABLED=1 uv run lockedin serve       # News chat works for granted users
-uv run lockedin news-revoke <user>                  # remove entitlement
-```
-
-Without `LOCKEDIN_NEWS_ENABLED=1` (the default), `POST /api/news/crawl` → 503. The switch is
-read from the **server's** environment. `uv run lockedin serve` loads the project-root `.env`
-first, and systemd deployments additionally read `ops/lockedin.env`.
-
 ### Tests
 
 Stdlib `unittest` (no pytest dependency). Two layers under `tests/`:

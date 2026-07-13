@@ -59,6 +59,9 @@ def load_accounts() -> dict[str, dict]:
     users = dict(data.get("users", {}))
     changed = False
     for rec in users.values():
+        if "news_enabled" in rec:
+            rec.pop("news_enabled")
+            changed = True
         if "approved" not in rec:
             rec["approved"] = True
             changed = True
@@ -66,7 +69,7 @@ def load_accounts() -> dict[str, dict]:
             rec["admin"] = False
             changed = True
         if "premium" not in rec:
-            rec["premium"] = bool(rec.get("news_enabled"))
+            rec["premium"] = False
             changed = True
     if users and not any(rec.get("admin") for rec in users.values()):
         owner = "shengdebao" if "shengdebao" in users else sorted(
@@ -133,7 +136,6 @@ def list_users() -> list[dict]:
             "premium_requested_at": rec.get("premium_requested_at", ""),
             "created_at": rec.get("created_at", ""),
             "pending_at": rec.get("pending_at", ""),
-            "news_enabled": bool(rec.get("premium") or rec.get("news_enabled")),
         })
     return out
 
@@ -227,20 +229,10 @@ def delete_user(username: str) -> None:
     save_accounts(users)
 
 
-def is_news_enabled(username: str) -> bool:
-    """Whether the account is entitled to the premium background news crawler."""
-    return is_premium(username)
-
-
-def set_news_enabled(username: str, on: bool) -> None:
-    """Grant/revoke the premium news entitlement; preserves credential fields. Raises ValueError."""
-    set_premium(username, on)
-
-
 def is_premium(username: str) -> bool:
     """Whether the account can use server-paid premium features such as local Qwen."""
     rec = load_accounts().get(username.strip().lower())
-    return bool(rec and (rec.get("premium") or rec.get("news_enabled")))
+    return bool(rec and rec.get("premium"))
 
 
 def set_premium(username: str, on: bool) -> None:
@@ -252,11 +244,9 @@ def set_premium(username: str, on: bool) -> None:
         raise ValueError("No such user.")
     if on:
         rec["premium"] = True
-        rec["news_enabled"] = True
         rec.pop("premium_requested_at", None)
     else:
         rec.pop("premium", None)
-        rec.pop("news_enabled", None)
     save_accounts(users)
 
 
@@ -267,7 +257,7 @@ def request_premium(username: str) -> str:
     rec = users.get(username)
     if rec is None:
         raise ValueError("No such user.")
-    if rec.get("premium") or rec.get("news_enabled"):
+    if rec.get("premium"):
         rec.pop("premium_requested_at", None)
         save_accounts(users)
         return ""

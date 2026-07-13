@@ -90,11 +90,9 @@ For those persistent links, the web server and Slack bot must share
 | Message | Action |
 |---|---|
 | *(first message)* | Bot asks for username, then password |
-| Attach a PDF / send a PDF link | Uploads it to your Assets queue |
+| Attach a PDF / send a PDF link | Uploads it to your Library queue |
 | `select` (or `switch`) | Lists your bubbles, reply with a number to set the active one |
 | `list` | Lists your bubbles |
-| `news` | Lists crawled news items + why each is relevant (premium) |
-| `crawl` | Searches the web for new papers for your bubbles (premium) |
 | `help` | Shows the command list |
 | anything else | Qwen answers using your **active** bubble's content (`select` one first) |
 
