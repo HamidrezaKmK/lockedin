@@ -232,6 +232,19 @@ def choose_account() -> dict:
     return accounts[-1]
 
 
+def print_bubbles(account: dict) -> None:
+    """List approved bubbles without starting an agent or synchronizing the workspace."""
+    rows = request(account["server"], "GET", "/api/scientist/v1/bubbles",
+                   token=account["token"]).get("bubbles", [])
+    if not rows:
+        print("No approved bubbles are available for this account.")
+        return
+    print("Approved bubbles:")
+    for row in rows:
+        print(f"  {row['slug']}  —  {row['name']}")
+    print("\nRun: lockedin-scientist <codex|claude|agy> <bubble-slug>")
+
+
 def role(mirror: Mirror, bubble: str) -> str:
     inventory_path = mirror.root / "REPORTS" / bubble / "_lockedin_papers.md"
     inventory = inventory_path.read_text() if inventory_path.exists() else "(inventory unavailable; run lockedin-scientist sync)"
@@ -297,13 +310,19 @@ def main() -> None:
     sub = parser.add_subparsers(dest="command")
     p_login = sub.add_parser("login"); p_login.add_argument("--server", required=True)
     sub.add_parser("sync")
+    sub.add_parser("bubbles", help="List approved bubbles and their slugs.")
     p_run = sub.add_parser("run"); p_run.add_argument("model", choices=("codex", "claude", "agy")); p_run.add_argument("bubble")
     args = parser.parse_args()
     if args.command == "login": login(args.server); return
     account = choose_account(); mirror = Mirror(account)
-    mirror.sync()
-    if args.command == "sync": print(mirror.root); return
-    if args.command == "run": raise SystemExit(run_agent(args.model, mirror, args.bubble))
+    if args.command == "bubbles": print_bubbles(account); return
+    if args.command == "sync":
+        mirror.sync()
+        print(mirror.root)
+        return
+    if args.command == "run":
+        mirror.sync()
+        raise SystemExit(run_agent(args.model, mirror, args.bubble))
     parser.print_help()
 
 

@@ -185,6 +185,31 @@
   .privacy-list li{padding-left:18px;position:relative;color:var(--muted);font-size:13px;line-height:1.55}
   .privacy-list li::before{content:"";position:absolute;left:0;top:.72em;width:7px;height:7px;border-radius:50%;background:var(--accent2)}
   .landing-footer{padding:24px 0 38px;color:var(--muted);font-size:12px}
+  /* Installed Scientist client — commands have their own responsive treatment instead of
+     inheriting the generic feature-card typography.  In particular, long URLs must wrap
+     inside a card rather than widening the landing page. */
+  .scientist-install{background:linear-gradient(135deg,color-mix(in srgb,var(--accent) 11%,var(--panel)),var(--panel));
+    border:1px solid color-mix(in srgb,var(--accent) 32%,var(--line));border-radius:12px;padding:clamp(18px,3vw,30px);
+    box-shadow:var(--shadow);overflow:hidden}
+  .scientist-install .landing-section-head{margin-bottom:22px}
+  .scientist-install .landing-section-head p{max-width:620px;line-height:1.55}
+  .scientist-platforms{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:18px}
+  .scientist-platform{min-width:0;background:color-mix(in srgb,var(--panel) 90%,transparent);border:1px solid var(--line);
+    border-radius:9px;padding:15px}
+  .scientist-platform h3{margin:0 0 5px;font-size:15px}
+  .scientist-platform p{margin:0 0 12px;color:var(--muted);font-size:12px;line-height:1.45}
+  .command{display:block;min-width:0;margin:0;padding:11px 12px;border-radius:7px;background:#101218;
+    border:1px solid color-mix(in srgb,var(--accent2) 35%,var(--line));color:#e8e5ff;font-family:var(--font-mono);
+    font-size:12px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;user-select:all}
+  .scientist-note{margin:0;color:var(--muted);font-size:12px;line-height:1.5}
+  .scientist-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:0;padding:0;list-style:none;counter-reset:scientist-step}
+  .scientist-steps li{min-width:0;counter-increment:scientist-step;position:relative;padding:13px 13px 13px 43px;
+    background:color-mix(in srgb,var(--panel) 86%,transparent);border:1px solid var(--line);border-radius:9px;
+    color:var(--muted);font-size:12px;line-height:1.5}
+  .scientist-steps li::before{content:counter(scientist-step);position:absolute;left:13px;top:13px;width:20px;height:20px;
+    display:grid;place-items:center;border-radius:50%;background:var(--accent);color:white;font-family:var(--font-mono);font-size:11px;font-weight:700}
+  .scientist-steps b{display:block;color:var(--ink);font-size:13px;margin-bottom:4px}
+  .scientist-steps .command{margin-top:8px;font-size:11px;padding:7px 8px}
   .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:22px;
     box-shadow:var(--shadow-sm)}
   .brand{font-size:22px;font-weight:700;font-family:var(--font-ui);letter-spacing:-.02em}
@@ -635,10 +660,11 @@
     .landing-section{padding:36px 0}
     .landing-section-head{display:block;margin-bottom:18px}
     .landing-section h2{font-size:23px;margin-bottom:8px}
-    .workflow-grid,.feature-grid{grid-template-columns:minmax(0,1fr)}
+    .workflow-grid,.feature-grid,.scientist-platforms,.scientist-steps{grid-template-columns:minmax(0,1fr)}
     .workflow-step,.feature-card{min-height:0}
     .privacy-panel{display:block}
     .privacy-panel h2{font-size:23px}
+    .scientist-install{padding:18px 14px}
   }
 </style>
 </head>
@@ -671,6 +697,33 @@
           </div>
           <div class="err" id="au_err"></div>
         </form>
+      </section>
+
+      <section class="landing-section" aria-labelledby="scientist-install-title">
+        <div class="scientist-install">
+        <div class="landing-section-head">
+          <h2 id="scientist-install-title">Use Scientist from your computer</h2>
+          <p>A small, dependency-free companion for your installed Codex, Claude, or Antigravity CLI. It mirrors only your authorized workspace and keeps it synchronized while you work.</p>
+        </div>
+        <div class="scientist-platforms">
+          <article class="scientist-platform">
+            <h3>macOS or Linux</h3>
+            <p>Requires Python 3.11+ and adds one command to <code>~/.local/bin</code>.</p>
+            <code class="command">curl -fsSL https://raw.githubusercontent.com/HamidrezaKmK/lockedin/scientist/install.sh | bash</code>
+          </article>
+          <article class="scientist-platform">
+            <h3>Windows PowerShell</h3>
+            <p>Requires Python 3.11+ and installs the client under your local app data folder.</p>
+            <code class="command">irm https://raw.githubusercontent.com/HamidrezaKmK/lockedin/scientist/install.ps1 | iex</code>
+          </article>
+        </div>
+        <ol class="scientist-steps">
+          <li><b>Sign in once</b>Authorize this device in your browser.<code class="command">lockedin-scientist login --server https://your-lockedin.example</code></li>
+          <li><b>Choose a bubble</b>See the active bubble names and slugs you may use.<code class="command">lockedin-scientist bubbles</code></li>
+          <li><b>Start your assistant</b>Use its slug with an installed coding CLI.<code class="command">lockedin-scientist codex &lt;bubble-slug&gt;</code></li>
+        </ol>
+        <p class="scientist-note">Your server URL is chosen at login; the installer does not install the LockedIn server or hard-code a server address.</p>
+        </div>
       </section>
 
       <section class="landing-section" aria-labelledby="workflow-title">
@@ -715,18 +768,6 @@
             <li>Standard accounts can bring their own OpenAI, Claude, or Gemini API key. Server-side Qwen and News can be limited to premium users.</li>
             <li>For remote access, run the app behind your own HTTPS tunnel or domain setup instead of exposing the local server directly.</li>
           </ul>
-        </div>
-      </section>
-
-      <section class="landing-section" aria-labelledby="scientist-install-title">
-        <div class="landing-section-head">
-          <h2 id="scientist-install-title">Use Scientist from your computer</h2>
-          <p>Install the sync hub once, authorize it in your browser, then launch Codex, Claude, or Antigravity against a live local mirror.</p>
-        </div>
-        <div class="feature-grid">
-          <div class="feature-card"><b>macOS / Linux</b><span><code>curl -fsSL https://raw.githubusercontent.com/HamidrezaKmK/lockedin/scientist/install.sh | bash</code></span></div>
-          <div class="feature-card"><b>Windows PowerShell</b><span><code>irm https://raw.githubusercontent.com/HamidrezaKmK/lockedin/scientist/install.ps1 | iex</code></span></div>
-          <div class="feature-card"><b>First run</b><span><code>lockedin-scientist login --server https://your-lockedin.example</code></span></div>
         </div>
       </section>
 
