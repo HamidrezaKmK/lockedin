@@ -52,6 +52,7 @@ class ScientistGuideTest(unittest.TestCase):
         self.assertIn("lockedin-scientist bubbles", section)
         self.assertIn("lockedin-scientist sync", section)
         self.assertIn("lockedin-scientist sync --from-server", section)
+        self.assertIn("lockedin-scientist uninstall --purge-data --yes", section)
         self.assertIn("lockedin-scientist agy", section)
         self.assertIn("curl -fsSL", section)
         self.assertIn("normal\ninteractive approval", section)
@@ -255,6 +256,9 @@ class ScientistClientTest(unittest.TestCase):
         self.assertIn("lockedin-scientist sync", output.getvalue())
         self.assertIn("lockedin-scientist claude", output.getvalue())
         self.assertIn("lockedin-scientist agy", output.getvalue())
+        self.assertIn("lockedin-scientist sync --from-server", output.getvalue())
+        self.assertIn("lockedin-scientist uninstall", output.getvalue())
+        self.assertIn("lockedin-scientist uninstall --purge-data --yes", output.getvalue())
 
     def test_help_describes_all_models_and_sync_without_an_account(self):
         original_argv = list(scientist_cli.sys.argv)
@@ -272,6 +276,7 @@ class ScientistClientTest(unittest.TestCase):
         self.assertIn("lockedin-scientist claude", text)
         self.assertIn("lockedin-scientist agy", text)
         self.assertIn("sync --from-server", text)
+        self.assertIn("uninstall --purge-data --yes", text)
 
     def test_unknown_slug_fails_before_a_vendor_cli_is_started(self):
         with temp_data_home():

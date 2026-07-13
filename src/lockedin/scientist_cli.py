@@ -58,6 +58,11 @@ def welcome() -> None:
     print(f"  {cyan('3.')} {dim('Sync once without starting an assistant')}\n     {cyan('lockedin-scientist sync')}")
     print(f"  {cyan('4.')} {dim('Launch the coding CLI you use')}\n     {cyan('lockedin-scientist codex <bubble-slug>')}\n     {cyan('lockedin-scientist claude <bubble-slug>')}\n     {cyan('lockedin-scientist agy <bubble-slug>')}")
     print()
+    print(bold("Troubleshooting & cleanup"))
+    print(f"  {cyan('↻')} {dim('Replace the mirror with the current website state')}\n     {cyan('lockedin-scientist sync --from-server')}")
+    print(f"  {cyan('−')} {dim('Remove the client; keep mirror and authorization')}\n     {cyan('lockedin-scientist uninstall')}")
+    print(f"  {cyan('×')} {dim('Remove the client, mirror, authorization, and sync state')}\n     {cyan('lockedin-scientist uninstall --purge-data --yes')}")
+    print()
     print(dim("Use --help to see every command. Your workspace stays synchronized while you work."))
 
 
@@ -491,12 +496,15 @@ def _main() -> None:
   lockedin-scientist claude <bubble-slug>
   lockedin-scientist agy <bubble-slug>
   lockedin-scientist uninstall
+  lockedin-scientist uninstall --purge-data --yes
 
 The short model form above is equivalent to `lockedin-scientist run <model> <bubble-slug>`.
 `sync` performs one safe pull/push cycle without launching a model. `sync --from-server` archives
 local safe files, resets sync bookkeeping, and makes the website state authoritative (it asks for
 confirmation; use --yes only for a deliberate non-interactive recovery). During a model session,
-the workspace is synchronized every five seconds. Use NO_COLOR=1 for plain terminal output.""",
+the workspace is synchronized every five seconds. `uninstall` removes only the command/client by
+default; `uninstall --purge-data --yes` also removes the mirror and authorization. Use NO_COLOR=1
+for plain terminal output.""",
         formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", title="commands", metavar="COMMAND")
     p_login = sub.add_parser("login", help="Authorize this computer in a browser.",

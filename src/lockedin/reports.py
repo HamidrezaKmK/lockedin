@@ -402,6 +402,15 @@ form:
 ```
 lockedin-scientist uninstall --purge-data --yes
 ```
+
+### Troubleshooting at a glance
+
+| Need | Command |
+|------|---------|
+| Pull/push normally | `lockedin-scientist sync` |
+| Replace the mirror with the current website state (with a local cache backup) | `lockedin-scientist sync --from-server` |
+| Remove only the installed command and client source | `lockedin-scientist uninstall` |
+| Remove the client, mirror, authorization, and sync state | `lockedin-scientist uninstall --purge-data --yes` |
 """,
     },
     {
