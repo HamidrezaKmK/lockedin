@@ -173,6 +173,12 @@ This workspace is synchronized with the LockedIn website every five seconds. Re-
 If .lockedin-scientist/retries exists, inspect the newest retry packet and reapply your intended change to the current page instead of restoring stale text.
 Never edit credentials, TODOs, bubbles.yaml, or unrelated bubbles. Describe intended report edits before writing.
 
+TERMINAL OUTPUT RULE:
+- In normal terminal conversation, do not emit LaTeX commands, delimiters, or raw equation source.
+  Explain mathematics in plain language and Unicode where useful (for example, G(n), ω, or t − s).
+- Markdown/LaTeX notation is allowed only inside report files being read or edited, or when the
+  user explicitly asks to see the exact report text.
+
 PAPER INVENTORY RULES:
 - HARD RULE: whenever the user asks which papers/assets are attached, or asks whether that list
   changed, first re-read REPORTS/{bubble}/_lockedin_papers.md from disk in that same turn. Use
