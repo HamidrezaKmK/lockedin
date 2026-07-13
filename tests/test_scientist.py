@@ -131,6 +131,17 @@ class ScientistClientTest(unittest.TestCase):
         self.assertEqual(first.root, second.root)
         self.assertEqual(first.root.parts[-3:], ("data", "users", "alice"))
 
+    def test_conflict_bases_live_outside_the_mirrored_workspace(self):
+        with temp_data_home():
+            mirror = scientist_cli.Mirror({"server": "https://example.test", "user": "alice", "token": "t"})
+            # Simulate an old, inaccessible/malformed workspace bookkeeping location. New
+            # clients must not try to create bases there.
+            mirror.legacy_base_dir.parent.mkdir(parents=True)
+            mirror.legacy_base_dir.write_text("old client metadata")
+            name = mirror.save_base("REPORTS/work/pages/overview.md", b"base")
+            self.assertEqual((mirror.base_dir / name).read_bytes(), b"base")
+            self.assertEqual(mirror.base_raw({"base_file": name}, "ignored"), b"base")
+
     def test_legacy_url_hashed_mirror_is_migrated_once(self):
         with temp_data_home():
             account = {"server": "https://example.test", "user": "alice", "token": "t"}

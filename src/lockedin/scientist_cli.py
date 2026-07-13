@@ -92,7 +92,11 @@ class Mirror:
             self.root.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(str(legacy), str(self.root))
         self.state_path = self.root / ".lockedin-scientist" / "state.json"
-        self.base_dir = self.root / ".lockedin-scientist" / "bases"
+        # Bases are client bookkeeping, not mirrored research content.  Keep new bases outside
+        # the workspace: an older client may have created ``.lockedin-scientist/bases`` with
+        # restrictive ownership, but that must never prevent a user from syncing their work.
+        self.base_dir = data_root() / "runtime" / "users" / account["user"] / "bases"
+        self.legacy_base_dir = self.root / ".lockedin-scientist" / "bases"
         self.root.mkdir(parents=True, exist_ok=True)
 
     def state(self) -> dict:
@@ -124,8 +128,9 @@ class Mirror:
     def base_raw(self, old: dict, rel: str) -> bytes:
         name = old.get("base_file")
         if name:
-            try: return (self.base_dir / name).read_bytes()
-            except FileNotFoundError: pass
+            for directory in (self.base_dir, self.legacy_base_dir):
+                try: return (directory / name).read_bytes()
+                except OSError: pass
         if old.get("content_b64"):  # one-time migration from v1 state files
             return base64.b64decode(old["content_b64"])
         return b""
