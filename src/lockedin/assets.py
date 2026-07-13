@@ -14,6 +14,7 @@ from __future__ import annotations
 import os
 import re
 import secrets
+import threading
 from datetime import datetime, timezone
 from urllib.parse import unquote, urlparse
 
@@ -24,6 +25,14 @@ from slugify import slugify
 from . import paths
 
 MAX_PDF_BYTES = 50 * 1024 * 1024  # 50 MB
+_META_LOCKS: dict[str, threading.RLock] = {}
+_META_LOCKS_GUARD = threading.Lock()
+
+
+def _meta_lock(pdf_id: str) -> threading.RLock:
+    """Serialize metadata read-modify-write operations for one asset."""
+    with _META_LOCKS_GUARD:
+        return _META_LOCKS.setdefault(pdf_id, threading.RLock())
 
 
 def _now_iso() -> str:
@@ -139,20 +148,22 @@ def list_assets() -> list[dict]:
 
 def update_asset(pdf_id: str, **fields) -> dict:
     """Patch allowed fields; keep tags<->idea_bubbles in sync."""
-    meta = load_meta(pdf_id)
-    if "tags" in fields and fields["tags"] is not None:
-        tags = [t.strip() for t in fields["tags"] if t.strip()]
-        old_scores = bubble_scores(meta)
-        slugs = [slug_of(t) for t in tags]
-        meta["tags"] = tags
-        meta["idea_bubbles"] = slugs
-        meta["bubble_scores"] = {slug: int(old_scores.get(slug, 5)) for slug in slugs}
-        fields.pop("tags")
-    for k in ("title", "notes", "url_source", "attention_flag", "suggested_tags", "bibliography"):
-        if k in fields and fields[k] is not None:
-            meta[k] = fields[k]
-    save_meta(pdf_id, meta)
-    return meta
+    with _meta_lock(pdf_id):
+        meta = load_meta(pdf_id)
+        if "tags" in fields and fields["tags"] is not None:
+            tags = [t.strip() for t in fields["tags"] if t.strip()]
+            old_scores = bubble_scores(meta)
+            slugs = [slug_of(t) for t in tags]
+            meta["tags"] = tags
+            meta["idea_bubbles"] = slugs
+            meta["bubble_scores"] = {slug: int(old_scores.get(slug, 5)) for slug in slugs}
+            fields.pop("tags")
+        for k in ("title", "notes", "url_source", "attention_flag", "suggested_tags", "bibliography",
+                  "extracted_title", "authors", "metadata_extracted", "summarized"):
+            if k in fields and fields[k] is not None:
+                meta[k] = fields[k]
+        save_meta(pdf_id, meta)
+        return meta
 
 
 def bubble_scores(meta: dict) -> dict[str, int]:

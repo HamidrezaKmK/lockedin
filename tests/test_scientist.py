@@ -15,16 +15,22 @@ from lockedin import bubbles, paths, reports, scientist_cli, scientist_sync
 
 @contextmanager
 def temp_data_home():
-    old = os.environ.get("XDG_DATA_HOME")
+    old_data = os.environ.get("XDG_DATA_HOME")
+    old_cache = os.environ.get("XDG_CACHE_HOME")
     with tempfile.TemporaryDirectory() as directory:
         os.environ["XDG_DATA_HOME"] = directory
+        os.environ["XDG_CACHE_HOME"] = str(Path(directory) / "cache")
         try:
             yield Path(directory)
         finally:
-            if old is None:
+            if old_data is None:
                 os.environ.pop("XDG_DATA_HOME", None)
             else:
-                os.environ["XDG_DATA_HOME"] = old
+                os.environ["XDG_DATA_HOME"] = old_data
+            if old_cache is None:
+                os.environ.pop("XDG_CACHE_HOME", None)
+            else:
+                os.environ["XDG_CACHE_HOME"] = old_cache
 
 
 @contextmanager
@@ -170,12 +176,13 @@ class ScientistClientTest(unittest.TestCase):
     def test_conflict_bases_live_outside_the_mirrored_workspace(self):
         with temp_data_home():
             mirror = scientist_cli.Mirror({"server": "https://example.test", "user": "alice", "token": "t"})
-            # Simulate an old, inaccessible/malformed workspace bookkeeping location. New
-            # clients must not try to create bases there.
-            mirror.legacy_base_dir.parent.mkdir(parents=True)
-            mirror.legacy_base_dir.write_text("old client metadata")
+            # Simulate a protected/malformed preferred runtime directory. The client must
+            # transparently move conflict bookkeeping to its cache fallback.
+            mirror.base_dir.parent.mkdir(parents=True)
+            mirror.base_dir.write_text("not a directory")
             name = mirror.save_base("REPORTS/work/pages/overview.md", b"base")
             self.assertEqual((mirror.base_dir / name).read_bytes(), b"base")
+            self.assertEqual(mirror.base_dir, mirror.fallback_base_dir)
             self.assertEqual(mirror.base_raw({"base_file": name}, "ignored"), b"base")
 
     def test_legacy_url_hashed_mirror_is_migrated_once(self):

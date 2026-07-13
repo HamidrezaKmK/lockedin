@@ -120,11 +120,8 @@ def extract_paper_metadata(home: Path, pdf_id: str, *, force: bool = False) -> d
         raw = models.complete(home, [{"role": "user", "content": text[:MAX_METADATA_INPUT_CHARS]}],
                               system=METADATA_SYSTEM, temperature=0)
         title, authors = _parse_paper_metadata(raw)
-        meta["extracted_title"] = title
-        meta["authors"] = authors
-        meta["metadata_extracted"] = True
-        assets.save_meta(pdf_id, meta)
-        return meta
+        return assets.update_asset(pdf_id, extracted_title=title, authors=authors,
+                                   metadata_extracted=True)
 
 
 def _parse_tags(raw: str) -> list[str]:
@@ -183,9 +180,7 @@ def run_ingest(home: Path, pdf_id: str, had_user_tags: bool) -> None:
         # 3) summarize (best-effort)
         try:
             summarize_pdf(home, pdf_id)
-            meta = assets.load_meta(pdf_id)
-            meta["summarized"] = True
-            assets.save_meta(pdf_id, meta)
+            assets.update_asset(pdf_id, summarized=True)
         except Exception as e:  # noqa: BLE001
             logger.warning("ingest summarize failed for %s: %s", pdf_id, e)
 
@@ -197,9 +192,6 @@ def run_ingest(home: Path, pdf_id: str, had_user_tags: bool) -> None:
             except Exception as e:  # noqa: BLE001
                 logger.warning("ingest tag-suggest failed for %s: %s", pdf_id, e)
                 tags = []
-            meta = assets.load_meta(pdf_id)
-            meta["suggested_tags"] = tags
-            meta["attention_flag"] = True   # always flag uncategorized uploads for review
-            assets.save_meta(pdf_id, meta)
+            assets.update_asset(pdf_id, suggested_tags=tags, attention_flag=True)
             for t in tags:
                 bubbles.propose_bubble(t)

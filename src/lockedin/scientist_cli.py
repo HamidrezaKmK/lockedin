@@ -67,6 +67,15 @@ def data_root() -> Path:
     return Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share")) / APP
 
 
+def cache_root() -> Path:
+    """A writable client-only fallback for machines with a protected data directory."""
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Caches" / "LockedInScientist"
+    if os.name == "nt":
+        return Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData/Local")) / "LockedInScientist" / "cache"
+    return Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / APP
+
+
 def config_path() -> Path: return data_root() / "accounts.json"
 
 
@@ -179,6 +188,7 @@ class Mirror:
         # the workspace: an older client may have created ``.lockedin-scientist/bases`` with
         # restrictive ownership, but that must never prevent a user from syncing their work.
         self.base_dir = data_root() / "runtime" / "users" / account["user"] / "bases"
+        self.fallback_base_dir = cache_root() / "runtime" / "users" / account["user"] / "bases"
         self.legacy_base_dir = self.root / ".lockedin-scientist" / "bases"
         self.root.mkdir(parents=True, exist_ok=True)
 
@@ -199,19 +209,26 @@ class Mirror:
 
     def save_base(self, rel: str, raw: bytes) -> str:
         """Keep conflict bases out of the small revision state manifest."""
-        self.base_dir.mkdir(parents=True, exist_ok=True)
         name = self._base_name(rel)
-        path = self.base_dir / name
-        if not path.exists() or path.read_bytes() != raw:
-            tmp = path.with_suffix(".tmp")
-            tmp.write_bytes(raw)
-            tmp.replace(path)
-        return name
+        errors = []
+        for directory in (self.base_dir, self.fallback_base_dir):
+            try:
+                directory.mkdir(parents=True, exist_ok=True)
+                path = directory / name
+                if not path.exists() or path.read_bytes() != raw:
+                    tmp = path.with_suffix(".tmp")
+                    tmp.write_bytes(raw)
+                    tmp.replace(path)
+                self.base_dir = directory
+                return name
+            except OSError as exc:
+                errors.append(str(exc))
+        raise RuntimeError("Cannot store Scientist conflict bases: " + "; ".join(errors))
 
     def base_raw(self, old: dict, rel: str) -> bytes:
         name = old.get("base_file")
         if name:
-            for directory in (self.base_dir, self.legacy_base_dir):
+            for directory in (self.base_dir, self.fallback_base_dir, self.legacy_base_dir):
                 try: return (directory / name).read_bytes()
                 except OSError: pass
         if old.get("content_b64"):  # one-time migration from v1 state files

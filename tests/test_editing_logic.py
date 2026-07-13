@@ -483,6 +483,26 @@ class AssetModelMetadata(unittest.TestCase):
         self.assertEqual(meta["authors"], ["Ada Lovelace", "Grace Hopper"])
         self.assertTrue(meta["metadata_extracted"])
 
+    def test_background_metadata_update_preserves_bibtex_saved_during_ingest(self):
+        bib = "@article{quickadd, title={Quick Add}, author={Ada}, year={2026}}"
+        with temp_home() as home:
+            with paths.use_root(home):
+                pid = assets.save_asset(b"%PDF-1", "paper.pdf", title="Uploaded name")
+                assets.save_text(pid, "Canonical Paper Title")
+            original = models.complete
+
+            def complete_during_bibtex_save(*args, **kwargs):
+                service.update_asset_bibliography(home, pid, bib)
+                return '{"title":"Canonical Paper Title","authors":["Ada"]}'
+
+            models.complete = complete_during_bibtex_save
+            try:
+                meta = tagger.extract_paper_metadata(home, pid)
+            finally:
+                models.complete = original
+        self.assertEqual(meta["bibliography"], bib)
+        self.assertEqual(meta["extracted_title"], "Canonical Paper Title")
+
 
 class AssetBibtex(unittest.TestCase):
     BIB1 = "@article{bases4spaces, title={Bases for Spaces}, author={Ada Lovelace}, year={1843}, journal={Notes}}"
