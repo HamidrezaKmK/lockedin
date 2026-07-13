@@ -22,3 +22,4 @@ printf '#!/usr/bin/env bash\nexec %q %q "$@"\n' "$PYTHON" "$root/scientist_cli.p
 chmod 0755 "$bin/lockedin-scientist"
 ln -sf lockedin-scientist "$bin/lockedin_scientist"
 echo "Installed only lockedin-scientist. Ensure $bin is on PATH, then run: lockedin-scientist login --server https://your-lockedin.example"
+echo "To remove it later: lockedin-scientist uninstall"

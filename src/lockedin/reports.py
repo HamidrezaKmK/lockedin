@@ -377,6 +377,22 @@ instead of being overwritten.
 Only pages and report assets inside an **approved** bubble can be written back. Credentials,
 sessions, chat history, TODOs, bubble settings, and paper PDFs are never writable by Scientist.
 Use `lockedin-scientist sync` to pull/push once without launching a coding CLI.
+
+### Uninstall
+
+To remove the installed command and client source while keeping your local mirror and saved
+authorization for a later reinstall, run:
+
+```
+lockedin-scientist uninstall
+```
+
+To also delete the local mirror, authorization, and sync state, use the explicit destructive
+form:
+
+```
+lockedin-scientist uninstall --purge-data --yes
+```
 """,
     },
     {

@@ -132,6 +132,34 @@ class ScientistClientTest(unittest.TestCase):
         with patch.dict(os.environ, {"NO_COLOR": "", "FORCE_COLOR": "1"}, clear=False):
             self.assertIn("\033[31m", scientist_cli._colour("red", "31"))
 
+    def test_uninstall_removes_client_but_preserves_data_by_default(self):
+        with temp_data_home() as root, tempfile.TemporaryDirectory() as bin_dir:
+            client = scientist_cli.client_install_path()
+            client.parent.mkdir(parents=True)
+            client.write_text("standalone client")
+            (root / "data" / "users" / "alice").mkdir(parents=True)
+            (root / "accounts.json").write_text("{}")
+            for name in ("lockedin-scientist", "lockedin_scientist"):
+                (Path(bin_dir) / name).write_text("wrapper")
+            with patch.object(scientist_cli, "__file__", str(client)), \
+                 patch.object(scientist_cli, "command_bin_dir", return_value=Path(bin_dir)):
+                scientist_cli.uninstall(purge_data=False, assume_yes=True)
+            self.assertFalse(client.parent.exists())
+            self.assertFalse((Path(bin_dir) / "lockedin-scientist").exists())
+            self.assertTrue((root / "data" / "users" / "alice").exists())
+            self.assertTrue((root / "accounts.json").exists())
+
+    def test_uninstall_purge_removes_all_client_data(self):
+        with temp_data_home() as root, tempfile.TemporaryDirectory() as bin_dir:
+            client = scientist_cli.client_install_path()
+            client.parent.mkdir(parents=True)
+            client.write_text("standalone client")
+            (root / "data").mkdir()
+            with patch.object(scientist_cli, "__file__", str(client)), \
+                 patch.object(scientist_cli, "command_bin_dir", return_value=Path(bin_dir)):
+                scientist_cli.uninstall(purge_data=True, assume_yes=True)
+            self.assertFalse((root / "lockedin-scientist").exists())
+
     def test_same_user_gets_a_stable_mirror_across_reauthorization(self):
         with temp_data_home():
             first = scientist_cli.Mirror({"server": "https://one.example", "user": "alice", "token": "one"})

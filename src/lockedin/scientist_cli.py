@@ -70,6 +70,15 @@ def data_root() -> Path:
 def config_path() -> Path: return data_root() / "accounts.json"
 
 
+def client_install_path() -> Path: return data_root() / "client" / "scientist_cli.py"
+
+
+def command_bin_dir() -> Path:
+    if os.name == "nt":
+        return Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData/Local")) / "LockedInScientist" / "bin"
+    return Path.home() / ".local" / "bin"
+
+
 def load_config() -> dict:
     p = config_path()
     return json.loads(p.read_text()) if p.exists() else {"accounts": []}
@@ -80,6 +89,42 @@ def save_config(cfg: dict) -> None:
     config_path().write_text(json.dumps(cfg, indent=2) + "\n")
     try: os.chmod(config_path(), 0o600)
     except OSError: pass
+
+
+def uninstall(*, purge_data: bool, assume_yes: bool) -> None:
+    """Remove the installed standalone client without silently deleting research files."""
+    installed = client_install_path()
+    running = Path(__file__).resolve()
+    if running != installed.resolve():
+        raise RuntimeError("This is a development copy, not the installed standalone client. "
+                           "Run the command installed in your user PATH to uninstall it.")
+    if not assume_yes:
+        if not sys.stdin.isatty():
+            raise RuntimeError("Refusing a non-interactive uninstall. Re-run with --yes after reviewing the options.")
+        scope = "the client, commands, authorization, local mirror, and sync state" if purge_data else "the client and command wrappers (your local mirror and authorization stay)"
+        answer = input(f"Remove {scope}? [y/N] ").strip().lower()
+        if answer not in ("y", "yes"):
+            print(dim("Uninstall cancelled."))
+            return
+
+    errors: list[str] = []
+    for name in ("lockedin-scientist", "lockedin_scientist", "lockedin-scientist.cmd", "lockedin_scientist.cmd"):
+        try: (command_bin_dir() / name).unlink(missing_ok=True)
+        except OSError as exc: errors.append(f"{name}: {exc}")
+    try: shutil.rmtree(installed.parent)
+    except FileNotFoundError: pass
+    except OSError as exc: errors.append(f"client files: {exc}")
+    if purge_data:
+        try: shutil.rmtree(data_root())
+        except FileNotFoundError: pass
+        except OSError as exc: errors.append(f"client data: {exc}")
+    if errors:
+        raise RuntimeError("Some files could not be removed: " + "; ".join(errors))
+    print(green("✓") + " LockedIn Scientist was removed.")
+    if purge_data:
+        print(dim("Authorization, local mirror, and sync state were also removed."))
+    else:
+        print(dim("Your local mirror and authorization were kept. Reinstall later to resume."))
 
 
 def request(server: str, method: str, path: str, body: dict | None = None, token: str = "") -> dict:
@@ -363,6 +408,7 @@ def _main() -> None:
   lockedin-scientist codex <bubble-slug>
   lockedin-scientist claude <bubble-slug>
   lockedin-scientist agy <bubble-slug>
+  lockedin-scientist uninstall
 
 The short model form above is equivalent to `lockedin-scientist run <model> <bubble-slug>`.
 `sync` performs one safe pull/push cycle without launching a model.  During a model session,
@@ -376,6 +422,10 @@ the workspace is synchronized every five seconds.  Use NO_COLOR=1 for plain term
                    description="Synchronize the local mirror once, then print its location.")
     sub.add_parser("bubbles", help="List active bubble names and slugs; no model or sync.",
                    description="List approved bubbles available to the authorized account.")
+    p_uninstall = sub.add_parser("uninstall", help="Remove the standalone client from this computer.",
+                                 description="Remove command wrappers and installed client source. Local research data is kept unless explicitly purged.")
+    p_uninstall.add_argument("--purge-data", action="store_true", help="Also remove authorization, local mirror, and all Scientist sync state.")
+    p_uninstall.add_argument("--yes", action="store_true", help="Skip the interactive confirmation prompt.")
     p_run = sub.add_parser("run", help="Start Codex, Claude, or Antigravity for one bubble.",
                            description="Sync first, verify the slug, then launch the chosen installed CLI.")
     p_run.add_argument("model", choices=("codex", "claude", "agy"), help="Installed coding CLI to run.")
@@ -385,6 +435,9 @@ the workspace is synchronized every five seconds.  Use NO_COLOR=1 for plain term
         welcome()
         return
     if args.command == "login": login(args.server); return
+    if args.command == "uninstall":
+        uninstall(purge_data=args.purge_data, assume_yes=args.yes)
+        return
     account = choose_account(); mirror = Mirror(account)
     if args.command == "bubbles": print_bubbles(account); return
     if args.command == "sync":
