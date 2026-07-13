@@ -92,6 +92,7 @@ class Mirror:
             self.root.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(str(legacy), str(self.root))
         self.state_path = self.root / ".lockedin-scientist" / "state.json"
+        self.base_dir = self.root / ".lockedin-scientist" / "bases"
         self.root.mkdir(parents=True, exist_ok=True)
 
     def state(self) -> dict:
@@ -104,6 +105,30 @@ class Mirror:
     def local_raw(self, rel: str) -> bytes:
         p = self.root / rel
         return p.read_bytes() if p.exists() else b""
+
+    def _base_name(self, rel: str) -> str:
+        import hashlib
+        return hashlib.sha256(rel.encode("utf-8")).hexdigest()
+
+    def save_base(self, rel: str, raw: bytes) -> str:
+        """Keep conflict bases out of the small revision state manifest."""
+        self.base_dir.mkdir(parents=True, exist_ok=True)
+        name = self._base_name(rel)
+        path = self.base_dir / name
+        if not path.exists() or path.read_bytes() != raw:
+            tmp = path.with_suffix(".tmp")
+            tmp.write_bytes(raw)
+            tmp.replace(path)
+        return name
+
+    def base_raw(self, old: dict, rel: str) -> bytes:
+        name = old.get("base_file")
+        if name:
+            try: return (self.base_dir / name).read_bytes()
+            except FileNotFoundError: pass
+        if old.get("content_b64"):  # one-time migration from v1 state files
+            return base64.b64decode(old["content_b64"])
+        return b""
 
     @staticmethod
     def rev(raw: bytes) -> str:
@@ -127,11 +152,35 @@ class Mirror:
         (d / (Path(rel).name + ".patch")).write_text(diff)
 
     def sync(self) -> None:
-        state = self.state(); tracked = state.setdefault("files", {})
-        remote = request(self.account["server"], "GET", "/api/scientist/v1/snapshot", token=self.account["token"])
-        by_path = {f["path"]: f for f in remote["files"]}
+        state = self.state()
+        # v1 stored every file's base64 content in state. Move writable bases into separate files,
+        # turning old large state files into small revision maps.
+        tracked = {}
+        for rel, old in state.get("files", {}).items():
+            if not isinstance(old, dict) or not old.get("revision"):
+                continue
+            tracked[rel] = {"revision": old["revision"]}
+            if self.writable(rel):
+                base = self.base_raw(old, rel)
+                tracked[rel]["base_file"] = self.save_base(rel, base)
+        state["files"] = tracked
+
+        def get_manifest() -> dict[str, dict]:
+            data = request(self.account["server"], "GET", "/api/scientist/v1/manifest",
+                           token=self.account["token"])
+            return {item["path"]: item for item in data["files"]}
+
+        def get_files(paths: list[str]) -> list[dict]:
+            files = []
+            for start in range(0, len(paths), 200):
+                data = request(self.account["server"], "POST", "/api/scientist/v1/files",
+                               {"paths": paths[start:start + 200]}, self.account["token"])
+                files.extend(data["files"])
+            return files
+
+        by_path = get_manifest()
         writes = []
-        for rel, old in tracked.items():
+        for rel, old in list(tracked.items()):
             if rel not in by_path or not self.writable(rel): continue
             raw = self.local_raw(rel)
             if self.rev(raw) != old["revision"]:
@@ -144,18 +193,36 @@ class Mirror:
                 if conflict.get("content_b64"):
                     current = base64.b64decode(conflict["content_b64"])
                     local = self.local_raw(rel)
-                    base = base64.b64decode(tracked.get(rel, {}).get("content_b64", ""))
+                    base = self.base_raw(tracked.get(rel, {}), rel)
                     self.retry(rel, base, local, current)
                     target = self.root / rel; target.parent.mkdir(parents=True, exist_ok=True); target.write_bytes(current)
-            remote = request(self.account["server"], "GET", "/api/scientist/v1/snapshot", token=self.account["token"])
-            by_path = {f["path"]: f for f in remote["files"]}
-        for rel, item in by_path.items():
+            by_path = get_manifest()
+
+        changed = [rel for rel, item in by_path.items()
+                   if rel not in tracked or tracked[rel]["revision"] != item["revision"]
+                   or not (self.root / rel).exists()]
+        for item in get_files(changed):
+            rel = item["path"]
             raw = base64.b64decode(item["content_b64"])
             local = self.local_raw(rel)
             old = tracked.get(rel)
             if not old or self.rev(local) == old["revision"] or not self.writable(rel):
                 target = self.root / rel; target.parent.mkdir(parents=True, exist_ok=True); target.write_bytes(raw)
-            tracked[rel] = {"revision": item["revision"], "content_b64": item["content_b64"]}
+            tracked[rel] = {"revision": item["revision"]}
+            if self.writable(rel):
+                tracked[rel]["base_file"] = self.save_base(rel, raw)
+
+        # Mirror server-side deletes when no local writable edit would be lost.
+        for rel, old in list(tracked.items()):
+            if rel in by_path:
+                continue
+            local = self.local_raw(rel)
+            if not self.writable(rel) or self.rev(local) == old["revision"]:
+                try: (self.root / rel).unlink()
+                except FileNotFoundError: pass
+                try: (self.base_dir / old.get("base_file", "")).unlink()
+                except (FileNotFoundError, IsADirectoryError): pass
+                tracked.pop(rel, None)
         self.save_state(state)
 
 

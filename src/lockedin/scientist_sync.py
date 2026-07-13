@@ -12,10 +12,24 @@ from pathlib import Path
 from . import bubbles, paths
 
 _ROOT_FILES = ("bubbles.yaml", "todos.yaml", "config/math.yaml", "config/aesthetics.yaml")
+_REVISION_CACHE: dict[str, tuple[int, int, str]] = {}
 
 
 def revision(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def _file_revision(path: Path) -> str:
+    """Hash only files whose metadata changed since the last manifest request."""
+    stat = path.stat()
+    key = str(path)
+    cached = _REVISION_CACHE.get(key)
+    fingerprint = (stat.st_mtime_ns, stat.st_size)
+    if cached and cached[:2] == fingerprint:
+        return cached[2]
+    value = revision(path.read_bytes())
+    _REVISION_CACHE[key] = (*fingerprint, value)
+    return value
 
 
 def _safe_files(home: Path) -> list[Path]:
@@ -43,6 +57,26 @@ def snapshot(home: Path) -> dict:
     for p in _safe_files(home):
         raw = p.read_bytes()
         files.append({"path": p.relative_to(home).as_posix(), "revision": revision(raw),
+                      "content_b64": base64.b64encode(raw).decode("ascii")})
+    return {"files": files}
+
+
+def manifest(home: Path) -> dict:
+    """Return a lightweight path/revision list for incremental clients."""
+    return {"files": [{"path": p.relative_to(home).as_posix(), "revision": _file_revision(p)}
+                      for p in _safe_files(home)]}
+
+
+def read_files(home: Path, wanted: list[str]) -> dict:
+    """Return content only for requested files that are currently safe to synchronize."""
+    by_path = {p.relative_to(home).as_posix(): p for p in _safe_files(home)}
+    files = []
+    for rel in dict.fromkeys(wanted):
+        p = by_path.get(rel)
+        if not p:
+            continue
+        raw = p.read_bytes()
+        files.append({"path": rel, "revision": _file_revision(p),
                       "content_b64": base64.b64encode(raw).decode("ascii")})
     return {"files": files}
 

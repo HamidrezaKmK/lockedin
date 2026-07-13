@@ -749,6 +749,9 @@ def build_app():
     class ScientistPushIn(BaseModel):
         writes: list[dict] = []
 
+    class ScientistFilesIn(BaseModel):
+        paths: list[str] = []
+
     # ---- auth plumbing ----
     def current_user(lockedin_session: Optional[str] = Cookie(default=None)) -> str:
         user = auth.session_user(lockedin_session)
@@ -1302,6 +1305,17 @@ def build_app():
     @app.get("/api/scientist/v1/snapshot")
     def scientist_snapshot(user: str = Depends(scientist_user)):
         return scientist_sync.snapshot(home_of(user))
+
+    @app.get("/api/scientist/v1/manifest")
+    def scientist_manifest(user: str = Depends(scientist_user)):
+        return scientist_sync.manifest(home_of(user))
+
+    @app.post("/api/scientist/v1/files")
+    def scientist_files(body: ScientistFilesIn, user: str = Depends(scientist_user)):
+        # Bound a request so a malformed client cannot turn this into an unbounded payload.
+        if len(body.paths) > 500:
+            raise HTTPException(status_code=400, detail="Request at most 500 files at once.")
+        return scientist_sync.read_files(home_of(user), body.paths)
 
     @app.get("/api/scientist/v1/bubbles")
     def scientist_bubbles(user: str = Depends(scientist_user)):
