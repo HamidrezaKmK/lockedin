@@ -1,8 +1,8 @@
 """Streamed research chat (read-only) + chat-title helper.
 
 The web app no longer writes to report pages with the model — that proved too unreliable with
-small local models. Editing is done by the user directly in the Markdown editor (or by a strong
-model in DEV_MODE). What remains here is:
+small local models. Editing is done by the user directly in the Markdown editor or through the
+synchronized Scientist client. What remains here is:
 
 * ``chat_stream`` — a knowledgeable, READ-ONLY research assistant grounded in the bubble's report
   pages, every tagged paper's summary, and the full text of any "deep-read" papers. It never

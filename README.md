@@ -176,21 +176,6 @@ LOCKEDIN_NEWS_ENABLED=1 uv run lockedin serve
 Revoke access with: `uv run lockedin news-revoke <username>`
 </details>
 
-<details>
-<summary><b>Direct Report Editing With Agents (DEV Mode)</b></summary>
-
-For hands-on editing via CLI agents without the web server.
-
-```bash
-./scientist.sh
-```
-The launcher authenticates from `.env`, lists approved bubbles, then accepts
-`<model> <bubble-slug>` where model is `codex`, `claude`, or `agy`. It injects a
-backend-generated context for that bubble only, with papers ordered by relevance. Scientist
-sessions can still use web search for new resources and recent external context.
-See [docs/DEV_MODE.md](docs/DEV_MODE.md).
-</details>
-
 ---
 
 ## 🛡️ Security

@@ -9,11 +9,9 @@ It is a prototype, local-first FastAPI app. Patterns were lifted from the siblin
 project (contextvar per-user roots, PBKDF2 auth, OpenAI-compatible model layer, single
 no-build SPA).
 
-A plain `claude` session in this repo is for **developing lockedin**. Separately, the
-`./scientist.sh` launcher can run Claude, Codex, or agy as a *report assistant* for one user
-(it authenticates from `.env` and injects bubble-scoped context, so the base commands are
-unaffected) — see
-[`docs/DEV_MODE.md`](docs/DEV_MODE.md).
+A plain `claude` session in this repo is for **developing lockedin**. The supported report
+assistant is the synchronized `lockedin-scientist` client, which runs a vendor CLI against an
+authorized local mirror of one user's workspace.
 
 ## Run / test
 
@@ -22,16 +20,14 @@ uv sync                          # manage deps + .venv (NOT pip)
 ollama serve && ollama pull qwen2.5:7b-instruct   # default model
 uv run lockedin serve [--port 8080] [--host 0.0.0.0]
 uv run lockedin doctor           # check the active model is reachable
-uv run lockedin devmode          # verify LOCKEDIN_USER/PASS, print that user's workspace (docs/DEV_MODE.md)
 ```
 
 Always run `uv run ...` **from the project root** — `cd`-ing elsewhere breaks uv's project
 resolution and the `lockedin` entry point fails to spawn.
 
 Sharing: a Cloudflare quick tunnel (`cloudflared tunnel --url http://localhost:<port>`) gives a
-temporary public HTTPS URL with no domain/account — see README. For agent-driven editing of a
-user's reports without running the server, see [`docs/DEV_MODE.md`](docs/DEV_MODE.md) +
-`uv run lockedin devmode`.
+temporary public HTTPS URL with no domain/account — see README. Use `lockedin-scientist` for
+agent-driven report editing through an authorized, synchronized local mirror.
 
 News crawler (premium, opt-in): grant a user, then run the server with the switch on. Crawling
 happens entirely in-app via the **Crawl now** button (no daemon). Uses the host `claude` CLI's
@@ -139,8 +135,8 @@ data/users/share_index.yaml         # {token: {user, slug}} — global lookup fo
 ## Key design decisions (don't regress these)
 
 - **Markdown is the source of truth.** The frontend uses Toast UI Editor (CDN) but persists
-  `.md`. The user writes/edits the reports themselves (in the editor, or via a strong model in
-  DEV_MODE). Don't switch to a JSON/block model.
+  `.md`. The user writes/edits the reports themselves (in the editor or via the synchronized
+  Scientist client). Don't switch to a JSON/block model.
 - **The chat is READ-ONLY — no AI writes to pages.** The earlier `<EDIT>`/`<NEWPAGE>` tag
   contract, section splicing, diff-accept overlay, and `generate_template` were all **removed**:
   they were too unreliable with small local models. `chat_stream` now only discusses. It assembles

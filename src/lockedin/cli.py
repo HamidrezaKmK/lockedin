@@ -86,8 +86,7 @@ def devmode():
     """Verify DEV_USERNAME/DEV_PASSWORD (from .env) and print that user's workspace.
 
     Lets an agent (or you) edit a user's reports directly on disk without running the server,
-    gated on the account password. Reads a project-root ``.env``. Exits non-zero on mismatch.
-    See DEV_MODE.md.
+    gated on the account password. Reads a project-root ``.env`` and exits non-zero on mismatch.
     """
     from . import assets, bubbles, models, paths
 
