@@ -185,9 +185,8 @@
   .privacy-list li{padding-left:18px;position:relative;color:var(--muted);font-size:13px;line-height:1.55}
   .privacy-list li::before{content:"";position:absolute;left:0;top:.72em;width:7px;height:7px;border-radius:50%;background:var(--accent2)}
   .landing-footer{padding:24px 0 38px;color:var(--muted);font-size:12px}
-  /* Installed Scientist client — commands have their own responsive treatment instead of
-     inheriting the generic feature-card typography.  In particular, long URLs must wrap
-     inside a card rather than widening the landing page. */
+  /* Installed Scientist client — commands stay copyable as a single shell line.
+     Narrow screens scroll the command itself instead of wrapping it. */
   .scientist-install{position:relative;background:linear-gradient(135deg,color-mix(in srgb,var(--accent) 13%,var(--panel)),var(--panel));
     border:1px solid color-mix(in srgb,var(--accent) 35%,var(--line));border-radius:14px;padding:clamp(18px,3vw,30px);
     box-shadow:var(--shadow);overflow:hidden}
@@ -204,8 +203,7 @@
   .scientist-platform p{margin:0 0 12px;color:var(--muted);font-size:12px;line-height:1.45}
   .command{display:block;min-width:0;margin:0;padding:11px 12px;border-radius:7px;background:#101218;
     border:1px solid color-mix(in srgb,var(--accent2) 35%,var(--line));color:#e8e5ff;font-family:var(--font-mono);
-    font-size:12px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;user-select:all}
-  .scientist-note{margin:0;color:var(--muted);font-size:12px;line-height:1.5}
+    font-size:12px;line-height:1.55;white-space:nowrap;overflow-x:auto;overflow-y:hidden;word-break:normal;user-select:all}
   .scientist-steps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:0;padding:0;list-style:none;counter-reset:scientist-step}
   .scientist-steps li{min-width:0;counter-increment:scientist-step;position:relative;padding:13px 13px 13px 43px;
     background:color-mix(in srgb,var(--panel) 86%,transparent);border:1px solid var(--line);border-radius:9px;
@@ -742,7 +740,6 @@
           <li><b>Sync any time</b>Pull/push once without starting an assistant.<code class="command">lockedin-scientist sync</code></li>
           <li><b>Start your assistant</b>Use its slug with Codex, Claude, or Antigravity.<code class="command">lockedin-scientist &lt;codex|claude|agy&gt; &lt;bubble-slug&gt;</code></li>
         </ol>
-        <p class="scientist-note">Your server URL is chosen at login; the installer does not install the LockedIn server or hard-code a server address.</p>
         </div>
       </section>
 
@@ -1023,7 +1020,6 @@
       el("h3",{},p.title||""),el("p",{},p.text||""),el("code",{class:"command"},p.command||"")));
     cards(".scientist-steps",scientist.steps,(s)=>el("li",{},
       el("b",{},s.title||""),document.createTextNode(s.text||""),el("code",{class:"command"},s.command||"")));
-    setText(".scientist-note",scientist.note);
     setText(".landing-footer",c.footer);
   }
 

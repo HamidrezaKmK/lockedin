@@ -228,7 +228,6 @@ scientist:
     - title: "Authorize"
       text: "Sign in once in your browser."
       command: "lockedin-scientist login --server https://lockedin.codes"
-  note: "This changes landing-page copy only."
 
 auth:
   title: "Enter your workspace"

@@ -82,7 +82,6 @@ DEFAULT_LANDING: dict[str, Any] = {
             {"title": "Start your assistant", "text": "Use its slug with Codex, Claude, or Antigravity.",
              "command": "lockedin-scientist <codex|claude|agy> <bubble-slug>"},
         ],
-        "note": "Your server URL is chosen at login; the installer does not install the LockedIn server.",
     },
     "footer": "Made for focused research sessions by HamidrezaKmK.",
 }
