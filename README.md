@@ -74,12 +74,12 @@ It authorizes in the browser once, then retains a revocable local token.
 
 macOS/Linux:
 ```bash
-curl -fsSL https://raw.githubusercontent.com/HamidrezaKmK/lockedin/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/HamidrezaKmK/lockedin/scientist/install.sh | bash
 ```
 
 Windows PowerShell:
 ```powershell
-irm https://raw.githubusercontent.com/HamidrezaKmK/lockedin/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/HamidrezaKmK/lockedin/scientist/install.ps1 | iex
 ```
 
 Then authorize and launch a bubble:
