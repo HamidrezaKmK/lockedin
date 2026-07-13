@@ -30,6 +30,11 @@ _ITERATIONS = 200_000
 _SESSIONS: dict[str, str] = {}
 
 
+def _token_hash(token: str) -> str:
+    """One-way identifier for a scientist API token (never persist the bearer value)."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -338,3 +343,47 @@ def session_user(token: str | None) -> str | None:
 def end_session(token: str | None) -> None:
     if token:
         _SESSIONS.pop(token, None)
+
+
+# --------------------------------------------------------------------------- #
+# Persistent tokens for installed Scientist clients
+# --------------------------------------------------------------------------- #
+def new_scientist_token(username: str, label: str = "") -> str:
+    """Mint a revocable bearer token for an installed client."""
+    username = username.strip().lower()
+    users = load_accounts()
+    if username not in users or not users[username].get("approved"):
+        raise ValueError("No approved user.")
+    token = "li_sc_" + secrets.token_urlsafe(32)
+    rec = {"hash": _token_hash(token), "created_at": _now_iso(), "label": label[:120]}
+    users[username].setdefault("scientist_tokens", []).append(rec)
+    save_accounts(users)
+    return token
+
+
+def scientist_token_user(token: str | None) -> str | None:
+    if not token:
+        return None
+    wanted = _token_hash(token)
+    for username, rec in load_accounts().items():
+        if not rec.get("approved"):
+            continue
+        if any(hmac.compare_digest(str(t.get("hash", "")), wanted)
+               for t in rec.get("scientist_tokens", [])):
+            return username
+    return None
+
+
+def revoke_scientist_token(username: str, token: str) -> bool:
+    username = username.strip().lower()
+    users = load_accounts()
+    rec = users.get(username)
+    if not rec:
+        return False
+    wanted = _token_hash(token)
+    old = rec.get("scientist_tokens", [])
+    rec["scientist_tokens"] = [t for t in old if not hmac.compare_digest(str(t.get("hash", "")), wanted)]
+    changed = len(old) != len(rec["scientist_tokens"])
+    if changed:
+        save_accounts(users)
+    return changed

@@ -1,0 +1,31 @@
+name: Scientist client release
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            asset: lockedin-scientist-linux-x64
+          - os: macos-13
+            asset: lockedin-scientist-macos-x64
+          - os: macos-14
+            asset: lockedin-scientist-macos-arm64
+          - os: windows-latest
+            asset: lockedin-scientist-windows-x64.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: |
+          uv run --with pyinstaller pyinstaller --onefile --name ${{ matrix.asset }} src/lockedin/scientist_cli.py
+          sha256sum dist/${{ matrix.asset }} > dist/${{ matrix.asset }}.sha256
+        shell: bash
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/${{ matrix.asset }}*

@@ -66,6 +66,30 @@ Open `http://127.0.0.1:8000/`. Sign up as the first user (becomes admin automati
 ## 🛠️ Advanced Setup
 
 <details>
+<summary><b>Installed Scientist CLI</b></summary>
+
+The optional `lockedin-scientist` sync hub keeps a private local mirror of your LockedIn
+workspace and launches an installed `codex`, `claude`, or `agy` CLI against a selected bubble.
+It authorizes in the browser once, then retains a revocable local token.
+
+macOS/Linux:
+```bash
+curl -fsSL https://raw.githubusercontent.com/HamidrezaKmK/lockedin/main/install.sh | bash
+```
+
+Windows PowerShell:
+```powershell
+irm https://raw.githubusercontent.com/HamidrezaKmK/lockedin/main/install.ps1 | iex
+```
+
+Then authorize and launch a bubble:
+```bash
+lockedin-scientist login --server https://your-lockedin.example
+lockedin-scientist codex <bubble-slug>
+```
+</details>
+
+<details>
 <summary><b>Persistent Systemd Services</b></summary>
 
 Systemd ensures `lockedin` restarts on failure and survives logout.

@@ -17,10 +17,12 @@ import queue
 import re
 import secrets
 import threading
+import time
 from pathlib import Path
 from typing import Optional
 
 from . import assets, auth, bubbles, landing, news, paths, service, tagger
+from . import scientist_sync
 
 
 # Display-math environments (numbered) vs theorem-like environments (boxed). Shared by the
@@ -593,6 +595,7 @@ COOKIE = "lockedin_session"
 
 PUBLIC_ORIGINS = [o.strip() for o in os.environ.get("LOCKEDIN_CORS_ORIGINS", "").split(",") if o.strip()]
 CROSS_SITE = bool(PUBLIC_ORIGINS)
+_SCIENTIST_DEVICES: dict[str, dict] = {}
 
 # Mark the session cookie Secure (HTTPS-only) by default — correct behind Cloudflare and on
 # localhost/127.0.0.1 (treated as secure contexts by modern browsers). Set
@@ -740,6 +743,12 @@ def build_app():
         note: Optional[str] = None
         done: Optional[bool] = None
 
+    class ScientistDeviceIn(BaseModel):
+        client_name: str = "lockedin-scientist"
+
+    class ScientistPushIn(BaseModel):
+        writes: list[dict] = []
+
     # ---- auth plumbing ----
     def current_user(lockedin_session: Optional[str] = Cookie(default=None)) -> str:
         user = auth.session_user(lockedin_session)
@@ -758,6 +767,13 @@ def build_app():
         if not auth.is_news_enabled(user):
             raise HTTPException(status_code=403,
                                 detail="News is a premium feature not enabled for this account.")
+        return user
+
+    def scientist_user(authorization: Optional[str] = Header(default=None)) -> str:
+        token = (authorization or "").removeprefix("Bearer ").strip()
+        user = auth.scientist_token_user(token)
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid Scientist token.")
         return user
 
     def _auth_response(user: str):
@@ -1241,6 +1257,57 @@ def build_app():
     @app.get("/api/attention")
     def attention(user: str = Depends(current_user)):
         return {"assets": service.attention_queue(home_of(user))}
+
+    # ---- installed Scientist client -------------------------------------------------
+    @app.post("/api/scientist/v1/device")
+    def scientist_device_start(body: ScientistDeviceIn):
+        code = secrets.token_urlsafe(18)
+        _SCIENTIST_DEVICES[code] = {"expires": time.time() + 600,
+                                    "client_name": body.client_name[:120], "user": "", "token": ""}
+        return {"device_code": code,
+                "verification_uri": f"/api/scientist/v1/device/{code}",
+                "expires_in": 600, "interval": 2}
+
+    @app.get("/api/scientist/v1/device/{code}")
+    def scientist_device_page(code: str, user: str = Depends(current_user)):
+        rec = _SCIENTIST_DEVICES.get(code)
+        if not rec or rec["expires"] < time.time():
+            raise HTTPException(status_code=404, detail="This device authorization expired.")
+        from fastapi.responses import HTMLResponse
+        return HTMLResponse("<main style='font:16px sans-serif;max-width:38rem;margin:4rem auto'>"
+                            "<h1>Authorize LockedIn Scientist</h1>"
+                            f"<p>Authorize the installed client as <b>{user}</b>?</p>"
+                            f"<form method='post' action='/api/scientist/v1/device/{code}/approve'>"
+                            "<button style='padding:.7rem 1rem'>Authorize</button></form></main>")
+
+    @app.post("/api/scientist/v1/device/{code}/approve")
+    def scientist_device_approve(code: str, user: str = Depends(current_user)):
+        rec = _SCIENTIST_DEVICES.get(code)
+        if not rec or rec["expires"] < time.time():
+            raise HTTPException(status_code=404, detail="This device authorization expired.")
+        rec["user"] = user
+        rec["token"] = auth.new_scientist_token(user, rec["client_name"])
+        from fastapi.responses import HTMLResponse
+        return HTMLResponse("<p>LockedIn Scientist authorized. You may return to your terminal.</p>")
+
+    @app.get("/api/scientist/v1/device/{code}/token")
+    def scientist_device_token(code: str):
+        rec = _SCIENTIST_DEVICES.get(code)
+        if not rec or rec["expires"] < time.time():
+            raise HTTPException(status_code=404, detail="This device authorization expired.")
+        if not rec["token"]:
+            return {"status": "pending"}
+        token, user = rec["token"], rec["user"]
+        _SCIENTIST_DEVICES.pop(code, None)
+        return {"status": "authorized", "token": token, "user": user}
+
+    @app.get("/api/scientist/v1/snapshot")
+    def scientist_snapshot(user: str = Depends(scientist_user)):
+        return scientist_sync.snapshot(home_of(user))
+
+    @app.post("/api/scientist/v1/push")
+    def scientist_push(body: ScientistPushIn, user: str = Depends(scientist_user)):
+        return scientist_sync.apply_writes(home_of(user), body.writes)
 
     # ---- bubbles ----
     @app.get("/api/bubbles")

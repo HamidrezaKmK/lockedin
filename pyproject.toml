@@ -22,6 +22,8 @@ dependencies = [
 
 [project.scripts]
 lockedin = "lockedin.cli:app"
+lockedin-scientist = "lockedin.scientist_cli:main"
+lockedin_scientist = "lockedin.scientist_cli:main"
 
 [build-system]
 requires = ["hatchling"]
