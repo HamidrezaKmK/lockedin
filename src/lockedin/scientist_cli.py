@@ -183,21 +183,51 @@ class Mirror:
         if not self.root.exists() and legacy.exists():
             self.root.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(str(legacy), str(self.root))
-        self.state_path = self.root / ".lockedin-scientist" / "state.json"
-        # Bases are client bookkeeping, not mirrored research content.  Keep new bases outside
-        # the workspace: an older client may have created ``.lockedin-scientist/bases`` with
-        # restrictive ownership, but that must never prevent a user from syncing their work.
-        self.base_dir = data_root() / "runtime" / "users" / account["user"] / "bases"
-        self.fallback_base_dir = cache_root() / "runtime" / "users" / account["user"] / "bases"
+        # Synchronization bookkeeping must not live in, or be required by, the mirror. An old
+        # client may have created its hidden mirror directory with restrictive ownership. Keep
+        # all new state in a client sidecar, falling back to the platform cache when necessary.
+        sidecar = data_root() / "runtime" / "users" / account["user"]
+        cache_sidecar = cache_root() / "runtime" / "users" / account["user"]
+        self.state_path = sidecar / "state.json"
+        self.fallback_state_path = cache_sidecar / "state.json"
+        self.base_dir = sidecar / "bases"
+        self.fallback_base_dir = cache_sidecar / "bases"
+        self.retry_dir = sidecar / "retries"
+        self.fallback_retry_dir = cache_sidecar / "retries"
+        self.legacy_state_path = self.root / ".lockedin-scientist" / "state.json"
         self.legacy_base_dir = self.root / ".lockedin-scientist" / "bases"
+        self._volatile_state: dict | None = None
         self.root.mkdir(parents=True, exist_ok=True)
 
     def state(self) -> dict:
-        return json.loads(self.state_path.read_text()) if self.state_path.exists() else {"files": {}}
+        if self._volatile_state is not None:
+            return self._volatile_state
+        for path in (self.state_path, self.fallback_state_path, self.legacy_state_path):
+            try:
+                if path.exists():
+                    state = json.loads(path.read_text())
+                    self.state_path = path
+                    return state if isinstance(state, dict) else {"files": {}}
+            except (OSError, json.JSONDecodeError):
+                continue
+        return {"files": {}}
 
     def save_state(self, state: dict) -> None:
-        self.state_path.parent.mkdir(parents=True, exist_ok=True)
-        self.state_path.write_text(json.dumps(state, indent=2) + "\n")
+        # State is an optimization for incremental sync, never a reason to fail a user's edit.
+        # Prefer the normal sidecar, then the cache sidecar; retain an in-memory copy only if
+        # both are unavailable for this process.
+        for path in (self.state_path, self.fallback_state_path):
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                tmp = path.with_suffix(".tmp")
+                tmp.write_text(json.dumps(state, indent=2) + "\n")
+                tmp.replace(path)
+                self.state_path = path
+                self._volatile_state = None
+                return
+            except OSError:
+                continue
+        self._volatile_state = state
 
     def local_raw(self, rel: str) -> bytes:
         p = self.root / rel
@@ -210,7 +240,6 @@ class Mirror:
     def save_base(self, rel: str, raw: bytes) -> str:
         """Keep conflict bases out of the small revision state manifest."""
         name = self._base_name(rel)
-        errors = []
         for directory in (self.base_dir, self.fallback_base_dir):
             try:
                 directory.mkdir(parents=True, exist_ok=True)
@@ -221,9 +250,10 @@ class Mirror:
                     tmp.replace(path)
                 self.base_dir = directory
                 return name
-            except OSError as exc:
-                errors.append(str(exc))
-        raise RuntimeError("Cannot store Scientist conflict bases: " + "; ".join(errors))
+            except OSError:
+                continue
+        # A base only improves the conflict diff. Sync can safely proceed without one.
+        return ""
 
     def base_raw(self, old: dict, rel: str) -> bytes:
         name = old.get("base_file")
@@ -246,15 +276,44 @@ class Mirror:
         return len(p) >= 4 and p[0] == "REPORTS" and ((p[2] == "pages" and rel.endswith(".md")) or p[2] == "assets")
 
     def retry(self, rel: str, base: bytes, local: bytes, remote: bytes) -> None:
-        d = self.root / ".lockedin-scientist" / "retries" / str(int(time.time() * 1000))
-        d.mkdir(parents=True, exist_ok=True)
-        (d / (Path(rel).name + ".base")).write_bytes(base)
-        (d / (Path(rel).name + ".local")).write_bytes(local)
-        (d / (Path(rel).name + ".remote")).write_bytes(remote)
-        diff = "".join(difflib.unified_diff(base.decode(errors="replace").splitlines(True),
-                                             local.decode(errors="replace").splitlines(True),
-                                             fromfile="base", tofile="rejected-local"))
-        (d / (Path(rel).name + ".patch")).write_text(diff)
+        for directory in (self.retry_dir, self.fallback_retry_dir):
+            try:
+                d = directory / str(int(time.time() * 1000))
+                d.mkdir(parents=True, exist_ok=True)
+                (d / (Path(rel).name + ".base")).write_bytes(base)
+                (d / (Path(rel).name + ".local")).write_bytes(local)
+                (d / (Path(rel).name + ".remote")).write_bytes(remote)
+                diff = "".join(difflib.unified_diff(base.decode(errors="replace").splitlines(True),
+                                                     local.decode(errors="replace").splitlines(True),
+                                                     fromfile="base", tofile="rejected-local"))
+                (d / (Path(rel).name + ".patch")).write_text(diff)
+                self.retry_dir = directory
+                return
+            except OSError:
+                continue
+
+    def recover_from_server(self) -> Path:
+        """Archive local safe files, discard sync metadata, then pull the server authority."""
+        backup = cache_root() / "recovery" / "users" / self.account["user"] / str(int(time.time()))
+        for path in self.root.rglob("*"):
+            if not path.is_file():
+                continue
+            rel = path.relative_to(self.root)
+            if ".lockedin-scientist" in rel.parts or path.name == "paper.pdf" or "chats" in rel.parts:
+                continue
+            try:
+                target = backup / rel
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(path, target)
+            except OSError:
+                continue
+        self._volatile_state = {"files": {}}
+        for path in (self.state_path, self.fallback_state_path, self.legacy_state_path):
+            try: path.unlink()
+            except OSError: pass
+        self.save_state({"files": {}})
+        self.sync()
+        return backup
 
     def sync(self) -> None:
         state = self.state()
@@ -267,7 +326,8 @@ class Mirror:
             tracked[rel] = {"revision": old["revision"]}
             if self.writable(rel):
                 base = self.base_raw(old, rel)
-                tracked[rel]["base_file"] = self.save_base(rel, base)
+                if name := self.save_base(rel, base):
+                    tracked[rel]["base_file"] = name
         state["files"] = tracked
 
         def get_manifest() -> dict[str, dict]:
@@ -315,7 +375,8 @@ class Mirror:
                 target = self.root / rel; target.parent.mkdir(parents=True, exist_ok=True); target.write_bytes(raw)
             tracked[rel] = {"revision": item["revision"]}
             if self.writable(rel):
-                tracked[rel]["base_file"] = self.save_base(rel, raw)
+                if name := self.save_base(rel, raw):
+                    tracked[rel]["base_file"] = name
 
         # Mirror server-side deletes when no local writable edit would be lost.
         for rel, old in list(tracked.items()):
@@ -325,8 +386,11 @@ class Mirror:
             if not self.writable(rel) or self.rev(local) == old["revision"]:
                 try: (self.root / rel).unlink()
                 except FileNotFoundError: pass
-                try: (self.base_dir / old.get("base_file", "")).unlink()
-                except (FileNotFoundError, IsADirectoryError): pass
+                name = old.get("base_file", "")
+                if name:
+                    for directory in (self.base_dir, self.fallback_base_dir, self.legacy_base_dir):
+                        try: (directory / name).unlink()
+                        except OSError: pass
                 tracked.pop(rel, None)
         self.save_state(state)
 
@@ -359,7 +423,7 @@ def role(mirror: Mirror, bubble: str) -> str:
     inventory = inventory_path.read_text() if inventory_path.exists() else "(inventory unavailable; run lockedin-scientist sync)"
     return f"""You are LockedIn Scientist. Work only in REPORTS/{bubble}/pages and REPORTS/{bubble}/assets.
 This workspace is synchronized with the LockedIn website every five seconds. Re-read a page immediately before editing it.
-If .lockedin-scientist/retries exists, inspect the newest retry packet and reapply your intended change to the current page instead of restoring stale text.
+If a sync conflict is reported, re-read the current page and reapply your intended change instead of restoring stale text.
 Never edit credentials, TODOs, bubbles.yaml, or unrelated bubbles. Describe intended report edits before writing.
 
 TERMINAL OUTPUT RULE:
@@ -422,21 +486,27 @@ def _main() -> None:
   lockedin-scientist login --server https://lockedin.codes
   lockedin-scientist bubbles
   lockedin-scientist sync
+  lockedin-scientist sync --from-server
   lockedin-scientist codex <bubble-slug>
   lockedin-scientist claude <bubble-slug>
   lockedin-scientist agy <bubble-slug>
   lockedin-scientist uninstall
 
 The short model form above is equivalent to `lockedin-scientist run <model> <bubble-slug>`.
-`sync` performs one safe pull/push cycle without launching a model.  During a model session,
-the workspace is synchronized every five seconds.  Use NO_COLOR=1 for plain terminal output.""",
+`sync` performs one safe pull/push cycle without launching a model. `sync --from-server` archives
+local safe files, resets sync bookkeeping, and makes the website state authoritative (it asks for
+confirmation; use --yes only for a deliberate non-interactive recovery). During a model session,
+the workspace is synchronized every five seconds. Use NO_COLOR=1 for plain terminal output.""",
         formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", title="commands", metavar="COMMAND")
     p_login = sub.add_parser("login", help="Authorize this computer in a browser.",
                              description="Open a browser device-authorization flow for a LockedIn server.")
     p_login.add_argument("--server", required=True, metavar="URL", help="LockedIn server URL, for example https://lockedin.codes.")
-    sub.add_parser("sync", help="Pull/push once without launching a coding CLI.",
-                   description="Synchronize the local mirror once, then print its location.")
+    p_sync = sub.add_parser("sync", help="Pull/push once without launching a coding CLI.",
+                            description="Synchronize the local mirror once, then print its location.")
+    p_sync.add_argument("--from-server", action="store_true",
+                        help="Archive local files and replace the mirror with the current website state.")
+    p_sync.add_argument("--yes", action="store_true", help="Confirm --from-server in a non-interactive shell.")
     sub.add_parser("bubbles", help="List active bubble names and slugs; no model or sync.",
                    description="List approved bubbles available to the authorized account.")
     p_uninstall = sub.add_parser("uninstall", help="Remove the standalone client from this computer.",
@@ -458,8 +528,20 @@ the workspace is synchronized every five seconds.  Use NO_COLOR=1 for plain term
     account = choose_account(); mirror = Mirror(account)
     if args.command == "bubbles": print_bubbles(account); return
     if args.command == "sync":
-        mirror.sync()
-        print(green("✓") + " Synced workspace\n  " + dim(mirror.root))
+        if args.from_server:
+            if not args.yes:
+                if not sys.stdin.isatty():
+                    raise RuntimeError("`sync --from-server` replaces the local mirror. Re-run with --yes to confirm.")
+                answer = input("Replace the local mirror with the website state? A local cache backup will be made. [y/N] ").strip().lower()
+                if answer not in ("y", "yes"):
+                    print(dim("Recovery cancelled."))
+                    return
+            backup = mirror.recover_from_server()
+            print(green("✓") + " Recovered workspace from the website\n  " + dim(mirror.root))
+            print(dim("Local backup: ") + dim(backup))
+        else:
+            mirror.sync()
+            print(green("✓") + " Synced workspace\n  " + dim(mirror.root))
         return
     if args.command == "run":
         mirror.sync()

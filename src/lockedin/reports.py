@@ -359,6 +359,23 @@ lockedin-scientist sync
 It prints the permanent local mirror location when complete. During an agent session, this same
 safe pull/push cycle runs every five seconds.
 
+### Recover the website state
+
+If local Scientist bookkeeping has become damaged or you intentionally want the website to be
+authoritative, run:
+
+```
+lockedin-scientist sync --from-server
+```
+
+It first archives local safe mirror files in the client cache, resets only synchronization
+bookkeeping, then pulls the website's current state without pushing stale local changes. It asks
+for confirmation. For a deliberate non-interactive recovery, use:
+
+```
+lockedin-scientist sync --from-server --yes
+```
+
 ### Sync behavior and scope
 
 The initial launch pulls your safe workspace content into a durable local mirror. During a

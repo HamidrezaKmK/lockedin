@@ -51,6 +51,7 @@ class ScientistGuideTest(unittest.TestCase):
         self.assertIn("lockedin-scientist login --server", section)
         self.assertIn("lockedin-scientist bubbles", section)
         self.assertIn("lockedin-scientist sync", section)
+        self.assertIn("lockedin-scientist sync --from-server", section)
         self.assertIn("lockedin-scientist agy", section)
         self.assertIn("curl -fsSL", section)
         self.assertIn("normal\ninteractive approval", section)
@@ -185,6 +186,31 @@ class ScientistClientTest(unittest.TestCase):
             self.assertEqual(mirror.base_dir, mirror.fallback_base_dir)
             self.assertEqual(mirror.base_raw({"base_file": name}, "ignored"), b"base")
 
+    def test_unwritable_sidecar_is_nonfatal_and_keeps_state_in_memory(self):
+        with temp_data_home():
+            mirror = scientist_cli.Mirror({"server": "https://example.test", "user": "alice", "token": "t"})
+            for path in (mirror.state_path, mirror.fallback_state_path):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.parent.chmod(0o500)
+            try:
+                state = {"files": {"REPORTS/work/pages/overview.md": {"revision": "abc"}}}
+                mirror.save_state(state)
+                self.assertEqual(mirror.state(), state)
+            finally:
+                for path in (mirror.state_path, mirror.fallback_state_path):
+                    path.parent.chmod(0o700)
+
+    def test_server_recovery_archives_local_files_before_resetting_sync_state(self):
+        with temp_data_home():
+            mirror = scientist_cli.Mirror({"server": "https://example.test", "user": "alice", "token": "t"})
+            local = mirror.root / "REPORTS" / "work" / "pages" / "overview.md"
+            local.parent.mkdir(parents=True)
+            local.write_text("local draft")
+            with patch.object(mirror, "sync") as sync:
+                backup = mirror.recover_from_server()
+            self.assertEqual((backup / "REPORTS" / "work" / "pages" / "overview.md").read_text(), "local draft")
+            sync.assert_called_once()
+
     def test_legacy_url_hashed_mirror_is_migrated_once(self):
         with temp_data_home():
             account = {"server": "https://example.test", "user": "alice", "token": "t"}
@@ -245,6 +271,7 @@ class ScientistClientTest(unittest.TestCase):
         self.assertIn("lockedin-scientist codex", text)
         self.assertIn("lockedin-scientist claude", text)
         self.assertIn("lockedin-scientist agy", text)
+        self.assertIn("sync --from-server", text)
 
     def test_unknown_slug_fails_before_a_vendor_cli_is_started(self):
         with temp_data_home():
