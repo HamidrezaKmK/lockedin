@@ -91,6 +91,11 @@ def _target(home: Path, rel: str) -> Path:
 def writable_path(home: Path, rel: str) -> bool:
     """Only selected approved bubble report pages and bubble images may be pushed."""
     parts = Path(rel).parts
+    # Check lexical components before checking the REPORTS layout.  ``Path.resolve`` protects
+    # against escaping ``home`` later, but a path such as REPORTS/slug/pages/../../config/x.md
+    # would otherwise look like a permitted page to the shape test below.
+    if any(part in ("", ".", "..") for part in parts):
+        return False
     if len(parts) < 4 or parts[0] != "REPORTS":
         return False
     slug = parts[1]

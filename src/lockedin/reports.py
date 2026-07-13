@@ -303,6 +303,71 @@ OpenAI, Claude, or Gemini with your own API key in the web settings.
 """,
     },
     {
+        "title": "Scientist CLI",
+        "content": """\
+## Work on a bubble from your terminal
+
+`lockedin-scientist` is a small companion for an already installed **Codex**, **Claude Code**,
+or **Antigravity** CLI. It keeps an authorized local mirror of your LockedIn workspace in sync
+while the coding assistant works. It does not install the LockedIn server or send your workspace
+to a model by itself.
+
+### Install
+
+On macOS or Linux (Python 3.11+):
+
+```
+curl -fsSL https://raw.githubusercontent.com/HamidrezaKmK/lockedin/scientist/install.sh | bash
+```
+
+On Windows PowerShell (Python 3.11+):
+
+```
+irm https://raw.githubusercontent.com/HamidrezaKmK/lockedin/scientist/install.ps1 | iex
+```
+
+The installer adds `lockedin-scientist` to your user PATH. On macOS/Linux, ensure
+`~/.local/bin` is on PATH if your shell cannot find the command.
+
+### Sign in and choose work
+
+Authorize a device once; the command opens a browser page on the server you specify:
+
+```
+lockedin-scientist login --server https://your-lockedin.example
+```
+
+List the bubbles currently approved for this account. This is deterministic and does not start
+an AI assistant:
+
+```
+lockedin-scientist bubbles
+```
+
+Then launch the coding CLI you already use with a bubble slug from that list:
+
+```
+lockedin-scientist codex <bubble-slug>
+lockedin-scientist claude <bubble-slug>
+lockedin-scientist agy <bubble-slug>
+```
+
+The CLI verifies the slug before launching an assistant. It uses the vendor CLI's normal
+interactive approval behavior; it does not enable auto-approval or bypass permissions.
+
+### Sync behavior and scope
+
+The initial launch pulls your safe workspace content into a durable local mirror. During a
+session it checks for website and local changes every five seconds and pushes local report edits
+with revision checks. A concurrent website edit is preserved and recorded as a retry packet
+instead of being overwritten.
+
+Only pages and report assets inside an **approved** bubble can be written back. Credentials,
+sessions, chat history, TODOs, bubble settings, and paper PDFs are never writable by Scientist.
+Use `lockedin-scientist sync` to pull/push once without launching a coding CLI.
+""",
+    },
+    {
         "title": "Editing Guide",
         "content": """\
 ## The editor
