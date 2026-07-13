@@ -13,8 +13,14 @@ esac
 base="${LOCKEDIN_SCIENTIST_RELEASE_BASE:-https://github.com/$REPO/releases/${VERSION}/download}"
 dest="${HOME}/.local/bin"; mkdir -p "$dest"
 tmp="$(mktemp)"; trap 'rm -f "$tmp" "$tmp.sha256"' EXIT
-curl -fsSL "$base/$asset" -o "$tmp"
-curl -fsSL "$base/$asset.sha256" -o "$tmp.sha256"
+if ! curl -fsSL "$base/$asset" -o "$tmp"; then
+  echo "No release asset for $asset yet. Check the Scientist release workflow, or use the clone + uv setup for now." >&2
+  exit 1
+fi
+if ! curl -fsSL "$base/$asset.sha256" -o "$tmp.sha256"; then
+  echo "Release checksum for $asset is not available yet. Check the Scientist release workflow." >&2
+  exit 1
+fi
 expected="$(awk '{print $1}' "$tmp.sha256")"
 actual="$(sha256sum "$tmp" | awk '{print $1}')"
 [[ -n "$expected" && "$expected" == "$actual" ]] || { echo "Checksum verification failed." >&2; exit 1; }
