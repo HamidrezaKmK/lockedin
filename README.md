@@ -85,7 +85,7 @@ irm https://raw.githubusercontent.com/HamidrezaKmK/lockedin/scientist/install.ps
 
 Then authorize and launch a bubble:
 ```bash
-lockedin-scientist login --server https://your-lockedin.example
+lockedin-scientist login --server https://lockedin.codes
 lockedin-scientist bubbles
 lockedin-scientist sync
 lockedin-scientist codex <bubble-slug>

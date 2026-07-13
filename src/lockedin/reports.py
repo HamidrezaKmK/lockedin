@@ -334,7 +334,7 @@ The installer adds `lockedin-scientist` to your user PATH. On macOS/Linux, ensur
 Authorize a device once; the command opens a browser page on the server you specify:
 
 ```
-lockedin-scientist login --server https://your-lockedin.example
+lockedin-scientist login --server https://lockedin.codes
 ```
 
 List the bubbles currently approved for this account. This is deterministic and does not start

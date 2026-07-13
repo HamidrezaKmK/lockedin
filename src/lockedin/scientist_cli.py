@@ -53,7 +53,7 @@ def welcome() -> None:
     print(violet("╰────────────────────────────────────╯"))
     print()
     print(bold("Get started"))
-    print(f"  {cyan('1.')} {dim('Authorize this computer')}\n     {cyan('lockedin-scientist login --server https://your-lockedin.example')}")
+    print(f"  {cyan('1.')} {dim('Authorize this computer')}\n     {cyan('lockedin-scientist login --server https://lockedin.codes')}")
     print(f"  {cyan('2.')} {dim('See your active bubbles')}\n     {cyan('lockedin-scientist bubbles')}")
     print(f"  {cyan('3.')} {dim('Sync once without starting an assistant')}\n     {cyan('lockedin-scientist sync')}")
     print(f"  {cyan('4.')} {dim('Launch the coding CLI you use')}\n     {cyan('lockedin-scientist codex <bubble-slug>')}\n     {cyan('lockedin-scientist claude <bubble-slug>')}\n     {cyan('lockedin-scientist agy <bubble-slug>')}")
@@ -316,7 +316,7 @@ class Mirror:
 
 def choose_account() -> dict:
     accounts = load_config().get("accounts", [])
-    if not accounts: raise RuntimeError("No account authorized. Run lockedin-scientist login --server https://…")
+    if not accounts: raise RuntimeError("No account authorized. Run lockedin-scientist login --server https://lockedin.codes")
     return accounts[-1]
 
 
@@ -402,7 +402,7 @@ def _main() -> None:
         prog=APP,
         description="Keep an authorized LockedIn research workspace synchronized while you use an installed coding CLI.",
         epilog="""Examples:
-  lockedin-scientist login --server https://your-lockedin.example
+  lockedin-scientist login --server https://lockedin.codes
   lockedin-scientist bubbles
   lockedin-scientist sync
   lockedin-scientist codex <bubble-slug>
