@@ -124,6 +124,12 @@ class SafeSyncBoundaryTest(unittest.TestCase):
 
 
 class ScientistClientTest(unittest.TestCase):
+    def test_terminal_colours_can_be_disabled_or_forced(self):
+        with patch.dict(os.environ, {"NO_COLOR": "1"}):
+            self.assertEqual(scientist_cli._colour("plain", "31"), "plain")
+        with patch.dict(os.environ, {"NO_COLOR": "", "FORCE_COLOR": "1"}, clear=False):
+            self.assertIn("\033[31m", scientist_cli._colour("red", "31"))
+
     def test_same_user_gets_a_stable_mirror_across_reauthorization(self):
         with temp_data_home():
             first = scientist_cli.Mirror({"server": "https://one.example", "user": "alice", "token": "one"})
@@ -166,8 +172,23 @@ class ScientistClientTest(unittest.TestCase):
                     scientist_cli.main()
         finally:
             scientist_cli.sys.argv = original_argv
-        self.assertIn("work  —  Current Work", output.getvalue())
+        self.assertIn("Current Work", output.getvalue())
+        self.assertIn("slug  work", output.getvalue())
         self.assertIn("<bubble-slug>", output.getvalue())
+
+    def test_no_argument_invocation_shows_a_welcome_without_an_account(self):
+        original_argv = list(scientist_cli.sys.argv)
+        try:
+            with temp_data_home():
+                scientist_cli.sys.argv = ["lockedin-scientist"]
+                output = io.StringIO()
+                with redirect_stdout(output):
+                    scientist_cli.main()
+        finally:
+            scientist_cli.sys.argv = original_argv
+        self.assertIn("LockedIn Scientist", output.getvalue())
+        self.assertIn("Get started", output.getvalue())
+        self.assertIn("lockedin-scientist bubbles", output.getvalue())
 
     def test_unknown_slug_fails_before_a_vendor_cli_is_started(self):
         with temp_data_home():

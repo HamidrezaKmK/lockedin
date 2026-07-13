@@ -24,6 +24,42 @@ from pathlib import Path
 APP = "lockedin-scientist"
 
 
+def _colour(text: object, code: str) -> str:
+    """Add restrained ANSI colour for people, never for pipes or NO_COLOR users."""
+    enabled = not os.environ.get("NO_COLOR") and (bool(os.environ.get("FORCE_COLOR")) or sys.stdout.isatty())
+    return f"\033[{code}m{text}\033[0m" if enabled else str(text)
+
+
+def bold(text: object) -> str: return _colour(text, "1")
+def dim(text: object) -> str: return _colour(text, "2")
+def cyan(text: object) -> str: return _colour(text, "36")
+def violet(text: object) -> str: return _colour(text, "38;5;141")
+def green(text: object) -> str: return _colour(text, "32")
+def red(text: object) -> str: return _colour(text, "31")
+
+
+def heading(title: str, subtitle: str = "") -> None:
+    print(violet("◆") + " " + bold(title))
+    if subtitle:
+        print("  " + dim(subtitle))
+
+
+def welcome() -> None:
+    """A useful first impression that does not require an account or network access."""
+    print()
+    print(violet("╭────────────────────────────────────╮"))
+    print(violet("│") + "         " + bold("LockedIn Scientist") + "         " + violet("│"))
+    print(violet("│") + "   " + dim("your research workspace, local") + "   " + violet("│"))
+    print(violet("╰────────────────────────────────────╯"))
+    print()
+    print(bold("Get started"))
+    print(f"  {cyan('1.')} {dim('Authorize this computer')}\n     {cyan('lockedin-scientist login --server https://your-lockedin.example')}")
+    print(f"  {cyan('2.')} {dim('See your active bubbles')}\n     {cyan('lockedin-scientist bubbles')}")
+    print(f"  {cyan('3.')} {dim('Launch your installed coding CLI')}\n     {cyan('lockedin-scientist codex <bubble-slug>')}")
+    print()
+    print(dim("Use --help to see every command. Your workspace stays synchronized while you work."))
+
+
 def data_root() -> Path:
     if os.name == "nt":
         return Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData/Local")) / APP
@@ -64,7 +100,8 @@ def login(server: str) -> None:
     server = server.rstrip("/")
     start = request(server, "POST", "/api/scientist/v1/device", {"client_name": APP})
     url = server + start["verification_uri"]
-    print("Open this URL to authorize the client:\n" + url)
+    heading("Authorize this computer", "A browser window will open. Sign in there, then return here.")
+    print("\n" + cyan(url) + "\n")
     webbrowser.open(url)
     until = time.time() + start["expires_in"]
     while time.time() < until:
@@ -74,7 +111,7 @@ def login(server: str) -> None:
             cfg = load_config(); accounts = [a for a in cfg["accounts"] if not (a["server"] == server and a["user"] == out["user"])]
             accounts.append({"server": server, "user": out["user"], "token": out["token"]})
             cfg["accounts"] = accounts; save_config(cfg)
-            print(f"Authorized {out['user']} on {server}.")
+            print(green("✓") + f" Authorized {bold(out['user'])} on {dim(server)}.")
             return
     raise RuntimeError("Device authorization timed out.")
 
@@ -242,12 +279,15 @@ def print_bubbles(account: dict) -> None:
     rows = request(account["server"], "GET", "/api/scientist/v1/bubbles",
                    token=account["token"]).get("bubbles", [])
     if not rows:
-        print("No approved bubbles are available for this account.")
+        heading("Active bubbles")
+        print(dim("No approved bubbles are available for this account yet."))
         return
-    print("Approved bubbles:")
-    for row in rows:
-        print(f"  {row['slug']}  —  {row['name']}")
-    print("\nRun: lockedin-scientist <codex|claude|agy> <bubble-slug>")
+    rows.sort(key=lambda row: (str(row.get("name", "")).casefold(), str(row.get("slug", ""))))
+    heading("Active bubbles", f"{len(rows)} approved workspace{'s' if len(rows) != 1 else ''} for @{account['user']}")
+    for index, row in enumerate(rows, start=1):
+        print(f"\n  {cyan(f'{index:02d}')}  {bold(row['name'])}")
+        print(f"      {dim('slug')}  {cyan(row['slug'])}")
+    print("\n" + dim("Start a session with") + f"  {cyan('lockedin-scientist codex <bubble-slug>')}")
 
 
 def role(mirror: Mirror, bubble: str) -> str:
@@ -307,7 +347,7 @@ def run_agent(model: str, mirror: Mirror, bubble: str) -> int:
     finally: stop.set(); mirror.sync()
 
 
-def main() -> None:
+def _main() -> None:
     # Friendly form: `lockedin-scientist codex my-bubble`.
     if len(sys.argv) >= 2 and sys.argv[1] in ("codex", "claude", "agy"):
         sys.argv.insert(1, "run")
@@ -318,17 +358,29 @@ def main() -> None:
     sub.add_parser("bubbles", help="List approved bubbles and their slugs.")
     p_run = sub.add_parser("run"); p_run.add_argument("model", choices=("codex", "claude", "agy")); p_run.add_argument("bubble")
     args = parser.parse_args()
+    if args.command is None:
+        welcome()
+        return
     if args.command == "login": login(args.server); return
     account = choose_account(); mirror = Mirror(account)
     if args.command == "bubbles": print_bubbles(account); return
     if args.command == "sync":
         mirror.sync()
-        print(mirror.root)
+        print(green("✓") + " Synced workspace\n  " + dim(mirror.root))
         return
     if args.command == "run":
         mirror.sync()
+        print(green("✓") + f" Synced. Starting {bold(args.model)} in {cyan(args.bubble)}…")
         raise SystemExit(run_agent(args.model, mirror, args.bubble))
     parser.print_help()
+
+
+def main() -> None:
+    try:
+        _main()
+    except RuntimeError as exc:
+        print(red("Error:") + " " + str(exc), file=sys.stderr)
+        raise SystemExit(1) from exc
 
 
 if __name__ == "__main__": main()
