@@ -55,7 +55,8 @@ def welcome() -> None:
     print(bold("Get started"))
     print(f"  {cyan('1.')} {dim('Authorize this computer')}\n     {cyan('lockedin-scientist login --server https://your-lockedin.example')}")
     print(f"  {cyan('2.')} {dim('See your active bubbles')}\n     {cyan('lockedin-scientist bubbles')}")
-    print(f"  {cyan('3.')} {dim('Launch your installed coding CLI')}\n     {cyan('lockedin-scientist codex <bubble-slug>')}")
+    print(f"  {cyan('3.')} {dim('Sync once without starting an assistant')}\n     {cyan('lockedin-scientist sync')}")
+    print(f"  {cyan('4.')} {dim('Launch the coding CLI you use')}\n     {cyan('lockedin-scientist codex <bubble-slug>')}\n     {cyan('lockedin-scientist claude <bubble-slug>')}\n     {cyan('lockedin-scientist agy <bubble-slug>')}")
     print()
     print(dim("Use --help to see every command. Your workspace stays synchronized while you work."))
 
@@ -287,7 +288,8 @@ def print_bubbles(account: dict) -> None:
     for index, row in enumerate(rows, start=1):
         print(f"\n  {cyan(f'{index:02d}')}  {bold(row['name'])}")
         print(f"      {dim('slug')}  {cyan(row['slug'])}")
-    print("\n" + dim("Start a session with") + f"  {cyan('lockedin-scientist codex <bubble-slug>')}")
+    print("\n" + dim("Start a session with Codex, Claude, or Antigravity:") +
+          f"\n  {cyan('lockedin-scientist <codex|claude|agy> <bubble-slug>')}")
 
 
 def role(mirror: Mirror, bubble: str) -> str:
@@ -351,12 +353,33 @@ def _main() -> None:
     # Friendly form: `lockedin-scientist codex my-bubble`.
     if len(sys.argv) >= 2 and sys.argv[1] in ("codex", "claude", "agy"):
         sys.argv.insert(1, "run")
-    parser = argparse.ArgumentParser(prog=APP)
-    sub = parser.add_subparsers(dest="command")
-    p_login = sub.add_parser("login"); p_login.add_argument("--server", required=True)
-    sub.add_parser("sync")
-    sub.add_parser("bubbles", help="List approved bubbles and their slugs.")
-    p_run = sub.add_parser("run"); p_run.add_argument("model", choices=("codex", "claude", "agy")); p_run.add_argument("bubble")
+    parser = argparse.ArgumentParser(
+        prog=APP,
+        description="Keep an authorized LockedIn research workspace synchronized while you use an installed coding CLI.",
+        epilog="""Examples:
+  lockedin-scientist login --server https://your-lockedin.example
+  lockedin-scientist bubbles
+  lockedin-scientist sync
+  lockedin-scientist codex <bubble-slug>
+  lockedin-scientist claude <bubble-slug>
+  lockedin-scientist agy <bubble-slug>
+
+The short model form above is equivalent to `lockedin-scientist run <model> <bubble-slug>`.
+`sync` performs one safe pull/push cycle without launching a model.  During a model session,
+the workspace is synchronized every five seconds.  Use NO_COLOR=1 for plain terminal output.""",
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = parser.add_subparsers(dest="command", title="commands", metavar="COMMAND")
+    p_login = sub.add_parser("login", help="Authorize this computer in a browser.",
+                             description="Open a browser device-authorization flow for a LockedIn server.")
+    p_login.add_argument("--server", required=True, metavar="URL", help="LockedIn server URL, for example https://lockedin.codes.")
+    sub.add_parser("sync", help="Pull/push once without launching a coding CLI.",
+                   description="Synchronize the local mirror once, then print its location.")
+    sub.add_parser("bubbles", help="List active bubble names and slugs; no model or sync.",
+                   description="List approved bubbles available to the authorized account.")
+    p_run = sub.add_parser("run", help="Start Codex, Claude, or Antigravity for one bubble.",
+                           description="Sync first, verify the slug, then launch the chosen installed CLI.")
+    p_run.add_argument("model", choices=("codex", "claude", "agy"), help="Installed coding CLI to run.")
+    p_run.add_argument("bubble", metavar="BUBBLE-SLUG", help="Slug shown by `lockedin-scientist bubbles`.")
     args = parser.parse_args()
     if args.command is None:
         welcome()

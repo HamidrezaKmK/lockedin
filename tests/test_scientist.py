@@ -44,6 +44,8 @@ class ScientistGuideTest(unittest.TestCase):
         section = reports.guide_section("Scientist CLI")
         self.assertIn("lockedin-scientist login --server", section)
         self.assertIn("lockedin-scientist bubbles", section)
+        self.assertIn("lockedin-scientist sync", section)
+        self.assertIn("lockedin-scientist agy", section)
         self.assertIn("curl -fsSL", section)
         self.assertIn("normal\ninteractive approval", section)
 
@@ -189,6 +191,25 @@ class ScientistClientTest(unittest.TestCase):
         self.assertIn("LockedIn Scientist", output.getvalue())
         self.assertIn("Get started", output.getvalue())
         self.assertIn("lockedin-scientist bubbles", output.getvalue())
+        self.assertIn("lockedin-scientist sync", output.getvalue())
+        self.assertIn("lockedin-scientist claude", output.getvalue())
+        self.assertIn("lockedin-scientist agy", output.getvalue())
+
+    def test_help_describes_all_models_and_sync_without_an_account(self):
+        original_argv = list(scientist_cli.sys.argv)
+        try:
+            scientist_cli.sys.argv = ["lockedin-scientist", "--help"]
+            output = io.StringIO()
+            with redirect_stdout(output), self.assertRaises(SystemExit) as exited:
+                scientist_cli.main()
+        finally:
+            scientist_cli.sys.argv = original_argv
+        self.assertEqual(exited.exception.code, 0)
+        text = output.getvalue()
+        self.assertIn("Pull/push once", text)
+        self.assertIn("lockedin-scientist codex", text)
+        self.assertIn("lockedin-scientist claude", text)
+        self.assertIn("lockedin-scientist agy", text)
 
     def test_unknown_slug_fails_before_a_vendor_cli_is_started(self):
         with temp_data_home():

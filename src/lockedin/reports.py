@@ -355,6 +355,18 @@ lockedin-scientist agy <bubble-slug>
 The CLI verifies the slug before launching an assistant. It uses the vendor CLI's normal
 interactive approval behavior; it does not enable auto-approval or bypass permissions.
 
+### Sync without an agent
+
+Use `sync` when you want to pull website changes and push your local report edits without
+opening Codex, Claude, or Antigravity:
+
+```
+lockedin-scientist sync
+```
+
+It prints the permanent local mirror location when complete. During an agent session, this same
+safe pull/push cycle runs every five seconds.
+
 ### Sync behavior and scope
 
 The initial launch pulls your safe workspace content into a durable local mirror. During a

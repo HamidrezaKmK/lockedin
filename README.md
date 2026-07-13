@@ -87,7 +87,10 @@ Then authorize and launch a bubble:
 ```bash
 lockedin-scientist login --server https://your-lockedin.example
 lockedin-scientist bubbles
+lockedin-scientist sync
 lockedin-scientist codex <bubble-slug>
+lockedin-scientist claude <bubble-slug>
+lockedin-scientist agy <bubble-slug>
 ```
 </details>
 
