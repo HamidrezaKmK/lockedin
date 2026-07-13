@@ -1269,16 +1269,14 @@ def build_app():
                 "expires_in": 600, "interval": 2}
 
     @app.get("/api/scientist/v1/device/{code}")
-    def scientist_device_page(code: str, user: str = Depends(current_user)):
+    def scientist_device_page(code: str):
         rec = _SCIENTIST_DEVICES.get(code)
         if not rec or rec["expires"] < time.time():
             raise HTTPException(status_code=404, detail="This device authorization expired.")
-        from fastapi.responses import HTMLResponse
-        return HTMLResponse("<main style='font:16px sans-serif;max-width:38rem;margin:4rem auto'>"
-                            "<h1>Authorize LockedIn Scientist</h1>"
-                            f"<p>Authorize the installed client as <b>{user}</b>?</p>"
-                            f"<form method='post' action='/api/scientist/v1/device/{code}/approve'>"
-                            "<button style='padding:.7rem 1rem'>Authorize</button></form></main>")
+        # Device authorization may be opened in a browser with no session yet.  Route through
+        # the normal SPA sign-in screen, retaining the code so boot() can approve it after login.
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse(url=f"/?scientist_device={code}", status_code=303)
 
     @app.post("/api/scientist/v1/device/{code}/approve")
     def scientist_device_approve(code: str, user: str = Depends(current_user)):
@@ -1304,6 +1302,12 @@ def build_app():
     @app.get("/api/scientist/v1/snapshot")
     def scientist_snapshot(user: str = Depends(scientist_user)):
         return scientist_sync.snapshot(home_of(user))
+
+    @app.get("/api/scientist/v1/bubbles")
+    def scientist_bubbles(user: str = Depends(scientist_user)):
+        """Small preflight inventory for the installed client before it launches an agent."""
+        return {"bubbles": [{"slug": b["slug"], "name": b.get("name") or b["slug"]}
+                            for b in service.list_bubbles(home_of(user))]}
 
     @app.post("/api/scientist/v1/push")
     def scientist_push(body: ScientistPushIn, user: str = Depends(scientist_user)):

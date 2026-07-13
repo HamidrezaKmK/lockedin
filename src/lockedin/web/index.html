@@ -1328,6 +1328,14 @@
     if(S.newsEnabled){ $("#newsNav").style.display=""; refreshNewsCount(); }
     applySideCollapsed(localStorage.getItem("li_side")==="1");
     renderModelTabs(); refreshHealth(); applyHash();
+    const deviceCode=new URLSearchParams(location.search).get("scientist_device");
+    if(deviceCode){
+      try{
+        await api("/api/scientist/v1/device/"+encodeURIComponent(deviceCode)+"/approve",{method:"POST"});
+        history.replaceState(null,"",location.pathname+location.hash);
+        toast("LockedIn Scientist authorized. You can return to your terminal.");
+      }catch(e){ toast("Scientist authorization failed: "+e.message); }
+    }
     fetch("/api/settings/math",{credentials:"include"})
       .then(r=>r.json()).then(d=>{ S.mathMacros=d.macros||{}; }).catch(()=>{});
   }

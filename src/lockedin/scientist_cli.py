@@ -47,7 +47,10 @@ def save_config(cfg: dict) -> None:
 
 def request(server: str, method: str, path: str, body: dict | None = None, token: str = "") -> dict:
     data = json.dumps(body).encode() if body is not None else None
-    headers = {"Content-Type": "application/json"}
+    # Some reverse proxies reject Python's default ``Python-urllib/x.y`` bot user
+    # agent. Identify this deterministic client without assuming a particular server.
+    headers = {"Content-Type": "application/json", "Accept": "application/json",
+               "User-Agent": f"{APP}/0.1"}
     if token: headers["Authorization"] = "Bearer " + token
     req = urllib.request.Request(server.rstrip("/") + path, data=data, headers=headers, method=method)
     try:
@@ -79,8 +82,15 @@ def login(server: str) -> None:
 class Mirror:
     def __init__(self, account: dict):
         self.account = account
-        key = urllib.parse.quote(account["server"], safe="")
-        self.root = data_root() / "servers" / key / "data" / "users" / account["user"]
+        # A person's local research mirror should have a predictable, durable location.
+        # The server/token live in account metadata, not in this user-facing directory name.
+        self.root = data_root() / "data" / "users" / account["user"]
+        # One-time migration from the early server-URL-encoded layout.
+        legacy_key = urllib.parse.quote(account["server"], safe="")
+        legacy = data_root() / "servers" / legacy_key / "data" / "users" / account["user"]
+        if not self.root.exists() and legacy.exists():
+            self.root.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(legacy), str(self.root))
         self.state_path = self.root / ".lockedin-scientist" / "state.json"
         self.root.mkdir(parents=True, exist_ok=True)
 
@@ -156,16 +166,43 @@ def choose_account() -> dict:
 
 
 def role(mirror: Mirror, bubble: str) -> str:
+    inventory_path = mirror.root / "REPORTS" / bubble / "_lockedin_papers.md"
+    inventory = inventory_path.read_text() if inventory_path.exists() else "(inventory unavailable; run lockedin-scientist sync)"
     return f"""You are LockedIn Scientist. Work only in REPORTS/{bubble}/pages and REPORTS/{bubble}/assets.
 This workspace is synchronized with the LockedIn website every five seconds. Re-read a page immediately before editing it.
 If .lockedin-scientist/retries exists, inspect the newest retry packet and reapply your intended change to the current page instead of restoring stale text.
-Never edit credentials, TODOs, bubbles.yaml, or unrelated bubbles. Describe intended report edits before writing."""
+Never edit credentials, TODOs, bubbles.yaml, or unrelated bubbles. Describe intended report edits before writing.
+
+PAPER INVENTORY RULES:
+- HARD RULE: whenever the user asks which papers/assets are attached, or asks whether that list
+  changed, first re-read REPORTS/{bubble}/_lockedin_papers.md from disk in that same turn. Use
+  its current contents as the answer; never reuse an earlier answer, infer from citations, or
+  scan the whole ASSETS directory and guess membership.
+- Attached papers live under ASSETS/<asset-id>/ (metadata, summary, extracted text, and sometimes
+  paper.pdf). REPORTS/{bubble}/assets is only for report images, not the paper library.
+- Only read papers whose asset ids appear in this inventory. Prefer higher relevance first.
+
+AUTHORITATIVE ATTACHED-PAPER INVENTORY:
+{inventory}"""
+
+
+def require_bubble(mirror: Mirror, bubble: str) -> None:
+    """Fail before spawning an agent when the requested bubble isn't an approved workspace."""
+    rows = request(mirror.account["server"], "GET", "/api/scientist/v1/bubbles",
+                   token=mirror.account["token"]).get("bubbles", [])
+    if any(row.get("slug") == bubble for row in rows):
+        return
+    available = ", ".join(f"{row['slug']} ({row['name']})" for row in rows) or "(none)"
+    raise RuntimeError(f"No approved bubble with slug {bubble!r}. Available: {available}")
 
 
 def run_agent(model: str, mirror: Mirror, bubble: str) -> int:
+    require_bubble(mirror, bubble)
     if not shutil.which(model): raise RuntimeError(f"{model} is not installed on PATH.")
     prompt = "Introduce yourself as the LockedIn research-report assistant and ask what to work on."
     instructions = role(mirror, bubble)
+    # Use each vendor CLI's ordinary interactive permission behavior.  Do not opt into any
+    # bypass/auto-accept mode; Codex can still ask for escalation when it judges it necessary.
     if model == "codex": cmd = ["codex", "--cd", str(mirror.root), "--sandbox", "workspace-write", "--ask-for-approval", "on-request", "--search", "-c", f"developer_instructions={instructions}", prompt]
     elif model == "claude": cmd = ["claude", "--append-system-prompt", instructions, prompt]
     else: cmd = ["agy", "-i", instructions + "\n\n" + prompt]
