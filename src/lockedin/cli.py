@@ -109,11 +109,11 @@ def devmode():
     typer.echo(f"  active model: {model}")
     typer.echo("  approved bubbles (name — slug; edit .md files under REPORTS/<slug>/pages/):")
     for slug, name, n in rows:
-        typer.echo(f"    - {name} — {slug}  ({n} pages; citations: REPORTS/{slug}/_lockedin_citations.md)")
+        typer.echo(f"    - {name} — {slug}  ({n} pages; papers: REPORTS/{slug}/_lockedin_papers.md)")
     if not rows:
         typer.echo("    (none approved yet — approve a bubble in the app first)")
-    typer.echo("  citation BibTeX is not embedded here; read only the selected bubble's "
-               "REPORTS/<slug>/_lockedin_citations.md when citations are needed.")
+    typer.echo("  paper metadata is not embedded here; read only the selected bubble's "
+               "REPORTS/<slug>/_lockedin_papers.md when paper details or citations are needed.")
 
 
 def _approved_bubble_rows(home):
@@ -183,6 +183,59 @@ def scientist_context_cmd(bubble: str = typer.Argument(..., help="Bubble slug or
         bubbles.refresh_citation_files([slug])
         typer.echo(f"Authenticated user: {user}")
         typer.echo(reports.scientist_context(slug))
+
+
+@app.command(name="refresh-scientist-index")
+def refresh_scientist_index():
+    """Rebuild attached-paper inventories for every approved bubble in every user workspace."""
+    from . import auth, bubbles, paths
+
+    users = 0
+    bubbles_refreshed = 0
+    for rec in auth.list_users():
+        home = paths.user_home(rec["username"])
+        if not home.exists():
+            continue
+        with paths.use_root(home):
+            active = [b["slug"] for b in bubbles.all_bubbles() if b.get("approved")]
+            bubbles.refresh_citation_files(active)
+        users += 1
+        bubbles_refreshed += len(active)
+    typer.echo(f"Refreshed scientist paper inventories for {bubbles_refreshed} approved bubbles across {users} users.")
+
+
+@app.command(name="refresh-asset-metadata")
+def refresh_asset_metadata(force: bool = typer.Option(False, "--force",
+                                                       help="Re-extract metadata already present."),
+                           all_users: bool = typer.Option(False, "--all-users",
+                                                           help="Process every registered user workspace.")):
+    """Use each account's active model to backfill paper titles and authors."""
+    from . import assets, auth, paths, tagger
+
+    if all_users:
+        targets=[(rec["username"], paths.user_home(rec["username"])) for rec in auth.list_users()]
+    else:
+        user, home = _dev_auth()
+        targets=[(user, home)]
+    processed = 0
+    failed = 0
+    users = 0
+    for user, home in targets:
+        if not home.exists():
+            continue
+        with paths.use_root(home):
+            asset_metas = assets.list_assets()
+        for meta in asset_metas:
+            if meta.get("metadata_extracted") and not force:
+                continue
+            try:
+                tagger.extract_paper_metadata(home, meta["pdf_id"], force=force)
+                processed += 1
+            except Exception as e:  # noqa: BLE001
+                failed += 1
+                typer.secho(f"! {user}/{meta.get('pdf_id')}: {e}", fg="yellow")
+        users += 1
+    typer.echo(f"Metadata refresh across {users} users: {processed} processed, {failed} failed.")
 
 
 @app.command()

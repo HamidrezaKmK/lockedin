@@ -19,6 +19,7 @@ from . import assets, bubbles, models, paths
 logger = logging.getLogger(__name__)
 
 MAX_SUMMARY_INPUT_CHARS = 24_000   # cap text fed to the summarizer (keeps local models happy)
+MAX_METADATA_INPUT_CHARS = 12_000
 
 SUMMARY_SYSTEM = (
     "You are a research assistant. Summarize the following document for a grad student's "
@@ -35,6 +36,13 @@ TAG_SYSTEM = (
     "tag when none apply. Tags are 1-4 words, lowercase, concept-level (e.g. 'diffusion models', "
     "'optimal transport', 'mechanistic interpretability'). Return STRICT JSON only: "
     '{"tags": ["...", "..."]} with 1-4 tags total.'
+)
+
+METADATA_SYSTEM = (
+    "Extract bibliographic metadata from the beginning of this research paper. Return STRICT JSON "
+    "only, exactly in this shape: {\"title\": \"paper title\", \"authors\": [\"First Last\"]}. "
+    "Use an empty string or empty list when a field cannot be determined. Do not invent names or "
+    "include affiliations, abstracts, venues, or commentary."
 )
 
 
@@ -68,6 +76,55 @@ def summarize_pdf(home: Path, pdf_id: str) -> str:
                               system=SUMMARY_SYSTEM, temperature=0.2)
     assets.save_summary(pdf_id, summary)
     return summary
+
+
+def _parse_paper_metadata(raw: str) -> tuple[str, list[str]]:
+    """Tolerantly parse the model's strict-JSON title/author response."""
+    raw = (raw or "").strip()
+    candidates = []
+    m = re.search(r"\{.*\}", raw, re.DOTALL)
+    if m:
+        candidates.append(m.group(0))
+    candidates.append(raw)
+    for candidate in candidates:
+        try:
+            data = json.loads(candidate)
+        except Exception:  # noqa: BLE001
+            continue
+        if not isinstance(data, dict):
+            continue
+        title = str(data.get("title") or "").strip()
+        authors = data.get("authors") or []
+        if isinstance(authors, str):
+            authors = [authors]
+        if not isinstance(authors, list):
+            authors = []
+        clean_authors = []
+        for author in authors:
+            name = str(author).strip()
+            if name and name not in clean_authors:
+                clean_authors.append(name)
+        return title, clean_authors
+    return "", []
+
+
+def extract_paper_metadata(home: Path, pdf_id: str, *, force: bool = False) -> dict:
+    """Use the active model to capture a paper's canonical title and author list."""
+    with paths.use_root(home):
+        meta = assets.load_meta(pdf_id)
+        if meta.get("metadata_extracted") and not force:
+            return meta
+        text = assets.get_text(pdf_id)
+        if not text:
+            return meta
+        raw = models.complete(home, [{"role": "user", "content": text[:MAX_METADATA_INPUT_CHARS]}],
+                              system=METADATA_SYSTEM, temperature=0)
+        title, authors = _parse_paper_metadata(raw)
+        meta["extracted_title"] = title
+        meta["authors"] = authors
+        meta["metadata_extracted"] = True
+        assets.save_meta(pdf_id, meta)
+        return meta
 
 
 def _parse_tags(raw: str) -> list[str]:
@@ -117,7 +174,13 @@ def run_ingest(home: Path, pdf_id: str, had_user_tags: bool) -> None:
             logger.warning("ingest extract failed for %s: %s", pdf_id, e)
             text = ""
 
-        # 2) summarize (best-effort)
+        # 2) extract canonical title/authors (best-effort; separate from any user-facing title)
+        try:
+            extract_paper_metadata(home, pdf_id)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("ingest metadata extraction failed for %s: %s", pdf_id, e)
+
+        # 3) summarize (best-effort)
         try:
             summarize_pdf(home, pdf_id)
             meta = assets.load_meta(pdf_id)
@@ -126,7 +189,7 @@ def run_ingest(home: Path, pdf_id: str, had_user_tags: bool) -> None:
         except Exception as e:  # noqa: BLE001
             logger.warning("ingest summarize failed for %s: %s", pdf_id, e)
 
-        # 3) suggest tags only when the user supplied none
+        # 4) suggest tags only when the user supplied none
         if not had_user_tags:
             try:
                 existing = [b["name"] for b in bubbles.all_bubbles()]

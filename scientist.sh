@@ -76,8 +76,9 @@ read full text/PDF only when the user asks for deeper inspection or the summary 
 repository source code.
 (4) The Markdown is the deliverable. Edit REPORTS/<slug>/pages/<page-slug>.md directly when the
 user approves edits. Re-read a page immediately before editing because it may have changed.
-(5) Read only the active bubble citation file listed in the context when citations are relevant.
-Never invent BibTeX keys. Prefer higher-relevance papers for reading, retrieval, comparison, and
+(5) The active bubble paper inventory file listed in the context contains every attached asset,
+including papers without BibTeX. Read it when paper metadata or citations are relevant. Never
+invent BibTeX keys. Prefer higher-relevance papers for reading, retrieval, comparison, and
 citation unless the user explicitly asks otherwise.
 (6) Every edit must be preceded by a concise prose description of the intended change. If your
 tooling does not show an approval prompt automatically, explicitly ask the user before writing.

@@ -22,7 +22,7 @@ import unittest
 from contextlib import contextmanager
 from pathlib import Path
 
-from lockedin import assets, bubbles, models, paths, reports, server, service
+from lockedin import assets, bubbles, models, paths, reports, server, service, tagger
 
 from tests._fixtures import make_bubble
 
@@ -465,6 +465,25 @@ class TodoRefRendering(unittest.TestCase):
 # Asset BibTeX — optional metadata, user-global duplicate-key guard, previews,
 # and rendered \cite{} references.
 # --------------------------------------------------------------------------- #
+class AssetModelMetadata(unittest.TestCase):
+    def test_model_metadata_is_saved_as_title_and_author_search_fields(self):
+        with temp_home() as home:
+            with paths.use_root(home):
+                pid = assets.save_asset(b"%PDF-1", "paper.pdf", title="Uploaded name")
+                assets.save_text(pid, "Canonical Paper Title\nAda Lovelace, Grace Hopper\nAbstract")
+            original = models.complete
+            models.complete = lambda *args, **kwargs: (
+                '{"title":"Canonical Paper Title","authors":["Ada Lovelace","Grace Hopper"]}')
+            try:
+                meta = tagger.extract_paper_metadata(home, pid)
+            finally:
+                models.complete = original
+        self.assertEqual(meta["title"], "Uploaded name")  # never overwrite a user-visible title
+        self.assertEqual(meta["extracted_title"], "Canonical Paper Title")
+        self.assertEqual(meta["authors"], ["Ada Lovelace", "Grace Hopper"])
+        self.assertTrue(meta["metadata_extracted"])
+
+
 class AssetBibtex(unittest.TestCase):
     BIB1 = "@article{bases4spaces, title={Bases for Spaces}, author={Ada Lovelace}, year={1843}, journal={Notes}}"
     BIB2 = "@book{otherkey, title={Other Book}, author={Grace Hopper}, year={1952}, publisher={Press}}"
@@ -487,7 +506,7 @@ class AssetBibtex(unittest.TestCase):
             pid = service.save_asset(home, b"%PDF-1", "a.pdf", title="A",
                                      tags=["Diffusion Models"])
             service.update_asset_bibliography(home, pid, self.BIB1)
-            cite_path = home / "REPORTS" / slug / "_lockedin_citations.md"
+            cite_path = home / "REPORTS" / slug / "_lockedin_papers.md"
             self.assertIn("bases4spaces", cite_path.read_text())
             service.update_asset_bibliography(home, pid, self.BIB2)
             text = cite_path.read_text()
@@ -495,8 +514,22 @@ class AssetBibtex(unittest.TestCase):
             self.assertNotIn("bases4spaces", text)
             service.update_asset_bibliography(home, pid, "")
             text = cite_path.read_text()
-            self.assertIn("No BibTeX entries", text)
+            self.assertIn("No BibTeX is saved", text)
+            self.assertIn("## [Relevance 5] A", text)
+            self.assertIn(pid, text)
             self.assertNotIn("otherkey", text)
+
+    def test_generated_citation_file_includes_assets_without_bibtex(self):
+        with temp_home() as home:
+            slug = make_bubble(home)
+            pid = service.save_asset(home, b"%PDF-1", "unindexed.pdf", title="Unindexed Paper",
+                                     tags=["Diffusion Models"], url_source="https://example.test/paper.pdf")
+            cite_path = home / "REPORTS" / slug / "_lockedin_papers.md"
+            text = cite_path.read_text()
+        self.assertIn("## [Relevance 5] Unindexed Paper", text)
+        self.assertIn(pid, text)
+        self.assertIn("https://example.test/paper.pdf", text)
+        self.assertIn("No BibTeX is saved", text)
 
     def test_duplicate_key_on_another_asset_is_rejected(self):
         with temp_home() as home:
@@ -684,6 +717,19 @@ class CrossPageReferences(unittest.TestCase):
         html = self._render("p2", content)
         self.assertNotIn(r"\thmref{", html)
         self.assertIn(r"\text{Theorem 1}", html)
+
+    def test_assumption_environment_is_numbered_and_referenceable(self):
+        content = ("\\begin{assumption}[Regularity]\\label{asm:regular}\n"
+                   "The solution is smooth.\n\\end{assumption}\n\n"
+                   "See \\thmref{asm:regular}.")
+        refs = server._build_refs([{"page_slug": "p1", "content": content}])
+        self.assertEqual(refs["thm"]["asm:regular"], {"env": "assumption", "number": 1})
+        html = server._render_preview_html(
+            name="B", page="p1", all_pages=[{"page_slug": "p1", "title": "One"}],
+            content=content, slug="s", link_base="/x", asset_base="/x/assets",
+            show_back=False, refs=refs)
+        self.assertIn("Assumption 1 (Regularity)", html)
+        self.assertIn('<span class="thm-ref">Assumption 1</span>', html)
 
 
 if __name__ == "__main__":

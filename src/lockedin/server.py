@@ -26,7 +26,7 @@ from . import assets, auth, bubbles, landing, news, paths, service, tagger
 # Display-math environments (numbered) vs theorem-like environments (boxed). Shared by the
 # reference builder and the two preprocess passes so their ordering rules can't drift.
 _DISP_ENVS = r'align\*?|alignat\*?|gather\*?|multline\*?|equation\*?'
-_THEO_ENVS = r'theorem|lemma|corollary|definition|proposition|remark|proof'
+_THEO_ENVS = r'theorem|lemma|corollary|definition|proposition|assumption|remark|proof'
 _LABEL_RE = re.compile(r'\\label\{([^}]+)\}')
 
 
@@ -371,9 +371,9 @@ def _render_preview_html(*, name: str, page: str, all_pages: list, content: str,
   --ref-accent:#b59cff;
 }}
 body.theme-light{{
-  --bg:#ffffff;--ink:#171b24;--muted:#526073;--line:#c4ccd9;--panel:#dfe6f0;
+  --bg:#f8fafc;--ink:#171b24;--muted:#526073;--line:#9eacbe;--panel:#cfd8e6;
   --accent:#5b3ee8;--accent2:#087f69;--shadow:rgba(17,24,39,.18);
-  --scroll-track:#ffffff;--scroll-thumb:#9aa6ba;--scroll-thumb-hover:#5b3ee8;
+  --scroll-track:#f8fafc;--scroll-thumb:#7d8ca2;--scroll-thumb-hover:#5b3ee8;
   --ref-accent:#6d4aff;
 }}
 body.theme-pink{{
@@ -464,6 +464,7 @@ blockquote p{{margin:5px 0}}
   text-transform:uppercase;color:var(--env);margin-bottom:.45em;
   font-feature-settings:"tnum" 1;font-variant-numeric:tabular-nums}}
 .math-env.definition,.math-env.proposition{{--env:var(--accent2)}}
+.math-env.assumption{{--env:var(--accent2)}}
 .math-env.remark{{--env:var(--muted)}}
 .math-env.proof{{--env:color-mix(in srgb,var(--muted) 55%,var(--line))}}
 .math-env.proof .math-env-title{{letter-spacing:.12em;opacity:.85}}

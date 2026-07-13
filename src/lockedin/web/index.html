@@ -37,12 +37,12 @@
     --shadow-sm:0 1px 6px rgba(0,0,0,.4); --shadow:0 6px 24px rgba(0,0,0,.55);
   }
   body.theme-light{
-    --bg:#ffffff; --panel:#eef2f7; --panel2:#dfe6f0; --line:#c4ccd9;
+    --bg:#f8fafc; --panel:#e7edf5; --panel2:#cfd8e6; --line:#9eacbe;
     --ink:#171b24; --muted:#526073; --accent:#5b3ee8; --accent2:#087f69;
-    --warn:#b45309; --bad:#dc2626; --good:#16a34a; --assistant-bg:#f0f4ff;
+    --warn:#b45309; --bad:#dc2626; --good:#16a34a; --assistant-bg:#e7edff;
     --ref-accent:#6d4aff;
     --text-color-1:#5b3ee8; --text-color-2:#087f69; --text-color-3:#b45309; --text-color-4:#be185d; --text-color-5:#0369a1;
-    --shadow-sm:0 1px 8px rgba(17,24,39,.12); --shadow:0 8px 28px rgba(17,24,39,.2);
+    --shadow-sm:0 1px 8px rgba(17,24,39,.16); --shadow:0 8px 28px rgba(17,24,39,.24);
   }
   body.theme-pink{
     --bg:#fff0fa; --panel:#ffe0f3; --panel2:#ffc7e8; --line:#ff94d2;
@@ -377,6 +377,7 @@
     text-transform:uppercase;color:var(--env);margin-bottom:.45em;
     font-feature-settings:"tnum" 1;font-variant-numeric:tabular-nums}
   .math-env.definition,.math-env.proposition{--env:var(--accent2)}
+  .math-env.assumption{--env:var(--warn)}
   .math-env.remark{--env:var(--muted)}
   .math-env.proof{--env:color-mix(in srgb,var(--muted) 55%,var(--line))}
   .math-env.proof .math-env-title{letter-spacing:.12em;opacity:.85}
@@ -401,6 +402,10 @@
   .page-visibility-btn.hidden-page{color:var(--muted);opacity:.55}
   .page-visibility-btn.hidden-page svg .slash{display:block}
   .page-visibility-btn svg .slash{display:none}
+  .sync-toolbar{color:var(--good)!important;font-weight:700!important}
+  .sync-toolbar.stale,.sync-toolbar.saving{color:var(--warn)!important}
+  .sync-toolbar.conflict{color:var(--bad)!important}
+  .sync-toolbar.saving{opacity:.8}
   .toolbar{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
   .color-tool{position:relative;display:inline-flex;align-items:center;height:24px}
   .color-tool-btn{position:relative;display:inline-flex;align-items:center;justify-content:center;
@@ -460,6 +465,8 @@
   .ptab-scroll::-webkit-scrollbar{height:8px}
   .ptab-scroll::-webkit-scrollbar-thumb{border-width:2px}
   .ptab-scroll>*{flex:0 0 auto}
+  .ptab-group{display:flex;gap:4px;align-items:center;min-width:0}
+  .ptab-group.hidden-tabs{margin-left:auto;padding-left:8px;border-left:1px solid var(--line);opacity:.76}
   .ptab-controls{display:flex;gap:8px;align-items:center;flex:0 0 auto;white-space:nowrap}
   .ptab{padding:4px 10px;border-radius:7px 7px 0 0;border:1px solid var(--line);
         background:var(--panel2);cursor:pointer;font-size:13px;display:flex;gap:6px;align-items:center;
@@ -524,7 +531,15 @@
   .papers-menu .bubble-pdf-list{display:block}
   .papers-menu .score-group{margin-top:4px}
   .papers-menu .score-heading{padding-top:5px;margin-bottom:4px}
-  .papers-menu .paperchip{display:flex;max-width:none;margin:3px 0;border-radius:7px}
+  .papers-menu .paper-row{display:flex;align-items:center;gap:5px;margin:3px 0}
+  .papers-menu .paperchip{display:flex;max-width:none;margin:0;border-radius:7px;flex:1;min-width:0}
+  .papers-menu .paper-relevance{display:flex;align-items:center;gap:2px;flex:0 0 auto}
+  .papers-menu .paper-relevance button{min-height:24px;padding:1px 6px;font-size:14px;line-height:1}
+  .quick-add-paper{margin-top:10px;padding-top:10px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:7px}
+  .quick-add-paper b{font-family:var(--font-ui);font-size:12px}
+  .quick-add-paper input,.quick-add-paper textarea{padding:7px 9px;font-size:12px}
+  .quick-add-paper textarea{min-height:68px;resize:vertical;font-family:var(--font-mono);line-height:1.35}
+  .quick-add-paper .row{justify-content:flex-end}
   .membership-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto auto;gap:6px;
     align-items:center;border:1px solid var(--line);border-radius:8px;padding:7px 8px;background:var(--panel2)}
   .membership-row .score{font-variant-numeric:tabular-nums;color:var(--muted);white-space:nowrap}
@@ -802,10 +817,14 @@
     if(window.innerWidth<=700) document.getElementById("app").classList.remove("side-open");
   }));
 
-  function setBubbleFocus(active){
+  function setBubbleFocus(active,{persist=true}={}){
     const app=document.getElementById("app");
     const enabled=!!active&&!!S.bubble;
     S.bubbleFocus=enabled;
+    if(persist){
+      if(enabled)sessionStorage.setItem("li_bubble_focus","1");
+      else sessionStorage.removeItem("li_bubble_focus");
+    }
     app.classList.toggle("bubble-focus",enabled);
     if(enabled){
       // The sidebar preference stores column widths inline, which would otherwise override
@@ -1006,7 +1025,7 @@
     const theoCounts=(refs&&refs.thmStart&&opts.pageSlug&&refs.thmStart[opts.pageSlug])
       ? Object.assign({},refs.thmStart[opts.pageSlug]) : {};
     let theoLabels={};
-    const _THEO_ENVS='theorem|lemma|corollary|definition|proposition|remark|proof';
+    const _THEO_ENVS='theorem|lemma|corollary|definition|proposition|assumption|remark|proof';
     const _THEO_RE=new RegExp('\\\\begin\\{('+_THEO_ENVS+')\\}(?:\\[([^\\]]*)\\])?([\\s\\S]*?)\\\\end\\{(?:'+_THEO_ENVS+')\\}','gi');
     s=s.replace(_THEO_RE,(m,env,optTitle,inner)=>{
       const e=env.toLowerCase(), numbered=(e!=='proof');
@@ -1143,7 +1162,7 @@
     detailWrap:null,
     refAc:null,
     healthTimer:null, healthSeq:0, verifiedActive:null,
-    shareActive:false, shareToken:"", bubbleFocus:false, renderVersion:0,
+    shareActive:false, shareToken:"", bubbleFocus:false, showHiddenPages:false, renderVersion:0,
     availableThemes:["dark","light","pink","techno","pearl"]
   };
 
@@ -1158,8 +1177,8 @@
   }
   const isCurrentRender=version=>version===S.renderVersion;
 
-  function leaveBubbleWorkspace(){
-    setBubbleFocus(false);
+  function leaveBubbleWorkspace({preserveFocus=false}={}){
+    setBubbleFocus(false,{persist:!preserveFocus});
     S.openToken=(S.openToken||0)+1;
     stopPolling();
     if(S.editor){ try{S.editor.destroy();}catch(e){} }
@@ -1266,22 +1285,22 @@
     const enabled=(S.availableThemes||[]).filter(t=>THEMES.includes(t));
     return enabled.length?enabled:["dark"];
   }
-  function applyTheme(name){
+  function applyTheme(name,{persist=true}={}){
     const enabled=availableThemes();
     const theme=enabled.includes(name)?name:enabled[0];
     document.body.classList.remove(...THEMES.map(t=>"theme-"+t), "light");
     document.body.classList.add("theme-"+theme);
     $("#themeCycle").textContent=THEME_LABELS[theme];
-    localStorage.setItem("li_theme",theme);
+    if(persist)localStorage.setItem("li_theme",theme);
   }
   $("#themeCycle").onclick=()=>{
     const enabled=availableThemes();
     const cur=localStorage.getItem("li_theme")||"dark";
     applyTheme(enabled[(enabled.indexOf(cur)+1)%enabled.length]);
   };
-  // The public landing screen is deliberately always dark. Once authenticated, boot() restores
-  // the account's allowed saved theme for the private workspace.
-  applyTheme("dark");
+  // The public landing screen is deliberately always dark. Do not overwrite the workspace
+  // preference; boot() restores that saved theme immediately after authentication.
+  applyTheme("dark",{persist:false});
   // Mobile-only ↗ in the topbar → open the current bubble page's read-only preview in a new tab.
   $("#previewArrow").onclick=()=>{ if(S.bubble) window.open(
     "/api/bubbles/"+S.bubble+"/preview/"+(S.page||S.home||"overview"),"_blank"); };
@@ -1719,7 +1738,7 @@
     const r=await api("/api/assets");
     if(!isCurrentRender(version))return;
     if(!r.assets.length){ m.append(el("div",{class:"muted"},"No assets yet. Upload your first PDF above.")); return; }
-    const filterText=el("input",{placeholder:"Search assets by title, filename, tag, notes, or BibTeX key…"});
+    const filterText=el("input",{placeholder:"Search assets by title, author, tag, notes, or BibTeX key…"});
     filterText.value=S.assetSearch||"";
     const filterBubble=el("select");
     filterBubble.append(el("option",{value:""},"All bubbles"));
@@ -1732,7 +1751,7 @@
       count);
     const grid=el("div",{class:"grid"});
     const haystack=a=>[
-      a.title,a.filename,a.pdf_id,a.url_source,a.notes,
+      a.title,a.extracted_title,a.pdf_id,a.url_source,a.notes,...(a.authors||[]),
       ...(a.tags||[]),...(a.suggested_tags||[]),
       ...(a.bibliography||"").match(/@\w+\s*\{\s*([^,\s}]+)/g)||[]
     ].filter(Boolean).join(" ").toLowerCase();
@@ -1757,9 +1776,12 @@
   }
   function assetCard(a){
     const c=el("div",{class:"acard"});
-    const titleBox=el("div",{class:"acard-title"},
-      el("h4",{},a.title||a.filename||a.pdf_id),
-      el("div",{class:"muted truncate",style:"font-size:11px;margin-top:2px"},a.filename||a.pdf_id));
+    const paperTitle=a.extracted_title||a.title||"Extracting paper title…";
+    const titleBox=el("div",{class:"acard-title"},el("h4",{},paperTitle));
+    if((a.authors||[]).length){
+      titleBox.append(el("div",{class:"muted truncate",style:"font-size:11px;margin-top:2px",title:(a.authors||[]).join(", ")},
+        (a.authors||[]).join(", ")));
+    }
     const head=el("div",{class:"acard-head"},titleBox);
     const badges=el("div",{class:"row",style:"gap:5px;flex-wrap:wrap;justify-content:flex-end"});
     if((a.bibliography||"").trim())badges.append(el("span",{class:"badge bib",title:"BibTeX available"},"✓ BibTeX"));
@@ -2282,13 +2304,13 @@
     // Re-entrancy guard: if two openBubble calls race (e.g. a quick click then another nav),
     // a superseded in-flight call could still build a stale workspace/editor over the new one.
     // A newer call bumps the token so the older one bails after its await.
-    leaveBubbleWorkspace();
+    leaveBubbleWorkspace({preserveFocus:true});
     const token=S.openToken=(S.openToken||0)+1;
     if(!noRoute)pushRoute("bubble/"+slug);
     S.bubble=slug; S.chat=[]; S.page=null; S.pages=[]; S.sessionId=null; S.sessionTitle=null;
     S.previewEl=null; S.remoteChangePending=false; S.papersMenu=null; S.chatPane=null; S.detailWrap=null;
     S.baseMtime=null; S.saving=false; S.syncState="synced";
-    S.shareActive=false; S.shareToken=""; S.editingTitles=false; S.nameInput=null;
+    S.shareActive=false; S.shareToken=""; S.editingTitles=false; S.nameInput=null; S.showHiddenPages=false;
     const {m,version}=beginMainRender({detail:true});
     const b=(await api("/api/bubbles/"+slug)).bubble;
     if(S.openToken!==token||!isCurrentRender(version)) return;   // a newer navigation started while we awaited — bail
@@ -2332,6 +2354,11 @@
     else { buildWorkspace(left,b); }
     buildChatPane(right,b);
     if(b.approved) buildMobileBubbleTools(m,b,wrap,right);
+    // Focus mode is a per-tab workspace preference. Restore it after the bubble UI exists so
+    // refreshing the current bubble keeps the same focused page instead of returning to chrome.
+    if(b.approved&&sessionStorage.getItem("li_bubble_focus")==="1"){
+      setBubbleFocus(true,{persist:false});
+    }
     // mobile ↗ preview link in the topbar: only meaningful on an approved bubble (it has pages)
     $("#previewArrow").classList.toggle("hide", !b.approved);
     // Deep-link: restore a specific page (e.g. after a refresh) without clobbering history.
@@ -2450,15 +2477,68 @@
       if(!group.length)continue;
       const sec=el("div",{class:"score-group"},el("div",{class:"score-heading"},"Relevance "+score));
       group.forEach(a=>{
+        const paperTitle=a.extracted_title||a.title||a.pdf_id;
         const chip=el("a",{class:"paperchip",href:"#asset/"+encodeURIComponent(a.pdf_id),
-          target:"_blank",title:"Edit asset: "+(a.title||a.pdf_id)},
-          el("span",{class:"lbl"},a.title||a.pdf_id));
-        sec.append(chip);
+          target:"_blank",title:"Edit asset: "+paperTitle},
+          el("span",{class:"lbl"},paperTitle));
+        const adjust=async next=>{
+          try{
+            const r=await api("/api/bubbles/"+b.slug+"/papers/"+a.pdf_id,
+              {method:"PATCH",body:JSON.stringify({score:next})});
+            S.bubbleAssets=(r.bubble||{}).assets||[];
+            renderBubblePdfs(container,{slug:b.slug,assets:S.bubbleAssets});
+          }catch(e){toast(e.message);}
+        };
+        const down=el("button",{type:"button",class:"ghost small",title:"Lower relevance",disabled:score<=1,
+          onclick:e=>{e.preventDefault();adjust(score-1);}},"−");
+        const up=el("button",{type:"button",class:"ghost small",title:"Raise relevance",disabled:score>=5,
+          onclick:e=>{e.preventDefault();adjust(score+1);}},"+");
+        sec.append(el("div",{class:"paper-row"},chip,
+          el("span",{class:"paper-relevance",title:"Relevance "+score},down,up)));
       });
       list.append(sec);
     }
     if(!b.assets.length)list.append(el("div",{class:"muted"},"None yet — add this paper from its asset editor."));
     container.append(list);
+    const url=el("input",{type:"url",placeholder:"PDF link",autocomplete:"url"});
+    const title=el("input",{type:"text",placeholder:"Paper title",maxlength:"240",autocomplete:"off"});
+    const bibliography=el("textarea",{rows:"3",placeholder:"BibTeX (optional)",spellcheck:"false"});
+    const status=el("span",{class:"muted",style:"font-size:11px;flex:1"});
+    const add=el("button",{type:"button",class:"primary small"},"Quick add");
+    const submit=async()=>{
+      const link=url.value.trim(), paperTitle=title.value.trim(), bibtex=bibliography.value.trim();
+      if(!link){url.focus();return;}
+      if(!paperTitle){title.focus();return;}
+      add.disabled=true; status.textContent="Fetching PDF…";
+      try{
+        const uploaded=await api("/api/assets/upload-url",
+          {method:"POST",body:JSON.stringify({url:link,title:paperTitle,tags:""})});
+        const attached=await api("/api/bubbles/"+b.slug+"/add-pdf",
+          {method:"POST",body:JSON.stringify({pdf_id:uploaded.pdf_id})});
+        let bibtexError="";
+        if(bibtex){
+          try{
+            await api("/api/assets/"+uploaded.pdf_id+"/bibliography",
+              {method:"PUT",body:JSON.stringify({bibliography:bibtex})});
+          }catch(e){ bibtexError=e.message; }
+        }
+        // Make the intended default explicit even if an existing asset is re-used later.
+        const scored=await api("/api/bubbles/"+b.slug+"/papers/"+uploaded.pdf_id,
+          {method:"PATCH",body:JSON.stringify({score:5})});
+        S.bubbleAssets=(scored.bubble||attached.bubble||{}).assets||[];
+        renderBubblePdfs(container,{slug:b.slug,assets:S.bubbleAssets});
+        if(bibtexError){
+          toast("Paper added, but BibTeX was not saved: "+bibtexError);
+        }else toast(bibtex?"Added with BibTeX at relevance 5":"Added to this bubble at relevance 5");
+      }catch(e){ status.textContent=e.message; add.disabled=false; }
+    };
+    add.onclick=submit;
+    title.onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();submit();}};
+    bibliography.onkeydown=e=>{if((e.ctrlKey||e.metaKey)&&e.key==="Enter"){e.preventDefault();submit();}};
+    const quick=el("div",{class:"quick-add-paper"},
+      el("b",{},"Quick add paper"),url,title,bibliography,
+      el("div",{class:"row"},status,add));
+    container.append(quick);
   }
 
   function initEditor(host, initialValue){
@@ -2491,6 +2571,8 @@
       S.editor.insertToolbarItem({groupIndex:0,itemIndex:6},
         {name:"page-visibility",tooltip:"Toggle page visibility",el:buildPageVisibilityTool()});
       S.editor.insertToolbarItem({groupIndex:0,itemIndex:7},
+        {name:"hidden-pages",tooltip:"Show hidden pages",el:buildHiddenPagesTool()});
+      S.editor.insertToolbarItem({groupIndex:0,itemIndex:0},
         {name:"page-sync",tooltip:"Page sync status",el:buildSyncTool()});
     }catch(e){}
     installReferenceAutocomplete(host);
@@ -2947,7 +3029,10 @@
     };
     tabs.append(tabScroll,controls);
     S.titleInputs={};
+    const visibleTabs=el("div",{class:"ptab-group"});
+    const hiddenTabs=el("div",{class:"ptab-group hidden-tabs"});
     S.pages.forEach(p=>{
+      if(p.hidden&&!S.showHiddenPages)return;
       const t=el("div",{class:"ptab"+(p.page_slug===S.page?" active":"")});
       if(S.editingTitles){
         // In edit-titles mode each tab title becomes an input; "✓ Save titles" persists them.
@@ -2984,8 +3069,10 @@
         if(p.page_slug!==S.home)
           t.append(el("span",{class:"x",title:"Delete page",onclick:(e)=>{e.stopPropagation();deletePage(p.page_slug);}},"✕"));
       }
-      tabScroll.append(t);
+      (p.hidden?hiddenTabs:visibleTabs).append(t);
     });
+    tabScroll.append(visibleTabs);
+    if(S.showHiddenPages&&hiddenTabs.childElementCount)tabScroll.append(hiddenTabs);
     // Keep page creation outside the horizontally scrolling tab list.  Once a bubble has
     // enough tabs, a button in that list can be clipped/off-screen and become unreachable.
     if(!S.editingTitles) controls.append(el("button",{type:"button",class:"small ghost",onclick:newPage},"+ Page"));
@@ -3016,17 +3103,27 @@
     controls.append(el("button",{class:"small ghost desktop-only-tool focus-hide",title:S.chatCollapsed?"Show chat":"Hide chat",
       onclick:toggleChat},S.chatCollapsed?"💬 >":"💬 <"));
     refreshPageVisibilityTool();
+    refreshHiddenPagesTool();
   }
   function closePapersMenu(){
     if(S.papersMenu){ S.papersMenu.remove(); S.papersMenu=null; }
   }
-  function togglePapersMenu(anchor){
+  async function togglePapersMenu(anchor){
     if(S.papersMenu){ closePapersMenu(); return; }
     const menu=el("div",{class:"papers-menu"});
-    renderBubblePdfs(menu,{slug:S.bubble,assets:S.bubbleAssets||[]});
     anchor.style.position=anchor.style.position||"relative";
     anchor.append(menu);
     S.papersMenu=menu;
+    menu.append(el("div",{class:"muted",style:"padding:4px"},"Loading papers…"));
+    const slug=S.bubble;
+    try{
+      const detail=(await api("/api/bubbles/"+slug)).bubble;
+      if(S.papersMenu!==menu||S.bubble!==slug)return;
+      S.bubbleAssets=detail.assets||[];
+      renderBubblePdfs(menu,{slug,assets:S.bubbleAssets});
+    }catch(e){
+      if(S.papersMenu===menu)menu.textContent="Could not load papers: "+e.message;
+    }
   }
   function pageVisibilityIcon(){
     const span=document.createElement("span");
@@ -3043,6 +3140,7 @@
       p.hidden=!!r.hidden;
       refreshTabs();
       refreshPageVisibilityTool();
+      refreshHiddenPagesTool();
       await fetchRefs();
       updatePreview();
       toast(p.hidden?"Hidden from preview/share":"Visible in preview/share");
@@ -3224,6 +3322,10 @@
     const match=S.pages.find(p=>p.page_slug===target)
       || S.pages.find(p=>p.title.toLowerCase()===String(target).toLowerCase());
     if(!match){ toast(`No page "${target}" in this bubble.`); return; }
+    if(match.hidden&&!S.showHiddenPages){
+      toast("Show hidden pages first to open this page.");
+      return;
+    }
     await savePage();
     const c=(await api("/api/bubbles/"+S.bubble+"/pages/"+match.page_slug)).content;
     S.page=match.page_slug; S.remoteChangePending=false;
@@ -3289,8 +3391,8 @@
       applyRemote(c||""); markSynced(); scrollContentTop(); primeSync(); }
     refreshTabs(); fetchRefs().then(()=>updatePreview());   // page removed → renumber
   }
-  const SYNC_LABEL={synced:"⟳ synced",stale:"✎ unsaved",saving:"⟳ saving…",conflict:"⚠ unsynced"};
-  const SYNC_ICON={synced:"⟳",stale:"✎",saving:"⟳",conflict:"⚠"};
+  const SYNC_LABEL={synced:"✓ synced",stale:"✎ unsaved",saving:"… saving",conflict:"✕ unsynced"};
+  const SYNC_ICON={synced:"✓",stale:"✎",saving:"…",conflict:"✕"};
   function editorToolButton(id,title,onClick){
     const b=document.createElement("button");
     b.type="button"; b.id=id; b.title=title; b.setAttribute("aria-label",title);
@@ -3301,6 +3403,7 @@
   }
   function buildSyncTool(){
     const b=editorToolButton("syncToolbarButton","Saved automatically; click to save now",clickSave);
+    b.className="sync-toolbar "+(S.syncState||"synced");
     b.textContent=SYNC_ICON[S.syncState||"synced"];
     return b;
   }
@@ -3309,6 +3412,23 @@
     b.classList.add("page-visibility-btn");
     b.append(pageVisibilityIcon());
     return b;
+  }
+  function buildHiddenPagesTool(){
+    const b=editorToolButton("hiddenPagesToolbarButton","Show hidden pages",toggleHiddenPages);
+    b.textContent="☷";
+    return b;
+  }
+  function toggleHiddenPages(){
+    S.showHiddenPages=!S.showHiddenPages;
+    refreshTabs();
+  }
+  function refreshHiddenPagesTool(){
+    const b=$("#hiddenPagesToolbarButton"); if(!b)return;
+    const shown=!!S.showHiddenPages;
+    b.textContent=shown?"◫":"☷";
+    b.title=shown?"Hide hidden pages":"Show hidden pages";
+    b.setAttribute("aria-label",b.title);
+    b.classList.toggle("active",shown);
   }
   function refreshPageVisibilityTool(){
     const b=$("#pageVisibilityToolbarButton"); if(!b)return;

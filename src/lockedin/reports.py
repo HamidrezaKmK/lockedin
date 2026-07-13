@@ -145,8 +145,16 @@ Each bubble has a mini-wiki. The tabs at the top of the editor list all pages.
 - Pick **🏷️ Edit titles** in the view dropdown to rename pages (and the bubble itself)
 
 The eye icon beside **Insert link** in the editor toolbar hides or shows the current page in
-read-only previews and public shares. Hidden pages remain editable for you but are not visible
-to readers.
+read-only previews and public shares. Hidden pages are omitted from the tab bar by default.
+Use the **☷ Show hidden pages** control beside the sync icon to reveal them; they appear in a
+separate right-aligned group until you hide them again.
+
+## Quick-add a paper
+
+Open **📚 Papers** in the page controls to see the bubble's attached papers and a **Quick add
+paper** form. Paste a PDF URL, provide a title, and optionally paste BibTeX. Quick add fetches
+the PDF as a new asset, attaches it directly to the current bubble at relevance 5, and saves the
+BibTeX when valid. You can edit or add BibTeX later from the asset detail page.
 
 Renaming a page updates its display everywhere — existing links that used the old title
 are rewritten automatically.
@@ -200,6 +208,8 @@ of the editor. Use ↑/↓ to move, Enter/Tab to insert, or click an item.
 
 Use **📚 Assets** to add a PDF or a paper URL. You can optionally set:
 - **Title** — defaults to the filename
+- **Extracted metadata** — the active model records a canonical paper title and author list
+  from the PDF during background processing; your chosen asset title is preserved
 - **Tags** — comma-separated topic names; each tag links the paper to a bubble
 - **Source URL** — the paper's arXiv/DOI link
 
@@ -225,8 +235,8 @@ those same assets: every paper stays visible in Assets whether or not it is in A
 ## Finding assets
 
 The Assets page has filters above the card grid:
-- **Search** — matches title, filename, PDF id, source URL, notes, tags, suggested tags,
-  and BibTeX keys
+- **Search** — matches your title, extracted paper title, authors, filename, PDF id, source URL,
+  notes, tags, suggested tags, and BibTeX keys
 - **Bubble** — limits results to assets attached to that bubble
 
 You can combine both filters, for example selecting a bubble and typing part of a paper
@@ -304,12 +314,13 @@ Open any bubble and use the view dropdown in the toolbar:
 - **🏷️ Edit titles** — rename the bubble and its pages inline; pick another view (or press
   Enter in a title) to save
 
-**Save**: click the sync icon beside **Insert link**, or press **Ctrl/⌘+S**. It changes to
+**Save**: click the leftmost sync icon in the editor toolbar, or press **Ctrl/⌘+S**. It changes to
 **✎** while there are unsaved edits and **⚠** when a disk conflict needs attention.
 
 The editor toolbar shows: **↶ undo**, **↷ redo**, text colour, insert table, insert image,
-insert link, the page visibility eye, and the sync icon. The eye hides or shows the current
-page in read-only previews and public shares.
+insert link, the page visibility eye, **☷ Show hidden pages**, and the leftmost sync icon. The eye hides
+or shows the current page in read-only previews and public shares; hidden page tabs stay out of
+the way until you use **☷**, then appear right-aligned in the tab bar.
 
 Use **⛶** in the page controls to enter a focused workspace that hides the navigation and chat;
 click it again to exit.
@@ -403,6 +414,7 @@ $\\sum_{k=1}^{n+1} k = \\frac{n(n+1)}{2} + (n+1) = \\frac{(n+1)(n+2)}{2}$.
 | `corollary` | ✓ (own counter) |
 | `definition` | ✓ (own counter) |
 | `proposition` | ✓ (own counter) |
+| `assumption` | ✓ (own counter) |
 | `remark` | ✓ (own counter) |
 | `proof` | ✗ — ends with ∎ |
 
@@ -416,8 +428,8 @@ Then write `\\thmref{thm:key}` anywhere — on this or any other page of the
 bubble, and even inside a math block — to get an inline reference. Theorem
 counters are bubble-wide too. For example, `\\thmref{thm:key}` → **Theorem 2**.
 
-While editing, type `\\thmref{` to open an autocomplete menu for theorem,
-definition, lemma, proposition, corollary, and remark labels.
+While editing, type `\\thmref{` to open an autocomplete menu for theorem, definition, lemma,
+proposition, assumption, corollary, and remark labels.
 
 ---
 
@@ -625,13 +637,13 @@ def scientist_context(slug: str) -> str:
     """Generated context artifact for a scientist session scoped to one bubble."""
     name = bubbles.slug_to_name(slug)
     pages = bubbles.list_pages(slug)
-    citations = paths.bubble_dir(slug) / "_lockedin_citations.md"
+    papers = paths.bubble_dir(slug) / "_lockedin_papers.md"
     lines = [
         f"# lockedin Scientist Context: {name}",
         "",
         f"- Bubble slug: `{slug}`",
         f"- Bubble report dir: `{paths.bubble_dir(slug)}`",
-        f"- Citation file: `{citations}`",
+        f"- Attached-paper inventory: `{papers}`",
         "",
         "Use only this bubble's report pages and the attached papers listed below. Higher",
         "relevance scores should be prioritized for reading, retrieval, comparison, and citation.",
