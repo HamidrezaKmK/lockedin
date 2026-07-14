@@ -232,10 +232,14 @@ def get_instructions(slug: str) -> str:
 # --------------------------------------------------------------------------- #
 # Derivation / listing
 # --------------------------------------------------------------------------- #
-def _pdf_slug_names() -> dict[str, str]:
-    """Map slug -> a display name, derived from PDF tags."""
+def _pdf_slug_names(asset_metas: list[dict] | None = None) -> dict[str, str]:
+    """Map slug -> a display name, derived from PDF tags.
+
+    Callers that are already building a bubble view pass their one asset-metadata scan here.
+    This avoids repeatedly parsing every ``meta.yaml`` for each bubble in the same response.
+    """
     out: dict[str, str] = {}
-    for m in assets.list_assets():
+    for m in asset_metas if asset_metas is not None else assets.list_assets():
         tags = m.get("tags", [])
         bubbles = m.get("idea_bubbles", [])
         for i, slug in enumerate(bubbles):
@@ -244,14 +248,16 @@ def _pdf_slug_names() -> dict[str, str]:
     return out
 
 
-def slug_to_name(slug: str) -> str:
-    reg = load_registry()
+def slug_to_name(slug: str, *, reg: dict | None = None,
+                 pdf_names: dict[str, str] | None = None) -> str:
+    reg = load_registry() if reg is None else reg
     if slug in reg and reg[slug].get("name"):
         return reg[slug]["name"]
-    return _pdf_slug_names().get(slug, slug)
+    return (pdf_names if pdf_names is not None else _pdf_slug_names()).get(slug, slug)
 
 
-def tag_for_slug(slug: str) -> str:
+def tag_for_slug(slug: str, *, reg: dict | None = None,
+                 pdf_names: dict[str, str] | None = None) -> str:
     """A display tag string guaranteed to slugify back to ``slug`` (the bubble's membership key).
 
     A bubble's display ``name`` is cosmetic and may be renamed freely, but membership is keyed by
@@ -261,10 +267,10 @@ def tag_for_slug(slug: str) -> str:
     member's tag (keeps a bubble's tag display consistent), then the registry name if it still maps
     to this slug, else a readable de-slugified form of the slug.
     """
-    existing = _pdf_slug_names().get(slug)
+    existing = (pdf_names if pdf_names is not None else _pdf_slug_names()).get(slug)
     if existing and assets.slug_of(existing) == slug:
         return existing
-    name = (load_registry().get(slug) or {}).get("name", "")
+    name = ((load_registry() if reg is None else reg).get(slug) or {}).get("name", "")
     if name and assets.slug_of(name) == slug:
         return name
     readable = slug.replace("-", " ")
@@ -284,8 +290,8 @@ def _paper_sort_key(meta: dict) -> tuple[int, str, str]:
     return (-int(meta.get("bubble_score", 5)), title, meta.get("pdf_id", ""))
 
 
-def pdfs_for_bubble(slug: str) -> list[dict]:
-    pdfs = [_with_bubble_score(m, slug) for m in assets.list_assets()
+def pdfs_for_bubble(slug: str, *, asset_metas: list[dict] | None = None) -> list[dict]:
+    pdfs = [_with_bubble_score(m, slug) for m in (asset_metas if asset_metas is not None else assets.list_assets())
             if slug in m.get("idea_bubbles", [])]
     pdfs.sort(key=_paper_sort_key)
     return pdfs
@@ -355,14 +361,16 @@ def memberships_for_asset(pdf_id: str) -> list[dict]:
     """Return approved bubble memberships for one asset, including relevance."""
     meta = assets.load_meta(pdf_id)
     scores = assets.bubble_scores(meta)
+    reg = load_registry()
+    pdf_names = _pdf_slug_names()
     out = []
     for slug in meta.get("idea_bubbles", []) or []:
         out.append({
             "slug": slug,
-            "name": slug_to_name(slug),
-            "tag": tag_for_slug(slug),
+            "name": slug_to_name(slug, reg=reg, pdf_names=pdf_names),
+            "tag": tag_for_slug(slug, reg=reg, pdf_names=pdf_names),
             "score": scores.get(slug, 5),
-            "approved": is_approved(slug),
+            "approved": bool(reg.get(slug, {}).get("approved")),
         })
     out.sort(key=lambda x: (-int(x.get("score", 5)), x.get("name", "").lower(), x.get("slug", "")))
     return out
@@ -371,9 +379,10 @@ def memberships_for_asset(pdf_id: str) -> list[dict]:
 def all_bubbles() -> list[dict]:
     """Union of registry bubbles and PDF-derived bubbles."""
     reg = load_registry()
-    pdf_names = _pdf_slug_names()
+    asset_metas = assets.list_assets()
+    pdf_names = _pdf_slug_names(asset_metas)
     counts: dict[str, int] = {}
-    for m in assets.list_assets():
+    for m in asset_metas:
         for slug in m.get("idea_bubbles", []):
             counts[slug] = counts.get(slug, 0) + 1
 
@@ -386,7 +395,7 @@ def all_bubbles() -> list[dict]:
         out.append({
             "slug": slug,
             "name": name,
-            "tag": tag_for_slug(slug),
+            "tag": tag_for_slug(slug, reg=reg, pdf_names=pdf_names),
             "approved": bool(entry.get("approved", False)),
             "in_registry": slug in reg,
             "pdf_count": counts.get(slug, 0),
@@ -401,7 +410,9 @@ def all_bubbles() -> list[dict]:
 def bubble_detail(slug: str) -> dict:
     reg = load_registry()
     entry = reg.get(slug, {})
-    pdfs = pdfs_for_bubble(slug)
+    asset_metas = assets.list_assets()
+    pdf_names = _pdf_slug_names(asset_metas)
+    pdfs = pdfs_for_bubble(slug, asset_metas=asset_metas)
     approved = bool(entry.get("approved", False))
     pages, home, content = [], "", ""
     if approved:
@@ -411,8 +422,8 @@ def bubble_detail(slug: str) -> dict:
         content = get_page(slug, home) if home else ""
     return {
         "slug": slug,
-        "name": entry.get("name") or slug_to_name(slug),
-        "tag": tag_for_slug(slug),
+        "name": entry.get("name") or slug_to_name(slug, reg=reg, pdf_names=pdf_names),
+        "tag": tag_for_slug(slug, reg=reg, pdf_names=pdf_names),
         "approved": approved,
         "in_registry": slug in reg,
         "instructions": entry.get("instructions", ""),

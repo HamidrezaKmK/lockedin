@@ -166,6 +166,29 @@ class BubbleIdentity(unittest.TestCase):
         from lockedin import assets
         self.assertEqual(assets.slug_of(tag), slug)
 
+    def test_all_bubbles_scans_asset_metadata_once(self):
+        with temp_home() as home:
+            with paths.use_root(home):
+                bubbles.create_bubble("first topic")
+                bubbles.create_bubble("second topic")
+                assets.save_asset(b"%PDF-1", "one.pdf", tags=["first topic"])
+                assets.save_asset(b"%PDF-1", "two.pdf", tags=["second topic"])
+                original = assets.list_assets
+                calls = 0
+
+                def counted_list_assets():
+                    nonlocal calls
+                    calls += 1
+                    return original()
+
+                assets.list_assets = counted_list_assets
+                try:
+                    rows = bubbles.all_bubbles()
+                finally:
+                    assets.list_assets = original
+        self.assertEqual(calls, 1)
+        self.assertEqual({row["slug"] for row in rows}, {"first-topic", "second-topic"})
+
 
 class BubbleRelevance(unittest.TestCase):
     def test_legacy_membership_defaults_to_score_five_and_sorts(self):
