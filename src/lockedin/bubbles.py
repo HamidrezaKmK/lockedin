@@ -685,6 +685,28 @@ def delete_page(slug: str, page_slug: str) -> bool:
 # --------------------------------------------------------------------------- #
 # Figures / images
 # --------------------------------------------------------------------------- #
+_GIF_LOOP_EXTENSION = b"!\xff\x0bNETSCAPE2.0\x03\x01\x00\x00\x00"
+
+
+def ensure_looping_gif(data: bytes) -> bytes:
+    """Add GIF's standard infinite-loop extension when an animation lacks one.
+
+    Browsers honour an animated GIF's loop metadata; replacing an ``img`` source can restart
+    it, but cannot turn a single-play GIF into a repeating animation.  This lossless byte-level
+    insertion happens before the GIF's first block, after its optional global colour table.
+    """
+    if not (data.startswith((b"GIF87a", b"GIF89a")) and len(data) >= 13):
+        return data
+    if b"NETSCAPE2.0" in data or b"ANIMEXTS1.0" in data:
+        return data
+    packed = data[10]
+    global_table_size = 3 * (1 << ((packed & 0x07) + 1)) if packed & 0x80 else 0
+    offset = 13 + global_table_size
+    if offset > len(data):
+        return data
+    return data[:offset] + _GIF_LOOP_EXTENSION + data[offset:]
+
+
 def save_bubble_image(slug: str, filename: str, data: bytes) -> str:
     """Save an uploaded image under assets/ with a safe unique name; return its URL."""
     adir = paths.bubble_assets_dir(slug)
@@ -696,6 +718,8 @@ def save_bubble_image(slug: str, filename: str, data: bytes) -> str:
     while (adir / name).exists():
         name = f"{stem}-{i}{ext}"
         i += 1
+    if ext == ".gif":
+        data = ensure_looping_gif(data)
     (adir / name).write_bytes(data)
     return f"/api/bubbles/{slug}/assets/{name}"
 

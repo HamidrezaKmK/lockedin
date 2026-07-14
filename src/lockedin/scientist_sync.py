@@ -117,6 +117,8 @@ def apply_writes(home: Path, writes: list[dict]) -> dict:
         try:
             target = _target(home, rel)
             raw = base64.b64decode(str(item.get("content_b64", "")), validate=True)
+            if Path(rel).suffix.lower() == ".gif":
+                raw = bubbles.ensure_looping_gif(raw)
         except Exception:
             conflicts.append({"path": rel, "reason": "invalid content"})
             continue

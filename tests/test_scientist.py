@@ -120,8 +120,16 @@ class SafeSyncBoundaryTest(unittest.TestCase):
                 "path": rel, "base_revision": scientist_sync.revision(b""),
                 "content_b64": base64.b64encode(gif).decode(),
             }])
-            self.assertEqual((home / rel).read_bytes(), gif)
+            self.assertIn(b"NETSCAPE2.0", (home / rel).read_bytes())
         self.assertEqual([item["path"] for item in result["applied"]], [rel])
+
+    def test_scientist_adds_loop_metadata_to_a_single_play_gif(self):
+        # Header + logical screen descriptor; sufficient to test lossless GIF metadata handling.
+        single_play = b"GIF89a\x01\x00\x01\x00\x00\x00\x00" + b";"
+        looping = bubbles.ensure_looping_gif(single_play)
+        self.assertIn(b"NETSCAPE2.0", looping)
+        self.assertTrue(looping.endswith(b";"))
+        self.assertEqual(bubbles.ensure_looping_gif(looping), looping)
 
     def test_unapproved_bubble_and_path_traversal_are_rejected(self):
         with workspace() as (home, slug):
