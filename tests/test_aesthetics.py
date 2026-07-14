@@ -50,3 +50,10 @@ class AestheticsConfigTests(unittest.TestCase):
         self.assertIn(".mobile-workspace-control{display:none!important}", source)
         self.assertIn('class:"small ghost mobile-workspace-control",onclick:newPage', source)
         self.assertIn('class:"small ghost mobile-workspace-control",title:"Page view mode"', source)
+
+    def test_library_defaults_to_the_unassigned_paper_filter(self):
+        source = (Path(server.WEB_DIR) / "index.html").read_text()
+        self.assertIn('const UNASSIGNED_BUBBLE="__unassigned__"', source)
+        self.assertIn('`Unassigned (${unassignedCount})`', source)
+        self.assertIn('if(S.assetBubble==null) S.assetBubble=UNASSIGNED_BUBBLE', source)
+        self.assertIn('"Every paper is assigned to at least one bubble."', source)

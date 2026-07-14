@@ -1896,9 +1896,15 @@
     const filterText=el("input",{placeholder:"Search your library by title, author, tag, notes, or BibTeX key…"});
     filterText.value=S.assetSearch||"";
     const filterBubble=el("select");
-    filterBubble.append(el("option",{value:""},"All bubbles"));
+    const UNASSIGNED_BUBBLE="__unassigned__";
+    const unassignedCount=r.assets.filter(a=>!(a.idea_bubbles||[]).length).length;
+    filterBubble.append(el("option",{value:UNASSIGNED_BUBBLE},`Unassigned (${unassignedCount})`));
+    filterBubble.append(el("option",{value:""},"All papers"));
     bubbles.forEach(b=>filterBubble.append(el("option",{value:b.slug},b.name||b.slug)));
-    filterBubble.value=S.assetBubble||"";
+    // A full library can be large. Start a fresh Library visit with the papers that still need
+    // a research home, while preserving an explicit selection during this browser session.
+    if(S.assetBubble==null) S.assetBubble=UNASSIGNED_BUBBLE;
+    filterBubble.value=S.assetBubble;
     const count=el("div",{class:"asset-count"});
     const filters=el("div",{class:"asset-filter"},
       el("label",{},"Search",filterText),
@@ -1918,12 +1924,21 @@
       const q=filterText.value.trim().toLowerCase();
       const bs=filterBubble.value;
       const shown=r.assets.filter(a=>{
-        if(bs && !(a.idea_bubbles||[]).includes(bs)) return false;
+        if(bs===UNASSIGNED_BUBBLE) {
+          if((a.idea_bubbles||[]).length) return false;
+        } else if(bs && !(a.idea_bubbles||[]).includes(bs)) return false;
         return !q || haystack(a).includes(q);
       });
       grid.innerHTML="";
-      count.textContent=shown.length===r.assets.length?`${shown.length} papers`:`${shown.length} of ${r.assets.length} papers`;
-      if(!shown.length){ grid.append(el("div",{class:"muted"},"No papers match these filters.")); return; }
+      const label=bs===UNASSIGNED_BUBBLE?"unassigned papers":"papers";
+      const population=bs===UNASSIGNED_BUBBLE?unassignedCount:r.assets.length;
+      count.textContent=shown.length===population?`${shown.length} ${label}`:`${shown.length} of ${population} ${label}`;
+      if(!shown.length){
+        grid.append(el("div",{class:"muted"},bs===UNASSIGNED_BUBBLE
+          ? "Every paper is assigned to at least one bubble."
+          : "No papers match these filters."));
+        return;
+      }
       appendCardsInFrames(grid,shown,assetCard,version,renderId,()=>filterRender);
     };
     filterText.addEventListener("input",renderFiltered);
