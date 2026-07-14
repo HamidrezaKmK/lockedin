@@ -238,6 +238,21 @@ class Mirror:
         p = self.root / rel
         return p.read_bytes() if p.exists() else b""
 
+    def local_writable_paths(self) -> list[str]:
+        """Return new report files that an agent may legitimately create locally.
+
+        The server manifest cannot mention a file that has never been uploaded.  Enumerating the
+        two direct report-file locations closes that gap without exposing sidecar state, paper
+        library files, nested paths, or symlinks outside the mirror.
+        """
+        reports = self.root / "REPORTS"
+        if not reports.exists():
+            return []
+        candidates = list(reports.glob("*/pages/*.md")) + list(reports.glob("*/assets/*"))
+        return sorted(p.relative_to(self.root).as_posix() for p in candidates
+                      if p.is_file() and not p.is_symlink()
+                      and self.writable(p.relative_to(self.root).as_posix()))
+
     def _base_name(self, rel: str) -> str:
         import hashlib
         return hashlib.sha256(rel.encode("utf-8")).hexdigest()
@@ -356,8 +371,28 @@ class Mirror:
             if self.rev(raw) != old["revision"]:
                 writes.append({"path": rel, "base_revision": old["revision"],
                                "content_b64": base64.b64encode(raw).decode()})
+        # New local report pages and figures have no prior server revision, so they are absent
+        # from ``tracked``. Push them against the empty-file revision. Files that already exist
+        # remotely stay server-authoritative until they are first pulled into the mirror. The
+        # revision manifest remains the metadata gate: no content is downloaded or uploaded for
+        # paths whose revision/name has not changed.
+        for rel in self.local_writable_paths():
+            if rel not in tracked and rel not in by_path:
+                writes.append({"path": rel, "base_revision": self.rev(b""),
+                               "content_b64": base64.b64encode(self.local_raw(rel)).decode()})
         if writes:
             result = request(self.account["server"], "POST", "/api/scientist/v1/push", {"writes": writes}, self.account["token"])
+            # A successful write already gives us the authoritative revision. Record it locally
+            # so the next manifest comparison does not download the same (possibly large) figure
+            # we just uploaded.
+            for applied in result["applied"]:
+                rel = applied["path"]
+                if not self.writable(rel):
+                    continue
+                raw = self.local_raw(rel)
+                tracked[rel] = {"revision": applied["revision"]}
+                if name := self.save_base(rel, raw):
+                    tracked[rel]["base_file"] = name
             for conflict in result["conflicts"]:
                 rel = conflict["path"]
                 if conflict.get("content_b64"):

@@ -323,6 +323,42 @@ class ScientistClientTest(unittest.TestCase):
         self.assertIn("REPORTS/work/assets", prompt)
         self.assertIn("/api/bubbles/work/assets/filename.gif", prompt)
 
+    def test_sync_pushes_a_new_local_gif_not_yet_in_the_server_manifest(self):
+        with temp_data_home():
+            mirror = scientist_cli.Mirror({"server": "https://example.test", "user": "alice", "token": "t"})
+            rel = "REPORTS/work/assets/new-animation.gif"
+            local = mirror.root / rel
+            local.parent.mkdir(parents=True)
+            local.write_bytes(b"GIF89a-new")
+            remote = {}
+            pushed = []
+            requested_files = []
+
+            def fake_request(_server, _method, endpoint, payload=None, token=None):
+                if endpoint.endswith("/manifest"):
+                    return {"files": [{"path": path, "revision": scientist_cli.Mirror.rev(raw)}
+                                      for path, raw in remote.items()]}
+                if endpoint.endswith("/push"):
+                    applied = []
+                    for item in payload["writes"]:
+                        raw = base64.b64decode(item["content_b64"])
+                        remote[item["path"]] = raw
+                        pushed.append(item)
+                        applied.append({"path": item["path"], "revision": scientist_cli.Mirror.rev(raw)})
+                    return {"applied": applied, "conflicts": []}
+                if endpoint.endswith("/files"):
+                    requested_files.extend(payload["paths"])
+                    return {"files": [{"path": path, "revision": scientist_cli.Mirror.rev(remote[path]),
+                                       "content_b64": base64.b64encode(remote[path]).decode()}
+                                      for path in payload["paths"]]}
+                raise AssertionError(endpoint)
+
+            with patch.object(scientist_cli, "request", side_effect=fake_request):
+                mirror.sync()
+            self.assertEqual([item["path"] for item in pushed], [rel])
+            self.assertEqual(remote[rel], b"GIF89a-new")
+            self.assertEqual(requested_files, [])
+
 
 if __name__ == "__main__":
     unittest.main()
