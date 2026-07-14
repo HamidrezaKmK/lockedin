@@ -65,6 +65,16 @@ class ScientistGuideTest(unittest.TestCase):
         self.assertIn("## The editor", guide)
         self.assertIn("centered-text", guide)
 
+    def test_windows_installer_persists_and_refreshes_path(self):
+        installer = (Path(__file__).resolve().parents[1] / "install.ps1").read_text()
+        self.assertIn("SetEnvironmentVariable('Path'", installer)
+        self.assertIn('$env:Path = "$bin;$env:Path"', installer)
+        self.assertIn("Get-Command py", installer)
+        self.assertIn("$env:PYTHON", installer)
+        self.assertIn("[guid]::NewGuid()", installer)
+        self.assertIn("Move-Item -Force -Path $clientTemp -Destination $client", installer)
+        self.assertNotIn("setx ", installer.lower())
+
 
 class SafeSyncBoundaryTest(unittest.TestCase):
     def test_manifest_excludes_sensitive_and_large_workspace_content(self):
