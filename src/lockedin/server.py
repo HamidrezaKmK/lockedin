@@ -441,6 +441,7 @@ blockquote p{{margin:5px 0}}
   padding:0 .14em;border-radius:4px;transition:color .14s ease}}
 .eq-ref:hover,.thm-ref:hover,.cite-ref:hover{{color:var(--ink)}}
 .text-color{{color:var(--tc)}}
+.centered-text{{text-align:center}}
 .bibitem{{display:grid;grid-template-columns:auto 1fr;gap:.65em;margin:.5em 0;line-height:1.55}}
 .bibnum{{font-family:var(--font-ui);font-weight:700;color:var(--accent);
   font-feature-settings:"tnum" 1;font-variant-numeric:tabular-nums}}
@@ -558,7 +559,16 @@ blockquote p{{margin:5px 0}}
     const qed=t.proof?'<div class="math-env-qed">∎</div>':'';
     return '<div class="math-env '+t.env+'"><div class="math-env-title">'+t.title+'</div>'+ih+qed+'</div>';
   }});
-  document.getElementById("content").innerHTML=html;
+  const content=document.getElementById("content");
+  content.innerHTML=html;
+  // Every rendered bubble preview starts GIF figures at their first frame. The GIF's embedded
+  // loop setting still controls repeated playback after that.
+  content.querySelectorAll("img[src]").forEach(img=>{{
+    const src=img.getAttribute("src")||"";
+    if(!/\\.gif(?:[?#]|$)/i.test(src))return;
+    img.src="";
+    img.src=src+(src.includes("?")?"&":"?")+"lockedin_gif="+Date.now();
+  }});
 }})();
 // Give every heading a stable id + a click-to-copy section anchor; deep-link via #id.
 (function(){{

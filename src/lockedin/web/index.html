@@ -536,6 +536,7 @@
   .toastui-editor-mode-switch{display:none!important}
   .toastui-editor-tabs{display:none!important}
   .wikilink{color:var(--accent2);border-bottom:1px dashed var(--accent2);cursor:pointer}
+  .centered-text{text-align:center}
   .todoref{color:var(--accent);font-weight:500;cursor:pointer;text-decoration:none;
     background:rgba(124,156,255,.12);padding:0 4px;border-radius:4px}
   .scopebar{display:flex;gap:6px;align-items:center;padding:6px 10px;border-top:1px solid var(--line)}
@@ -2703,6 +2704,8 @@
         {name:"undo",tooltip:"Undo (Ctrl+Z)",el:histBtn("↶","Undo",false)});
       S.editor.insertToolbarItem({groupIndex:0,itemIndex:2},
         {name:"text-color",tooltip:"Color selected text",el:buildColorTool()});
+      S.editor.insertToolbarItem({groupIndex:0,itemIndex:3},
+        {name:"center-text",tooltip:"Center selected text",el:buildCenterTextTool()});
       // Keep page-specific status controls alongside the built-in Insert link button.
       // Their handlers prevent focus loss, so they do not disturb the editor selection.
       S.editor.insertToolbarItem({groupIndex:0,itemIndex:6},
@@ -2772,6 +2775,13 @@
     refresh(); wrap.append(btn,menu); return wrap;
   }
 
+  function buildCenterTextTool(){
+    const btn=el("button",{type:"button",class:"color-tool-btn",title:"Center selected text","aria-label":"Center selected text"},"≡");
+    btn.addEventListener("mousedown",e=>e.preventDefault());
+    btn.addEventListener("click",e=>{ e.preventDefault(); applyCenterText(); });
+    return btn;
+  }
+
   function applyTextColor(hex){
     hex=normalizeHex(hex);
     if(!hex)return;
@@ -2788,6 +2798,20 @@
     restoreScroll();
     setTimeout(restoreScroll,0);
     S.colorSelection=null;
+    markStale(); scheduleAutosave(); refreshReferenceAutocomplete(); updatePreview();
+  }
+
+  function applyCenterText(){
+    const md=S.editor&&S.editor.getMarkdown?S.editor.getMarkdown():"";
+    const sel=currentEditorSelectionOffsets();
+    if(!sel||sel.from===sel.to){ toast("Select the text or block to center first"); const v=editorView(); if(v)v.focus(); return; }
+    const from=Math.max(0,Math.min(sel.from,md.length));
+    const to=Math.max(from,Math.min(sel.to,md.length));
+    const selected=md.slice(from,to);
+    const replacement='<div class="centered-text">\n'+selected+'\n</div>';
+    const restoreScroll=preserveEditorScroll();
+    replaceEditorRange(from,to,replacement);
+    restoreScroll(); setTimeout(restoreScroll,0);
     markStale(); scheduleAutosave(); refreshReferenceAutocomplete(); updatePreview();
   }
 
@@ -3024,7 +3048,21 @@
     const sTop=S.previewEl.scrollTop, sLeft=S.previewEl.scrollLeft;
     S.previewEl.innerHTML=renderMarkdown(S.editor.getMarkdown(),{refs:S.refs,pageSlug:S.page,citationPdfLinks:true});
     linkifyWikilinks(S.previewEl);
+    restartGifPlayback(S.previewEl);
     S.previewEl.scrollTop=sTop; S.previewEl.scrollLeft=sLeft;
+  }
+
+  // Recreating the source starts a GIF from frame one whenever a bubble preview is rendered.
+  // The GIF's own loop metadata remains authoritative for its repeated playback.
+  function restartGifPlayback(root){
+    if(!root)return;
+    root.querySelectorAll("img[src]").forEach(img=>{
+      const src=img.getAttribute("src")||"";
+      if(!/\.gif(?:[?#]|$)/i.test(src))return;
+      const join=src.includes("?")?"&":"?";
+      img.src="";
+      img.src=src+join+"lockedin_gif="+Date.now();
+    });
   }
   // Bubble-wide equation/theorem reference registry: numbers + labels are global, so \eqref and
   // \thmref resolve across pages. Re-fetched on bubble open, after every save, and after page

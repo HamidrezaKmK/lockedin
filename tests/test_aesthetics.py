@@ -26,3 +26,11 @@ class AestheticsConfigTests(unittest.TestCase):
             show_back=False, themes=["dark", "pink"])
         self.assertIn('const THEMES=["dark", "pink"];', html)
         self.assertNotIn('const THEMES=["dark", "light", "pink", "techno", "pearl"];', html)
+
+    def test_preview_restarts_gif_figures_and_supports_centered_text(self):
+        html = server._render_preview_html(
+            name="Test", page="overview", all_pages=[{"page_slug": "overview", "title": "Overview"}],
+            content='![Animation](/api/bubbles/test/assets/demo.gif)\n\n<div class="centered-text">Centered</div>',
+            slug="test", link_base="/x", asset_base="/x/assets", show_back=False)
+        self.assertIn("lockedin_gif", html)
+        self.assertIn(".centered-text{text-align:center}", html)

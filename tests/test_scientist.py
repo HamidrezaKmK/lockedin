@@ -56,10 +56,14 @@ class ScientistGuideTest(unittest.TestCase):
         self.assertIn("lockedin-scientist agy", section)
         self.assertIn("curl -fsSL", section)
         self.assertIn("normal\ninteractive approval", section)
+        self.assertIn("REPORTS/<bubble-slug>/assets/", section)
+        self.assertIn("my-figure.gif", section)
 
     def test_editguide_remains_the_canonical_editing_section(self):
         self.assertEqual(reports.guide_section("Missing"), "")
-        self.assertIn("## The editor", reports.guide_section("Editing Guide"))
+        guide = reports.guide_section("Editing Guide")
+        self.assertIn("## The editor", guide)
+        self.assertIn("centered-text", guide)
 
 
 class SafeSyncBoundaryTest(unittest.TestCase):
@@ -108,6 +112,17 @@ class SafeSyncBoundaryTest(unittest.TestCase):
         self.assertEqual(rejected["applied"], [])
         self.assertEqual(rejected["conflicts"][0]["reason"], "read-only or invalid scientist path")
 
+    def test_animated_gif_is_synchronized_as_a_report_asset(self):
+        with workspace() as (home, slug):
+            rel = f"REPORTS/{slug}/assets/convergence.gif"
+            gif = b"GIF89a\\x01\\x00\\x01\\x00"
+            result = scientist_sync.apply_writes(home, [{
+                "path": rel, "base_revision": scientist_sync.revision(b""),
+                "content_b64": base64.b64encode(gif).decode(),
+            }])
+            self.assertEqual((home / rel).read_bytes(), gif)
+        self.assertEqual([item["path"] for item in result["applied"]], [rel])
+
     def test_unapproved_bubble_and_path_traversal_are_rejected(self):
         with workspace() as (home, slug):
             with paths.use_root(home):
@@ -115,9 +130,10 @@ class SafeSyncBoundaryTest(unittest.TestCase):
             writes = [
                 {"path": "REPORTS/draft/pages/x.md", "base_revision": scientist_sync.revision(b""), "content_b64": ""},
                 {"path": f"REPORTS/{slug}/pages/../../config/keys.md", "base_revision": scientist_sync.revision(b""), "content_b64": ""},
+                {"path": f"REPORTS/{slug}/assets/nested/figure.gif", "base_revision": scientist_sync.revision(b""), "content_b64": ""},
             ]
             result = scientist_sync.apply_writes(home, writes)
-        self.assertEqual(len(result["conflicts"]), 2)
+        self.assertEqual(len(result["conflicts"]), 3)
         self.assertTrue(all("read-only" in item["reason"] for item in result["conflicts"]))
 
     def test_stale_write_returns_current_content_without_overwriting_web_edit(self):
@@ -296,6 +312,8 @@ class ScientistClientTest(unittest.TestCase):
         self.assertIn("Exact current paper", prompt)
         self.assertIn("never reuse an earlier answer", prompt)
         self.assertIn("normal terminal conversation", prompt)
+        self.assertIn("REPORTS/work/assets", prompt)
+        self.assertIn("/api/bubbles/work/assets/filename.gif", prompt)
 
 
 if __name__ == "__main__":

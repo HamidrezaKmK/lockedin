@@ -96,7 +96,7 @@ def writable_path(home: Path, rel: str) -> bool:
     # would otherwise look like a permitted page to the shape test below.
     if any(part in ("", ".", "..") for part in parts):
         return False
-    if len(parts) < 4 or parts[0] != "REPORTS":
+    if len(parts) != 4 or parts[0] != "REPORTS":
         return False
     slug = parts[1]
     with paths.use_root(home):

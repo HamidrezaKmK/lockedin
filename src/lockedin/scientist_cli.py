@@ -278,7 +278,7 @@ class Mirror:
     @staticmethod
     def writable(rel: str) -> bool:
         p = Path(rel).parts
-        return len(p) >= 4 and p[0] == "REPORTS" and ((p[2] == "pages" and rel.endswith(".md")) or p[2] == "assets")
+        return len(p) == 4 and p[0] == "REPORTS" and ((p[2] == "pages" and rel.endswith(".md")) or p[2] == "assets")
 
     def retry(self, rel: str, base: bytes, local: bytes, remote: bytes) -> None:
         for directory in (self.retry_dir, self.fallback_retry_dir):
@@ -445,6 +445,17 @@ PAPER INVENTORY RULES:
 - Attached papers live under ASSETS/<asset-id>/ (metadata, summary, extracted text, and sometimes
   paper.pdf). REPORTS/{bubble}/assets is only for report images, not the paper library.
 - Only read papers whose asset ids appear in this inventory. Prefer higher relevance first.
+
+FIGURES AND GIFS:
+- REPORTS/{bubble}/assets is the synchronized place for report figures and animated GIFs. When
+  adding one, create or copy a flat, descriptively named file there (for example,
+  covariance-field.gif or reconstruction-error.png), then embed it in a report page with:
+  ![Concise accessible caption](/api/bubbles/{bubble}/assets/filename.gif)
+- This is the same asset URL and Markdown form produced by the website editor. Never put report
+  figures in ASSETS/ (that directory is the paper library), and never use a local filesystem path
+  in report Markdown. GIFs render from their first frame and loop in LockedIn previews.
+- Before embedding, confirm that the asset file exists in REPORTS/{bubble}/assets. Let the normal
+  five-second sync push it; do not call unrelated upload APIs or edit sync metadata.
 
 AUTHORITATIVE ATTACHED-PAPER INVENTORY:
 {inventory}"""

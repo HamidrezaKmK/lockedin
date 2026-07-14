@@ -387,6 +387,18 @@ Only pages and report assets inside an **approved** bubble can be written back. 
 sessions, chat history, TODOs, bubble settings, and paper PDFs are never writable by Scientist.
 Use `lockedin-scientist sync` to pull/push once without launching a coding CLI.
 
+### Figures and GIFs
+
+Scientist can add report figures and animated GIFs using the same format as the browser editor.
+Place a descriptively named file in `REPORTS/<bubble-slug>/assets/`, then embed it in a page:
+
+```
+![Description of the figure](/api/bubbles/<bubble-slug>/assets/my-figure.gif)
+```
+
+Keep report artwork out of `ASSETS/`, which is reserved for the paper library. Preview and shared
+bubble pages restart GIFs from their first frame whenever they render.
+
 ### Uninstall
 
 To remove the installed command and client source while keeping your local mirror and saved
@@ -428,7 +440,7 @@ Open any bubble and use the view dropdown in the toolbar:
 **Save**: click the leftmost sync icon in the editor toolbar, or press **Ctrl/⌘+S**. It changes to
 **✎** while there are unsaved edits and **⚠** when a disk conflict needs attention.
 
-The editor toolbar shows: **↶ undo**, **↷ redo**, text colour, insert table, insert image,
+The editor toolbar shows: **↶ undo**, **↷ redo**, text colour, **≡ center selected text**, insert table, insert image,
 insert link, the page visibility eye, **☷ Show hidden pages**, and the leftmost sync icon. The eye hides
 or shows the current page in read-only previews and public shares; hidden page tabs stay out of
 the way until you use **☷**, then appear right-aligned in the tab bar.
@@ -450,6 +462,19 @@ larger screen.)
 
 Standard CommonMark: headings `#`, bold `**`, italic `*`, lists, blockquotes `>`,
 fenced code blocks, tables, images. Nothing unusual here.
+
+### Centred text
+
+Select a paragraph or block and use **≡ center selected text** in the editor toolbar. It writes
+portable Markdown-compatible HTML:
+
+```
+<div class="centered-text">
+Your centred text
+</div>
+```
+
+The same markup works for Scientist edits, live previews, and shared bubble pages.
 
 ---
 
