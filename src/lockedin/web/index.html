@@ -2777,7 +2777,9 @@
       markStale(); scheduleAutosave();
       refreshReferenceAutocomplete();
       clearTimeout(deb); deb=setTimeout(updatePreview,300); });
-    setTimeout(updatePreview,200);
+    // A newly opened report should start its animations from the beginning. Ordinary
+    // typing updates below deliberately keep the existing GIF elements in place.
+    setTimeout(()=>updatePreview({restartGifs:true}),200);
     // The editor records the initial content load as an undoable step, so a stray
     // Ctrl+Z would wipe the whole page (and then autosave the wipe). Drop that step
     // once the content settles so undo can only reach back to the loaded baseline.
@@ -3087,13 +3089,42 @@
     }catch(e){}
   }
 
-  function updatePreview(){
+  function updatePreview({restartGifs=false}={}){
     if(!S.previewEl||!S.editor)return;
     const sTop=S.previewEl.scrollTop, sLeft=S.previewEl.scrollLeft;
+    const savedGifs=restartGifs?null:collectGifImages(S.previewEl);
     S.previewEl.innerHTML=renderMarkdown(S.editor.getMarkdown(),{refs:S.refs,pageSlug:S.page,citationPdfLinks:true});
     linkifyWikilinks(S.previewEl);
-    restartGifPlayback(S.previewEl);
+    if(restartGifs) restartGifPlayback(S.previewEl);
+    else restoreGifImages(S.previewEl,savedGifs);
     S.previewEl.scrollTop=sTop; S.previewEl.scrollLeft=sLeft;
+  }
+
+  // Rendering Markdown replaces the preview DOM. Keep unchanged GIF elements through
+  // ordinary typing updates so they neither flash blank nor restart their animation.
+  function gifImageKey(img){
+    const src=img&&img.getAttribute("src")||"";
+    try{
+      const url=new URL(src,window.location.href);
+      if(!/\.gif$/i.test(url.pathname))return "";
+      url.searchParams.delete("lockedin_gif");
+      return url.href;
+    }catch(e){ return /\.gif(?:[?#]|$)/i.test(src)?src:""; }
+  }
+  function collectGifImages(root){
+    const saved=new Map();
+    root.querySelectorAll("img[src]").forEach(img=>{
+      const key=gifImageKey(img); if(!key)return;
+      const images=saved.get(key)||[]; images.push(img); saved.set(key,images);
+    });
+    return saved;
+  }
+  function restoreGifImages(root,saved){
+    if(!saved)return;
+    root.querySelectorAll("img[src]").forEach(img=>{
+      const images=saved.get(gifImageKey(img));
+      if(images&&images.length) img.replaceWith(images.shift());
+    });
   }
 
   // Recreating the source starts a GIF from frame one whenever a bubble preview is rendered.
@@ -3534,7 +3565,8 @@
     S.applyingRemote=true;
     try{ S.editor.setMarkdown(md||"",false); }
     finally{ setTimeout(()=>{ S.applyingRemote=false; },0); }
-    setTimeout(updatePreview,150);
+    // A remote/page load is intentional navigation, so start any report GIFs afresh.
+    setTimeout(()=>updatePreview({restartGifs:true}),150);
     setTimeout(resetEditorHistory,200);   // loaded content is the undo baseline (see initEditor)
   }
   async function switchPage(target,{noRoute=false}={}){

@@ -35,6 +35,13 @@ class AestheticsConfigTests(unittest.TestCase):
         self.assertIn("lockedin_gif", html)
         self.assertIn(".centered-text{text-align:center}", html)
 
+    def test_live_editor_preview_preserves_gifs_between_typing_updates(self):
+        source = (Path(server.WEB_DIR) / "index.html").read_text()
+        self.assertIn("const savedGifs=restartGifs?null:collectGifImages(S.previewEl);", source)
+        self.assertIn("else restoreGifImages(S.previewEl,savedGifs);", source)
+        self.assertIn("setTimeout(()=>updatePreview({restartGifs:true}),200);", source)
+        self.assertIn("setTimeout(()=>updatePreview({restartGifs:true}),150);", source)
+
     def test_authenticated_bubble_assets_are_never_cdn_cached(self):
         source = (Path(server.__file__).read_text())
         self.assertIn('"Cache-Control": "private, no-store"', source)
