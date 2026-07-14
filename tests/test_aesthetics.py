@@ -44,3 +44,9 @@ class AestheticsConfigTests(unittest.TestCase):
         self.assertIn("#app.bubble-focus .ptabs,#app.bubble-focus #editorWrap{display:none!important}", source)
         self.assertIn("#app.bubble-focus #previewWrap{display:block!important;position:absolute;inset:0", source)
         self.assertIn('id:"mobileFocusExit"', source)
+
+    def test_mobile_hides_workspace_controls_but_not_desktop_controls(self):
+        source = (Path(server.WEB_DIR) / "index.html").read_text()
+        self.assertIn(".mobile-workspace-control{display:none!important}", source)
+        self.assertIn('class:"small ghost mobile-workspace-control",onclick:newPage', source)
+        self.assertIn('class:"small ghost mobile-workspace-control",title:"Page view mode"', source)

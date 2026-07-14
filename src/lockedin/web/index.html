@@ -632,6 +632,9 @@
     .pane{height:auto;min-height:0}
     #detail>.editor-pane{height:calc(var(--vvh) - 154px - env(safe-area-inset-top));min-height:min(380px, calc(var(--vvh) - 154px))}
     #detail>.chat-pane,.desktop-only-tool{display:none!important}
+    /* On phones, page creation and editor-mode switching belong in the full workspace, not the
+       compact reader header. Keep page tabs and the Focus control only. */
+    .mobile-workspace-control{display:none!important}
     #previewArrow{display:none!important}
     .mobile-only{display:inline-flex;align-items:center}
     /* Mobile respects the chosen view mode (the Split/Edit/Read selector is visible here now).
@@ -3276,7 +3279,7 @@
     if(S.showHiddenPages&&hiddenTabs.childElementCount)tabScroll.append(hiddenTabs);
     // Keep page creation outside the horizontally scrolling tab list.  Once a bubble has
     // enough tabs, a button in that list can be clipped/off-screen and become unreachable.
-    if(!S.editingTitles) controls.append(el("button",{type:"button",class:"small ghost",onclick:newPage},"+ Page"));
+    if(!S.editingTitles) controls.append(el("button",{type:"button",class:"small ghost mobile-workspace-control",onclick:newPage},"+ Page"));
     const papersBtn=el("button",{class:"small ghost desktop-only-tool","data-papers-toggle":"1",title:"Papers in this bubble",
       onclick:(e)=>{ e.stopPropagation(); togglePapersMenu(controls); }},"📚 Papers");
     controls.append(papersBtn);
@@ -3284,7 +3287,7 @@
     // mobile too, so phones can switch between Read and Edit. Selecting "Edit titles" enters
     // rename mode (page titles + bubble name); picking any real view mode while renaming saves
     // those edits first, then switches. Enter inside a title input also saves (see toggleEditTitles).
-    const vm=el("select",{class:"small ghost",title:"Page view mode",
+    const vm=el("select",{class:"small ghost mobile-workspace-control",title:"Page view mode",
       style:"width:auto;padding:4px 8px"+(S.editingTitles?";color:var(--accent);border-color:var(--accent)":"")});
     [["split","◧ Split"],["edit","✏️ Edit"],["view","👁 Read"],["edittitles","🏷️ Edit titles"]].forEach(([v,lbl])=>{
       const o=el("option",{value:v},lbl);
