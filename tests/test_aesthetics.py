@@ -38,3 +38,9 @@ class AestheticsConfigTests(unittest.TestCase):
     def test_authenticated_bubble_assets_are_never_cdn_cached(self):
         source = (Path(server.__file__).read_text())
         self.assertIn('"Cache-Control": "private, no-store"', source)
+
+    def test_mobile_focus_is_a_read_only_preview_without_desktop_layout_changes(self):
+        source = (Path(server.WEB_DIR) / "index.html").read_text()
+        self.assertIn("#app.bubble-focus .ptabs,#app.bubble-focus #editorWrap{display:none!important}", source)
+        self.assertIn("#app.bubble-focus #previewWrap{display:block!important;height:100%", source)
+        self.assertIn('id:"mobileFocusExit"', source)
