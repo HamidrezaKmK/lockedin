@@ -894,7 +894,10 @@ def build_app():
         p = service.bubble_asset_path(home, slug, safe)
         if not p.exists():
             raise HTTPException(status_code=404, detail="No such image.")
-        return FileResponse(p, headers={"Content-Disposition": "inline"})
+        # Share URLs are explicitly public capabilities and may be cached independently of the
+        # authenticated owner route below.
+        return FileResponse(p, headers={"Content-Disposition": "inline",
+                                        "Cache-Control": "public, max-age=3600"})
 
     # ---- auth ----
     @app.post("/api/signup")
@@ -1462,7 +1465,10 @@ def build_app():
         p = service.bubble_asset_path(home_of(user), slug, safe)
         if not p.exists():
             raise HTTPException(status_code=404, detail="No such image.")
-        return FileResponse(p, headers={"Content-Disposition": "inline"})
+        # These assets belong to an authenticated user's private workspace.  Never let a CDN
+        # cache a response keyed only by URL: it can be stale and can bypass the auth boundary.
+        return FileResponse(p, headers={"Content-Disposition": "inline",
+                                        "Cache-Control": "private, no-store"})
 
     # ---- chat sessions ----
     @app.get("/api/bubbles/{slug}/chats")

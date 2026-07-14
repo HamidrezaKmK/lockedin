@@ -34,3 +34,7 @@ class AestheticsConfigTests(unittest.TestCase):
             slug="test", link_base="/x", asset_base="/x/assets", show_back=False)
         self.assertIn("lockedin_gif", html)
         self.assertIn(".centered-text{text-align:center}", html)
+
+    def test_authenticated_bubble_assets_are_never_cdn_cached(self):
+        source = (Path(server.__file__).read_text())
+        self.assertIn('"Cache-Control": "private, no-store"', source)
