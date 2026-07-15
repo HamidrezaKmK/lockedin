@@ -613,6 +613,26 @@ def create_page(slug: str, title: str) -> str:
     return page_slug
 
 
+def register_page(slug: str, page_slug: str, content: str) -> None:
+    """Register a Scientist-created page whose filename is already its stable slug.
+
+    Browser-created pages choose their slug from a human title.  Scientist instead starts with
+    ``pages/<page_slug>.md``, so this keeps that filename stable while using the same manifest
+    and link-normalization invariants as every other page creation path.
+    """
+    if not page_slug or slugify(page_slug) != page_slug:
+        raise ValueError("Invalid page slug.")
+    ensure_pages(slug)
+    data = manifest(slug)
+    if any(p["page_slug"] == page_slug for p in data.get("pages", [])):
+        raise ValueError("Page already exists.")
+    _atomic_write(paths.bubble_page_path(slug, page_slug), normalize_wikilinks(slug, content))
+    data.setdefault("pages", []).append({"page_slug": page_slug,
+                                          "title": page_slug.replace("-", " ")})
+    _save_manifest(slug, data)
+    touch_bubble(slug)
+
+
 def rename_page(slug: str, page_slug: str, title: str) -> None:
     data = manifest(slug)
     old_title = ""

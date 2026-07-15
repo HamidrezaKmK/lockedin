@@ -365,6 +365,7 @@ class Mirror:
 
         by_path = get_manifest()
         writes = []
+        new_pages = []
         for rel, old in list(tracked.items()):
             if rel not in by_path or not self.writable(rel): continue
             raw = self.local_raw(rel)
@@ -378,8 +379,32 @@ class Mirror:
         # paths whose revision/name has not changed.
         for rel in self.local_writable_paths():
             if rel not in tracked and rel not in by_path:
-                writes.append({"path": rel, "base_revision": self.rev(b""),
-                               "content_b64": base64.b64encode(self.local_raw(rel)).decode()})
+                parts = Path(rel).parts
+                if parts[2] == "pages":
+                    new_pages.append(rel)
+                else:
+                    writes.append({"path": rel, "base_revision": self.rev(b""),
+                                   "content_b64": base64.b64encode(self.local_raw(rel)).decode()})
+        for rel in new_pages:
+            parts = Path(rel).parts
+            result = request(self.account["server"], "POST", "/api/scientist/v1/pages", {
+                "bubble": parts[1], "page_slug": Path(parts[3]).stem,
+                "content_b64": base64.b64encode(self.local_raw(rel)).decode(),
+                "base_revision": self.rev(b""),
+            }, self.account["token"])
+            for applied in result["applied"]:
+                raw = base64.b64decode(applied.get("content_b64", "")) or self.local_raw(rel)
+                target = self.root / rel; target.parent.mkdir(parents=True, exist_ok=True); target.write_bytes(raw)
+                tracked[rel] = {"revision": applied["revision"]}
+                if name := self.save_base(rel, raw):
+                    tracked[rel]["base_file"] = name
+            for conflict in result["conflicts"]:
+                current = base64.b64decode(conflict.get("content_b64", ""))
+                self.retry(rel, b"", self.local_raw(rel), current)
+                if conflict.get("content_b64"):
+                    target = self.root / rel; target.parent.mkdir(parents=True, exist_ok=True); target.write_bytes(current)
+                print(f"[{APP} sync conflict] Could not create {rel}: {conflict['reason']}. "
+                      "Saved the local version as a retry packet.", file=sys.stderr)
         if writes:
             result = request(self.account["server"], "POST", "/api/scientist/v1/push", {"writes": writes}, self.account["token"])
             # A successful write already gives us the authoritative revision. Record it locally
@@ -465,6 +490,11 @@ def role(mirror: Mirror, bubble: str) -> str:
 This workspace is synchronized with the LockedIn website every five seconds. Re-read a page immediately before editing it.
 If a sync conflict is reported, re-read the current page and reapply your intended change instead of restoring stale text.
 Never edit credentials, TODOs, bubbles.yaml, or unrelated bubbles. Describe intended report edits before writing.
+
+NEW REPORT PAGES:
+- To add a website page, create one flat Markdown file at REPORTS/{bubble}/pages/<page-slug>.md.
+- Use a lowercase hyphenated filename. Scientist registers it automatically; its website tab title is
+  the filename with hyphens replaced by spaces. Never create or edit pages.yaml yourself.
 
 TERMINAL OUTPUT RULE:
 - In normal terminal conversation, do not emit LaTeX commands, delimiters, or raw equation source.

@@ -9,6 +9,8 @@ import base64
 import hashlib
 from pathlib import Path
 
+from slugify import slugify
+
 from . import bubbles, paths
 
 _ROOT_FILES = ("bubbles.yaml", "todos.yaml", "config/math.yaml", "config/aesthetics.yaml")
@@ -63,6 +65,7 @@ def snapshot(home: Path) -> dict:
 
 def manifest(home: Path) -> dict:
     """Return a lightweight path/revision list for incremental clients."""
+    register_orphan_pages(home)
     return {"files": [{"path": p.relative_to(home).as_posix(), "revision": _file_revision(p)}
                       for p in _safe_files(home)]}
 
@@ -89,7 +92,7 @@ def _target(home: Path, rel: str) -> Path:
 
 
 def writable_path(home: Path, rel: str) -> bool:
-    """Only selected approved bubble report pages and bubble images may be pushed."""
+    """Only existing approved report pages and bubble images may be pushed."""
     parts = Path(rel).parts
     # Check lexical components before checking the REPORTS layout.  ``Path.resolve`` protects
     # against escaping ``home`` later, but a path such as REPORTS/slug/pages/../../config/x.md
@@ -103,7 +106,69 @@ def writable_path(home: Path, rel: str) -> bool:
         approved = any(b["slug"] == slug and b.get("approved") for b in bubbles.all_bubbles())
     if not approved:
         return False
-    return (parts[2] == "pages" and rel.endswith(".md")) or parts[2] == "assets"
+    if parts[2] == "assets":
+        return True
+    if parts[2] != "pages" or not rel.endswith(".md"):
+        return False
+    page_slug = Path(parts[3]).stem
+    with paths.use_root(home):
+        return any(p["page_slug"] == page_slug for p in bubbles.list_pages(slug))
+
+
+def _approved_page(home: Path, slug: str, page_slug: str) -> bool:
+    if not slug or not page_slug or Path(page_slug).name != page_slug:
+        return False
+    with paths.use_root(home):
+        approved = any(b["slug"] == slug and b.get("approved") for b in bubbles.all_bubbles())
+    return approved
+
+
+def register_page(home: Path, slug: str, page_slug: str, content_b64: str,
+                  base_revision: str) -> dict:
+    """Atomically create a Scientist page and its manifest entry, or return a conflict."""
+    rel = f"REPORTS/{slug}/pages/{page_slug}.md"
+    if not _approved_page(home, slug, page_slug):
+        return {"applied": [], "conflicts": [{"path": rel, "reason": "read-only or invalid scientist page"}]}
+    try:
+        raw = base64.b64decode(content_b64, validate=True)
+        content = raw.decode("utf-8")
+    except (ValueError, UnicodeDecodeError):
+        return {"applied": [], "conflicts": [{"path": rel, "reason": "invalid content"}]}
+    with paths.use_root(home):
+        target = paths.bubble_page_path(slug, page_slug)
+        current = target.read_bytes() if target.exists() else b""
+        if base_revision != revision(current):
+            conflict = {"path": rel, "reason": "stale revision", "revision": revision(current),
+                        "content_b64": base64.b64encode(current).decode("ascii")}
+            return {"applied": [], "conflicts": [conflict]}
+        try:
+            bubbles.register_page(slug, page_slug, content)
+        except ValueError as exc:
+            conflict = {"path": rel, "reason": str(exc), "revision": revision(current),
+                        "content_b64": base64.b64encode(current).decode("ascii")}
+            return {"applied": [], "conflicts": [conflict]}
+        stored = target.read_bytes()
+    return {"applied": [{"path": rel, "revision": revision(stored),
+                         "content_b64": base64.b64encode(stored).decode("ascii")}], "conflicts": []}
+
+
+def register_orphan_pages(home: Path) -> None:
+    """Make old Scientist-created Markdown files visible without trusting manifest edits."""
+    with paths.use_root(home):
+        for bubble in bubbles.all_bubbles():
+            slug = bubble["slug"]
+            if not bubble.get("approved"):
+                continue
+            pages = {p["page_slug"] for p in bubbles.list_pages(slug)}
+            for path in paths.bubble_pages_dir(slug).glob("*.md"):
+                page_slug = path.stem
+                if page_slug in pages or slugify(page_slug) != page_slug:
+                    continue
+                try:
+                    bubbles.register_page(slug, page_slug, path.read_text())
+                    pages.add(page_slug)
+                except (OSError, UnicodeDecodeError, ValueError):
+                    continue
 
 
 def apply_writes(home: Path, writes: list[dict]) -> dict:

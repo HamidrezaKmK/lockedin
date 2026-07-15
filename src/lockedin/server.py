@@ -750,6 +750,12 @@ def build_app():
     class ScientistPushIn(BaseModel):
         writes: list[dict] = []
 
+    class ScientistPageCreateIn(BaseModel):
+        bubble: str
+        page_slug: str
+        content_b64: str
+        base_revision: str
+
     class ScientistFilesIn(BaseModel):
         paths: list[str] = []
 
@@ -1259,6 +1265,11 @@ def build_app():
     @app.post("/api/scientist/v1/push")
     def scientist_push(body: ScientistPushIn, user: str = Depends(scientist_user)):
         return scientist_sync.apply_writes(home_of(user), body.writes)
+
+    @app.post("/api/scientist/v1/pages")
+    def scientist_create_page(body: ScientistPageCreateIn, user: str = Depends(scientist_user)):
+        return scientist_sync.register_page(home_of(user), body.bubble, body.page_slug,
+                                            body.content_b64, body.base_revision)
 
     # ---- bubbles ----
     @app.get("/api/bubbles")

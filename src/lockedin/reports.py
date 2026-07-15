@@ -387,6 +387,13 @@ Only pages and report assets inside an **approved** bubble can be written back. 
 sessions, chat history, TODOs, bubble settings, and paper PDFs are never writable by Scientist.
 Use `lockedin-scientist sync` to pull/push once without launching a coding CLI.
 
+### New report pages
+
+To add a page from Scientist, create a flat Markdown file at
+`REPORTS/<bubble-slug>/pages/<page-slug>.md`. Scientist registers it in the website automatically;
+the page tab title is derived from the filename with hyphens replaced by spaces. Do not edit
+`pages.yaml` yourself.
+
 ### Figures and GIFs
 
 Scientist can add report figures and animated GIFs using the same format as the browser editor.

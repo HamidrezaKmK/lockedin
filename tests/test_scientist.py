@@ -77,6 +77,45 @@ class ScientistGuideTest(unittest.TestCase):
 
 
 class SafeSyncBoundaryTest(unittest.TestCase):
+    def test_scientist_registers_new_page_and_filename_title(self):
+        with workspace() as (home, slug):
+            result = scientist_sync.register_page(home, slug, "methods-and-results",
+                base64.b64encode(b"# Different heading\n").decode(), scientist_sync.revision(b""))
+            with paths.use_root(home):
+                pages = bubbles.list_pages(slug)
+                content = bubbles.get_page(slug, "methods-and-results")
+        self.assertEqual([item["path"] for item in result["applied"]],
+                         [f"REPORTS/{slug}/pages/methods-and-results.md"])
+        self.assertIn({"page_slug": "methods-and-results", "title": "methods and results"}, pages)
+        self.assertEqual(content, "# Different heading\n")
+        self.assertEqual(base64.b64decode(result["applied"][0]["content_b64"]), b"# Different heading\n")
+
+    def test_scientist_manifest_registers_existing_orphan_page(self):
+        with workspace() as (home, slug):
+            orphan = home / "REPORTS" / slug / "pages" / "agent-notes.md"
+            orphan.write_text("# Notes\n")
+            scientist_sync.manifest(home)
+            with paths.use_root(home):
+                pages = bubbles.list_pages(slug)
+        self.assertIn({"page_slug": "agent-notes", "title": "agent notes"}, pages)
+
+    def test_generic_scientist_push_cannot_create_orphan_page(self):
+        with workspace() as (home, slug):
+            rel = f"REPORTS/{slug}/pages/orphan.md"
+            result = scientist_sync.apply_writes(home, [{
+                "path": rel, "base_revision": scientist_sync.revision(b""),
+                "content_b64": base64.b64encode(b"# Orphan\n").decode(),
+            }])
+        self.assertEqual(result["applied"], [])
+        self.assertIn("read-only", result["conflicts"][0]["reason"])
+
+    def test_scientist_page_registration_rejects_existing_page(self):
+        with workspace() as (home, slug):
+            result = scientist_sync.register_page(home, slug, "overview",
+                base64.b64encode(b"# Replacement\n").decode(), scientist_sync.revision(b""))
+        self.assertEqual(result["applied"], [])
+        self.assertEqual(result["conflicts"][0]["reason"], "stale revision")
+
     def test_manifest_excludes_sensitive_and_large_workspace_content(self):
         with workspace() as (home, slug):
             (home / "REPORTS" / slug / "pages" / "note.md").write_text("note")
@@ -106,15 +145,22 @@ class SafeSyncBoundaryTest(unittest.TestCase):
         self.assertEqual([item["path"] for item in result["files"]], [rel])
         self.assertEqual(base64.b64decode(result["files"][0]["content_b64"]), b"note")
 
-    def test_only_approved_bubble_pages_and_assets_are_writable(self):
+    def test_only_existing_approved_bubble_pages_and_assets_are_writable(self):
         with workspace() as (home, slug):
-            for rel in (f"REPORTS/{slug}/pages/new.md", f"REPORTS/{slug}/assets/plot.png"):
-                outcome = scientist_sync.apply_writes(home, [{
-                    "path": rel, "base_revision": scientist_sync.revision(b""),
-                    "content_b64": base64.b64encode(b"new").decode(),
-                }])
-                self.assertEqual([item["path"] for item in outcome["applied"]], [rel])
-                self.assertEqual((home / rel).read_bytes(), b"new")
+            rel = f"REPORTS/{slug}/pages/overview.md"
+            outcome = scientist_sync.apply_writes(home, [{
+                "path": rel, "base_revision": scientist_sync.revision((home / rel).read_bytes()),
+                "content_b64": base64.b64encode(b"updated").decode(),
+            }])
+            self.assertEqual([item["path"] for item in outcome["applied"]], [rel])
+            self.assertEqual((home / rel).read_bytes(), b"updated")
+            rel = f"REPORTS/{slug}/assets/plot.png"
+            outcome = scientist_sync.apply_writes(home, [{
+                "path": rel, "base_revision": scientist_sync.revision(b""),
+                "content_b64": base64.b64encode(b"new").decode(),
+            }])
+            self.assertEqual([item["path"] for item in outcome["applied"]], [rel])
+            self.assertEqual((home / rel).read_bytes(), b"new")
             rejected = scientist_sync.apply_writes(home, [{
                 "path": "todos.yaml", "base_revision": scientist_sync.revision(b""),
                 "content_b64": base64.b64encode(b"bad").decode(),
