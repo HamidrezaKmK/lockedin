@@ -3008,8 +3008,10 @@
         return {key,detail:env.charAt(0).toUpperCase()+env.slice(1)+" "+(t.number||"?")};
       });
     }else{
-      rows=(S.todos||[]).slice().sort((a,b)=>(a.done===b.done?Number(a.id)-Number(b.id):(a.done?1:-1)))
-        .map(t=>({key:String(t.id),detail:(t.done?"Done · ":"")+t.title}));
+      // @ references are for active work. Completed TODOs remain available in the
+      // TODO view and still resolve in existing report links, but are not suggested.
+      rows=(S.todos||[]).filter(t=>!t.done).sort((a,b)=>Number(a.id)-Number(b.id))
+        .map(t=>({key:String(t.id),detail:t.title}));
     }
     if(q) rows=rows.filter(r=>r.key.toLowerCase().includes(q)||String(r.detail||"").toLowerCase().includes(q));
     return rows.slice(0,12);

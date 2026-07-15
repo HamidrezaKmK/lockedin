@@ -399,6 +399,11 @@ class PreviewMathRendering(unittest.TestCase):
 # @<id> resolution baked into the shared preview/share renderer.
 # --------------------------------------------------------------------------- #
 class TodosCrud(unittest.TestCase):
+    def test_todo_autocomplete_only_suggests_open_items(self):
+        source = (Path(server.WEB_DIR) / "index.html").read_text()
+        self.assertIn(".filter(t=>!t.done).sort((a,b)=>Number(a.id)-Number(b.id))", source)
+        self.assertNotIn('detail:(t.done?"Done · ":"")+t.title', source)
+
     def test_ids_autoincrement_and_crud_round_trips(self):
         with temp_home() as home:
             t1 = service.add_todo(home, "First", "n1")
