@@ -1259,7 +1259,8 @@ def build_app():
     @app.get("/api/scientist/v1/bubbles")
     def scientist_bubbles(user: str = Depends(scientist_user)):
         """Small preflight inventory for the installed client before it launches an agent."""
-        return {"bubbles": [{"slug": b["slug"], "name": b.get("name") or b["slug"]}
+        return {"bubbles": [{"slug": b["slug"], "name": b.get("name") or b["slug"],
+                             "last_edited_at": b.get("last_edited_at") or ""}
                             for b in service.list_bubbles(home_of(user))]}
 
     @app.post("/api/scientist/v1/push")

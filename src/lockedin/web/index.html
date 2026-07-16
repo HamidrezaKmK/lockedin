@@ -3094,38 +3094,57 @@
   function updatePreview({restartGifs=false}={}){
     if(!S.previewEl||!S.editor)return;
     const sTop=S.previewEl.scrollTop, sLeft=S.previewEl.scrollLeft;
-    const savedGifs=restartGifs?null:collectGifImages(S.previewEl);
+    const savedResources=restartGifs?null:collectPreviewResources(S.previewEl);
     S.previewEl.innerHTML=renderMarkdown(S.editor.getMarkdown(),{refs:S.refs,pageSlug:S.page,citationPdfLinks:true});
     linkifyWikilinks(S.previewEl);
     if(restartGifs) restartGifPlayback(S.previewEl);
-    else restoreGifImages(S.previewEl,savedGifs);
-    S.previewEl.scrollTop=sTop; S.previewEl.scrollLeft=sLeft;
+    else restorePreviewResources(S.previewEl,savedResources);
+    const restoreScroll=()=>{ S.previewEl.scrollTop=sTop; S.previewEl.scrollLeft=sLeft; };
+    restoreScroll(); requestAnimationFrame(restoreScroll);
   }
 
-  // Rendering Markdown replaces the preview DOM. Keep unchanged GIF elements through
-  // ordinary typing updates so they neither flash blank nor restart their animation.
-  function gifImageKey(img){
-    const src=img&&img.getAttribute("src")||"";
+  // Rendering Markdown replaces the preview DOM. Keep every unchanged external resource through
+  // ordinary typing updates so figures, media, embeds, and custom resource elements retain their
+  // loaded dimensions/state instead of asynchronously reflowing the reader's scroll position.
+  function canonicalResourceUrl(value){
     try{
-      const url=new URL(src,window.location.href);
-      if(!/\.gif$/i.test(url.pathname))return "";
+      const url=new URL(value,window.location.href);
       url.searchParams.delete("lockedin_gif");
       return url.href;
-    }catch(e){ return /\.gif(?:[?#]|$)/i.test(src)?src:""; }
+    }catch(e){ return String(value||""); }
   }
-  function collectGifImages(root){
+  function previewResourceRoot(el){
+    return el.closest("picture,video,audio,iframe,object,embed")||el;
+  }
+  function previewResourceKey(el){
+    const values=[];
+    const nodes=[el,...el.querySelectorAll("[src],[data],[srcset],[poster]")];
+    nodes.forEach(node=>["src","data","srcset","poster"].forEach(attr=>{
+      const value=node.getAttribute(attr); if(value) values.push(attr+":"+canonicalResourceUrl(value));
+    }));
+    return values.length ? el.tagName+"|"+values.join("|") : "";
+  }
+  function previewResources(root){
+    const seen=new Set(), resources=[];
+    root.querySelectorAll("[src],[data],[srcset],picture").forEach(el=>{
+      const resource=previewResourceRoot(el);
+      if(!seen.has(resource)){ seen.add(resource); resources.push(resource); }
+    });
+    return resources;
+  }
+  function collectPreviewResources(root){
     const saved=new Map();
-    root.querySelectorAll("img[src]").forEach(img=>{
-      const key=gifImageKey(img); if(!key)return;
-      const images=saved.get(key)||[]; images.push(img); saved.set(key,images);
+    previewResources(root).forEach(resource=>{
+      const key=previewResourceKey(resource); if(!key)return;
+      const resources=saved.get(key)||[]; resources.push(resource); saved.set(key,resources);
     });
     return saved;
   }
-  function restoreGifImages(root,saved){
+  function restorePreviewResources(root,saved){
     if(!saved)return;
-    root.querySelectorAll("img[src]").forEach(img=>{
-      const images=saved.get(gifImageKey(img));
-      if(images&&images.length) img.replaceWith(images.shift());
+    previewResources(root).forEach(resource=>{
+      const resources=saved.get(previewResourceKey(resource));
+      if(resources&&resources.length) resource.replaceWith(resources.shift());
     });
   }
 

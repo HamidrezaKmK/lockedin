@@ -10,7 +10,7 @@ from contextlib import contextmanager, redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
-from lockedin import bubbles, paths, reports, scientist_cli, scientist_sync
+from lockedin import bubbles, paths, reports, scientist_cli, scientist_sync, server
 
 
 @contextmanager
@@ -309,16 +309,26 @@ class ScientistClientTest(unittest.TestCase):
         try:
             with temp_data_home(), patch.object(scientist_cli, "choose_account", return_value=account), \
                  patch.object(scientist_cli.Mirror, "sync", side_effect=AssertionError("must not sync")), \
-                 patch.object(scientist_cli, "request", return_value={"bubbles": [{"slug": "work", "name": "Current Work"}]}):
+                 patch.object(scientist_cli, "request", return_value={"bubbles": [
+                     {"slug": "older", "name": "Older", "last_edited_at": "2026-01-01T00:00:00+00:00"},
+                     {"slug": "newer", "name": "Newer", "last_edited_at": "2026-02-01T00:00:00+00:00"},
+                     {"slug": "a-tie", "name": "A tie", "last_edited_at": "2026-01-01T00:00:00+00:00"},
+                 ]}):
                 scientist_cli.sys.argv = ["lockedin-scientist", "bubbles"]
                 output = io.StringIO()
                 with redirect_stdout(output):
                     scientist_cli.main()
         finally:
             scientist_cli.sys.argv = original_argv
-        self.assertIn("Current Work", output.getvalue())
-        self.assertIn("slug  work", output.getvalue())
-        self.assertIn("<bubble-slug>", output.getvalue())
+        text = output.getvalue()
+        self.assertLess(text.index("Newer"), text.index("Older"))
+        self.assertLess(text.index("A tie"), text.index("Older"))
+        self.assertIn("slug  newer", text)
+        self.assertIn("<bubble-slug>", text)
+
+    def test_scientist_bubble_endpoint_keeps_website_recency_metadata(self):
+        source = Path(server.__file__).read_text()
+        self.assertIn('"last_edited_at": b.get("last_edited_at") or ""', source)
 
     def test_no_argument_invocation_shows_a_welcome_without_an_account(self):
         original_argv = list(scientist_cli.sys.argv)

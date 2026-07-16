@@ -474,7 +474,9 @@ def print_bubbles(account: dict) -> None:
         heading("Active bubbles")
         print(dim("No approved bubbles are available for this account yet."))
         return
-    rows.sort(key=lambda row: (str(row.get("name", "")).casefold(), str(row.get("slug", ""))))
+    # Match the website: newest edited bubble first, with its stable ascending-slug tie order.
+    rows.sort(key=lambda row: str(row.get("slug", "")))
+    rows.sort(key=lambda row: str(row.get("last_edited_at", "")), reverse=True)
     heading("Active bubbles", f"{len(rows)} approved workspace{'s' if len(rows) != 1 else ''} for @{account['user']}")
     for index, row in enumerate(rows, start=1):
         print(f"\n  {cyan(f'{index:02d}')}  {bold(row['name'])}")

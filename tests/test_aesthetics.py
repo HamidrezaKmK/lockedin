@@ -35,10 +35,13 @@ class AestheticsConfigTests(unittest.TestCase):
         self.assertIn("lockedin_gif", html)
         self.assertIn(".centered-text{text-align:center}", html)
 
-    def test_live_editor_preview_preserves_gifs_between_typing_updates(self):
+    def test_live_editor_preview_preserves_all_resources_between_typing_updates(self):
         source = (Path(server.WEB_DIR) / "index.html").read_text()
-        self.assertIn("const savedGifs=restartGifs?null:collectGifImages(S.previewEl);", source)
-        self.assertIn("else restoreGifImages(S.previewEl,savedGifs);", source)
+        self.assertIn("const savedResources=restartGifs?null:collectPreviewResources(S.previewEl);", source)
+        self.assertIn("else restorePreviewResources(S.previewEl,savedResources);", source)
+        self.assertIn('el.closest("picture,video,audio,iframe,object,embed")', source)
+        self.assertIn('root.querySelectorAll("[src],[data],[srcset],picture")', source)
+        self.assertIn("requestAnimationFrame(restoreScroll)", source)
         self.assertIn("setTimeout(()=>updatePreview({restartGifs:true}),200);", source)
         self.assertIn("setTimeout(()=>updatePreview({restartGifs:true}),150);", source)
 
