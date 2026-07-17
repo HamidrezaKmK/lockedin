@@ -25,6 +25,7 @@ SLACK_SECRET = ""
 
 _HELP = (
     "Commands:\n"
+    "• `workspaces` / `switch workspace` — choose your active workspace\n"
     "• `select` — choose your active bubble\n"
     "• `list` — show all bubbles\n"
     "• `todos` — list your open TODOs and add / edit / complete / remove them\n"
@@ -39,7 +40,9 @@ _sessions:       dict[str, httpx.Client] = {}   # uid → logged-in HTTP client
 _auth:           dict[str, str | None]   = {}   # uid → None (need username) | str (need password)
 _usernames:      dict[str, str]          = {}   # uid → lockedin username for reauth prompts
 _active_bubble:  dict[str, dict]         = {}   # uid → active bubble dict
+_active_workspace: dict[str, dict]       = {}   # uid → active workspace dict
 _selecting:      dict[str, list[dict]]   = {}   # uid → bubble list (awaiting number reply)
+_workspace_selecting: dict[str, list[dict]] = {} # uid → workspace list (awaiting number reply)
 _todo_flow:      dict[str, dict]         = {}   # uid → {stage, id, title, ...} (todos wizard)
 
 _CONFIRM_RE = re.compile(r"^(ok|okay|yes|y|confirm|keep|default|same)$", re.IGNORECASE)
@@ -55,6 +58,16 @@ def _login(username: str, password: str, uid: str = "") -> httpx.Client:
     r = http.post(f"{URL}/api/login", json={"username": username, "password": password})
     r.raise_for_status()
     username = r.json().get("user") or username
+    if uid:
+        try:
+            ws = http.get(f"{URL}/api/workspaces").json()
+            personal = ws.get("personal_workspace_id", "")
+            chosen = next((x for x in ws.get("workspaces", []) if x.get("id") == personal), None)
+            if chosen:
+                _active_workspace[uid] = chosen
+                http.headers["X-LockedIn-Workspace"] = chosen["id"]
+        except Exception:
+            pass
     if uid and SLACK_SECRET:
         try:
             http.post(
@@ -82,6 +95,12 @@ def _linked_login(uid: str) -> httpx.Client | None:
             return None
         r.raise_for_status()
         _usernames[uid] = r.json().get("user", "")
+        ws = http.get(f"{URL}/api/workspaces").json()
+        personal = ws.get("personal_workspace_id", "")
+        chosen = next((x for x in ws.get("workspaces", []) if x.get("id") == personal), None)
+        if chosen:
+            _active_workspace[uid] = chosen
+            http.headers["X-LockedIn-Workspace"] = chosen["id"]
         return http
     except Exception as e:
         logger.warning("Could not refresh Slack-linked session for %s: %s", uid, e)
@@ -98,7 +117,9 @@ def _forget_session(uid: str) -> None:
     if old:
         old.close()
     _active_bubble.pop(uid, None)
+    _active_workspace.pop(uid, None)
     _selecting.pop(uid, None)
+    _workspace_selecting.pop(uid, None)
     _todo_flow.pop(uid, None)
 
 
@@ -397,6 +418,30 @@ def handle(event: dict, say) -> None:
 
     # ── normal operation ──────────────────────────────────────────────────────
     http = _sessions[uid]
+
+    if uid in _workspace_selecting:
+        rows = _workspace_selecting[uid]
+        try:
+            chosen = rows[int(text) - 1]
+        except (ValueError, IndexError):
+            say("Reply with a workspace number, or `cancel`.")
+            return
+        _active_workspace[uid] = chosen
+        http.headers["X-LockedIn-Workspace"] = chosen["id"]
+        _active_bubble.pop(uid, None); _todo_flow.pop(uid, None); _selecting.pop(uid, None)
+        _workspace_selecting.pop(uid, None)
+        say(f"Active workspace: *{chosen['name']}*.")
+        return
+
+    if re.match(r"^(workspaces|switch workspace)$", text, re.IGNORECASE):
+        try:
+            rows = http.get(f"{URL}/api/workspaces").raise_for_status().json().get("workspaces", [])
+        except Exception as e:
+            say(f"Couldn't load workspaces: {e}"); return
+        active = _active_workspace.get(uid, {}).get("id")
+        say("Your workspaces:\n" + "\n".join(f"{i+1}. *{w['name']}* ({w['role']})" + (" ← active" if w['id']==active else "") for i,w in enumerate(rows)) + "\n\nReply with a number to switch.")
+        _workspace_selecting[uid] = rows
+        return
 
     # upload attached PDFs (checked before anything else)
     for f in files:

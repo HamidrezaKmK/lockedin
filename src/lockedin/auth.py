@@ -111,6 +111,13 @@ def create_user(username: str, password: str) -> str:
                        "admin": first_user, "premium": first_user}
     save_accounts(users)
     paths.ensure_user_dirs(username)
+    # Research data is workspace-owned from the first login onward.  Keep the user directory
+    # for account-private configuration only.
+    from . import workspaces
+    personal = workspaces.ensure_personal(username, users[username])
+    users = load_accounts()
+    users[username]["personal_workspace_id"] = personal["id"]
+    save_accounts(users)
     return username
 
 

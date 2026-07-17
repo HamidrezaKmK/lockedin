@@ -46,8 +46,8 @@ also limits the theme switcher on every public page you share. The landing page 
 
 ## Your account
 
-Click your username in the top-right account menu to see whether you are **standard** or
-**premium**, request premium access, or log out.
+Click the active workspace name in the top-right menu to see whether your account is **standard**
+or **premium**, request premium access, log out, or open **Manage workspaces**.
 
 Go to **⚙️ Settings → Account** to change your username or password. You must supply your
 current password to confirm. A username change carries all your data over and keeps you
@@ -62,6 +62,42 @@ Admins see a **User access** card in Settings. From there you can:
 
 Users who request premium from the top-right account menu appear with a **requested** badge.
 You cannot delete your own account.
+""",
+    },
+    {
+        "title": "Workspaces",
+        "content": """\
+## Your active workspace
+
+Every account has a private **Personal** workspace. It opens automatically when you sign in and
+is the safe home for your individual research. You can also create or join shared workspaces.
+The active workspace controls everything research-related: Library papers, Bubbles, report pages
+and figures, TODOs, chat history, citations, and math macros. The top-right workspace switcher
+shows the active workspace name; use it to switch before opening any of those views.
+
+Personal workspaces stay private and cannot be shared, transferred, or deleted independently.
+Shared workspaces are separate research containers: adding or removing a member changes access,
+not ownership of the work already contributed.
+
+## Workspace tab
+
+Open **🗂️ Workspace** in the sidebar to manage the active workspace.
+
+- **Create a workspace** creates a new shared workspace with you as its first admin.
+- **Active workspace** lists every member and their `admin` or `editor` role.
+- Every member can see the roster. Workspace admins can search approved LockedIn accounts, add
+  members, promote an editor to admin, demote an admin, or remove a member.
+- A workspace must always retain at least one admin. Personal workspaces have one fixed member.
+
+Editors can change research content. Admins additionally manage membership and workspace
+lifecycle. Switching workspaces immediately changes the Library, TODOs, Bubbles, and chat you
+see; unsaved report edits must be saved or discarded first.
+
+## Shared math macros
+
+**Math Macros** lives inside the active workspace settings. A macro belongs to the workspace,
+not an individual account, so every member, preview, public share, and Scientist mirror uses the
+same definitions. Add or edit a macro there before using it in report math.
 """,
     },
     {
@@ -84,13 +120,6 @@ Standard accounts use OpenAI, Claude, or Gemini with their own API key. This kee
 sign-ups from consuming the server's local compute by default.
 
 The coloured dot next to the active model updates when a health-check runs.
-
-## Math macros
-
-In **⚙️ Settings → Math Macros**, click **Show macros** to expand the macro editor.
-You can define shorthand LaTeX commands; for example, define `\\mu` →
-`\\mathbf{\\mu}` to use your own shorthand everywhere on the page. Macros apply
-automatically to all math in your reports.
 
 ## Research chat
 
@@ -169,7 +198,7 @@ Shared pages have a theme-cycle button, restricted to the themes you enabled in 
         "content": """\
 ## Overview
 
-TODOs are your personal task list (like GitHub issues). Each item has a numeric **id**,
+TODOs are the active workspace's task list (like GitHub issues). Each item has a numeric **id**,
 a **title**, an optional Markdown **note**, and a **done** flag.
 
 ## Managing TODOs
@@ -223,7 +252,7 @@ After upload, papers without tags are summarised and given suggested tags. They 
 **🔔 Attention** until you review the suggestions. Auto-suggested bubbles also appear there
 until approved.
 
-The Library view is always your full paper inventory. Attention is just a queue toggle on
+The Library view is always the active workspace's full paper inventory. Attention is just a queue toggle on
 those same papers: every paper stays visible in Library whether or not it is in Attention.
 
 ## Finding papers
@@ -282,6 +311,7 @@ You only need to log in again if you change your lockedin username or password.
 
 ## What it can do
 
+- **`workspaces`** or **`switch workspace`** — list and select the active workspace
 - **`select`** — choose the active bubble for questions
 - **`list`** — show your bubbles
 - **Ask a question** — the bot answers using your active bubble's reports and paper summaries
@@ -289,7 +319,10 @@ You only need to log in again if you change your lockedin username or password.
 - **Send a PDF link** — fetches and uploads the paper when the link resolves to a PDF
 - **`todos`** — list, add, edit, complete, or remove open TODOs
 
-The Slackbot follows the same account, premium, and per-user workspace rules as the website.
+The Slackbot has an active workspace before it has an active bubble. Switching workspaces clears
+the active bubble and TODO flow, so uploads, TODOs, questions, and bubble selection always stay
+inside the workspace you chose. It follows the same account, premium, and workspace access rules
+as the website.
 Questions use your configured model. Qwen from Slack also requires premium; otherwise configure
 OpenAI, Claude, or Gemini with your own API key in the web settings.
 """,
@@ -330,11 +363,17 @@ lockedin-scientist login --server https://lockedin.codes
 ```
 
 List the bubbles currently approved for this account. This is deterministic and does not start
-an AI assistant:
+an AI assistant. First list your available workspaces and select one; `bubbles`, `sync`, and
+agent commands then operate only in that selected workspace:
 
 ```
+lockedin-scientist workspaces
+lockedin-scientist switch <workspace-id-or-name>
 lockedin-scientist bubbles
 ```
+
+The initial selection is your Personal workspace. `switch` saves the selection in this Scientist
+client only; it does not change the website or Slackbot selection.
 
 Then launch the coding CLI you already use with a bubble slug from that list:
 
@@ -356,8 +395,9 @@ opening Codex, Claude, or Antigravity:
 lockedin-scientist sync
 ```
 
-It prints the permanent local mirror location when complete. During an agent session, this same
-safe pull/push cycle runs every five seconds.
+It prints the selected workspace's local mirror location when complete. Mirrors are isolated by
+workspace, so bubbles with the same slug in two workspaces cannot collide. During an agent
+session, this same safe pull/push cycle runs every five seconds.
 
 ### Recover the website state
 

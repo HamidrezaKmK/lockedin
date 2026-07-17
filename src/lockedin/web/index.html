@@ -276,6 +276,10 @@
   #accountMenu .acct-name{font-weight:700;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   #accountMenu .acct-row{font-size:12px;color:var(--muted);line-height:1.45}
   #accountMenu .acct-actions{display:flex;gap:8px;flex-wrap:wrap}
+  #accountMenu .workspace-manage{background:color-mix(in srgb,var(--accent2) 28%,var(--panel2));
+    border-color:color-mix(in srgb,var(--accent2) 72%,var(--line));color:var(--ink);font-weight:700}
+  #accountMenu .workspace-manage:hover{background:color-mix(in srgb,var(--accent2) 42%,var(--panel));
+    border-color:var(--accent2);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent2) 18%,transparent)}
 
   /* grids */
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px}
@@ -828,6 +832,7 @@
     <button class="navbtn" data-view="bubbles">🫧 Bubbles</button>
     <button class="navbtn" data-view="attention">🔔 Attention <span id="attnCount" class="muted"></span></button>
     <button class="navbtn" data-view="todos">✅ TODOs</button>
+    <button class="navbtn" data-view="workspace">🗂️ Workspace</button>
     <button class="navbtn" data-view="settings">⚙️ Settings</button>
     <div class="side-credit">Made with 💜 + 🤖 by <a href="https://github.com/HamidrezaKmK" target="_blank" rel="noopener">HamidrezaKmK</a></div>
   </div>
@@ -951,10 +956,18 @@
     if(!h||h==="assets"){switchView("assets",{noRoute:true});return;}
     if(h==="bubbles"){switchView("bubbles",{noRoute:true});return;}
     if(h==="attention"){switchView("attention",{noRoute:true});return;}
+    if(h==="workspace"){switchView("workspace",{noRoute:true});return;}
     if(h==="settings"){switchView("settings",{noRoute:true});return;}
     if(h==="todos"){switchView("todos",{noRoute:true});return;}
     const tm=h.match(/^todos\/(\d+)$/);
     if(tm){viewTodo(+tm[1]);return;}
+    const wam=h.match(/^w\/([^/]+)\/asset\/([^/]+)$/);
+    if(wam){
+      S.workspaceId=decodeURIComponent(wam[1]);
+      refreshAccountButton();
+      openAssetById(decodeURIComponent(wam[2]),{noRoute:true});
+      return;
+    }
     const am=h.match(/^asset\/([^/]+)$/);
     if(am){openAssetById(decodeURIComponent(am[1]),{noRoute:true});return;}
     const m=h.match(/^bubble\/([^/]+)(?:\/([^/]+))?$/);
@@ -978,7 +991,9 @@
 
   // ---------- api ----------
   async function api(path, opts={}){
-    const r = await fetch(path, {credentials:"include", headers:{"Content-Type":"application/json"}, ...opts});
+    const headers={"Content-Type":"application/json",...(opts.headers||{})};
+    if(S.workspaceId) headers["X-LockedIn-Workspace"]=S.workspaceId;
+    const r = await fetch(path, {credentials:"include", headers, ...opts});
     if(!r.ok){ let d; try{d=(await r.json()).detail;}catch(e){d=r.statusText;} const err=new Error(d||"Error"); err.status=r.status; throw err; }
     const ct=r.headers.get("content-type")||""; return ct.includes("json")?r.json():r.text();
   }
@@ -1063,7 +1078,7 @@
     const ac = new AbortController();
     (async()=>{
       const r = await fetch(path,{method:"POST",credentials:"include",signal:ac.signal,
-        headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+        headers:{"Content-Type":"application/json","X-LockedIn-Workspace":S.workspaceId||""},body:JSON.stringify(body)});
       const reader=r.body.getReader(); const dec=new TextDecoder(); let buf="";
       while(true){
         const {value,done}=await reader.read(); if(done)break;
@@ -1085,6 +1100,12 @@
   function renderMarkdown(md,opts){
     opts=opts||{}; const refs=opts.refs;
     const store=[]; let s=md||"";
+    // Stored report Markdown predates workspaces. Add the active workspace capability at render
+    // time so existing report figures keep working after a workspace switch or in a new tab.
+    if(S.workspaceId){
+      s=s.replace(/\/api\/bubbles\/([^/?\s)]+)\/assets\/([^?\s)"']+)(?:\?workspace=[^\s)"']*)?/g,
+        (_,slug,file)=>workspaceUrl("/api/bubbles/"+slug+"/assets/"+file));
+    }
     // Pre-stash fenced code blocks so Pass 0 and math stashing never touch their content.
     const cbStore=[];
     s=s.replace(/^(`{3,})[^\n]*\n[\s\S]*?\n\1/gm,m=>{ cbStore.push(m); return '\n\n@@CB'+(cbStore.length-1)+'@@\n\n'; });
@@ -1176,7 +1197,7 @@
       (_,color,text)=>`<span class="text-color" style="--tc:${color}">${escHtml(text)}</span>`);
     const citationHref=k=>{
       const ent=bib[k], pdfId=ent&&ent.pdf_id;
-      return (opts.citationPdfLinks&&pdfId)?"/api/assets/"+encodeURIComponent(pdfId)+"/pdf":"";
+      return (opts.citationPdfLinks&&pdfId)?workspaceUrl("/api/assets/"+encodeURIComponent(pdfId)+"/pdf"):"";
     };
     const citationHtml=raw=>{
       const keys=raw.split(",").map(k=>k.trim()).filter(Boolean);
@@ -1257,6 +1278,7 @@
 
   // ---------- state ----------
   const S = { user:null, model:null, premium:false, premiumRequestedAt:"", admin:false,
+    workspaceId:null, personalWorkspaceId:null, workspaces:[],
     mathMacros:{}, refs:null, view:"assets", bubble:null, chat:[],
     editor:null, page:null, pages:[], home:null, bubbleInstr:"", bubbleAssets:[],
     sessionId:null, sessionTitle:null,
@@ -1271,6 +1293,18 @@
     shareActive:false, shareToken:"", bubbleFocus:false, showHiddenPages:false, renderVersion:0,
     availableThemes:["dark","light","pink","techno","pearl"]
   };
+
+  // Browser navigations (new tabs, PDFs, images, and preview pages) cannot carry the API header.
+  // Preserve the workspace explicitly in those URLs; the server validates membership before use.
+  function workspaceUrl(path){
+    if(!S.workspaceId)return path;
+    return path+(path.includes("?")?"&":"?")+"workspace="+encodeURIComponent(S.workspaceId);
+  }
+  function workspaceAssetRoute(pdfId){
+    return S.workspaceId
+      ? "#w/"+encodeURIComponent(S.workspaceId)+"/asset/"+encodeURIComponent(pdfId)
+      : "#asset/"+encodeURIComponent(pdfId);
+  }
 
   // Every main-screen render owns a monotonically increasing version. Async requests from a
   // screen that has since been replaced can finish, but they are no longer allowed to repaint it.
@@ -1339,7 +1373,7 @@
 
   function refreshAccountButton(){
     const btn=$("#accountBtn");
-    if(btn) btn.textContent=S.user?("@"+S.user):"Account";
+    if(btn){ const ws=(S.workspaces||[]).find(w=>w.id===S.workspaceId); btn.textContent=ws?("▣ "+ws.name):"Workspace"; }
   }
 
   function renderAccountMenu(){
@@ -1353,6 +1387,11 @@
         el("span",{class:"pill"},S.premium?"premium":"standard")),
       el("div",{class:"acct-row"},premiumText),
     );
+    const ws=el("div",{class:"col",style:"gap:4px"},el("b",{style:"font-size:12px"},"Workspaces"));
+    (S.workspaces||[]).forEach(w=>ws.append(el("button",{class:"ghost small",disabled:w.id===S.workspaceId,
+      onclick:()=>switchWorkspace(w.id)},(w.id===S.workspaceId?"✓ ":"")+w.name+" · "+w.role)));
+    ws.append(el("button",{class:"workspace-manage small",onclick:()=>{ $("#accountMenu").classList.add("hide"); switchView("workspace"); }},"Manage workspaces →"));
+    menu.append(ws);
     if(!S.premium){
       menu.append(el("div",{class:"acct-row"},
         S.premiumRequestedAt
@@ -1382,6 +1421,17 @@
     renderAccountMenu();
     $("#accountMenu").classList.toggle("hide");
   };
+  async function switchWorkspace(id){
+    if(id===S.workspaceId)return;
+    if(S.saving){toast("Finish saving before switching workspaces.");return;}
+    const old=S.workspaceId; S.workspaceId=id;
+    try{
+      const math=await api("/api/settings/math"); S.mathMacros=math.macros||{};
+      S.bubble=null; S.page=null; S.pages=[]; S.chat=[]; S.todos=[]; S.todosById={};
+      refreshAccountButton(); $("#accountMenu").classList.add("hide"); switchView("assets");
+      toast("Switched workspace");
+    }catch(e){ S.workspaceId=old; toast(e.message); }
+  }
   document.addEventListener("click",e=>{
     const wrap=document.querySelector(".account-quick");
     if(wrap&&!wrap.contains(e.target)) $("#accountMenu").classList.add("hide");
@@ -1438,11 +1488,12 @@
   applyTheme("dark",{persist:false});
   // Mobile-only ↗ in the topbar → open the current bubble page's read-only preview in a new tab.
   $("#previewArrow").onclick=()=>{ if(S.bubble) window.open(
-    "/api/bubbles/"+S.bubble+"/preview/"+(S.page||S.home||"overview"),"_blank"); };
+    workspaceUrl("/api/bubbles/"+S.bubble+"/preview/"+(S.page||S.home||"overview")),"_blank"); };
 
   async function boot(){
     let me; try{ me=await api("/api/me"); }catch(e){ return; }
     S.user=me.user; S.model=me.model; S.premium=!!me.premium;
+    S.workspaceId=me.workspace_id||null; S.personalWorkspaceId=me.personal_workspace_id||null;
     S.premiumRequestedAt=me.premium_requested_at||""; S.admin=!!me.admin;
     S.availableThemes=Array.isArray(me.themes)?me.themes:THEMES.slice();
     $("#auth").style.display="none"; $("#app").style.display="grid";
@@ -1458,8 +1509,8 @@
         toast("LockedIn Scientist authorized. You can return to your terminal.");
       }catch(e){ toast("Scientist authorization failed: "+e.message); }
     }
-    fetch("/api/settings/math",{credentials:"include"})
-      .then(r=>r.json()).then(d=>{ S.mathMacros=d.macros||{}; }).catch(()=>{});
+    api("/api/settings/math").then(d=>{ S.mathMacros=d.macros||{}; }).catch(()=>{});
+    api("/api/workspaces").then(d=>{ S.workspaces=d.workspaces||[]; refreshAccountButton(); }).catch(()=>{});
   }
 
   // ================= MODEL SWITCHER =================
@@ -1619,7 +1670,6 @@
       el("pre",{id:"settingsHealthDetails",class:"hide",
         style:"white-space:pre-wrap;overflow:auto;margin-top:8px;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--panel);font-size:12px"}));
     renderAesthetics(m);
-    renderMathMacros(m);
     if(S.admin) renderUserAccess(m);
     renderAccountSection(m);
     if(checkHealth)scheduleLiveHealth(S.model.active);
@@ -1656,6 +1706,70 @@
     main.append(box);
   }
 
+  async function renderWorkspaceSettings(main){
+    const old=$("#workspaceCreate"); if(old)old.remove();
+    const prior=$("#workspaceSettings"); if(prior)prior.remove();
+    const active=(S.workspaces||[]).find(w=>w.id===S.workspaceId);
+    const createBox=el("div",{id:"workspaceCreate",class:"card col",style:"margin-top:20px;gap:10px"});
+    createBox.append(el("b",{},"Create a workspace"),
+      el("div",{class:"muted",style:"font-size:12px"},"Create a shared research space, then invite approved LockedIn users."));
+    const makeName=el("input",{placeholder:"New shared workspace name"});
+    createBox.append(el("div",{class:"row"},makeName,el("button",{class:"primary small",onclick:async()=>{
+      try{const r=await api("/api/workspaces",{method:"POST",body:JSON.stringify({name:makeName.value})});
+        S.workspaces.push({id:r.workspace.id,name:r.workspace.name,kind:r.workspace.kind,role:"admin",owner_user:S.user});
+        makeName.value=""; refreshAccountButton(); refreshWorkspaceSettings(main); toast("Workspace created");
+      }catch(e){toast(e.message);}
+    }},"Create workspace")));
+    main.append(createBox);
+    if(!active)return;
+    const box=el("div",{id:"workspaceSettings",class:"card col",style:"margin-top:20px;gap:10px"});
+    box.append(el("div",{class:"row"},el("b",{},"Active workspace: "+active.name),el("span",{class:"pill"},active.role)),
+      el("div",{class:"muted",style:"font-size:12px"},"These settings and math macros apply to every bubble and member in this workspace."));
+    const roster=el("div",{class:"col",style:"gap:6px"}); box.append(roster); main.append(box);
+    try{
+      const r=await api("/api/workspaces/"+encodeURIComponent(S.workspaceId)+"/members");
+      const members=r.members||[]; roster.append(el("b",{style:"font-size:12px"},"Members"));
+      if(active.role==="admin" && active.kind!=="personal"){
+        const input=el("input",{placeholder:"Search approved users to add",autocomplete:"off"});
+        const choices=el("datalist",{id:"workspaceUserChoices"}); input.setAttribute("list","workspaceUserChoices");
+        const hint=el("div",{class:"muted",style:"font-size:12px"},"Loading approved users…");
+        roster.append(choices,el("div",{class:"row"},input,el("button",{class:"primary small",onclick:async()=>{
+          try{await api("/api/workspaces/"+S.workspaceId+"/members",{method:"POST",body:JSON.stringify({username:input.value})});refreshWorkspaceSettings(main);toast("Member added");}catch(e){toast(e.message);}
+        }},"Add member")),hint);
+        try{
+          const users=(await api("/api/workspaces/users")).users||[];
+          const ranked=q=>users.slice().sort((a,b)=>{
+            q=q.toLowerCase(); const score=x=>x===q?0:x.startsWith(q)?1:x.includes(q)?2:3;
+            return score(a)-score(b)||a.localeCompare(b);
+          });
+          const renderChoices=()=>{choices.innerHTML=""; ranked(input.value.trim()).forEach(username=>choices.append(el("option",{value:username})));};
+          input.oninput=renderChoices; renderChoices(); hint.textContent=users.length?"Start typing to search approved users.":"No other approved users are available.";
+        }catch(e){hint.textContent="Couldn't load eligible users: "+e.message;}
+      }
+      members.forEach(member=>{
+        const row=el("div",{class:"row",style:"border-top:1px solid var(--line);padding-top:7px;flex-wrap:wrap"},
+          el("b",{},"@"+member.username),el("span",{class:"pill"},member.role),member.owner?el("span",{class:"badge"},"owner"):null,el("span",{class:"spacer"}));
+        if(active.role==="admin" && active.kind!=="personal" && member.username!==S.user){
+          row.append(el("button",{class:"ghost small",onclick:async()=>{try{await api("/api/workspaces/"+S.workspaceId+"/members/"+encodeURIComponent(member.username),{method:"PUT",body:JSON.stringify({role:member.role==="admin"?"editor":"admin"})});refreshWorkspaceSettings(main);}catch(e){toast(e.message);}}},member.role==="admin"?"Demote":"Make admin"),
+            el("button",{class:"danger small",onclick:async()=>{try{await api("/api/workspaces/"+S.workspaceId+"/members/"+encodeURIComponent(member.username),{method:"DELETE"});refreshWorkspaceSettings(main);toast("Member removed");}catch(e){toast(e.message);}}},"Remove"));
+        }
+        roster.append(row);
+      });
+    }catch(e){roster.append(el("div",{class:"err"},e.message));}
+  }
+
+  async function viewWorkspace(){
+    const {m}=beginMainRender();
+    m.append(el("h2",{class:"section-title"},"🗂️ Workspace"),
+      el("div",{class:"muted",style:"margin-bottom:12px"},"Manage the active workspace, its members, and shared report macros."));
+    await refreshWorkspaceSettings(m);
+  }
+
+  async function refreshWorkspaceSettings(main){
+    await renderWorkspaceSettings(main);
+    const activeBox=$("#workspaceSettings"); if(activeBox) renderMathMacros(activeBox,{embedded:true});
+  }
+
   function renderAccountSection(main){
     const old=$("#accountSection"); if(old)old.remove();
     const box=el("div",{id:"accountSection",class:"card col",style:"margin-top:20px;gap:10px"});
@@ -1686,10 +1800,10 @@
     main.append(box);
   }
 
-  function renderMathMacros(main){
+  function renderMathMacros(main,{embedded=false}={}){
     const old=$("#mathMacros"); if(old)old.remove();
     const pending=Object.assign({},S.mathMacros); // editable copy
-    const box=el("div",{id:"mathMacros",class:"card col",style:"margin-top:20px"});
+    const box=el("div",{id:"mathMacros",class:(embedded?"col":"card col"),style:embedded?"margin-top:14px;padding-top:14px;border-top:1px solid var(--line)":"margin-top:20px"});
     const body=el("div",{class:"col hide",style:"gap:10px;margin-top:10px"});
     const toggle=el("button",{class:"ghost small",onclick:()=>{
       body.classList.toggle("hide");
@@ -1737,7 +1851,7 @@
         });
         try{
           const r=await fetch("/api/settings/math",{method:"PUT",credentials:"include",
-            headers:{"Content-Type":"application/json"},body:JSON.stringify({macros})});
+            headers:{"Content-Type":"application/json","X-LockedIn-Workspace":S.workspaceId||""},body:JSON.stringify({macros})});
           if(!r.ok) throw new Error(await r.text());
           S.mathMacros=macros;
           if(typeof updatePreview==="function") updatePreview();
@@ -1814,6 +1928,7 @@
     else if(v==="bubbles")viewBubbles();
     else if(v==="attention")viewAttention();
     else if(v==="todos")viewTodos();
+    else if(v==="workspace")viewWorkspace();
     else if(v==="settings")viewSettings();
     refreshAttnCount();
   }
@@ -1867,7 +1982,8 @@
         if(uploadMode==="file"){
           const fd=new FormData(); fd.append("file",file.files[0]);
           fd.append("title",title.value); fd.append("tags",""); fd.append("url_source","");
-          const r=await fetch("/api/assets/upload",{method:"POST",credentials:"include",body:fd});
+          const r=await fetch("/api/assets/upload",{method:"POST",credentials:"include",
+            headers:{"X-LockedIn-Workspace":S.workspaceId||""},body:fd});
           if(!r.ok)throw new Error((await r.json()).detail);
           d=await r.json();
         }else{
@@ -1966,7 +2082,7 @@
       el("span",{},"•"),
       el("span",{},(a.date_added||"").slice(0,10)||"undated")));
     c.append(el("div",{class:"acard-actions"},
-      el("a",{href:"/api/assets/"+a.pdf_id+"/pdf",target:"_blank",title:"Open PDF",onclick:e=>e.stopPropagation()},
+      el("a",{href:workspaceUrl("/api/assets/"+a.pdf_id+"/pdf"),target:"_blank",title:"Open PDF",onclick:e=>e.stopPropagation()},
         el("button",{class:"primary small",onclick:e=>e.stopPropagation()},"↗ PDF")),
       el("span",{class:"spacer"}),
       el("button",{class:"ghost small",onclick:async(e)=>{
@@ -2179,7 +2295,7 @@
       actionRow.append(el("button",{class:"ghost",onclick:async()=>saveAsset(true)},"Move to attention queue"));
     }
     actionRow.append(
-      el("a",{href:"/api/assets/"+a.pdf_id+"/pdf",target:"_blank"},
+      el("a",{href:workspaceUrl("/api/assets/"+a.pdf_id+"/pdf"),target:"_blank"},
         el("button",{class:"ghost"},"Open PDF")),
       el("span",{class:"spacer"}),
       el("button",{class:"ghost",onclick:async()=>{ if(confirm("Delete this asset?")){
@@ -2444,7 +2560,7 @@
   function openReadOnlyPreview(slug){
     const target=visibleSharePage();
     if(currentPageMeta()&&currentPageMeta().hidden)toast("This page is hidden in preview/share; opening a visible page.");
-    window.open("/api/bubbles/"+slug+"/preview/"+target,"_blank");
+    window.open(workspaceUrl("/api/bubbles/"+slug+"/preview/"+target),"_blank");
   }
 
   function buildShareControls(slug){
@@ -2645,8 +2761,8 @@
     main.append(actions,papersSheet,chatSheet);
   }
 
-  // Render the "Papers in this bubble" strip. Paper chips open the full asset editor in a new tab;
-  // membership and relevance edits live there so this pane stays compact and read-only.
+  // Render the "Papers in this bubble" strip. The route carries the selected workspace, so the
+  // full editor can safely open in a new tab without falling back to Personal.
   function renderBubblePdfs(container, b){
     if(!Array.isArray(b.assets)) b.assets=[];
     container.innerHTML="";
@@ -2660,8 +2776,8 @@
       const sec=el("div",{class:"score-group"},el("div",{class:"score-heading"},"Relevance "+score));
       group.forEach(a=>{
         const paperTitle=a.extracted_title||a.title||a.pdf_id;
-        const chip=el("a",{class:"paperchip",href:"#asset/"+encodeURIComponent(a.pdf_id),
-          target:"_blank",title:"Edit asset: "+paperTitle},
+        const chip=el("a",{class:"paperchip",href:workspaceAssetRoute(a.pdf_id),target:"_blank",rel:"noopener",
+          title:"Edit asset: "+paperTitle},
           el("span",{class:"lbl"},paperTitle));
         const adjust=async next=>{
           try{
@@ -3171,8 +3287,9 @@
 
   function uploadImage(slug,blob,cb){
     const fd=new FormData(); fd.append("file",blob,(blob.name||"figure.png"));
-    fetch("/api/bubbles/"+slug+"/assets",{method:"POST",credentials:"include",body:fd})
-      .then(r=>r.json()).then(d=>cb(d.url,"figure")).catch(()=>toast("Image upload failed"));
+    fetch("/api/bubbles/"+slug+"/assets",{method:"POST",credentials:"include",
+      headers:{"X-LockedIn-Workspace":S.workspaceId||""},body:fd})
+      .then(r=>r.json()).then(d=>cb(workspaceUrl(d.url),"figure")).catch(()=>toast("Image upload failed"));
   }
   // Linkify both [[wikilinks]] (page nav) and @<id> TODO references (digits only, so @50 never
   // matches @5). A known @id renders as "@id title" linking to the TODO detail view; an unknown
@@ -3975,7 +4092,7 @@
       c.append(el("h4",{},a.title||a.filename||a.pdf_id));
       c.append(renderAssetTags(a,{suggestionsOnly:true,emptyText:"No suggestions — tag manually."}));
       c.append(el("div",{class:"row",style:"margin-top:10px"},
-        el("a",{href:"/api/assets/"+a.pdf_id+"/pdf",target:"_blank",onclick:e=>e.stopPropagation()},
+        el("a",{href:workspaceUrl("/api/assets/"+a.pdf_id+"/pdf"),target:"_blank",onclick:e=>e.stopPropagation()},
           el("button",{class:"primary small"},"Open PDF")),
         el("button",{class:"small",onclick:(e)=>{e.stopPropagation();openAssetEditor(a,{returnTo:"attention"});}},"Manage")));
       grid.append(c);

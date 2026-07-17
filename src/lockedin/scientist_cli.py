@@ -54,16 +54,17 @@ def welcome() -> None:
     print()
     print(bold("Get started"))
     print(f"  {cyan('1.')} {dim('Authorize this computer')}\n     {cyan('lockedin-scientist login --server https://lockedin.codes')}")
-    print(f"  {cyan('2.')} {dim('See your active bubbles')}\n     {cyan('lockedin-scientist bubbles')}")
-    print(f"  {cyan('3.')} {dim('Sync once without starting an assistant')}\n     {cyan('lockedin-scientist sync')}")
-    print(f"  {cyan('4.')} {dim('Launch the coding CLI you use')}\n     {cyan('lockedin-scientist codex <bubble-slug>')}\n     {cyan('lockedin-scientist claude <bubble-slug>')}\n     {cyan('lockedin-scientist agy <bubble-slug>')}")
+    print(f"  {cyan('2.')} {dim('List and select a workspace')}\n     {cyan('lockedin-scientist workspaces')}\n     {cyan('lockedin-scientist switch <workspace-id-or-name>')}")
+    print(f"  {cyan('3.')} {dim('See approved bubbles in that workspace')}\n     {cyan('lockedin-scientist bubbles')}")
+    print(f"  {cyan('4.')} {dim('Sync once without starting an assistant')}\n     {cyan('lockedin-scientist sync')}")
+    print(f"  {cyan('5.')} {dim('Launch the coding CLI you use')}\n     {cyan('lockedin-scientist codex <bubble-slug>')}\n     {cyan('lockedin-scientist claude <bubble-slug>')}\n     {cyan('lockedin-scientist agy <bubble-slug>')}")
     print()
     print(bold("Troubleshooting & cleanup"))
     print(f"  {cyan('↻')} {dim('Replace the mirror with the current website state')}\n     {cyan('lockedin-scientist sync --from-server')}")
     print(f"  {cyan('−')} {dim('Remove the client; keep mirror and authorization')}\n     {cyan('lockedin-scientist uninstall')}")
     print(f"  {cyan('×')} {dim('Remove the client, mirror, authorization, and sync state')}\n     {cyan('lockedin-scientist uninstall --purge-data --yes')}")
     print()
-    print(dim("Use --help to see every command. Your workspace stays synchronized while you work."))
+    print(dim("Use --help to see every command. Scientist keeps one selected workspace and synchronizes it while you work."))
 
 
 def data_root() -> Path:
@@ -141,19 +142,28 @@ def uninstall(*, purge_data: bool, assume_yes: bool) -> None:
         print(dim("Your local mirror and authorization were kept. Reinstall later to resume."))
 
 
-def request(server: str, method: str, path: str, body: dict | None = None, token: str = "") -> dict:
+def request(server: str, method: str, path: str, body: dict | None = None, token: str = "",
+            workspace: str = "") -> dict:
     data = json.dumps(body).encode() if body is not None else None
     # Some reverse proxies reject Python's default ``Python-urllib/x.y`` bot user
     # agent. Identify this deterministic client without assuming a particular server.
     headers = {"Content-Type": "application/json", "Accept": "application/json",
                "User-Agent": f"{APP}/0.1"}
     if token: headers["Authorization"] = "Bearer " + token
+    if workspace: headers["X-LockedIn-Workspace"] = workspace
     req = urllib.request.Request(server.rstrip("/") + path, data=data, headers=headers, method=method)
     try:
         with urllib.request.urlopen(req, timeout=60) as r: return json.loads(r.read())
     except urllib.error.HTTPError as e:
         detail = e.read().decode(errors="replace")
         raise RuntimeError(f"server returned {e.code}: {detail}") from e
+
+
+def account_request(account: dict, method: str, path: str, body: dict | None = None) -> dict:
+    """Request for an account; omit the new header for legacy client state."""
+    if account.get("workspace_id"):
+        return request(account["server"], method, path, body, account["token"], account["workspace_id"])
+    return request(account["server"], method, path, body, account["token"])
 
 
 def login(server: str) -> None:
@@ -169,7 +179,9 @@ def login(server: str) -> None:
         out = request(server, "GET", f"/api/scientist/v1/device/{start['device_code']}/token")
         if out.get("status") == "authorized":
             cfg = load_config(); accounts = [a for a in cfg["accounts"] if not (a["server"] == server and a["user"] == out["user"])]
-            accounts.append({"server": server, "user": out["user"], "token": out["token"]})
+            ws = request(server, "GET", "/api/scientist/v1/workspaces", token=out["token"])
+            accounts.append({"server": server, "user": out["user"], "token": out["token"],
+                             "workspace_id": ws.get("personal_workspace_id", "")})
             cfg["accounts"] = accounts; save_config(cfg)
             print(green("✓") + f" Authorized {bold(out['user'])} on {dim(server)}.")
             return
@@ -181,7 +193,9 @@ class Mirror:
         self.account = account
         # A person's local research mirror should have a predictable, durable location.
         # The server/token live in account metadata, not in this user-facing directory name.
-        self.root = data_root() / "data" / "users" / account["user"]
+        workspace_id = account.get("workspace_id")
+        self.root = (data_root() / "data" / "workspaces" / workspace_id if workspace_id
+                     else data_root() / "data" / "users" / account["user"])
         # One-time migration from the early server-URL-encoded layout.
         legacy_key = urllib.parse.quote(account["server"], safe="")
         legacy = data_root() / "servers" / legacy_key / "data" / "users" / account["user"]
@@ -351,15 +365,14 @@ class Mirror:
         state["files"] = tracked
 
         def get_manifest() -> dict[str, dict]:
-            data = request(self.account["server"], "GET", "/api/scientist/v1/manifest",
-                           token=self.account["token"])
+            data = account_request(self.account, "GET", "/api/scientist/v1/manifest")
             return {item["path"]: item for item in data["files"]}
 
         def get_files(paths: list[str]) -> list[dict]:
             files = []
             for start in range(0, len(paths), 200):
-                data = request(self.account["server"], "POST", "/api/scientist/v1/files",
-                               {"paths": paths[start:start + 200]}, self.account["token"])
+                data = account_request(self.account, "POST", "/api/scientist/v1/files",
+                                       {"paths": paths[start:start + 200]})
                 files.extend(data["files"])
             return files
 
@@ -387,11 +400,11 @@ class Mirror:
                                    "content_b64": base64.b64encode(self.local_raw(rel)).decode()})
         for rel in new_pages:
             parts = Path(rel).parts
-            result = request(self.account["server"], "POST", "/api/scientist/v1/pages", {
+            result = account_request(self.account, "POST", "/api/scientist/v1/pages", {
                 "bubble": parts[1], "page_slug": Path(parts[3]).stem,
                 "content_b64": base64.b64encode(self.local_raw(rel)).decode(),
                 "base_revision": self.rev(b""),
-            }, self.account["token"])
+            })
             for applied in result["applied"]:
                 raw = base64.b64decode(applied.get("content_b64", "")) or self.local_raw(rel)
                 target = self.root / rel; target.parent.mkdir(parents=True, exist_ok=True); target.write_bytes(raw)
@@ -406,7 +419,7 @@ class Mirror:
                 print(f"[{APP} sync conflict] Could not create {rel}: {conflict['reason']}. "
                       "Saved the local version as a retry packet.", file=sys.stderr)
         if writes:
-            result = request(self.account["server"], "POST", "/api/scientist/v1/push", {"writes": writes}, self.account["token"])
+            result = account_request(self.account, "POST", "/api/scientist/v1/push", {"writes": writes})
             # A successful write already gives us the authoritative revision. Record it locally
             # so the next manifest comparison does not download the same (possibly large) figure
             # we just uploaded.
@@ -468,8 +481,7 @@ def choose_account() -> dict:
 
 def print_bubbles(account: dict) -> None:
     """List approved bubbles without starting an agent or synchronizing the workspace."""
-    rows = request(account["server"], "GET", "/api/scientist/v1/bubbles",
-                   token=account["token"]).get("bubbles", [])
+    rows = account_request(account, "GET", "/api/scientist/v1/bubbles").get("bubbles", [])
     if not rows:
         heading("Active bubbles")
         print(dim("No approved bubbles are available for this account yet."))
@@ -483,6 +495,31 @@ def print_bubbles(account: dict) -> None:
         print(f"      {dim('slug')}  {cyan(row['slug'])}")
     print("\n" + dim("Start a session with Codex, Claude, or Antigravity:") +
           f"\n  {cyan('lockedin-scientist <codex|claude|agy> <bubble-slug>')}")
+
+
+def print_workspaces(account: dict) -> list[dict]:
+    data = request(account["server"], "GET", "/api/scientist/v1/workspaces",
+                   token=account["token"], workspace=account.get("workspace_id", ""))
+    rows = data.get("workspaces", [])
+    heading("Workspaces", f"for @{account['user']}")
+    for row in rows:
+        mark = " ✓" if row.get("id") == account.get("workspace_id") else ""
+        print(f"  {cyan(row['id'])}  {bold(row['name'])}  {dim(row.get('role', 'editor'))}{mark}")
+    return rows
+
+
+def switch_workspace(account: dict, query: str) -> None:
+    rows = print_workspaces(account)
+    matches = [r for r in rows if r.get("id") == query or r.get("name", "").lower() == query.lower()]
+    if len(matches) != 1:
+        raise RuntimeError("Use a workspace id or an unambiguous exact workspace name.")
+    account["workspace_id"] = matches[0]["id"]
+    cfg = load_config()
+    for item in cfg.get("accounts", []):
+        if item.get("server") == account["server"] and item.get("user") == account["user"]:
+            item["workspace_id"] = account["workspace_id"]
+    save_config(cfg)
+    print(green("✓") + " Active workspace: " + bold(matches[0]["name"]))
 
 
 def role(mirror: Mirror, bubble: str) -> str:
@@ -530,8 +567,7 @@ AUTHORITATIVE ATTACHED-PAPER INVENTORY:
 
 def require_bubble(mirror: Mirror, bubble: str) -> None:
     """Fail before spawning an agent when the requested bubble isn't an approved workspace."""
-    rows = request(mirror.account["server"], "GET", "/api/scientist/v1/bubbles",
-                   token=mirror.account["token"]).get("bubbles", [])
+    rows = account_request(mirror.account, "GET", "/api/scientist/v1/bubbles").get("bubbles", [])
     if any(row.get("slug") == bubble for row in rows):
         return
     available = ", ".join(f"{row['slug']} ({row['name']})" for row in rows) or "(none)"
@@ -567,6 +603,8 @@ def _main() -> None:
         description="Keep an authorized LockedIn research workspace synchronized while you use an installed coding CLI.",
         epilog="""Examples:
   lockedin-scientist login --server https://lockedin.codes
+  lockedin-scientist workspaces
+  lockedin-scientist switch <workspace-id-or-name>
   lockedin-scientist bubbles
   lockedin-scientist sync
   lockedin-scientist sync --from-server
@@ -593,6 +631,9 @@ for plain terminal output.""",
     p_sync.add_argument("--from-server", action="store_true",
                         help="Archive local files and replace the mirror with the current website state.")
     p_sync.add_argument("--yes", action="store_true", help="Confirm --from-server in a non-interactive shell.")
+    sub.add_parser("workspaces", help="List workspaces available to this account.")
+    p_switch = sub.add_parser("switch", help="Switch the active workspace for this Scientist client.")
+    p_switch.add_argument("workspace", help="Workspace id or exact workspace name.")
     sub.add_parser("bubbles", help="List active bubble names and slugs; no model or sync.",
                    description="List approved bubbles available to the authorized account.")
     p_uninstall = sub.add_parser("uninstall", help="Remove the standalone client from this computer.",
@@ -612,6 +653,8 @@ for plain terminal output.""",
         uninstall(purge_data=args.purge_data, assume_yes=args.yes)
         return
     account = choose_account(); mirror = Mirror(account)
+    if args.command == "workspaces": print_workspaces(account); return
+    if args.command == "switch": switch_workspace(account, args.workspace); return
     if args.command == "bubbles": print_bubbles(account); return
     if args.command == "sync":
         if args.from_server:

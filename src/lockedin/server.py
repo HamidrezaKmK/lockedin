@@ -10,6 +10,7 @@ would otherwise be at risk if Starlette resumed the generator on a different thr
 
 Launch with ``lockedin serve``.
 """
+import contextvars
 import json
 import logging
 import os
@@ -21,7 +22,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from . import assets, auth, bubbles, landing, paths, service, tagger
+from . import assets, auth, bubbles, landing, paths, service, tagger, workspaces
 from . import scientist_sync
 
 
@@ -33,6 +34,8 @@ _LABEL_RE = re.compile(r'\\label\{([^}]+)\}')
 
 
 _CITE_RE = re.compile(r'\\cite\{([^}]+)\}')
+_REQUEST_WORKSPACE: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "lockedin_request_workspace", default=None)
 
 
 def _build_refs(pages: "list[dict]", bibliography: "dict | None" = None) -> dict:
@@ -633,6 +636,21 @@ def build_app():
         app.add_middleware(CORSMiddleware, allow_origins=["*"],
                            allow_methods=["*"], allow_headers=["*"])
 
+    @app.middleware("http")
+    async def workspace_request_context(request, call_next):
+        """Make the selected workspace available to the entire request.
+
+        Setting a ContextVar in a synchronous FastAPI dependency does not reliably propagate to
+        the synchronous endpoint handler. The ASGI request context does.
+        """
+        workspace_id = ((request.headers.get("X-LockedIn-Workspace")
+                         or request.query_params.get("workspace") or "").strip() or None)
+        token = _REQUEST_WORKSPACE.set(workspace_id)
+        try:
+            return await call_next(request)
+        finally:
+            _REQUEST_WORKSPACE.reset(token)
+
     # ---- request models ----
     class Credentials(BaseModel):
         username: str
@@ -759,24 +777,71 @@ def build_app():
     class ScientistFilesIn(BaseModel):
         paths: list[str] = []
 
+    class WorkspaceIn(BaseModel):
+        name: str
+
+    class WorkspaceMemberIn(BaseModel):
+        username: str
+
+    class WorkspaceRoleIn(BaseModel):
+        role: str
+
     # ---- auth plumbing ----
-    def current_user(lockedin_session: Optional[str] = Cookie(default=None)) -> str:
+    def current_user(lockedin_session: Optional[str] = Cookie(default=None),
+                     x_lockedin_workspace: Optional[str] = Header(default=None),
+                     workspace: Optional[str] = None) -> str:
         user = auth.session_user(lockedin_session)
         if not user:
             raise HTTPException(status_code=401, detail="Please log in.")
         if not auth.is_approved(user):
             auth.end_session(lockedin_session)
             raise HTTPException(status_code=403, detail="Account is waiting for approval.")
+        accounts = auth.load_accounts()
+        account = accounts.get(user, {})
+        personal = workspaces.migrate_legacy(user, account)
+        if account.get("personal_workspace_id") != personal["id"]:
+            accounts[user]["personal_workspace_id"] = personal["id"]
+            auth.save_accounts(accounts)
+        workspace_id = (x_lockedin_workspace or workspace or personal["id"]).strip()
+        try:
+            workspaces.resolve(user, workspace_id)
+        except PermissionError as e:
+            raise HTTPException(status_code=403, detail=str(e))
+        except workspaces.WorkspaceError as e:
+            raise HTTPException(status_code=404, detail=str(e))
         return user
 
     def home_of(user: str) -> Path:
-        return paths.user_home(user)
+        return workspaces.workspace_home(active_workspace_id(user))
 
-    def scientist_user(authorization: Optional[str] = Header(default=None)) -> str:
+    def active_workspace_id(user: str) -> str:
+        """The request selection, or the user's mandatory Personal workspace."""
+        selected = _REQUEST_WORKSPACE.get()
+        if selected:
+            return selected
+        accounts = auth.load_accounts()
+        personal = workspaces.migrate_legacy(user, accounts.get(user, {}))
+        if accounts.get(user, {}).get("personal_workspace_id") != personal["id"]:
+            accounts[user]["personal_workspace_id"] = personal["id"]
+            auth.save_accounts(accounts)
+        return personal["id"]
+
+    def scientist_user(authorization: Optional[str] = Header(default=None),
+                       x_lockedin_workspace: Optional[str] = Header(default=None),
+                       workspace: Optional[str] = None) -> str:
         token = (authorization or "").removeprefix("Bearer ").strip()
         user = auth.scientist_token_user(token)
         if not user:
             raise HTTPException(status_code=401, detail="Invalid Scientist token.")
+        accounts = auth.load_accounts(); rec = accounts.get(user, {})
+        personal = workspaces.migrate_legacy(user, rec)
+        workspace_id = (x_lockedin_workspace or workspace or personal["id"]).strip()
+        try:
+            workspaces.resolve(user, workspace_id)
+        except PermissionError as e:
+            raise HTTPException(status_code=403, detail=str(e))
+        except workspaces.WorkspaceError as e:
+            raise HTTPException(status_code=404, detail=str(e))
         return user
 
     def _auth_response(user: str):
@@ -912,7 +977,9 @@ def build_app():
             user = auth.create_user(creds.username, creds.password)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
-        service.ensure_workspace(home_of(user))
+        rec = auth.load_accounts().get(user, {})
+        personal = workspaces.ensure_personal(user, rec)
+        service.ensure_workspace(workspaces.workspace_home(personal["id"]))
         return _auth_response(user)
 
     @app.post("/api/login")
@@ -964,7 +1031,76 @@ def build_app():
                 "premium": auth.is_premium(user),
                 "premium_requested_at": rec.get("premium_requested_at", ""),
                 "admin": auth.is_admin(user),
-                "themes": service.load_aesthetics_config(home_of(user))["themes"]}
+                "themes": service.load_aesthetics_config(home_of(user))["themes"],
+                "workspace_id": active_workspace_id(user),
+                "personal_workspace_id": rec.get("personal_workspace_id", "")}
+
+    # ---- workspaces ----------------------------------------------------------
+    @app.get("/api/workspaces")
+    def list_workspaces(user: str = Depends(current_user)):
+        rec = auth.load_accounts().get(user, {})
+        return {"workspaces": workspaces.list_for_user(user),
+                "personal_workspace_id": rec.get("personal_workspace_id", ""),
+                "active_workspace_id": active_workspace_id(user)}
+
+    @app.post("/api/workspaces")
+    def create_workspace(body: WorkspaceIn, user: str = Depends(current_user)):
+        try:
+            item = workspaces.create(user, body.name, kind="shared")
+        except workspaces.WorkspaceError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        service.ensure_workspace(workspaces.workspace_home(item["id"]))
+        return {"workspace": item}
+
+    @app.get("/api/workspaces/users")
+    def workspace_invitable_users(user: str = Depends(current_user)):
+        """Approved accounts an admin may add to the active workspace."""
+        try:
+            workspaces.resolve(user, active_workspace_id(user), admin=True)
+        except PermissionError as e:
+            raise HTTPException(status_code=403, detail=str(e))
+        return {"users": [row["username"] for row in auth.list_users()
+                          if row.get("approved") and row["username"] != user]}
+
+    @app.get("/api/workspaces/{workspace_id}/members")
+    def workspace_members(workspace_id: str, user: str = Depends(current_user)):
+        try:
+            return {"members": workspaces.members(user, workspace_id)}
+        except PermissionError as e:
+            raise HTTPException(status_code=403, detail=str(e))
+        except workspaces.WorkspaceError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    @app.post("/api/workspaces/{workspace_id}/members")
+    def add_workspace_member(workspace_id: str, body: WorkspaceMemberIn,
+                             user: str = Depends(current_user)):
+        if not auth.is_approved(body.username.strip().lower()):
+            raise HTTPException(status_code=400, detail="No approved LockedIn account has that username.")
+        try:
+            return {"workspace": workspaces.invite(user, workspace_id, body.username)}
+        except PermissionError as e:
+            raise HTTPException(status_code=403, detail=str(e))
+        except workspaces.WorkspaceError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    @app.put("/api/workspaces/{workspace_id}/members/{username}")
+    def set_workspace_member_role(workspace_id: str, username: str, body: WorkspaceRoleIn,
+                                  user: str = Depends(current_user)):
+        try:
+            return {"workspace": workspaces.set_role(user, workspace_id, username, body.role)}
+        except PermissionError as e:
+            raise HTTPException(status_code=403, detail=str(e))
+        except workspaces.WorkspaceError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    @app.delete("/api/workspaces/{workspace_id}/members/{username}")
+    def delete_workspace_member(workspace_id: str, username: str, user: str = Depends(current_user)):
+        try:
+            return {"workspace": workspaces.remove_member(user, workspace_id, username)}
+        except PermissionError as e:
+            raise HTTPException(status_code=403, detail=str(e))
+        except workspaces.WorkspaceError as e:
+            raise HTTPException(status_code=400, detail=str(e))
 
     @app.post("/api/account")
     def update_account(body: AccountIn, user: str = Depends(current_user)):
@@ -1262,6 +1398,12 @@ def build_app():
         return {"bubbles": [{"slug": b["slug"], "name": b.get("name") or b["slug"],
                              "last_edited_at": b.get("last_edited_at") or ""}
                             for b in service.list_bubbles(home_of(user))]}
+
+    @app.get("/api/scientist/v1/workspaces")
+    def scientist_workspaces(user: str = Depends(scientist_user)):
+        rec = auth.load_accounts().get(user, {})
+        return {"workspaces": workspaces.list_for_user(user),
+                "personal_workspace_id": rec.get("personal_workspace_id", "")}
 
     @app.post("/api/scientist/v1/push")
     def scientist_push(body: ScientistPushIn, user: str = Depends(scientist_user)):

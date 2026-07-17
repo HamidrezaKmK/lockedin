@@ -10,7 +10,6 @@ By default, the deployment is private and local-only (`127.0.0.1`). For web acce
 
 ## ✨ Features
 
-- **👤 Per-User Workspaces:** Authenticated workspaces with username/password. The first account becomes the admin; subsequent sign-ups are pending until admin approval.
 - **📄 Paper Management:** Upload papers, extract text, generate one-time summaries, and cache report context.
 - **🏷️ Auto-Tagging:** Automatically group uploaded documents into contextual "bubbles".
 - **📝 Markdown Reports:** Create multi-page Markdown reports featuring internal links, figures, KaTeX math support, and live previews.
