@@ -659,6 +659,28 @@ class AssetBibtex(unittest.TestCase):
                 self.assertIn("\\cite{missing}", bubbles.get_page(slug, "overview"))
 
 
+class BubbleAssetExplorer(unittest.TestCase):
+    def test_lists_reads_and_deletes_bubble_assets(self):
+        with temp_home() as home:
+            slug = make_bubble(home)
+            with paths.use_root(home):
+                bubbles.save_bubble_image(slug, "notes.py", b"print('hello')\n")
+            entries = service.list_bubble_assets(home, slug)
+            self.assertEqual(entries[0]["name"], "notes.py")
+            self.assertEqual(service.bubble_text_asset(home, slug, "notes.py"), "print('hello')\n")
+            self.assertTrue(service.delete_bubble_asset(home, slug, "notes.py"))
+            self.assertEqual(service.list_bubble_assets(home, slug), [])
+
+    def test_rejects_binary_text_view_and_path_traversal(self):
+        with temp_home() as home:
+            slug = make_bubble(home)
+            with paths.use_root(home):
+                bubbles.save_bubble_image(slug, "data.bin", b"\xff\x00")
+            with self.assertRaises(ValueError):
+                service.bubble_text_asset(home, slug, "data.bin")
+            self.assertFalse(service.delete_bubble_asset(home, slug, "../data.bin"))
+
+
 class CitationRendering(unittest.TestCase):
     BIB = {
         "bases4spaces": {"key": "bases4spaces", "text": "Ada Lovelace. \"Bases for Spaces\". Notes. 1843."},

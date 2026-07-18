@@ -487,6 +487,18 @@
   .diffbox{background:var(--panel);border:1px solid var(--line);border-radius:12px;
            width:min(840px,93vw);max-height:85vh;display:flex;flex-direction:column}
   .diffbody{overflow:auto;padding:10px 12px;line-height:1.5}
+  .asset-modal-header{padding:12px 16px;display:flex;align-items:center;gap:8px;flex-shrink:0;
+    border-bottom:1px solid var(--line)}
+  .asset-modal-header b{font-family:var(--font-ui);font-size:15px}
+  .asset-modal-body{padding:14px 16px;min-height:180px;gap:8px}
+  .asset-file-row{display:grid;grid-template-columns:minmax(160px,1fr) auto auto auto auto;
+    gap:7px;align-items:center;padding:9px 0;border-bottom:1px solid var(--line)}
+  .asset-file-row:last-child{border-bottom:0}
+  .asset-file-name{font-family:var(--font-mono);font-size:12px;min-width:0}
+  .asset-modal-footer{padding:12px 16px;border-top:1px solid var(--line);display:flex;
+    align-items:center;gap:10px;flex-wrap:wrap;flex-shrink:0;background:var(--panel2)}
+  @media(max-width:700px){.asset-file-row{grid-template-columns:minmax(130px,1fr) auto auto;gap:6px}
+    .asset-file-row .asset-file-size{grid-column:1}.asset-file-row a,.asset-file-row button{justify-self:end}}
   /* Compact creation dialogs mirror the Help panel's clean header/body/footer rhythm. */
   .create-dialog{width:min(420px,calc(100vw - 28px));overflow:hidden;box-shadow:var(--shadow)}
   .create-dialog-header,.create-dialog-footer{padding:12px 16px;display:flex;align-items:center;gap:8px;flex-shrink:0}
@@ -2561,17 +2573,77 @@
     window.open(workspaceUrl("/api/bubbles/"+slug+"/preview/"+target),"_blank");
   }
 
-  function buildShareControls(slug){
+  function formatFileSize(size){
+    const n=Number(size)||0;
+    if(n<1024)return n+" B";
+    if(n<1024*1024)return (n/1024).toFixed(1)+" KB";
+    return (n/(1024*1024)).toFixed(1)+" MB";
+  }
+
+  function openBubbleAssets(slug){
+    const overlay=el("div",{class:"overlay",role:"dialog","aria-modal":"true","aria-label":"Bubble assets"});
+    const box=el("div",{class:"diffbox col",style:"width:min(760px,94vw);max-height:82vh;padding:0;overflow:hidden;gap:0"});
+    const list=el("div",{class:"diffbody asset-modal-body col"});
+    const file=el("input",{type:"file",multiple:"true"});
+    const upload=el("button",{class:"primary small"},"Upload files");
+    const close=()=>overlay.remove();
+    const render=async()=>{
+      list.innerHTML=""; list.append(el("div",{class:"muted"},"Loading files…"));
+      try{
+        const r=await api("/api/bubbles/"+encodeURIComponent(slug)+"/assets");
+        list.innerHTML="";
+        const entries=r.assets||[];
+        if(!entries.length){ list.append(el("div",{class:"muted"},"No files in this bubble yet.")); return; }
+        entries.forEach(item=>{
+          const url=workspaceUrl(item.url);
+          const row=el("div",{class:"asset-file-row"},
+            el("span",{class:"asset-file-name truncate",title:item.name},item.name),
+            el("span",{class:"muted asset-file-size",style:"font-size:12px"},formatFileSize(item.size)),
+            el("a",{href:url,target:"_blank",rel:"noopener",onclick:e=>e.stopPropagation()},el("button",{class:"ghost small"},"Open")),
+            el("a",{href:url,download:item.name,onclick:e=>e.stopPropagation()},el("button",{class:"ghost small"},"⇩ Download")));
+          row.append(el("button",{class:"danger small",onclick:async()=>{
+            if(!confirm("Delete "+item.name+"? This can break report links that use this file."))return;
+            try{ await api("/api/bubbles/"+encodeURIComponent(slug)+"/assets/"+encodeURIComponent(item.name),{method:"DELETE"}); toast("Deleted "+item.name); render(); }
+            catch(e){ toast(e.message); }
+          }},"Delete"));
+          list.append(row);
+        });
+      }catch(e){ list.innerHTML=""; list.append(el("div",{class:"err"},e.message)); }
+    };
+    upload.onclick=async()=>{
+      const files=[...file.files]; if(!files.length){file.click();return;}
+      upload.disabled=true; upload.textContent="Uploading…";
+      try{
+        for(const picked of files){
+          const fd=new FormData(); fd.append("file",picked);
+          const r=await fetch("/api/bubbles/"+encodeURIComponent(slug)+"/assets",{method:"POST",credentials:"include",
+            headers:{"X-LockedIn-Workspace":S.workspaceId||""},body:fd});
+          if(!r.ok){ const d=await r.json(); throw new Error(d.detail||"Upload failed."); }
+        }
+        file.value=""; toast(files.length===1?"File uploaded":"Files uploaded"); await render();
+      }catch(e){ toast(e.message); }
+      finally{upload.disabled=false;upload.textContent="Upload files";}
+    };
+    file.onchange=()=>{ if(file.files.length)upload.textContent="Upload "+file.files.length+" file"+(file.files.length===1?"":"s"); };
+    box.append(
+      el("div",{class:"asset-modal-header"},el("b",{},"📁 Bubble assets"),el("span",{class:"spacer"}),el("button",{class:"ghost small",title:"Close",onclick:close},"✕")),
+      list,
+      el("div",{class:"asset-modal-footer"},file,el("span",{class:"spacer"}),upload));
+    overlay.append(box); overlay.onclick=e=>{if(e.target===overlay)close();}; document.body.append(overlay); render();
+  }
+
+  function buildShareControls(slug,onShareState){
     const wrap=el("span",{class:"row",style:"gap:6px;align-items:center;flex-shrink:0"});
     const btn=el("button",{class:"ghost small"});
-    const copy=el("button",{class:"ghost small",title:"Copy link to the current page",
-      style:"opacity:.8"},"📋 Copy link");
+    const copy=el("button",{class:"ghost small",title:"Open the shared page in a new tab",
+      style:"opacity:.8"},"↗ Open link");
     function render(){
       btn.textContent=S.shareActive?"🟢 Sharing":"🔗 Share";
       btn.title=S.shareActive?"Public link is live — click to stop sharing"
                              :"Make this bubble viewable via an unlisted link";
       btn.classList.toggle("primary",false);
       copy.classList.toggle("hide",!S.shareActive);
+      if(onShareState)onShareState(S.shareActive);
     }
     btn.onclick=async()=>{
       btn.disabled=true;
@@ -2582,11 +2654,7 @@
         toast(S.shareActive?"Sharing on — anyone with the link can view":"Sharing off");
       }catch(e){ toast(e.message); } finally{ btn.disabled=false; }
     };
-    copy.onclick=async()=>{
-      const url=shareUrl();
-      try{ await navigator.clipboard.writeText(url); toast("🔗 Link copied"); }
-      catch(e){ prompt("Copy this link:",url); }
-    };
+    copy.onclick=()=>window.open(shareUrl(),"_blank","noopener");
     wrap.append(btn,copy); render();
     return wrap;
   }
@@ -2632,9 +2700,12 @@
       // bubble name (sharing/preview are done from a larger screen) to keep the page minimal.
       // "👁 Preview" opens the server-rendered, read-only page — exactly what a share viewer sees.
       const tools=el("span",{class:"row desktop-only-tool",style:"gap:6px;align-items:center;flex-shrink:0"});
-      tools.append(el("button",{class:"ghost small",title:"Preview the read-only page your share viewers see",
-        onclick:()=>openReadOnlyPreview(slug)},"👁 Preview"));
-      tools.append(buildShareControls(slug));
+      const preview=el("button",{class:"ghost small",title:"Preview the read-only page your share viewers see",
+        onclick:()=>openReadOnlyPreview(slug)},"👁 Preview");
+      tools.append(preview);
+      tools.append(el("button",{class:"ghost small",title:"Browse, upload, or download this bubble's files",
+        onclick:()=>openBubbleAssets(slug)},"📁 Assets"));
+      tools.append(buildShareControls(slug,active=>preview.classList.toggle("hide",active)));
       titleRow.append(tools);
     }
     m.append(titleRow);

@@ -67,6 +67,41 @@ class Sharing(unittest.TestCase):
             self.assertIsNone(sharing.resolve(tok))
             self.assertIsNone(service.share_target(tok))
 
+    def test_workspace_share_resolves_to_the_workspace_home(self):
+        with temp_base():
+            from lockedin import auth, paths, service, workspaces
+            auth.create_user("alice", "pw12")
+            workspace = workspaces.ensure_personal("alice", auth.load_accounts()["alice"])
+            home = workspaces.workspace_home(workspace["id"])
+            service.create_bubble(home, "Topic")
+            service.approve_bubble(home, "topic")
+            token = service.set_bubble_share(home, "topic", True)["share_token"]
+            self.assertEqual(service.share_target(token), (home, "topic"))
+
+    def test_legacy_share_index_entries_migrate_to_personal_workspaces(self):
+        with temp_base():
+            from lockedin import auth, service, sharing, workspaces
+            auth.create_user("alice", "pw12")
+            personal_id = auth.load_accounts()["alice"]["personal_workspace_id"]
+            personal_home = workspaces.workspace_home(personal_id)
+            service.create_bubble(personal_home, "Topic")
+            service.approve_bubble(personal_home, "topic")
+            token = service.set_bubble_share(personal_home, "topic", True)["share_token"]
+            # Mimic a pre-workspace index record that still carries the username.
+            sharing.register(token, "alice", "topic")
+            self.assertEqual(service.migrate_share_index_to_workspaces(), 1)
+            self.assertEqual(sharing.resolve(token)["workspace_id"], personal_id)
+            self.assertEqual(service.share_target(token), (personal_home, "topic"))
+
+    def test_workspace_id_in_legacy_user_field_is_normalized(self):
+        with temp_base():
+            from lockedin import auth, service, sharing
+            auth.create_user("alice", "pw12")
+            workspace_id = auth.load_accounts()["alice"]["personal_workspace_id"]
+            sharing.register("legacy-workspace-token", workspace_id, "topic")
+            self.assertEqual(service.migrate_share_index_to_workspaces(), 1)
+            self.assertEqual(sharing.resolve("legacy-workspace-token")["workspace_id"], workspace_id)
+
 
 class Account(unittest.TestCase):
     def test_new_accounts_are_auto_approved_but_not_premium_by_default(self):
@@ -92,6 +127,19 @@ class Account(unittest.TestCase):
             auth.set_premium("alice", True)
             self.assertTrue(auth.is_premium("alice"))
             self.assertEqual(models.set_active_provider(home, "qwen")["active"], "qwen")
+
+    def test_model_settings_are_account_scoped_across_workspaces(self):
+        with temp_base():
+            from lockedin import auth, models, paths, workspaces
+            auth.create_user("alice", "pw12")
+            account_home = paths.user_home("alice")
+            workspace = workspaces.create("alice", "Shared Research")
+            workspace_home = workspaces.workspace_home(workspace["id"])
+            with models.use_account_home(account_home):
+                models.save_config(workspace_home, {"openai": {"api_key": "account-key"}})
+                self.assertEqual(models.load_config(workspace_home)["openai"]["api_key"], "account-key")
+            self.assertFalse((workspace_home / "config" / "active_model.yaml").exists())
+            self.assertTrue((account_home / "config" / "active_model.yaml").exists())
 
     def test_premium_request_is_recorded_and_cleared_on_upgrade(self):
         with temp_base():

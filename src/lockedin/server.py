@@ -22,7 +22,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from . import assets, auth, bubbles, landing, paths, service, tagger, workspaces
+from . import assets, auth, bubbles, landing, models, paths, service, tagger, workspaces
 from . import scientist_sync
 
 
@@ -628,6 +628,9 @@ def build_app():
     from pydantic import BaseModel
 
     app = FastAPI(title="lockedin — research assistant")
+    # One-time-compatible, idempotent repair for share links created before content became
+    # workspace-owned. Existing links retain their tokens and now target Personal workspaces.
+    service.migrate_share_index_to_workspaces()
     landing_content = landing.load_landing()
     if CROSS_SITE:
         app.add_middleware(CORSMiddleware, allow_origins=PUBLIC_ORIGINS,
@@ -646,8 +649,14 @@ def build_app():
         workspace_id = ((request.headers.get("X-LockedIn-Workspace")
                          or request.query_params.get("workspace") or "").strip() or None)
         token = _REQUEST_WORKSPACE.set(workspace_id)
+        user = auth.session_user(request.cookies.get("lockedin_session"))
+        if not user:
+            bearer = request.headers.get("authorization", "").removeprefix("Bearer ").strip()
+            user = auth.scientist_token_user(bearer) if bearer else None
+        account_home = paths.user_home(user) if user else None
         try:
-            return await call_next(request)
+            with models.use_account_home(account_home):
+                return await call_next(request)
         finally:
             _REQUEST_WORKSPACE.reset(token)
 
@@ -1637,6 +1646,25 @@ def build_app():
             raise HTTPException(status_code=400, detail="No file provided.")
         url = service.save_bubble_image(home_of(user), slug, file.filename, await file.read())
         return {"url": url}
+
+    @app.get("/api/bubbles/{slug}/assets")
+    def list_bubble_assets(slug: str, user: str = Depends(current_user)):
+        return {"assets": service.list_bubble_assets(home_of(user), slug)}
+
+    @app.get("/api/bubbles/{slug}/assets/{filename}/text")
+    def get_bubble_text_asset(slug: str, filename: str, user: str = Depends(current_user)):
+        try:
+            return {"filename": filename, "text": service.bubble_text_asset(home_of(user), slug, filename)}
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail="No such asset.")
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    @app.delete("/api/bubbles/{slug}/assets/{filename}")
+    def delete_bubble_asset(slug: str, filename: str, user: str = Depends(current_user)):
+        if not service.delete_bubble_asset(home_of(user), slug, filename):
+            raise HTTPException(status_code=404, detail="No such asset.")
+        return {"ok": True}
 
     @app.get("/api/bubbles/{slug}/assets/{filename}")
     def get_bubble_image(slug: str, filename: str, user: str = Depends(current_user)):

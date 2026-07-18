@@ -12,7 +12,7 @@ from pathlib import Path
 
 import yaml
 
-from . import assets, auth, bubbles, models, paths, reports, sharing, tagger, todos
+from . import assets, auth, bubbles, models, paths, reports, sharing, tagger, todos, workspaces
 
 
 def ensure_workspace(home: Path) -> None:
@@ -208,8 +208,24 @@ def set_bubble_share(home: Path, slug: str, active: bool) -> dict:
     with paths.use_root(home):
         res = bubbles.set_share_active(slug, active)
     if res.get("share_token"):
-        sharing.register(res["share_token"], home.name, slug)
+        workspace = workspaces.get(home.name)
+        if workspace and workspaces.workspace_home(home.name).resolve() == home.resolve():
+            sharing.register(res["share_token"], "", slug, workspace_id=home.name)
+        else:  # legacy user-home shares remain supported for existing installations and tests
+            sharing.register(res["share_token"], home.name, slug)
     return res
+
+
+def migrate_share_index_to_workspaces() -> int:
+    """Move all legacy share-index entries onto the users' Personal workspace ids."""
+    accounts = auth.load_accounts()
+    personal = {username: rec.get("personal_workspace_id", "")
+                for username, rec in accounts.items()
+                if rec.get("personal_workspace_id") and workspaces.get(rec["personal_workspace_id"])}
+    # An early workspace implementation accidentally put the workspace id in the legacy
+    # ``user`` field. Normalize those records too.
+    personal.update({workspace_id: workspace_id for workspace_id in personal.values()})
+    return sharing.migrate_user_entries(personal)
 
 
 def share_target(token: str) -> tuple[Path, str] | None:
@@ -217,7 +233,11 @@ def share_target(token: str) -> tuple[Path, str] | None:
     ent = sharing.resolve(token)
     if not ent:
         return None
-    home = paths.user_home(ent["user"])
+    workspace_id = ent.get("workspace_id") or ent.get("user", "")
+    # Entries written before the workspace migration stored the workspace id in ``user``.
+    # Recognize those links so turning sharing back on is not required to repair them.
+    home = (workspaces.workspace_home(workspace_id)
+            if workspaces.get(workspace_id) else paths.user_home(workspace_id))
     with paths.use_root(home):
         entry = bubbles.load_registry().get(ent["slug"])
         if not entry or not entry.get("share_active"):
@@ -443,6 +463,21 @@ def save_bubble_image(home: Path, slug: str, filename: str, data: bytes) -> str:
 def bubble_asset_path(home: Path, slug: str, filename: str) -> Path:
     with paths.use_root(home):
         return paths.bubble_assets_dir(slug) / filename
+
+
+def list_bubble_assets(home: Path, slug: str) -> list[dict]:
+    with paths.use_root(home):
+        return bubbles.list_bubble_assets(slug)
+
+
+def delete_bubble_asset(home: Path, slug: str, filename: str) -> bool:
+    with paths.use_root(home):
+        return bubbles.delete_bubble_asset(slug, filename)
+
+
+def bubble_text_asset(home: Path, slug: str, filename: str) -> str:
+    with paths.use_root(home):
+        return bubbles.read_bubble_text_asset(slug, filename)
 
 
 # ---- streaming (generators manage their own root) ----

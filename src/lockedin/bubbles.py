@@ -762,6 +762,48 @@ def list_bubble_images(slug: str) -> list[str]:
     return sorted(f"/api/bubbles/{slug}/assets/{p.name}" for p in adir.iterdir() if p.is_file())
 
 
+def list_bubble_assets(slug: str) -> list[dict]:
+    """Return file metadata for the bubble's private assets directory."""
+    adir = paths.bubble_assets_dir(slug)
+    if not adir.exists():
+        return []
+    out = []
+    for path in adir.iterdir():
+        if not path.is_file():
+            continue
+        out.append({"name": path.name, "size": path.stat().st_size,
+                    "url": f"/api/bubbles/{slug}/assets/{path.name}"})
+    return sorted(out, key=lambda item: item["name"].lower())
+
+
+def delete_bubble_asset(slug: str, filename: str) -> bool:
+    """Remove one file from a bubble's assets directory, never a directory/path traversal."""
+    safe = Path(filename).name
+    if safe != filename or not safe:
+        return False
+    path = paths.bubble_assets_dir(slug) / safe
+    if not path.is_file():
+        return False
+    path.unlink()
+    return True
+
+
+def read_bubble_text_asset(slug: str, filename: str, *, max_bytes: int = 1_000_000) -> str:
+    """Read a small UTF-8 text asset for the in-app file viewer."""
+    safe = Path(filename).name
+    if safe != filename or not safe:
+        raise ValueError("Bad filename.")
+    path = paths.bubble_assets_dir(slug) / safe
+    if not path.is_file():
+        raise FileNotFoundError(path)
+    if path.stat().st_size > max_bytes:
+        raise ValueError("This file is too large to view here. Download it instead.")
+    try:
+        return path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as e:
+        raise ValueError("This is not a UTF-8 text file. Open or download it instead.") from e
+
+
 # --------------------------------------------------------------------------- #
 # Chat session persistence
 # --------------------------------------------------------------------------- #
