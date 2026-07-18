@@ -34,6 +34,11 @@ class AestheticsConfigTests(unittest.TestCase):
             slug="test", link_base="/x", asset_base="/x/assets", show_back=False)
         self.assertIn("lockedin_gif", html)
         self.assertIn(".centered-text{text-align:center}", html)
+        self.assertIn('p > img:only-child[alt]', html)
+        self.assertIn("figcaption", html)
+        self.assertIn("katex.renderToString(match[1]", html)
+        self.assertIn("captionStore", html)
+        self.assertIn("@@LI_CAP", html)
 
     def test_live_editor_preview_preserves_all_resources_between_typing_updates(self):
         source = (Path(server.WEB_DIR) / "index.html").read_text()
@@ -48,6 +53,13 @@ class AestheticsConfigTests(unittest.TestCase):
     def test_authenticated_bubble_assets_are_never_cdn_cached(self):
         source = (Path(server.__file__).read_text())
         self.assertIn('"Cache-Control": "private, no-store"', source)
+
+    def test_preview_reverse_sync_uses_source_offsets(self):
+        source = (Path(server.WEB_DIR) / "index.html").read_text()
+        self.assertIn("function withSourceMarkers(md)", source)
+        self.assertIn("function bindPreviewSourceOffsets(root)", source)
+        self.assertIn('closest("[data-source-start]")', source)
+        self.assertNotIn("function _findWordOffset", source)
 
     def test_mobile_focus_is_a_read_only_preview_without_desktop_layout_changes(self):
         source = (Path(server.WEB_DIR) / "index.html").read_text()

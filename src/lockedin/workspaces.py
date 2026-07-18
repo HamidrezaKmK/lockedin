@@ -190,4 +190,9 @@ def migrate_legacy(user: str, account: dict) -> dict:
                 pass
         elif not target.exists():
             shutil.move(str(source), str(target))
+    # Bubbles are now created explicitly and immediately approved. Clear the old tagger's
+    # pending suggestions so a legacy direct link cannot open its obsolete approval prompt.
+    from . import bubbles
+    with paths.use_root(root):
+        bubbles.purge_legacy_auto_suggestions()
     return rec

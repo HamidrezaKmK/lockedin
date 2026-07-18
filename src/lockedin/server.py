@@ -56,6 +56,9 @@ def _build_refs(pages: "list[dict]", bibliography: "dict | None" = None) -> dict
     thm: dict[str, dict] = {}
     thm_counts: dict[str, int] = {}
     thm_start: dict[str, dict] = {}
+    fig: dict[str, dict] = {}
+    fig_idx = 0
+    fig_start: dict[str, int] = {}
     bibliography = bibliography or {}
     cite_order: list[str] = []
     cite_map: dict[str, int] = {}
@@ -64,10 +67,17 @@ def _build_refs(pages: "list[dict]", bibliography: "dict | None" = None) -> dict
     theo_re = re.compile(
         r'\\begin\{(' + _THEO_ENVS + r')\}(?:\[([^\]]*)\])?([\s\S]*?)\\end\{(?:' + _THEO_ENVS + r')\}',
         re.IGNORECASE)
+    figure_re = re.compile(r'!\[([^\]\n]*)\]\([^)]+\)')
     for pg in pages:
         slug = pg["page_slug"]
         content = pg.get("content", "") or ""
         thm_start[slug] = dict(thm_counts)
+        fig_start[slug] = fig_idx
+        for fm in figure_re.finditer(content):
+            fig_idx += 1
+            label = _LABEL_RE.search(fm.group(1))
+            if label and label.group(1) not in fig:
+                fig[label.group(1)] = {"number": fig_idx, "page_slug": slug}
         # Equations: collect $$ blocks and display environments, count labels in document order.
         cands: list[tuple[int, str]] = []
         for m in dd_re.finditer(content):
@@ -96,8 +106,18 @@ def _build_refs(pages: "list[dict]", bibliography: "dict | None" = None) -> dict
                 if key in bibliography and key not in cite_map:
                     cite_map[key] = len(cite_order) + 1
                     cite_order.append(key)
-    return {"eq": eq, "thm": thm, "thmStart": thm_start,
+    return {"eq": eq, "thm": thm, "thmStart": thm_start, "fig": fig, "figStart": fig_start,
             "citeMap": cite_map, "citeOrder": cite_order, "bibliography": bibliography}
+
+
+def _preprocess_figure_refs(md: str, figure_labels: dict) -> str:
+    """Render a figure reference as a styled, non-navigating number."""
+    def replace(match: "re.Match") -> str:
+        figure = figure_labels.get(match.group(1))
+        if not figure:
+            return '<span class="fig-ref">Figure ?</span>'
+        return f'<span class="fig-ref">Figure {figure["number"]}</span>'
+    return re.sub(r'\\figref\{([^}]+)\}', replace, md)
 
 
 def _bubble_bibliography(home, slug: str) -> dict:
@@ -333,12 +353,16 @@ def _render_preview_html(*, name: str, page: str, all_pages: list, content: str,
         refs = _build_refs([{"page_slug": page, "content": content}])
     eq_map = refs.get("eq", {})
     thm_map = refs.get("thm", {})
+    fig_map = refs.get("fig", {})
     thm_start = refs.get("thmStart", {}).get(page, {})
+    fig_start = refs.get("figStart", {}).get(page, 0)
     content = _preprocess_equations(content, eq_map, thm_map)
     content, theo_store = _preprocess_theorems(content, thm_map, thm_start)
+    content = _preprocess_figure_refs(content, fig_map)
     content = _preprocess_citations(content, refs)
     for entry in theo_store:
         entry["inner"] = _preprocess_citations(entry["inner"], refs)
+        entry["inner"] = _preprocess_figure_refs(entry["inner"], fig_map)
     content += _references_markdown(refs)
     md = content
     # point figure URLs at the right (possibly public) asset route
@@ -426,6 +450,9 @@ pre{{background:var(--panel);padding:14px;border-radius:10px;overflow:auto;
      box-shadow:0 2px 12px var(--shadow)}}
 pre code{{font-family:var(--font-mono);font-size:13px}}
 a{{color:var(--accent)}} img{{max-width:100%;border-radius:8px;box-shadow:0 2px 12px var(--shadow)}}
+figure{{margin:1.1em 0;text-align:center}} figure img{{display:block;margin:0 auto}}
+figcaption{{margin:.55em auto 0;max-width:92%;font-style:italic;line-height:1.45;color:var(--muted)}}
+.figure-number{{font-style:normal;font-weight:600;color:var(--ink)}}
 table{{display:block;width:max-content;max-width:100%;overflow-x:auto;border-collapse:collapse;margin:14px 0;font-size:15px}}
 th,td{{border:1px solid var(--line);padding:7px 11px;text-align:left}}
 thead th{{background:var(--panel);font-family:var(--font-ui);font-size:13px;font-weight:600}}
@@ -439,10 +466,10 @@ blockquote p{{margin:5px 0}}
 /* An equation's own number shares the accent + tabular figures with its cross-references. */
 .katex .tag,.katex-display .tag{{color:var(--accent);font-feature-settings:"tnum" 1;font-variant-numeric:tabular-nums}}
 /* Cross-references: colored inline labels that go quiet on hover. */
-.eq-ref,.thm-ref,.cite-ref{{font-family:var(--font-ui);font-weight:600;color:var(--accent);
+.eq-ref,.thm-ref,.fig-ref,.cite-ref{{font-family:var(--font-ui);font-weight:600;color:var(--accent);
   font-feature-settings:"tnum" 1;font-variant-numeric:tabular-nums;white-space:nowrap;
   padding:0 .14em;border-radius:4px;transition:color .14s ease}}
-.eq-ref:hover,.thm-ref:hover,.cite-ref:hover{{color:var(--ink)}}
+.eq-ref:hover,.thm-ref:hover,.fig-ref:hover,.cite-ref:hover{{color:var(--ink)}}
 .text-color{{color:var(--tc)}}
 .centered-text{{text-align:center}}
 .bibitem{{display:grid;grid-template-columns:auto 1fr;gap:.65em;margin:.5em 0;line-height:1.55}}
@@ -529,15 +556,21 @@ blockquote p{{margin:5px 0}}
 // Test marker: marked.parse(s) is the intended ordering; options are passed explicitly below.
 // Mirrors renderMarkdown() in index.html so preview and split-view are always identical.
 (function(){{
-  const store=[]; let s={repr(md)};
+  const store=[], captionStore=[]; let s={repr(md)};
   const _macros={json.dumps(macros or {})};
   const _theoStore={json.dumps(theo_store)};
+  const _figRefs={json.dumps(fig_map)};
+  let _nextFigure={int(fig_start)};
   const escHtml=t=>String(t||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  const escAttr=t=>escHtml(t).replace(/"/g,"&quot;");
   const renderTextColor=src=>src.replace(/\\\\textcolor\\{{(#[0-9a-fA-F]{{3}}(?:[0-9a-fA-F]{{3}})?)\\}}\\{{([^{{}}\\n]*)\\}}/g,
     (_,color,text)=>'<span class="text-color" style="--tc:'+color+'">'+escHtml(text)+'</span>');
   const renderMath=it=>{{ try{{ return katex.renderToString(it.src,{{displayMode:it.display,macros:_macros,throwOnError:false}}); }}
     catch(e){{ return '<span style="color:#ff7a7a">'+it.src+'</span>'; }} }};
   const stash=(re,display)=>{{ s=s.replace(re,(m,p1)=>{{ store.push({{src:p1,display}}); return "@@M"+(store.length-1)+"@@"; }}); }};
+  // marked places image alt text in an HTML attribute. Preserve it while math is stashed so an
+  // inline `$...$` caption is restored as text and rendered below the figure, not inside HTML.
+  s=s.replace(/!\[([^\]\\n]*)\](?=\()/g,(_,caption)=>{{ captionStore.push(caption); return "![@@LI_CAP"+(captionStore.length-1)+"@@]"; }});
   s=s.replace(/(\\\\begin\\{{(?:align\\*?|alignat\\*?|gather\\*?|multline\\*?|equation\\*?)\\}}[\\s\\S]*?\\\\end\\{{(?:align\\*?|alignat\\*?|gather\\*?|multline\\*?|equation\\*?)\\}})/g,(m,p1)=>{{ store.push({{src:p1,display:true}}); return "@@M"+(store.length-1)+"@@"; }});
   stash(/\\$\\$([\\s\\S]+?)\\$\\$/g,true);
   stash(/\\\\\\[([\\s\\S]+?)\\\\\\]/g,true);
@@ -546,6 +579,7 @@ blockquote p{{margin:5px 0}}
   s=renderTextColor(s);
   let html=marked.parse(s,{{breaks:false}});
   html=html.replace(/@@M(\\d+)@@/g,(m,i)=>renderMath(store[+i]));
+  html=html.replace(/@@LI_CAP(\\d+)@@/g,(_,i)=>escAttr(captionStore[+i]||""));
   // Restore theorem/lemma/proof blocks: render inner content with math
   html=html.replace(/<p>@@TH(\\d+)@@<\\/p>/g,(m,i)=>{{
     const t=_theoStore[+i];
@@ -564,6 +598,33 @@ blockquote p{{margin:5px 0}}
   }});
   const content=document.getElementById("content");
   content.innerHTML=html;
+  // A Markdown image's alt text is its figure caption in previews and public shares.
+  content.querySelectorAll("p > img:only-child[alt]").forEach(img=>{{
+    _nextFigure++;
+    const rawCaption=img.getAttribute("alt")||"";
+    const labelMatch=/\\\\label\\{{([^}}]+)\\}}/.exec(rawCaption);
+    const label=labelMatch&&labelMatch[1];
+    const caption=rawCaption.replace(/\\\\label\\{{[^}}]+\\}}/g,"").trim();
+    const number=label&&_figRefs[label]?_figRefs[label].number:_nextFigure;
+    const paragraph=img.parentElement, figure=document.createElement("figure");
+    if(label)figure.id="fig-"+encodeURIComponent(label);
+    paragraph.replaceWith(figure); figure.append(img);
+    const figcaption=document.createElement("figcaption");
+    const marker=document.createElement("span"); marker.className="figure-number";
+    marker.textContent="Figure "+number+": "; figcaption.append(marker);
+    let last=0, match; const math=/[$]([^$\\n]+?)[$]/g;
+    while((match=math.exec(caption))!==null){{
+      if(match.index>last)figcaption.append(document.createTextNode(caption.slice(last,match.index)));
+      try{{
+        const node=document.createElement("span");
+        node.innerHTML=katex.renderToString(match[1],{{displayMode:false,macros:_macros,throwOnError:false}});
+        figcaption.append(node);
+      }}catch(e){{ figcaption.append(document.createTextNode(match[0])); }}
+      last=math.lastIndex;
+    }}
+    if(last<caption.length)figcaption.append(document.createTextNode(caption.slice(last)));
+    figure.append(figcaption);
+  }});
   // Every rendered bubble preview starts GIF figures at their first frame. The GIF's embedded
   // loop setting still controls repeated playback after that.
   content.querySelectorAll("img[src]").forEach(img=>{{

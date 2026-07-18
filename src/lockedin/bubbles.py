@@ -6,7 +6,8 @@ A bubble has a slug (filesystem key) and a display name. Bubbles are tracked in 
 applied directly to a PDF still produce a bubble.
 
 Report generation is gated: a bubble must be ``approved`` before a report can be generated.
-Auto-suggested bubbles (from the tagger) start ``approved=False`` and wait in the UI.
+New bubbles created in LockedIn are approved immediately. The ``approved`` flag remains as a
+write-safety boundary for older or externally-created registry entries.
 
 All paths resolve against the active per-user context root.
 """
@@ -16,6 +17,7 @@ import json as _json
 import os
 import re
 import secrets
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -133,6 +135,27 @@ def propose_bubble(name: str) -> str:
                      "created_at": now, "last_edited_at": now}
         save_registry(reg)
     return slug
+
+
+def purge_legacy_auto_suggestions() -> list[str]:
+    """Remove obsolete, unapproved auto-suggestion records from this workspace.
+
+    LockedIn no longer proposes bubbles automatically. Those old records have no user-facing
+    purpose, but a direct link to one could still expose the obsolete approval screen. They
+    never represent a user-created bubble (normal creation approves immediately), so remove
+    their registry entries and any report folders they may have materialized.
+    """
+    reg = load_registry()
+    stale = sorted(slug for slug, entry in reg.items() if not entry.get("approved"))
+    if not stale:
+        return []
+    for slug in stale:
+        reg.pop(slug, None)
+        bubble_root = paths.bubble_dir(slug)
+        if bubble_root.exists():
+            shutil.rmtree(bubble_root)
+    save_registry(reg)
+    return stale
 
 
 def create_bubble(name: str) -> str:

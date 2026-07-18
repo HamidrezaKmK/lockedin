@@ -616,6 +616,19 @@ proposition, assumption, corollary, and remark labels.
 
 ---
 
+## Figures
+
+Every Markdown image in a bubble is numbered in page order and receives a caption beneath it.
+Put a figure label inside the image caption, then refer to it anywhere in the bubble. For
+example, write ![Blue ellipses show level sets of $x^\top C x$ \label{fig:ellipses}](assets/ellipses.png)
+and later write \figref{fig:ellipses}.
+
+This renders the caption as **Figure 1: Blue ellipses show level sets of ...** and the reference
+as a purple **Figure 1**. Figure numbers and references are bubble-wide, so they
+remain correct across pages. Type \figref{ in the editor to choose an existing figure label.
+
+---
+
 ## Citations
 
 Assets with saved BibTeX can be cited from pages in bubbles where those assets are attached.

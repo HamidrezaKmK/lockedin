@@ -356,6 +356,10 @@
     box-shadow:var(--shadow-sm)}
   .preview pre code{overflow-wrap:normal;word-break:normal;font-family:var(--font-mono);font-size:13px}
   .preview img{max-width:100%;height:auto;border-radius:8px;box-shadow:var(--shadow-sm)}
+  .preview figure{margin:1.1em 0;text-align:center}
+  .preview figure img{display:block;margin:0 auto}
+  .preview figcaption{margin:.55em auto 0;max-width:92%;font-family:var(--font-reading);font-size:.9em;
+    font-style:italic;line-height:1.45;color:var(--muted)}
   /* tables + blockquotes — shared by the preview pane and chat messages */
   .preview table,.msg table{display:block;width:max-content;max-width:100%;overflow-x:auto;
         border-collapse:collapse;margin:8px 0;font-size:13px}
@@ -375,10 +379,11 @@
      so a \tag and the \eqref pointing at it read as one typographic system. */
   .katex .tag,.katex-display .tag{color:var(--accent);font-feature-settings:"tnum" 1;font-variant-numeric:tabular-nums}
   /* Cross-references: colored inline labels that go quiet on hover. */
-  .eq-ref,.thm-ref,.cite-ref{font-family:var(--font-ui);font-weight:600;color:var(--accent);
+  .eq-ref,.thm-ref,.fig-ref,.cite-ref{font-family:var(--font-ui);font-weight:600;color:var(--accent);
     font-feature-settings:"tnum" 1;font-variant-numeric:tabular-nums;white-space:nowrap;
     padding:0 .14em;border-radius:4px;transition:color .14s ease;cursor:default}
-  .eq-ref:hover,.thm-ref:hover,.cite-ref:hover{color:var(--ink)}
+  .eq-ref:hover,.thm-ref:hover,.fig-ref:hover,.cite-ref:hover{color:var(--ink)}
+  .figure-number{font-style:normal;font-weight:600;color:var(--ink)}
   a.cite-ref,.cite-ref a{color:var(--accent);text-decoration:none}
   a.cite-ref:hover,.cite-ref a:hover{color:var(--ink)}
   a.cite-ref,.cite-ref a{cursor:pointer}
@@ -1111,13 +1116,19 @@
   // server's _build_refs/_preprocess_* so the live editor preview matches the standalone pages.
   function renderMarkdown(md,opts){
     opts=opts||{}; const refs=opts.refs;
-    const store=[]; let s=md||"";
+    const store=[], captionStore=[]; let s=md||"";
+    if(opts.sourceMarkers) s=withSourceMarkers(s);
     // Stored report Markdown predates workspaces. Add the active workspace capability at render
     // time so existing report figures keep working after a workspace switch or in a new tab.
     if(S.workspaceId){
       s=s.replace(/\/api\/bubbles\/([^/?\s)]+)\/assets\/([^?\s)"']+)(?:\?workspace=[^\s)"']*)?/g,
         (_,slug,file)=>workspaceUrl("/api/bubbles/"+slug+"/assets/"+file));
     }
+    // Keep image alt text out of general math stashing. Markdown emits it as an HTML attribute,
+    // where replacing `$...$` would corrupt the caption before decorateFigures sees it.
+    s=s.replace(/!\[([^\]\n]*)\](?=\()/g,(_,caption)=>{
+      captionStore.push(caption); return "![@@LI_CAP"+(captionStore.length-1)+"@@]";
+    });
     // Pre-stash fenced code blocks so Pass 0 and math stashing never touch their content.
     const cbStore=[];
     s=s.replace(/^(`{3,})[^\n]*\n[\s\S]*?\n\1/gm,m=>{ cbStore.push(m); return '\n\n@@CB'+(cbStore.length-1)+'@@\n\n'; });
@@ -1180,6 +1191,7 @@
     });
     // Merge the global theorem labels (other pages) under this page's local ones (which win).
     if(refs&&refs.thm) theoLabels=Object.assign({},refs.thm,theoLabels);
+    const figLabels=(refs&&refs.fig)||{};
     // Stash all math tokens so marked.js can't mangle them. This MUST come before the
     // \thmref/\eqref span substitutions below, so an in-math reference stays raw inside the
     // stashed source (renderMath resolves it for KaTeX) instead of being turned into an HTML span.
@@ -1194,6 +1206,10 @@
       const t=theoLabels[lb]; if(!t) return `\\thmref{${lb}}`;
       const cap=t.env.charAt(0).toUpperCase()+t.env.slice(1);
       return `<span class="thm-ref">${cap} ${t.number}</span>`;
+    });
+    s=s.replace(/\\figref\{([^}]+)\}/g,(_,lb)=>{
+      const f=figLabels[lb];
+      return f?'<span class="fig-ref">Figure '+f.number+'</span>':'<span class="fig-ref">Figure ?</span>';
     });
     // Pass 3 — replace \eqref{}/\ref{} in remaining (non-math) text
     if(hasEq){
@@ -1252,6 +1268,7 @@
       catch(e){ return `<span style="color:#ff7a7a">${src.src}</span>`; } };
     let html=marked.parse(s,{breaks:false});
     html=html.replace(/@@M(\d+)@@/g,(m,i)=>renderMath(store[+i]));
+    html=html.replace(/@@LI_CAP(\d+)@@/g,(_,i)=>escAttr(captionStore[+i]||""));
     // Restore theorem/lemma/proof blocks: render inner content (math + markdown)
     html=html.replace(/<p>@@TH(\d+)@@<\/p>/g,(m,i)=>{
       const t=theoStore[+i];
@@ -1273,6 +1290,10 @@
         const c2=tr.env.charAt(0).toUpperCase()+tr.env.slice(1);
         return `<span class="thm-ref">${c2} ${tr.number}</span>`;
       });
+      is=is.replace(/\\figref\{([^}]+)\}/g,(_,lb)=>{
+        const f=figLabels[lb];
+        return f?'<span class="fig-ref">Figure '+f.number+'</span>':'<span class="fig-ref">Figure ?</span>';
+      });
       is=is.replace(/\\cite\{([^}]+)\}/g,(_,raw)=>citationHtml(raw));
       is=renderTextColor(is);
       let ih=marked.parse(is,{breaks:false});
@@ -1286,6 +1307,94 @@
     // Escape HTML so the literal source shows verbatim; unescape \| like marked does in tables.
     html=html.replace(/@@IC(\d+)@@/g,(_,i)=>'<code>'+escHtml(icStore[+i].replace(/\\\|/g,"|"))+'</code>');
     return html;
+  }
+
+  function withSourceMarkers(md){
+    // Keep a stable offset into the original Markdown at each structural block. Comments survive
+    // marked.js without altering its parsing; bindPreviewSourceOffsets consumes them after render.
+    const lines=String(md||"").match(/.*(?:\n|$)/g)||[];
+    let out="", offset=0, afterBlank=true, inFence=false;
+    for(const line of lines){
+      if(!line)continue;
+      const text=line.replace(/\n$/,""), trimmed=text.trim();
+      const fence=/^\s*(`{3,}|~{3,})/.test(text);
+      // Math delimiters are deliberately not structural triggers: marking both opening and
+      // closing $$ lines would inject a comment into the TeX passed to KaTeX. Display math still
+      // receives a marker through the blank line that starts its block.
+      const structural=/^\s*(#{1,6}\s|[-+*]\s+|\d+[.)]\s+|>\s?)/.test(text);
+      if(!inFence && trimmed && (afterBlank||structural)) out+=`<!--li-src:${offset}-->\n`;
+      out+=line;
+      if(fence)inFence=!inFence;
+      afterBlank=!trimmed || fence;
+      offset+=line.length;
+    }
+    return out;
+  }
+
+  function bindPreviewSourceOffsets(root){
+    const walker=document.createTreeWalker(root,NodeFilter.SHOW_COMMENT);
+    const markers=[]; let node;
+    while(node=walker.nextNode()){
+      const match=/^li-src:(\d+)$/.exec((node.nodeValue||"").trim());
+      if(match)markers.push({node,offset:+match[1]});
+    }
+    const nextElement=node=>{
+      let cur=node;
+      while(cur&&cur!==root){
+        let sibling=cur.nextSibling;
+        while(sibling){ if(sibling.nodeType===Node.ELEMENT_NODE)return sibling; sibling=sibling.nextSibling; }
+        cur=cur.parentNode;
+      }
+      return null;
+    };
+    markers.forEach(({node,offset})=>{
+      const target=nextElement(node);
+      if(target&&!target.dataset.sourceStart)target.dataset.sourceStart=String(offset);
+      node.remove();
+    });
+    const blocks=[...root.querySelectorAll("[data-source-start]")];
+    blocks.forEach((block,index)=>{
+      const next=blocks[index+1];
+      if(next)block.dataset.sourceEnd=next.dataset.sourceStart;
+    });
+  }
+
+  function decorateFigures(root){
+    const refs=S.refs||{}, figLabels=refs.fig||{};
+    let nextFigure=Number((refs.figStart||{})[S.page]||0);
+    root.querySelectorAll("p > img:only-child[alt]").forEach(img=>{
+      nextFigure++;
+      const rawCaption=img.getAttribute("alt")||"";
+      const labelMatch=/\\label\{([^}]+)\}/.exec(rawCaption);
+      const label=labelMatch&&labelMatch[1];
+      const caption=rawCaption.replace(/\\label\{[^}]+\}/g,"").trim();
+      const number=label&&figLabels[label]?figLabels[label].number:nextFigure;
+      const paragraph=img.parentElement, figure=document.createElement("figure");
+      if(label)figure.id="fig-"+encodeURIComponent(label);
+      if(paragraph.dataset.sourceStart)figure.dataset.sourceStart=paragraph.dataset.sourceStart;
+      if(paragraph.dataset.sourceEnd)figure.dataset.sourceEnd=paragraph.dataset.sourceEnd;
+      paragraph.replaceWith(figure);
+      figure.append(img);
+      const figcaption=document.createElement("figcaption");
+      figcaption.append(el("span",{class:"figure-number"},"Figure "+number+": "));
+      renderFigureCaption(figcaption,caption);
+      figure.append(figcaption);
+    });
+  }
+
+  function renderFigureCaption(target,caption){
+    const source=String(caption||""); let last=0, match;
+    const math=/\$([^$\n]+?)\$/g;
+    while((match=math.exec(source))!==null){
+      if(match.index>last)target.append(document.createTextNode(source.slice(last,match.index)));
+      try{
+        const node=document.createElement("span");
+        node.innerHTML=katex.renderToString(match[1],{displayMode:false,macros:S.mathMacros,throwOnError:false});
+        target.append(node);
+      }catch(e){ target.append(document.createTextNode(match[0])); }
+      last=math.lastIndex;
+    }
+    if(last<source.length)target.append(document.createTextNode(source.slice(last)));
   }
 
   // ---------- state ----------
@@ -2682,10 +2791,9 @@
     loadTodos().then(()=>{ if(S.bubble===slug && S.editor) updatePreview(); });
     S.bubbleAssets=b.assets||[];
     S.shareActive=!!b.share_active; S.shareToken=b.share_token||"";
-    // Editable bubble title. For approved bubbles the rename lives in the "✏️ Edit titles"
-    // toggle by the sync badge (alongside page-title editing); unapproved bubbles have no
-    // page tabs, so they keep an inline rename pencil here.
-    const nameSpan=el("span",{class:"truncate",style:"max-width:60vw"},b.name+(b.approved?"":" (suggested)"));
+    // Bubble creation is explicit and immediately creates its report workspace. The approval
+    // branch below only protects against an old direct link while its legacy data is cleaned up.
+    const nameSpan=el("span",{class:"truncate",style:"max-width:60vw"},b.name);
     S.nameSpan=nameSpan;
     const titleRow=el("div",{class:"row bubble-title",style:"margin:10px 0 12px;align-items:center;gap:8px;flex-wrap:wrap"},
       el("h2",{class:"section-title",style:"margin:0"},"🫧 "), nameSpan);
@@ -2736,14 +2844,9 @@
 
   function buildApprovalPane(left,b){
     const bd=el("div",{class:"bd col"});
-    bd.append(el("p",{},"This bubble was auto-suggested. Approve it to start its report pages."));
-    if(b.assets.length)bd.append(el("div",{class:"muted"},"Triggered by: "+b.assets.map(a=>a.title).join(", ")));
-    const instr=el("textarea",{rows:"3",placeholder:"Optional: what should this report focus on?"});
-    bd.append(el("label",{class:"muted"},"Report instructions (optional)"),instr);
-    bd.append(el("button",{class:"primary",onclick:async()=>{
-      await api("/api/bubbles/"+b.slug+"/approve",{method:"POST",body:JSON.stringify({instructions:instr.value})});
-      toast("Approved"); openBubble(b.slug);
-    }},"Approve this bubble"));
+    bd.append(el("p",{},"This bubble is no longer available."));
+    bd.append(el("div",{class:"muted"},"Automatic bubble suggestions have been removed. Create a bubble explicitly from the Bubbles list instead."));
+    bd.append(el("button",{class:"primary",onclick:()=>showList("bubbles")},"Back to bubbles"));
     left.append(el("div",{class:"hd"},el("b",{},"Report")), bd);
   }
 
@@ -3157,7 +3260,7 @@
     if(!sel||!sel.empty)return null;
     const from=sel.from;
     const before=st.doc.textBetween(Math.max(0,from-260),from,"\n","\n");
-    const m=before.match(/\\(cite|eqref|thmref)\{([^{}\n]*)$/);
+    const m=before.match(/\\(cite|eqref|thmref|figref)\{([^{}\n]*)$/);
     if(!m){
       const tm=before.match(/(^|[^\w])@(\d*)$/);
       if(!tm)return null;
@@ -3192,6 +3295,10 @@
         const env=String(t.env||"Theorem");
         return {key,detail:env.charAt(0).toUpperCase()+env.slice(1)+" "+(t.number||"?")};
       });
+    }else if(token.kind==="figref"){
+      const fig=refs.fig||{};
+      rows=Object.keys(fig).sort((a,b)=>Number(fig[a].number||0)-Number(fig[b].number||0))
+        .map(key=>({key,detail:"Figure "+(fig[key].number||"?")}));
     }else{
       // @ references are for active work. Completed TODOs remain available in the
       // TODO view and still resolve in existing report links, but are not suggested.
@@ -3216,7 +3323,8 @@
     const ac=S.refAc; if(!ac)return;
     const title=ac.token&&ac.token.kind==="cite"?"Citations in this bubble":
       ac.token&&ac.token.kind==="todo"?"TODOs":
-      ac.token&&ac.token.kind==="thmref"?"Theorem and definition labels":"Equation labels";
+      ac.token&&ac.token.kind==="thmref"?"Theorem and definition labels":
+      ac.token&&ac.token.kind==="figref"?"Figure labels":"Equation labels";
     ac.box.innerHTML="";
     ac.box.append(el("div",{class:"ref-ac-title"},title));
     ac.items.forEach((it,i)=>{
@@ -3280,7 +3388,9 @@
     if(!S.previewEl||!S.editor)return;
     const sTop=S.previewEl.scrollTop, sLeft=S.previewEl.scrollLeft;
     const savedResources=restartGifs?null:collectPreviewResources(S.previewEl);
-    S.previewEl.innerHTML=renderMarkdown(S.editor.getMarkdown(),{refs:S.refs,pageSlug:S.page,citationPdfLinks:true});
+    S.previewEl.innerHTML=renderMarkdown(S.editor.getMarkdown(),{refs:S.refs,pageSlug:S.page,citationPdfLinks:true,sourceMarkers:true});
+    bindPreviewSourceOffsets(S.previewEl);
+    decorateFigures(S.previewEl);
     linkifyWikilinks(S.previewEl);
     if(restartGifs) restartGifPlayback(S.previewEl);
     else restorePreviewResources(S.previewEl,savedResources);
@@ -3401,72 +3511,24 @@
   }
 
   // ---- reverse sync (Overleaf-style): double-click rendered preview → jump editor cursor ----
-  // Heuristic text match: the rendered HTML keeps no source positions, so we search the live
-  // markdown for the double-clicked word (or, inside a rendered equation, its LaTeX) and move
-  // the Toast UI cursor there. Good enough — lands on the right spot almost always.
   function _srcPosFromOffset(md,off){            // → 1-indexed [line, ch] for setSelection
     let line=1; for(let i=0;i<off;i++) if(md.charCodeAt(i)===10) line++;
     const ls=md.lastIndexOf("\n",off-1)+1;
     return [line, off-ls+1];
   }
-  function _normTex(s){                            // compare TeX ignoring numbering + whitespace
-    return (s||"").replace(/\\(?:tag|label)\{[^}]*\}/g,"").replace(/\s+/g,"").trim();
-  }
-  // Find where a rendered equation's LaTeX lives in the source. The KaTeX annotation carries the
-  // retagged TeX (\tag{n}); the source still has \label{} — so we match on the normalized form.
-  function _findMathOffset(md,tex){
-    const needle=_normTex(tex); if(!needle) return -1;
-    const res=[/\$\$([\s\S]+?)\$\$/g,
-               /\\begin\{(?:align\*?|alignat\*?|gather\*?|multline\*?|equation\*?)\}([\s\S]*?)\\end\{(?:align\*?|alignat\*?|gather\*?|multline\*?|equation\*?)\}/g,
-               /\\\[([\s\S]+?)\\\]/g, /\\\(([\s\S]+?)\\\)/g, /\$([^\$\n]+?)\$/g];
-    for(const re of res){ let m; re.lastIndex=0;
-      while((m=re.exec(md))!==null){ const n=_normTex(m[1]);
-        if(n && (n===needle || n.includes(needle) || needle.includes(n))) return m.index; }
-    }
-    return -1;
-  }
-  // Find the double-clicked word in the source. When it occurs several times, disambiguate by how
-  // many neighbouring words (from the clicked block) sit near each candidate in the source.
-  function _stripMd(t){ return (t||"").replace(/[*_#>\[\]|`~]/g," "); }
-  function _findWordOffset(md,word,context){
-    const esc=word.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
-    const re=new RegExp("\\b"+esc+"\\b","gi"); const hits=[]; let m;
-    while((m=re.exec(md))!==null){ hits.push(m.index); if(hits.length>500) break; }
-    if(!hits.length){ const i=md.toLowerCase().indexOf(word.toLowerCase()); return i; }
-    if(hits.length===1 || !context) return hits[0];
-    const neigh=_stripMd(context).toLowerCase().split(/\s+/)
-      .filter(w=>w.length>2 && w.toLowerCase()!==word.toLowerCase()).slice(0,8);
-    let best=hits[0],bestScore=-1;
-    for(const off of hits){
-      const around=_stripMd(md.slice(Math.max(0,off-60),off+60)).toLowerCase();
-      let score=0; for(const w of neigh) if(around.includes(w)) score++;
-      if(score>bestScore){ bestScore=score; best=off; }
-    }
-    return best;
-  }
   function syncPreviewToSource(e){
     if(S.viewMode!=="split" || !S.editor || !S.editor.setSelection) return;
-    let off=-1, matchLen=0;
-    const mathEl=e.target.closest && e.target.closest(".katex");
+    const sourceEl=e.target.closest&&e.target.closest("[data-source-start]");
+    if(!sourceEl)return;
     const md=S.editor.getMarkdown();
-    if(mathEl){
-      const ann=mathEl.querySelector('annotation[encoding="application/x-tex"]');
-      off=_findMathOffset(md, ann?ann.textContent:"");
-    } else {
-      const word=(window.getSelection&&window.getSelection().toString().trim())||"";
-      if(!word) return;
-      const block=e.target.closest("p,li,h1,h2,h3,h4,h5,h6,td,th,blockquote,.math-env,div");
-      off=_findWordOffset(md, word, block?block.textContent:"");
-      if(off>=0) matchLen=word.length;
-    }
-    if(off<0) return;
+    const off=Math.max(0,Math.min(md.length,Number(sourceEl.dataset.sourceStart)||0));
     const [line,ch]=_srcPosFromOffset(md,off);
     // Moving the editor selection + focus can make the browser scroll the preview pane (its own
     // overflow:auto container) to a weird spot. The right pane must NOT move on a dblclick — so
     // snapshot its scroll and restore it, including after Toast UI's deferred focus scrollIntoView.
     const pv=S.previewEl, sTop=pv.scrollTop, sLeft=pv.scrollLeft;
     const keepPreview=()=>{ pv.scrollTop=sTop; pv.scrollLeft=sLeft; };
-    try{ S.editor.setSelection([line,ch],[line,ch+matchLen]); S.editor.focus(); }
+    try{ S.editor.setSelection([line,ch],[line,ch]); S.editor.focus(); }
     catch(err){ console.warn("reverse-sync setSelection failed",err); }
     keepPreview(); requestAnimationFrame(keepPreview); setTimeout(keepPreview,30);
   }

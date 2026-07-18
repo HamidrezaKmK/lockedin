@@ -143,6 +143,21 @@ class WikilinkNormalization(unittest.TestCase):
 # NOT clobber a rename or its share state, and membership must follow the slug.
 # --------------------------------------------------------------------------- #
 class BubbleIdentity(unittest.TestCase):
+    def test_legacy_auto_suggestions_are_purged_without_touching_real_bubbles(self):
+        with temp_home() as home:
+            with paths.use_root(home):
+                stale = bubbles.propose_bubble("Old model suggestion")
+                stale_dir = paths.bubble_dir(stale)
+                stale_dir.mkdir(parents=True)
+                (stale_dir / "old.md").write_text("obsolete")
+                real = bubbles.create_bubble("My actual research")
+
+                self.assertEqual(bubbles.purge_legacy_auto_suggestions(), [stale])
+                self.assertNotIn(stale, bubbles.load_registry())
+                self.assertFalse(stale_dir.exists())
+                self.assertTrue(bubbles.load_registry()[real]["approved"])
+                self.assertEqual(bubbles.purge_legacy_auto_suggestions(), [])
+
     def test_retagging_preserves_rename_and_share(self):
         with temp_home() as home:
             with paths.use_root(home):
@@ -826,6 +841,31 @@ class CrossPageReferences(unittest.TestCase):
             show_back=False, refs=refs)
         self.assertIn("Assumption 1 (Regularity)", html)
         self.assertIn('<span class="thm-ref">Assumption 1</span>', html)
+
+
+class FigureReferences(unittest.TestCase):
+    P1 = r"![First figure \label{fig:first}](/first.png)"
+    P2 = r"See \figref{fig:first}. ![Second figure \label{fig:second}](/second.png)"
+
+    def _refs(self):
+        return server._build_refs([{"page_slug": "p1", "content": self.P1},
+                                   {"page_slug": "p2", "content": self.P2}])
+
+    def test_figures_are_numbered_and_labeled_across_pages(self):
+        refs = self._refs()
+        self.assertEqual(refs["figStart"], {"p1": 0, "p2": 1})
+        self.assertEqual(refs["fig"]["fig:first"], {"number": 1, "page_slug": "p1"})
+        self.assertEqual(refs["fig"]["fig:second"], {"number": 2, "page_slug": "p2"})
+
+    def test_figure_reference_and_caption_are_rendered(self):
+        html = server._render_preview_html(
+            name="B", page="p2", all_pages=[{"page_slug": "p1", "title": "One"},
+                                             {"page_slug": "p2", "title": "Two"}],
+            content=self.P2, slug="s", link_base="/x", asset_base="/x/assets",
+            show_back=False, refs=self._refs())
+        self.assertIn('class="fig-ref">Figure 1</span>', html)
+        self.assertIn('marker.textContent="Figure "+number+": "', html)
+        self.assertIn('figure.id="fig-"+encodeURIComponent(label)', html)
 
 
 if __name__ == "__main__":
