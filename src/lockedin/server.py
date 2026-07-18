@@ -683,7 +683,6 @@ def build_app():
         notes: Optional[str] = None
         url_source: Optional[str] = None
         attention_flag: Optional[bool] = None
-        suggested_tags: Optional[list[str]] = None
 
     class AssetBibtexIn(BaseModel):
         bibliography: str = ""
@@ -695,6 +694,7 @@ def build_app():
         url: str
         title: str = ""
         tags: str = ""
+        bibliography: str = ""
 
     class BubbleIn(BaseModel):
         name: str
@@ -1241,18 +1241,27 @@ def build_app():
         title: str = Form(""),
         tags: str = Form(""),
         url_source: str = Form(""),
+        bibliography: str = Form(""),
     ):
         if not file.filename:
             raise HTTPException(status_code=400, detail="No file provided.")
+        if not title.strip():
+            raise HTTPException(status_code=400, detail="A title is required.")
         pdf_bytes = await file.read()
         tag_list = [t.strip() for t in tags.split(",") if t.strip()]
         home = home_of(user)
-        pdf_id = service.save_asset(home, pdf_bytes, file.filename, title=title,
-                                    tags=tag_list, url_source=url_source)
+        try:
+            pdf_id = service.save_asset(home, pdf_bytes, file.filename, title=title,
+                                        tags=tag_list, url_source=url_source,
+                                        bibliography=bibliography)
+        except assets.DuplicateBibKeyError as e:
+            raise HTTPException(status_code=409, detail=str(e))
+        except assets.BibtexError as e:
+            raise HTTPException(status_code=400, detail=str(e))
         # any user-supplied tag becomes an approved bubble immediately
         if tag_list:
             service.register_user_tags(home, tag_list)
-        background_tasks.add_task(tagger.run_ingest, home, pdf_id, bool(tag_list))
+        background_tasks.add_task(tagger.run_ingest, home, pdf_id)
         return {"pdf_id": pdf_id, "attention_flag": service.get_asset(home, pdf_id).get("attention_flag")}
 
     @app.post("/api/assets/upload-url")
@@ -1264,10 +1273,17 @@ def build_app():
         url = body.url.strip()
         if not url:
             raise HTTPException(status_code=400, detail="No URL provided.")
+        if not body.title.strip():
+            raise HTTPException(status_code=400, detail="A title is required.")
         tag_list = [t.strip() for t in body.tags.split(",") if t.strip()]
         home = home_of(user)
         try:
-            pdf_id = service.fetch_and_save_asset(home, url, title=body.title, tags=tag_list)
+            pdf_id = service.fetch_and_save_asset(home, url, title=body.title, tags=tag_list,
+                                                   bibliography=body.bibliography)
+        except assets.DuplicateBibKeyError as e:
+            raise HTTPException(status_code=409, detail=str(e))
+        except assets.BibtexError as e:
+            raise HTTPException(status_code=400, detail=str(e))
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
         except Exception as e:
@@ -1275,7 +1291,7 @@ def build_app():
         # any user-supplied tag becomes an approved bubble immediately
         if tag_list:
             service.register_user_tags(home, tag_list)
-        background_tasks.add_task(tagger.run_ingest, home, pdf_id, bool(tag_list))
+        background_tasks.add_task(tagger.run_ingest, home, pdf_id)
         return {"pdf_id": pdf_id, "attention_flag": service.get_asset(home, pdf_id).get("attention_flag")}
 
     @app.get("/api/assets/{pdf_id}")
@@ -1323,6 +1339,19 @@ def build_app():
     @app.get("/api/assets/{pdf_id}/summary")
     def get_summary(pdf_id: str, user: str = Depends(current_user)):
         return {"summary": service.asset_summary(home_of(user), pdf_id)}
+
+    @app.post("/api/assets/{pdf_id}/resummarize")
+    def resummarize_asset(pdf_id: str, user: str = Depends(current_user)):
+        try:
+            return {"summary": service.resummarize_asset(home_of(user), pdf_id)}
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail="No such asset.")
+        except service.ModelUnavailableError as e:
+            raise HTTPException(status_code=503, detail=str(e))
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"Could not re-summarize this paper: {e}")
 
     @app.get("/api/assets/{pdf_id}/pdf")
     def get_pdf(pdf_id: str, user: str = Depends(current_user)):
@@ -1562,8 +1591,6 @@ def build_app():
             # 409: the editor's base mtime is stale — an external edit landed first.
             raise HTTPException(status_code=409, detail="Page changed on disk",
                                 headers={"X-Disk-Mtime": repr(e.disk_mtime)})
-        except service.CitationValidationError as e:
-            raise HTTPException(status_code=400, detail=str(e))
         return {"ok": True, "page_mtime": mtime}
 
     @app.get("/api/bubbles/{slug}/poll")

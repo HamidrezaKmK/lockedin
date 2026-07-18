@@ -1955,7 +1955,8 @@
     const linkMode=el("button",{type:"button"},"PDF link");
     const modeSeg=el("div",{class:"seg"},fileMode,linkMode);
     const file=el("input",{type:"file",accept:"application/pdf"});
-    const title=el("input",{placeholder:"Title (optional)"});
+    const title=el("input",{placeholder:"Title",required:"true"});
+    const bibliography=el("textarea",{rows:"3",placeholder:"BibTeX (optional)",spellcheck:"false"});
     let bubbles=[];
     try{ bubbles=(await bubblesRequest).bubbles||[]; }catch(e){}
     if(!isCurrentRender(version))return;
@@ -1976,25 +1977,27 @@
       const hasFile=uploadMode==="file"&&!!file.files[0], link=uploadMode==="link"?url.value.trim():"";
       if(uploadMode==="file"&&!hasFile){toast("Choose a PDF file.");return;}
       if(uploadMode==="link"&&!link){toast("Paste a PDF link.");return;}
+      if(!title.value.trim()){toast("Enter a title.");title.focus();return;}
       btn.disabled=true; btn.textContent=uploadMode==="file"?"Uploading…":"Fetching…";
       try{
         let d;
         if(uploadMode==="file"){
           const fd=new FormData(); fd.append("file",file.files[0]);
           fd.append("title",title.value); fd.append("tags",""); fd.append("url_source","");
+          fd.append("bibliography",bibliography.value);
           const r=await fetch("/api/assets/upload",{method:"POST",credentials:"include",
             headers:{"X-LockedIn-Workspace":S.workspaceId||""},body:fd});
           if(!r.ok)throw new Error((await r.json()).detail);
           d=await r.json();
         }else{
-          d=await api("/api/assets/upload-url",{method:"POST",body:JSON.stringify({url:link,title:title.value,tags:""})});
+          d=await api("/api/assets/upload-url",{method:"POST",body:JSON.stringify({url:link,title:title.value,tags:"",bibliography:bibliography.value})});
         }
-        toast(d.attention_flag?"Added — auto-tagging in background…":"Added — summarizing in background…");
-        file.value="";title.value="";url.value="";
+        toast("Added — summarizing in background…");
+        file.value="";title.value="";url.value="";bibliography.value="";
         viewAssets();
       }catch(e){toast(e.message);} finally{btn.disabled=false;btn.textContent="Add paper";}
     };
-    f.append(el("b",{},"Add a PDF"),modeSeg,file,url,title,btn);
+    f.append(el("b",{},"Add a PDF"),modeSeg,file,url,title,bibliography,btn);
     m.insertBefore(f,loading);
     m.insertBefore(el("div",{style:"height:16px"}),loading);
 
@@ -2029,7 +2032,7 @@
     const grid=el("div",{class:"grid"});
     const haystack=a=>[
       a.title,a.extracted_title,a.pdf_id,a.url_source,a.notes,...(a.authors||[]),
-      ...(a.tags||[]),...(a.suggested_tags||[]),
+      ...(a.tags||[]),
       ...(a.bibliography||"").match(/@\w+\s*\{\s*([^,\s}]+)/g)||[]
     ].filter(Boolean).join(" ").toLowerCase();
     let filterRender=0;
@@ -2095,14 +2098,9 @@
     c.onclick=()=>openAssetEditor(a);
     return c;
   }
-  function renderAssetTags(a,{suggestionsOnly=false,emptyText=""}={}){
+  function renderAssetTags(a,{emptyText=""}={}){
     const wrap=el("div",{class:"acard-tags"});
-    const real=suggestionsOnly?[]:(a.tags||[]).map(t=>({label:t,cls:"pill"}));
-    // Suggestions are only a hint for un-tagged papers in the full asset grid, but the
-    // attention queue is specifically about reviewing suggestions.
-    const showSuggestions=suggestionsOnly||!(a.tags||[]).length;
-    const suggested=showSuggestions?(a.suggested_tags||[]).map(t=>({label:"? "+t,cls:"pill suggest"})):[];
-    const items=real.concat(suggested);
+    const items=(a.tags||[]).map(t=>({label:t,cls:"pill"}));
     if(!items.length){
       if(emptyText)wrap.append(el("div",{class:"tag-summary"},el("span",{class:"tag-summary-main"},emptyText)));
       return wrap;
@@ -2269,19 +2267,8 @@
         el("button",{class:"ghost",onclick:closeBibEdit},"Cancel")));
     bibPanel.append(bibSummary,bibEdit);
     box.append(bibPanel);
-    // suggestions are only a hint while a paper is still unassigned
-    if(!(a.idea_bubbles||[]).length && (a.suggested_tags||[]).length){
-      const sg=el("div",{class:"row"},el("span",{class:"muted"},"Suggested:"));
-      a.suggested_tags.forEach(t=>{ const p=el("span",{class:"pill suggest",style:"cursor:pointer"},"+ "+t);
-        p.onclick=async()=>{ try{
-          const r=await api("/api/bubbles",{method:"POST",body:JSON.stringify({name:t})});
-          await api("/api/bubbles/"+r.slug+"/add-pdf",{method:"POST",body:JSON.stringify({pdf_id:a.pdf_id})});
-          await refreshAssetMemberships(); toast("Added to bubble");
-        }catch(e){ toast(e.message); } }; sg.append(p); });
-      box.append(sg);
-    }
     const saveAsset=async(attentionFlag)=>{
-      const payload={title:title.value,notes:notes.value,url_source:url.value,suggested_tags:[]};
+      const payload={title:title.value,notes:notes.value,url_source:url.value};
       if(attentionFlag!==undefined)payload.attention_flag=attentionFlag;
       await api("/api/assets/"+a.pdf_id,{method:"PATCH",body:JSON.stringify(payload)});
       toast(attentionFlag===false?"Saved and cleared from attention queue":attentionFlag===true?"Saved and moved to attention queue":"Saved");
@@ -2304,10 +2291,21 @@
     m.append(box);
     // show cached summary
     const sumWrap=el("div",{class:"card",style:"margin-top:12px;max-width:720px"});
-    sumWrap.append(el("b",{},"AI summary"));
+    const resummarize=el("button",{class:"ghost small"},"↻ Re-summarize");
+    const summaryHint=el("span",{class:"muted",style:"font-size:12px"},"⤷ Uses your active model");
+    sumWrap.append(el("div",{class:"row"},el("b",{},"AI summary"),el("span",{class:"spacer"}),summaryHint,resummarize));
     const body=el("div",{class:"preview",style:"margin-top:8px"});
     let sum=""; try{ sum=(await api("/api/assets/"+a.pdf_id+"/summary")).summary; }catch(e){}
     body.innerHTML=renderMarkdown(sum||"_Not summarized yet._");
+    resummarize.onclick=async()=>{
+      resummarize.disabled=true; const original=resummarize.textContent; resummarize.textContent="Re-summarizing…";
+      try{
+        const r=await api("/api/assets/"+a.pdf_id+"/resummarize",{method:"POST"});
+        body.innerHTML=renderMarkdown(r.summary||"_No summary was produced._");
+        toast("Summary refreshed");
+      }catch(e){ toast(e.message); }
+      finally{resummarize.disabled=false;resummarize.textContent=original;}
+    };
     sumWrap.append(body); m.append(sumWrap);
   }
 
@@ -4090,7 +4088,7 @@
     r.assets.forEach(a=>{
       const c=el("div",{class:"acard"});
       c.append(el("h4",{},a.title||a.filename||a.pdf_id));
-      c.append(renderAssetTags(a,{suggestionsOnly:true,emptyText:"No suggestions — tag manually."}));
+      c.append(renderAssetTags(a,{emptyText:"No bubbles assigned yet."}));
       c.append(el("div",{class:"row",style:"margin-top:10px"},
         el("a",{href:workspaceUrl("/api/assets/"+a.pdf_id+"/pdf"),target:"_blank",onclick:e=>e.stopPropagation()},
           el("button",{class:"primary small"},"Open PDF")),

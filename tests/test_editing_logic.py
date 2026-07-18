@@ -531,6 +531,30 @@ class AssetModelMetadata(unittest.TestCase):
         self.assertEqual(meta["bibliography"], bib)
         self.assertEqual(meta["extracted_title"], "Canonical Paper Title")
 
+    def test_asset_can_be_created_with_bibtex(self):
+        bib = "@article{libraryadd, title={Library Add}, author={Ada}, year={2026}}"
+        with temp_home() as home:
+            pid = service.save_asset(home, b"%PDF-1", "paper.pdf", bibliography=bib)
+            self.assertEqual(service.get_asset(home, pid)["bibliography"], bib)
+
+    def test_resummarize_requires_a_working_active_model(self):
+        with temp_home() as home:
+            pid = service.save_asset(home, b"%PDF-1", "paper.pdf")
+            with self.assertRaises(service.ModelUnavailableError):
+                service.resummarize_asset(home, pid)
+
+    def test_resummarize_refreshes_the_cached_summary(self):
+        with temp_home() as home:
+            pid = service.save_asset(home, b"%PDF-1", "paper.pdf")
+            original_health, original_summarize = models.health_check, tagger.summarize_pdf
+            models.health_check = lambda *args, **kwargs: {"ok": True}
+            tagger.summarize_pdf = lambda *args, **kwargs: "Fresh summary"
+            try:
+                self.assertEqual(service.resummarize_asset(home, pid), "Fresh summary")
+            finally:
+                models.health_check, tagger.summarize_pdf = original_health, original_summarize
+            self.assertTrue(service.get_asset(home, pid)["summarized"])
+
 
 class AssetBibtex(unittest.TestCase):
     BIB1 = "@article{bases4spaces, title={Bases for Spaces}, author={Ada Lovelace}, year={1843}, journal={Notes}}"
@@ -617,20 +641,22 @@ class AssetBibtex(unittest.TestCase):
             refs = server._bubble_refs(home, slug, service.list_pages(home, slug))
             self.assertEqual(refs["bibliography"]["bases4spaces"]["pdf_id"], pid)
 
-    def test_page_cannot_cite_key_from_unattached_asset(self):
+    def test_page_can_save_unattached_citation_as_unresolved(self):
         with temp_home() as home:
             slug = make_bubble(home)
             with paths.use_root(home):
                 pid = assets.save_asset(b"%PDF-1", "a.pdf", title="A")
             service.update_asset_bibliography(home, pid, self.BIB1)
-            with self.assertRaises(service.CitationValidationError):
-                service.save_page(home, slug, "overview", "# T\n\nUse \\cite{bases4spaces}.\n")
+            service.save_page(home, slug, "overview", "# T\n\nUse \\cite{bases4spaces}.\n")
+            with paths.use_root(home):
+                self.assertIn("\\cite{bases4spaces}", bubbles.get_page(slug, "overview"))
 
-    def test_page_cannot_cite_unknown_key(self):
+    def test_page_can_save_unknown_citation_as_unresolved(self):
         with temp_home() as home:
             slug = make_bubble(home)
-            with self.assertRaises(service.CitationValidationError):
-                service.save_page(home, slug, "overview", "# T\n\nUse \\cite{missing}.\n")
+            service.save_page(home, slug, "overview", "# T\n\nUse \\cite{missing}.\n")
+            with paths.use_root(home):
+                self.assertIn("\\cite{missing}", bubbles.get_page(slug, "overview"))
 
 
 class CitationRendering(unittest.TestCase):

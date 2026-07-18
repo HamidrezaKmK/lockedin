@@ -12,14 +12,7 @@ from pathlib import Path
 
 import yaml
 
-from . import assets, auth, bubbles, models, paths, reports, sharing, todos
-
-
-_CITE_REF_RE = re.compile(r"\\cite\{([^}]+)\}")
-
-
-class CitationValidationError(ValueError):
-    """Raised when a report page cites a key unavailable to its bubble."""
+from . import assets, auth, bubbles, models, paths, reports, sharing, tagger, todos
 
 
 def ensure_workspace(home: Path) -> None:
@@ -30,16 +23,23 @@ def ensure_workspace(home: Path) -> None:
 
 # ---- assets ----
 def save_asset(home: Path, pdf_bytes: bytes, filename: str, title: str = "",
-               tags: list[str] | None = None, url_source: str = "") -> str:
+               tags: list[str] | None = None, url_source: str = "",
+               bibliography: str = "") -> str:
     with paths.use_root(home):
-        pdf_id = assets.save_asset(pdf_bytes, filename, title=title, tags=tags, url_source=url_source)
+        bibliography = bibliography.strip()
+        # Validate before creating files, so an invalid or duplicate key does not leave behind
+        # a partially added asset.
+        if bibliography:
+            assets.validate_bibtex_unique("", bibliography)
+        pdf_id = assets.save_asset(pdf_bytes, filename, title=title, tags=tags,
+                                   url_source=url_source, bibliography=bibliography)
         meta = assets.load_meta(pdf_id)
         bubbles.refresh_citation_files(meta.get("idea_bubbles", []))
         return pdf_id
 
 
 def fetch_and_save_asset(home: Path, url: str, title: str = "",
-                         tags: list[str] | None = None) -> str:
+                         tags: list[str] | None = None, bibliography: str = "") -> str:
     """Download a PDF from ``url`` and store it as a new asset. Returns the new pdf_id.
 
     Shares ``assets.fetch_pdf_from_url`` with the Slack bot. Raises ``ValueError`` if the link
@@ -49,7 +49,8 @@ def fetch_and_save_asset(home: Path, url: str, title: str = "",
     if fetched is None:
         raise ValueError("That link doesn't point to a PDF.")
     pdf_bytes, filename = fetched
-    return save_asset(home, pdf_bytes, filename, title=title, tags=tags, url_source=url)
+    return save_asset(home, pdf_bytes, filename, title=title, tags=tags,
+                      url_source=url, bibliography=bibliography)
 
 
 def list_assets(home: Path) -> list[dict]:
@@ -57,6 +58,7 @@ def list_assets(home: Path) -> list[dict]:
         out = []
         for meta in assets.list_assets():
             meta = dict(meta)
+            meta.pop("suggested_tags", None)  # legacy auto-suggestions are no longer surfaced
             meta["bubble_scores"] = assets.bubble_scores(meta)
             out.append(meta)
         return out
@@ -65,6 +67,7 @@ def list_assets(home: Path) -> list[dict]:
 def get_asset(home: Path, pdf_id: str) -> dict:
     with paths.use_root(home):
         meta = assets.load_meta(pdf_id)
+        meta.pop("suggested_tags", None)  # legacy auto-suggestions are no longer surfaced
         meta["bubble_scores"] = assets.bubble_scores(meta)
         meta["bubble_memberships"] = bubbles.memberships_for_asset(pdf_id)
         return meta
@@ -112,6 +115,26 @@ def asset_pdf_path(home: Path, pdf_id: str) -> Path:
 def asset_summary(home: Path, pdf_id: str) -> str:
     with paths.use_root(home):
         return assets.get_summary(pdf_id)
+
+
+class ModelUnavailableError(RuntimeError):
+    """Raised when a requested LLM action has no usable active provider."""
+
+
+def resummarize_asset(home: Path, pdf_id: str) -> str:
+    """Refresh an asset's cached summary with the workspace owner's active model."""
+    with paths.use_root(home):
+        if not assets.exists(pdf_id):
+            raise FileNotFoundError(pdf_id)
+        health = models.health_check(home, live=True)
+        if not health.get("ok"):
+            raise ModelUnavailableError("No working active LLM is available. " +
+                                        health.get("message", "Configure a model in Settings."))
+        summary = tagger.summarize_pdf(home, pdf_id)
+        if not summary.strip():
+            raise ValueError("This PDF has no extractable text to summarize.")
+        assets.update_asset(pdf_id, summarized=True)
+        return summary
 
 
 def attention_queue(home: Path) -> list[dict]:
@@ -261,40 +284,7 @@ def get_page(home: Path, slug: str, page_slug: str) -> str:
 def save_page(home: Path, slug: str, page_slug: str, content: str,
               base_mtime: "float | None" = None) -> float:
     with paths.use_root(home):
-        _validate_page_citations(slug, content)
         return bubbles.save_page(slug, page_slug, content, base_mtime)
-
-
-def _citation_keys(content: str) -> list[str]:
-    keys: list[str] = []
-    for m in _CITE_REF_RE.finditer(content or ""):
-        keys.extend(k.strip() for k in m.group(1).split(",") if k.strip())
-    return keys
-
-
-def _validate_page_citations(slug: str, content: str) -> None:
-    cited = set(_citation_keys(content))
-    if not cited:
-        return
-    bubble_keys: set[str] = set()
-    global_keys: dict[str, dict] = {}
-    for meta in assets.list_assets():
-        keys = assets.bibtex_keys(meta.get("bibliography", ""))
-        if slug in meta.get("idea_bubbles", []):
-            bubble_keys.update(keys)
-        for key in keys:
-            global_keys.setdefault(key, meta)
-    unavailable = sorted(cited - bubble_keys)
-    if not unavailable:
-        return
-    key = unavailable[0]
-    meta = global_keys.get(key)
-    if meta:
-        title = meta.get("title") or meta.get("filename") or meta.get("pdf_id", key)
-        raise CitationValidationError(
-            f"Cannot cite {key!r} in this bubble because asset {title!r} is not attached to it.")
-    raise CitationValidationError(
-        f"Cannot cite {key!r}: no asset in this bubble has that BibTeX key.")
 
 
 def create_page(home: Path, slug: str, title: str) -> str:

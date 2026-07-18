@@ -80,7 +80,8 @@ def _atomic_write(path, text: str) -> None:
 # Create
 # --------------------------------------------------------------------------- #
 def save_asset(pdf_bytes: bytes, filename: str, title: str = "",
-               tags: list[str] | None = None, url_source: str = "") -> str:
+               tags: list[str] | None = None, url_source: str = "",
+               bibliography: str = "") -> str:
     """Write a new PDF + its meta.yaml. Returns the new pdf_id."""
     pdf_id = secrets.token_hex(6)  # 12 hex chars
     adir = paths.asset_dir(pdf_id)
@@ -96,13 +97,12 @@ def save_asset(pdf_bytes: bytes, filename: str, title: str = "",
         "idea_bubbles": [slug_of(t) for t in tags],
         "bubble_scores": {slug_of(t): 5 for t in tags},
         "attention_flag": True,
-        "suggested_tags": [],
         "summarized": False,
         "extracted_title": "",
         "authors": [],
         "metadata_extracted": False,
         "notes": "",
-        "bibliography": "",
+        "bibliography": bibliography.strip(),
         "date_added": _now_iso(),
     }
     save_meta(pdf_id, meta)
@@ -158,7 +158,7 @@ def update_asset(pdf_id: str, **fields) -> dict:
             meta["idea_bubbles"] = slugs
             meta["bubble_scores"] = {slug: int(old_scores.get(slug, 5)) for slug in slugs}
             fields.pop("tags")
-        for k in ("title", "notes", "url_source", "attention_flag", "suggested_tags", "bibliography",
+        for k in ("title", "notes", "url_source", "attention_flag", "bibliography",
                   "extracted_title", "authors", "metadata_extracted", "summarized"):
             if k in fields and fields[k] is not None:
                 meta[k] = fields[k]
