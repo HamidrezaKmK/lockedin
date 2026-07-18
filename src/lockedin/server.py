@@ -503,7 +503,7 @@ blockquote p{{margin:5px 0}}
 <button id="theme-cycle" onclick="cycleTheme()" title="Cycle theme">🌙</button>
 <nav><b>{name}</b> &nbsp;|&nbsp; {nav_links}</nav>
 <div id="content"></div>
-<footer class="page-credit">Made with 💜 + 🤖 by <a href="https://github.com/HamidrezaKmK" target="_blank" rel="noopener">HamidrezaKmK</a></footer>
+<footer class="page-credit">Made with 💜 + 🤖 by a PhD student</footer>
 <div id="copied">🔗 Link copied</div>
 <script>
 (function(){{

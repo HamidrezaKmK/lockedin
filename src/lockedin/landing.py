@@ -83,7 +83,7 @@ DEFAULT_LANDING: dict[str, Any] = {
              "command": "lockedin-scientist <codex|claude|agy> <bubble-slug>"},
         ],
     },
-    "footer": "Made for focused research sessions by HamidrezaKmK.",
+    "footer": "Made for focused research sessions by a PhD student",
 }
 
 
