@@ -437,6 +437,9 @@ def handle(event: dict, say) -> None:
         try:
             rows = http.get(f"{URL}/api/workspaces").raise_for_status().json().get("workspaces", [])
         except Exception as e:
+            if _is_unauthorized(e):
+                _ask_reauth(uid, say)
+                return
             say(f"Couldn't load workspaces: {e}"); return
         active = _active_workspace.get(uid, {}).get("id")
         say("Your workspaces:\n" + "\n".join(f"{i+1}. *{w['name']}* ({w['role']})" + (" ← active" if w['id']==active else "") for i,w in enumerate(rows)) + "\n\nReply with a number to switch.")
