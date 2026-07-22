@@ -53,6 +53,12 @@ def _slack_headers() -> dict[str, str]:
     return {"X-Lockedin-Slack-Secret": SLACK_SECRET} if SLACK_SECRET else {}
 
 
+def _asset_title(filename: str) -> str:
+    """Provide the required Library title when Slack only supplies a filename."""
+    stem = os.path.splitext(os.path.basename(filename or "upload.pdf"))[0]
+    return stem.replace("_", " ").replace("-", " ").strip() or "Untitled PDF"
+
+
 def _login(username: str, password: str, uid: str = "") -> httpx.Client:
     http = httpx.Client(timeout=60, follow_redirects=True)
     r = http.post(f"{URL}/api/login", json={"username": username, "password": password})
@@ -454,12 +460,16 @@ def handle(event: dict, say) -> None:
         if not url:
             continue
         try:
-            data = http.get(
+            download = http.get(
                 url, headers={"Authorization": f"Bearer {event.get('_bot_token', '')}"}
-            ).content
+            )
+            download.raise_for_status()
+            data = download.content
+            filename = f.get("name", "upload.pdf")
             http.post(
                 f"{URL}/api/assets/upload",
-                files={"file": (f.get("name", "upload.pdf"), data, "application/pdf")},
+                files={"file": (filename, data, "application/pdf")},
+                data={"title": _asset_title(filename)},
             ).raise_for_status()
             say(f"Uploaded *{f.get('name', 'file')}* — auto-tagging in background.")
         except Exception as e:
@@ -484,7 +494,7 @@ def handle(event: dict, say) -> None:
                 http.post(
                     f"{URL}/api/assets/upload",
                     files={"file": (name, data, "application/pdf")},
-                    data={"url_source": link},
+                    data={"title": _asset_title(name), "url_source": link},
                 ).raise_for_status()
                 say(f"📎 Added *{name}* to your assets — it's in the attention queue for tagging.")
             except Exception as e:

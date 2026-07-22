@@ -193,6 +193,14 @@ def apply_writes(home: Path, writes: list[dict]) -> dict:
             conflicts.append({"path": rel, "reason": "stale revision", "revision": revision(current),
                               "content_b64": base64.b64encode(current).decode("ascii")})
             continue
+        # A blank local mirror must never silently erase a populated report page or figure.
+        # Clearing content remains possible in the web editor, where it is an explicit action;
+        # Scientist clients receive a conflict and can recover their mirror instead.
+        if not raw and current:
+            conflicts.append({"path": rel, "reason": "refusing to replace non-empty content with an empty sync write",
+                              "revision": revision(current),
+                              "content_b64": base64.b64encode(current).decode("ascii")})
+            continue
         target.parent.mkdir(parents=True, exist_ok=True)
         tmp = target.with_suffix(target.suffix + ".tmp")
         tmp.write_bytes(raw)

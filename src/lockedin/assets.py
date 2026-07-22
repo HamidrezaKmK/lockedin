@@ -27,6 +27,7 @@ from . import paths
 MAX_PDF_BYTES = 50 * 1024 * 1024  # 50 MB
 _META_LOCKS: dict[str, threading.RLock] = {}
 _META_LOCKS_GUARD = threading.Lock()
+_DOI_RE = re.compile(r'10\.\d{4,9}/[-._;()/:A-Z0-9]+', re.IGNORECASE)
 
 
 def _meta_lock(pdf_id: str) -> threading.RLock:
@@ -37,6 +38,37 @@ def _meta_lock(pdf_id: str) -> threading.RLock:
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _open_access_pdf_fallback(url: str) -> str | None:
+    """Find a repository PDF for a DOI when the publisher blocks automated downloads."""
+    match = _DOI_RE.search(unquote(url))
+    if not match:
+        return None
+    doi = match.group(0).rstrip(".,;)")
+    try:
+        response = httpx.get(f"https://api.openalex.org/works/https://doi.org/{doi}",
+                             timeout=10, headers={"User-Agent": "lockedin"})
+        response.raise_for_status()
+        work = response.json()
+    except (httpx.HTTPError, ValueError):
+        return None
+    locations = [work.get("best_oa_location"), *(work.get("locations") or [])]
+    seen: set[str] = set()
+    for location in locations:
+        if not isinstance(location, dict):
+            continue
+        candidate = str(location.get("pdf_url") or "").strip()
+        landing = str(location.get("landing_page_url") or "").strip()
+        parsed = urlparse(landing)
+        if not candidate and parsed.netloc.lower().endswith("hal.science"):
+            record = parsed.path.rstrip("/")
+            if re.fullmatch(r"/hal-\d+", record):
+                candidate = f"{parsed.scheme or 'https'}://{parsed.netloc}{record}/document"
+        if candidate and candidate not in seen:
+            seen.add(candidate)
+            return candidate
+    return None
 
 
 def fetch_pdf_from_url(url: str) -> tuple[bytes, str] | None:
@@ -51,7 +83,15 @@ def fetch_pdf_from_url(url: str) -> tuple[bytes, str] | None:
     """
     resp = httpx.get(url, follow_redirects=True, timeout=30,
                      headers={"User-Agent": "lockedin"})
-    resp.raise_for_status()
+    try:
+        resp.raise_for_status()
+    except httpx.HTTPStatusError:
+        fallback = _open_access_pdf_fallback(url)
+        if not fallback:
+            raise
+        resp = httpx.get(fallback, follow_redirects=True, timeout=30,
+                         headers={"User-Agent": "lockedin"})
+        resp.raise_for_status()
     data = resp.content
     if len(data) > MAX_PDF_BYTES:
         raise ValueError("file is larger than the 50 MB limit")

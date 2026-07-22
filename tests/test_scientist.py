@@ -212,6 +212,18 @@ class SafeSyncBoundaryTest(unittest.TestCase):
         self.assertEqual(current, b"website version")
         self.assertEqual(base64.b64decode(result["conflicts"][0]["content_b64"]), b"website version")
 
+    def test_empty_scientist_write_cannot_erase_existing_content(self):
+        with workspace() as (home, slug):
+            rel = f"REPORTS/{slug}/pages/overview.md"
+            (home / rel).write_bytes(b"important report")
+            result = scientist_sync.apply_writes(home, [{
+                "path": rel, "base_revision": scientist_sync.revision(b"important report"),
+                "content_b64": base64.b64encode(b"").decode(),
+            }])
+        self.assertEqual(result["applied"], [])
+        self.assertIn("refusing to replace", result["conflicts"][0]["reason"])
+        self.assertEqual(base64.b64decode(result["conflicts"][0]["content_b64"]), b"important report")
+
 
 class ScientistClientTest(unittest.TestCase):
     def test_terminal_colours_can_be_disabled_or_forced(self):

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>lockedin — research assistant</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔒</text></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -611,6 +611,9 @@
 
   /* ── Mobile ── */
   @media (max-width:700px){
+    /* Safari zooms the viewport when focusing a form field below 16px. Keep every editable
+       control at the platform threshold; the viewport declaration above also disables pinch zoom. */
+    input,textarea,select{font-size:16px!important}
     /* On phones the whole page scrolls naturally instead of a locked app shell.
        overflow-x:clip is a safety net: it kills any horizontal page scroll (which would
        otherwise let a too-wide child shift content left and clip the left edge) without
@@ -635,6 +638,18 @@
     /* main scrolls with the page */
     #main{height:auto;overflow:visible;padding:14px 12px}
     #main.detailmode{height:auto;overflow:visible;min-height:0;padding:12px 10px 84px}
+    /* A bubble is an editor workspace, not a document page: keep the app frame fixed and let
+       the editor/preview own scrolling. This removes Safari's extra page-level scroll handle. */
+    #app.detail-open{height:var(--vvh);min-height:var(--vvh);overflow:hidden}
+    /* The Papers/Chat controls are intentionally floating controls. Do not reserve page space
+       for them: that would shrink the bubble field and make the controls look detached. */
+    #app.detail-open #main.detailmode{height:100%;overflow:hidden;padding:12px 10px 0}
+    #app.detail-open #detail{display:flex;flex:1;min-height:0}
+    #app.detail-open #detail>.editor-pane{height:auto;min-height:0;flex:1}
+    /* Safari can still expose the document scroller even when the app itself is clipped. Lock
+       both document roots while a bubble is open; preview/editor panes remain the only scrollers. */
+    html:has(body.detail-open),body.detail-open{height:var(--vvh);overflow:hidden!important;overscroll-behavior:none}
+    body.detail-open #app{height:var(--vvh);min-height:var(--vvh);overflow:hidden}
     #app.bubble-focus{height:var(--vvh);min-height:var(--vvh);overflow:hidden}
     #app.bubble-focus #main.detailmode{position:fixed;inset:0;height:auto;min-height:0;padding:0;overflow:hidden}
     /* Mobile focus is deliberately a reader, not a compressed version of the editor. Keeping
@@ -1434,6 +1449,8 @@
     m.innerHTML="";
     m.dataset.renderVersion=String(version);
     m.classList.toggle("detailmode",detail);
+    $("#app").classList.toggle("detail-open",detail);
+    document.body.classList.toggle("detail-open",detail);
     return {m,version};
   }
   const isCurrentRender=version=>version===S.renderVersion;
@@ -2186,7 +2203,7 @@
     renderFiltered();
     m.append(filters,grid);
   }
-  function assetCard(a){
+  function assetCard(a,{returnTo="assets"}={}){
     const c=el("div",{class:"acard"});
     const paperTitle=a.extracted_title||a.title||"Extracting paper title…";
     const titleBox=el("div",{class:"acard-title"},el("h4",{},paperTitle));
@@ -2214,9 +2231,12 @@
         const next=!a.attention_flag;
         await api("/api/assets/"+a.pdf_id,{method:"PATCH",body:JSON.stringify({attention_flag:next})});
         toast(next?"Added to attention queue":"Removed from attention queue");
-        viewAssets(); refreshAttnCount();
-      }},a.attention_flag?"Clear queue":"Queue")));
-    c.onclick=()=>openAssetEditor(a);
+        (returnTo==="attention"?viewAttention:viewAssets)(); refreshAttnCount();
+      }},a.attention_flag?"Clear queue":"Queue"),
+      el("button",{class:"ghost small",onclick:e=>{
+        e.stopPropagation(); openAssetEditor(a,{returnTo});
+      }},"Manage")));
+    c.onclick=()=>openAssetEditor(a,{returnTo});
     return c;
   }
   function renderAssetTags(a,{emptyText=""}={}){
@@ -4218,16 +4238,7 @@
     loading.remove();
     if(!r.assets.length){ m.append(el("div",{class:"muted"},"Nothing needs your attention. 🎉")); return; }
     const grid=el("div",{class:"grid"});
-    r.assets.forEach(a=>{
-      const c=el("div",{class:"acard"});
-      c.append(el("h4",{},a.title||a.filename||a.pdf_id));
-      c.append(renderAssetTags(a,{emptyText:"No bubbles assigned yet."}));
-      c.append(el("div",{class:"row",style:"margin-top:10px"},
-        el("a",{href:workspaceUrl("/api/assets/"+a.pdf_id+"/pdf"),target:"_blank",onclick:e=>e.stopPropagation()},
-          el("button",{class:"primary small"},"Open PDF")),
-        el("button",{class:"small",onclick:(e)=>{e.stopPropagation();openAssetEditor(a,{returnTo:"attention"});}},"Manage")));
-      grid.append(c);
-    });
+    r.assets.forEach(a=>grid.append(assetCard(a,{returnTo:"attention"})));
     m.append(grid);
   }
 
