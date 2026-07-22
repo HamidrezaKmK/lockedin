@@ -1328,6 +1328,8 @@ def build_app():
             raise HTTPException(status_code=409, detail=str(e))
         except assets.BibtexError as e:
             raise HTTPException(status_code=400, detail=str(e))
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
         # any user-supplied tag becomes an approved bubble immediately
         if tag_list:
             service.register_user_tags(home, tag_list)

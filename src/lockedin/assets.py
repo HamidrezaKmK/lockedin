@@ -24,7 +24,7 @@ from slugify import slugify
 
 from . import paths
 
-MAX_PDF_BYTES = 50 * 1024 * 1024  # 50 MB
+MAX_PDF_BYTES = 200 * 1024 * 1024  # 200 MB
 _META_LOCKS: dict[str, threading.RLock] = {}
 _META_LOCKS_GUARD = threading.Lock()
 _DOI_RE = re.compile(r'10\.\d{4,9}/[-._;()/:A-Z0-9]+', re.IGNORECASE)
@@ -61,9 +61,12 @@ def _open_access_pdf_fallback(url: str) -> str | None:
         candidate = str(location.get("pdf_url") or "").strip()
         landing = str(location.get("landing_page_url") or "").strip()
         parsed = urlparse(landing)
-        if not candidate and parsed.netloc.lower().endswith("hal.science"):
+        host = (parsed.hostname or "").lower()
+        # OpenAlex records HAL's repository landing URL rather than its direct PDF URL.  HAL
+        # uses several valid prefixes (for example ``hal-`` and ``inria-``), not just ``hal-``.
+        if not candidate and (host == "hal.science" or host.endswith(".hal.science")):
             record = parsed.path.rstrip("/")
-            if re.fullmatch(r"/hal-\d+", record):
+            if re.fullmatch(r"/[a-z0-9]+-\d+(?:v\d+)?", record, re.IGNORECASE):
                 candidate = f"{parsed.scheme or 'https'}://{parsed.netloc}{record}/document"
         if candidate and candidate not in seen:
             seen.add(candidate)
@@ -94,7 +97,7 @@ def fetch_pdf_from_url(url: str) -> tuple[bytes, str] | None:
         resp.raise_for_status()
     data = resp.content
     if len(data) > MAX_PDF_BYTES:
-        raise ValueError("file is larger than the 50 MB limit")
+        raise ValueError("file is larger than the 200 MB limit")
     ctype = resp.headers.get("content-type", "").split(";")[0].strip().lower()
     # Trust the magic bytes over the header — servers often mislabel PDFs.
     if not (ctype == "application/pdf" or data[:5] == b"%PDF-"):
@@ -123,6 +126,8 @@ def save_asset(pdf_bytes: bytes, filename: str, title: str = "",
                tags: list[str] | None = None, url_source: str = "",
                bibliography: str = "") -> str:
     """Write a new PDF + its meta.yaml. Returns the new pdf_id."""
+    if len(pdf_bytes) > MAX_PDF_BYTES:
+        raise ValueError("file is larger than the 200 MB limit")
     pdf_id = secrets.token_hex(6)  # 12 hex chars
     adir = paths.asset_dir(pdf_id)
     adir.mkdir(parents=True, exist_ok=True)

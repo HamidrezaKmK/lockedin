@@ -21,6 +21,7 @@ import tempfile
 import unittest
 from contextlib import contextmanager
 from pathlib import Path
+from unittest.mock import patch
 
 from lockedin import assets, bubbles, models, paths, reports, server, service, tagger
 
@@ -281,6 +282,27 @@ class BubbleRelevance(unittest.TestCase):
             models.stream_chat = orig
         self.assertIn("## Relevance 5", captured["system"])
         self.assertIn("### [Relevance 5] Attached", captured["system"])
+
+
+class PublisherPdfFallback(unittest.TestCase):
+    def test_hal_inria_repository_record_becomes_direct_pdf_url(self):
+        class Response:
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {
+                    "best_oa_location": {
+                        "landing_page_url": "https://inria.hal.science/inria-00274768",
+                        "pdf_url": None,
+                    },
+                    "locations": [],
+                }
+
+        with patch("lockedin.assets.httpx.get", return_value=Response()):
+            fallback = assets._open_access_pdf_fallback(
+                "https://dl.acm.org/doi/pdf/10.1145/1399504.1360691?download=true")
+        self.assertEqual(fallback, "https://inria.hal.science/inria-00274768/document")
 
 
 class AssetAttentionDefaults(unittest.TestCase):
