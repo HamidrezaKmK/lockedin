@@ -4,11 +4,25 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from lockedin import server, service
 
 
 class AestheticsConfigTests(unittest.TestCase):
+    def test_landing_endpoint_reads_current_yaml_instead_of_startup_snapshot(self):
+        app = server.build_app()
+        endpoint = next(route.endpoint for route in app.routes if route.path == "/api/landing")
+        with patch("lockedin.server.landing.load_landing", return_value={"hero": {"kicker": "Fresh"}}):
+            response = endpoint()
+        self.assertIn(b"Fresh", response.body)
+
+    def test_landing_always_offers_the_repository_clone_call_to_action(self):
+        source = (Path(server.WEB_DIR) / "index.html").read_text()
+        self.assertIn('class="open-source-panel"', source)
+        self.assertIn("git clone https://github.com/HamidrezaKmK/lockedin.git", source)
+        self.assertIn('class="clone-link"', source)
+
     def test_enabled_themes_persist_and_require_one_choice(self):
         with tempfile.TemporaryDirectory() as d:
             home = Path(d)
@@ -26,6 +40,15 @@ class AestheticsConfigTests(unittest.TestCase):
             show_back=False, themes=["dark", "pink"])
         self.assertIn('const THEMES=["dark", "pink"];', html)
         self.assertNotIn('const THEMES=["dark", "light", "pink", "techno", "pearl"];', html)
+
+    def test_private_preview_keeps_its_workspace_on_page_links(self):
+        html = server._render_preview_html(
+            name="Test", page="overview", all_pages=[
+                {"page_slug": "overview", "title": "Overview"},
+                {"page_slug": "methods", "title": "Methods"},
+            ], content="See [[methods]]", slug="test", link_base="/api/bubbles/test/preview",
+            asset_base="/api/bubbles/test/assets", show_back=True, workspace_id="research")
+        self.assertIn('/api/bubbles/test/preview/methods?workspace=research', html)
 
     def test_preview_restarts_gif_figures_and_supports_centered_text(self):
         html = server._render_preview_html(

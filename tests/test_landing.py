@@ -90,15 +90,13 @@ privacy:
         self.assertEqual(cfg["components"]["features"][0]["text"], "")
         self.assertEqual(cfg["privacy"]["bullets"], ["one", "2"])
 
-    def test_server_uses_startup_snapshot(self):
+    def test_server_reloads_landing_yaml_on_each_request(self):
         self.write_landing("footer: First\n")
         app = server.build_app()
         endpoint = next(r.endpoint for r in app.routes if getattr(r, "path", "") == "/api/landing")
         self.assertIn(b'"footer":"First"', endpoint().body)
         self.write_landing("footer: Second\n")
-        self.assertIn(b'"footer":"First"', endpoint().body)
-        endpoint2 = next(r.endpoint for r in server.build_app().routes if getattr(r, "path", "") == "/api/landing")
-        self.assertIn(b'"footer":"Second"', endpoint2().body)
+        self.assertIn(b'"footer":"Second"', endpoint().body)
 
 
 if __name__ == "__main__":

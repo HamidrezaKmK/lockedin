@@ -21,6 +21,7 @@ import threading
 import time
 from pathlib import Path
 from typing import Optional
+from urllib.parse import quote
 
 from . import assets, auth, bubbles, landing, models, paths, service, tagger, workspaces
 from . import scientist_sync
@@ -290,6 +291,7 @@ def _references_markdown(refs: dict) -> str:
 
 def _render_preview_html(*, name: str, page: str, all_pages: list, content: str, slug: str,
                          link_base: str, asset_base: str, show_back: bool,
+                         workspace_id: "str | None" = None,
                          todos: "dict | None" = None,
                          todo_link_base: "str | None" = None,
                          macros: "dict | None" = None,
@@ -306,8 +308,15 @@ def _render_preview_html(*, name: str, page: str, all_pages: list, content: str,
                      page slug, used to look up its theorem-counter offset. If omitted, refs are
                      built from this page alone (single-page fallback for tests/standalone use).
     """
+    # Private preview pages receive their workspace through a URL query parameter because a
+    # new browser tab cannot carry the SPA's request header. Keep it on every page/wikilink;
+    # otherwise the first preview page is right but navigation falls back to Personal workspace.
+    def page_url(page_slug: str) -> str:
+        url = f"{link_base}/{page_slug}"
+        return f"{url}?workspace={quote(workspace_id, safe='')}" if workspace_id else url
+
     nav_links = " &nbsp;|&nbsp; ".join(
-        f'<a href="{link_base}/{p["page_slug"]}">{p["title"]}</a>' for p in all_pages)
+        f'<a href="{page_url(p["page_slug"])}">{p["title"]}</a>' for p in all_pages)
 
     def resolve_wikilink(m):
         raw = m.group(1).strip()
@@ -322,7 +331,7 @@ def _render_preview_html(*, name: str, page: str, all_pages: list, content: str,
                       if p["page_slug"] == target or p["title"].lower() == target.lower()), None)
         if match:
             label = display if display else match["title"]
-            return f'[{label}]({link_base}/{match["page_slug"]})'
+            return f'[{label}]({page_url(match["page_slug"])})'
         return m.group(0)
 
     # Resolve @<id> TODO references to a label "@<id> <title>" (strikethrough if done). With a
@@ -692,7 +701,6 @@ def build_app():
     # One-time-compatible, idempotent repair for share links created before content became
     # workspace-owned. Existing links retain their tokens and now target Personal workspaces.
     service.migrate_share_index_to_workspaces()
-    landing_content = landing.load_landing()
     if CROSS_SITE:
         app.add_middleware(CORSMiddleware, allow_origins=PUBLIC_ORIGINS,
                            allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
@@ -966,7 +974,9 @@ def build_app():
 
     @app.get("/api/landing")
     def get_landing():
-        return JSONResponse(landing_content, headers={"Cache-Control": "no-cache"})
+        # This is deliberately read at request time: landing.yaml is the site's editable public
+        # copy, so changing it should be visible after a browser refresh without a deploy/restart.
+        return JSONResponse(landing.load_landing(), headers={"Cache-Control": "no-cache"})
 
     @app.get("/api/help")
     def get_help():
@@ -1642,6 +1652,7 @@ def build_app():
             all_pages=visible_pages, content=service.get_page(home, slug, page),
             slug=slug, link_base=f"/api/bubbles/{slug}/preview",
             asset_base=f"/api/bubbles/{slug}/assets", show_back=True,
+            workspace_id=active_workspace_id(user),
             todos={t["id"]: t for t in service.list_todos(home)},
             todo_link_base="/#todos",  # owner is logged in → link opens the SPA TODO manager
             macros=service.load_math_config(home).get("macros", {}),

@@ -179,11 +179,20 @@
   .feature-icon{width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;
     background:color-mix(in srgb,var(--accent) 13%,var(--panel2));border:1px solid color-mix(in srgb,var(--accent) 30%,var(--line));
     margin-bottom:12px}
-  .privacy-panel{display:grid;grid-template-columns:minmax(0,.72fr) minmax(0,1fr);gap:28px;align-items:start}
-  .privacy-panel h2{margin:0 0 10px}
-  .privacy-list{display:grid;gap:10px;margin:0;padding:0;list-style:none}
-  .privacy-list li{padding-left:18px;position:relative;color:var(--muted);font-size:13px;line-height:1.55}
-  .privacy-list li::before{content:"";position:absolute;left:0;top:.72em;width:7px;height:7px;border-radius:50%;background:var(--accent2)}
+  .open-source-panel{position:relative;overflow:hidden;display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,.8fr);gap:26px;align-items:center;
+    background:linear-gradient(135deg,color-mix(in srgb,var(--accent2) 13%,var(--panel)),var(--panel));border:1px solid color-mix(in srgb,var(--accent2) 35%,var(--line));
+    border-radius:14px;padding:clamp(20px,3vw,30px);box-shadow:var(--shadow)}
+  .open-source-panel::after{content:"";position:absolute;width:260px;height:260px;right:-100px;top:-150px;border-radius:50%;pointer-events:none;
+    background:radial-gradient(circle,color-mix(in srgb,var(--accent) 18%,transparent),transparent 68%)}
+  .open-source-panel>*{position:relative}
+  .open-source-panel h2{margin:0 0 9px}
+  .open-source-panel p{margin:0;color:var(--muted);font-size:14px;line-height:1.6;max-width:650px}
+  .clone-box{display:grid;gap:10px;padding:15px;background:color-mix(in srgb,var(--panel) 88%,transparent);border:1px solid var(--line);border-radius:10px}
+  .clone-box small{font-family:var(--font-ui);font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--accent2)}
+  .clone-command{display:block;overflow:auto;white-space:nowrap;padding:9px 10px;border-radius:7px;background:var(--bg);border:1px solid var(--line);font-family:var(--font-mono);font-size:11px;color:var(--ink)}
+  .clone-link{display:inline-flex;align-items:center;justify-content:center;gap:7px;text-decoration:none;font-family:var(--font-ui);font-size:13px;font-weight:700;
+    color:#fff;background:var(--accent2);padding:10px 13px;border-radius:8px;transition:transform .15s ease,filter .15s ease}
+  .clone-link:hover{color:#fff;transform:translateY(-1px);filter:brightness(1.08)}
   .landing-footer{padding:24px 0 38px;color:var(--muted);font-size:12px}
   /* Installed Scientist client — commands stay copyable as a single shell line.
      Narrow screens scroll the command itself instead of wrapping it. */
@@ -729,8 +738,9 @@
     .landing-section h2{font-size:23px;margin-bottom:8px}
     .workflow-grid,.feature-grid,.scientist-platforms,.scientist-steps{grid-template-columns:minmax(0,1fr)}
     .workflow-step,.feature-card{min-height:0}
-    .privacy-panel{display:block}
-    .privacy-panel h2{font-size:23px}
+    .open-source-panel{display:block}
+    .open-source-panel h2{font-size:23px}
+    .clone-box{margin-top:18px}
     .scientist-install{padding:18px 14px}
   }
 </style>
@@ -824,16 +834,16 @@
       </section>
 
       <section class="landing-section" aria-labelledby="privacy-title">
-        <div class="privacy-panel">
+        <div class="open-source-panel">
           <div>
-            <h2 id="privacy-title">Local and private-first by default</h2>
-            <p>lockedin is designed for research notes that should stay close to the machine, account, and model configuration you control.</p>
+            <h2 id="privacy-title">Open source, yours to shape</h2>
+            <p>Run lockedin on your own machine, adapt it to your research group, and keep ownership of the workbench where your ideas take shape.</p>
           </div>
-          <ul class="privacy-list">
-            <li>User data stays behind login; public share pages are unlisted and read-only.</li>
-            <li>Standard accounts can bring their own OpenAI, Claude, or Gemini API key. Server-side Qwen can be limited to premium users.</li>
-            <li>For remote access, run the app behind your own HTTPS tunnel or domain setup instead of exposing the local server directly.</li>
-          </ul>
+          <div class="clone-box">
+            <small>Make it your own</small>
+            <code class="clone-command">git clone https://github.com/HamidrezaKmK/lockedin.git</code>
+            <a class="clone-link" href="https://github.com/HamidrezaKmK/lockedin" target="_blank" rel="noopener noreferrer">⌘ Clone the repository <span aria-hidden="true">↗</span></a>
+          </div>
         </div>
       </section>
 
@@ -1079,15 +1089,10 @@
       el("br"),
       el("span",{},f.text||"")));
 
-      const privacy=c.privacy||{};
+    const privacy=c.privacy||{};
     setText("#privacy-title",privacy.title);
     const privacyText=$("#privacy-title")&&$("#privacy-title").parentElement.querySelector("p");
     if(privacyText&&privacy.text!=null) privacyText.textContent=privacy.text;
-    const list=$(".privacy-list");
-    if(list&&Array.isArray(privacy.bullets)){
-      list.innerHTML="";
-      privacy.bullets.forEach(b=>list.append(el("li",{},b||"")));
-    }
 
     const scientist=c.scientist||{};
     setText("#scientist-install-title",scientist.title);

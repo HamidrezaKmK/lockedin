@@ -55,8 +55,8 @@ DEFAULT_LANDING: dict[str, Any] = {
         ],
     },
     "privacy": {
-        "title": "Local and private-first by default",
-        "text": "lockedin is designed for research notes that should stay close to the machine, account, and model configuration you control.",
+        "title": "Open source, yours to shape",
+        "text": "Run lockedin on your own machine, adapt it to your research group, and keep ownership of the workbench where your ideas take shape.",
         "bullets": [
             "User data stays behind login; public share pages are unlisted and read-only.",
             "Standard accounts can bring their own OpenAI, Claude, or Gemini API key. Server-side Qwen can be limited to premium users.",
