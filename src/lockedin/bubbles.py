@@ -550,6 +550,106 @@ def get_page(slug: str, page_slug: str) -> str:
     return p.read_text() if p.exists() else ""
 
 
+# --------------------------------------------------------------------------- #
+# Private review comments — deliberately separate from Markdown/source previews
+# --------------------------------------------------------------------------- #
+def _comments(slug: str, page_slug: str) -> dict:
+    path = paths.bubble_page_comments_path(slug, page_slug)
+    if not path.exists():
+        return {"version": 1, "threads": []}
+    try:
+        data = _json.loads(path.read_text())
+        if isinstance(data, dict) and isinstance(data.get("threads"), list):
+            data.setdefault("version", 1)
+            return data
+    except Exception:  # noqa: BLE001 - a damaged sidecar must not break the report
+        pass
+    return {"version": 1, "threads": []}
+
+
+def _save_comments(slug: str, page_slug: str, data: dict) -> float:
+    path = paths.bubble_page_comments_path(slug, page_slug)
+    _atomic_write(path, _json.dumps(data, ensure_ascii=False, indent=2) + "\n")
+    touch_bubble(slug)
+    return path.stat().st_mtime
+
+
+def list_comments(slug: str, page_slug: str) -> dict:
+    """Return private threads for one page; callers must already enforce membership."""
+    return _comments(slug, page_slug)
+
+
+def comments_mtime(slug: str, page_slug: str) -> float:
+    path = paths.bubble_page_comments_path(slug, page_slug)
+    return path.stat().st_mtime if path.exists() else 0
+
+
+def create_comment(slug: str, page_slug: str, author: str, body: str, anchor: dict) -> dict:
+    body = str(body or "").strip()
+    quote = str((anchor or {}).get("quote") or "")
+    if not body:
+        raise ValueError("Comment text required.")
+    if not quote:
+        raise ValueError("Select text to comment on.")
+    now = _now_iso()
+    item = {"id": secrets.token_urlsafe(12), "page_slug": page_slug, "status": "open",
+            "created_at": now, "updated_at": now, "resolved_at": "", "resolved_by": "",
+            "anchor": {"quote": quote, "start": max(0, int((anchor or {}).get("start") or 0)),
+                       "prefix": str((anchor or {}).get("prefix") or "")[-96:],
+                       "suffix": str((anchor or {}).get("suffix") or "")[:96]},
+            "messages": [{"id": secrets.token_urlsafe(12), "author": author, "body": body,
+                          "created_at": now, "edited_at": ""}]}
+    data = _comments(slug, page_slug); data["threads"].append(item)
+    _save_comments(slug, page_slug, data)
+    return item
+
+
+def _thread(data: dict, thread_id: str) -> dict:
+    for item in data.get("threads", []):
+        if item.get("id") == thread_id:
+            return item
+    raise KeyError(thread_id)
+
+
+def reply_comment(slug: str, page_slug: str, thread_id: str, author: str, body: str) -> dict:
+    body = str(body or "").strip()
+    if not body: raise ValueError("Reply text required.")
+    data = _comments(slug, page_slug); item = _thread(data, thread_id); now = _now_iso()
+    msg = {"id": secrets.token_urlsafe(12), "author": author, "body": body,
+           "created_at": now, "edited_at": ""}
+    item.setdefault("messages", []).append(msg); item["updated_at"] = now
+    _save_comments(slug, page_slug, data); return msg
+
+
+def edit_comment_message(slug: str, page_slug: str, thread_id: str, message_id: str,
+                         author: str, body: str) -> dict:
+    body = str(body or "").strip()
+    if not body: raise ValueError("Comment text required.")
+    data = _comments(slug, page_slug); item = _thread(data, thread_id)
+    for msg in item.get("messages", []):
+        if msg.get("id") == message_id:
+            if msg.get("author") != author: raise PermissionError("You can only edit your own comments.")
+            now = _now_iso(); msg["body"] = body; msg["edited_at"] = now; item["updated_at"] = now
+            _save_comments(slug, page_slug, data); return msg
+    raise KeyError(message_id)
+
+
+def set_comment_status(slug: str, page_slug: str, thread_id: str, status: str, actor: str) -> dict:
+    if status not in {"open", "resolved"}: raise ValueError("Invalid comment status.")
+    data = _comments(slug, page_slug); item = _thread(data, thread_id); now = _now_iso()
+    item["status"] = status; item["updated_at"] = now
+    item["resolved_at"] = now if status == "resolved" else ""
+    item["resolved_by"] = actor if status == "resolved" else ""
+    _save_comments(slug, page_slug, data); return item
+
+
+def delete_comment(slug: str, page_slug: str, thread_id: str) -> bool:
+    data = _comments(slug, page_slug); before = len(data["threads"])
+    data["threads"] = [t for t in data["threads"] if t.get("id") != thread_id]
+    if len(data["threads"]) == before: return False
+    _save_comments(slug, page_slug, data); return True
+
+
 _WIKILINK_RE = re.compile(r"\[\[([^\]]+)\]\]")
 
 
@@ -730,6 +830,10 @@ def delete_page(slug: str, page_slug: str) -> bool:
     _save_manifest(slug, data)
     try:
         paths.bubble_page_path(slug, page_slug).unlink()
+    except OSError:
+        pass
+    try:
+        paths.bubble_page_comments_path(slug, page_slug).unlink()
     except OSError:
         pass
     touch_bubble(slug)

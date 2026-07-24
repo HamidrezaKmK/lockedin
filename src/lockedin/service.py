@@ -342,9 +342,35 @@ def page_poll(home: Path, slug: str, page_slug: str) -> dict:
         page_path = paths.bubble_page_path(slug, page_slug)
         manifest_path = paths.bubble_manifest_path(slug)
         page_mtime = page_path.stat().st_mtime if page_path.exists() else 0
+        comments_mtime = bubbles.comments_mtime(slug, page_slug)
         manifest_mtime = manifest_path.stat().st_mtime if manifest_path.exists() else 0
         pages = bubbles.list_pages(slug) if manifest_path.exists() else []
-    return {"page_mtime": page_mtime, "manifest_mtime": manifest_mtime, "pages": pages}
+    return {"page_mtime": page_mtime, "comments_mtime": comments_mtime,
+            "manifest_mtime": manifest_mtime, "pages": pages}
+
+
+def list_comments(home: Path, slug: str, page_slug: str) -> dict:
+    with paths.use_root(home): return bubbles.list_comments(slug, page_slug)
+
+
+def create_comment(home: Path, slug: str, page_slug: str, author: str, body: str, anchor: dict) -> dict:
+    with paths.use_root(home): return bubbles.create_comment(slug, page_slug, author, body, anchor)
+
+
+def reply_comment(home: Path, slug: str, page_slug: str, thread_id: str, author: str, body: str) -> dict:
+    with paths.use_root(home): return bubbles.reply_comment(slug, page_slug, thread_id, author, body)
+
+
+def edit_comment_message(home: Path, slug: str, page_slug: str, thread_id: str, message_id: str, author: str, body: str) -> dict:
+    with paths.use_root(home): return bubbles.edit_comment_message(slug, page_slug, thread_id, message_id, author, body)
+
+
+def set_comment_status(home: Path, slug: str, page_slug: str, thread_id: str, status: str, actor: str) -> dict:
+    with paths.use_root(home): return bubbles.set_comment_status(slug, page_slug, thread_id, status, actor)
+
+
+def delete_comment(home: Path, slug: str, page_slug: str, thread_id: str) -> bool:
+    with paths.use_root(home): return bubbles.delete_comment(slug, page_slug, thread_id)
 
 
 # ---- todos (global per-user, referenced from report pages as @<id>) ----

@@ -890,5 +890,36 @@ class FigureReferences(unittest.TestCase):
         self.assertIn('figure.id="fig-"+encodeURIComponent(label)', html)
 
 
+class PrivateReviewComments(unittest.TestCase):
+    def test_thread_lifecycle_and_author_only_message_editing(self):
+        with temp_home() as home:
+            slug = make_bubble(home)
+            anchor = {"start": 3, "quote": "important text", "prefix": "An ", "suffix": " follows"}
+            thread = service.create_comment(home, slug, "overview", "alice", "Needs a citation", anchor)
+            self.assertEqual(thread["status"], "open")
+            reply = service.reply_comment(home, slug, "overview", thread["id"], "bob", "I will add one")
+            with self.assertRaises(PermissionError):
+                service.edit_comment_message(home, slug, "overview", thread["id"], reply["id"], "alice", "Changed")
+            edited = service.edit_comment_message(home, slug, "overview", thread["id"], reply["id"], "bob", "Citation added")
+            self.assertEqual(edited["body"], "Citation added")
+            service.set_comment_status(home, slug, "overview", thread["id"], "resolved", "alice")
+            data = service.list_comments(home, slug, "overview")
+            self.assertEqual(data["threads"][0]["status"], "resolved")
+            self.assertTrue(service.delete_comment(home, slug, "overview", thread["id"]))
+            self.assertEqual(service.list_comments(home, slug, "overview")["threads"], [])
+
+    def test_deleting_a_page_removes_its_review_sidecar(self):
+        with temp_home() as home:
+            slug = make_bubble(home)
+            page = service.create_page(home, slug, "Draft")
+            service.create_comment(home, slug, page, "alice", "Review this", {"start": 0, "quote": "# Draft"})
+            with paths.use_root(home):
+                comment_path = paths.bubble_page_comments_path(slug, page)
+                self.assertTrue(comment_path.exists())
+            self.assertTrue(service.delete_page(home, slug, page))
+            with paths.use_root(home):
+                self.assertFalse(comment_path.exists())
+
+
 if __name__ == "__main__":
     unittest.main()

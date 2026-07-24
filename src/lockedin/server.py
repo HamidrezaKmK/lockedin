@@ -543,7 +543,9 @@ blockquote p{{margin:5px 0}}
 <div id="copied">🔗 Link copied</div>
 <script>
 (function(){{
-  const THEMES={json.dumps(themes or list(service.THEMES))};
+  // Standalone owner previews and public shares intentionally stay restrained: they only
+  // offer the universal Dark/Light pair, independent of the workspace's editor theme choices.
+  const THEMES={json.dumps(["dark", "light"])};
   const LABELS={{dark:"🌙",light:"☀️",pink:"🦄",techno:"🤖",pearl:"⚪"}};
   window.applyPreviewTheme=function(name){{
     const theme=THEMES.includes(name)?name:THEMES[0];
@@ -807,6 +809,19 @@ def build_app():
 
     class PageOrderIn(BaseModel):
         page_slugs: list[str]
+
+    class CommentCreateIn(BaseModel):
+        body: str
+        anchor: dict
+
+    class CommentReplyIn(BaseModel):
+        body: str
+
+    class CommentEditIn(BaseModel):
+        body: str
+
+    class CommentStatusIn(BaseModel):
+        status: str
 
     class ChatIn(BaseModel):
         messages: list[dict]
@@ -1679,6 +1694,56 @@ def build_app():
     @app.get("/api/bubbles/{slug}/poll")
     def bubble_poll(slug: str, page: str, user: str = Depends(current_user)):
         return service.page_poll(home_of(user), slug, page)
+
+    # ---- private review comments (never used by public preview/share routes) ----
+    @app.get("/api/bubbles/{slug}/pages/{page}/comments")
+    def get_comments(slug: str, page: str, user: str = Depends(current_user)):
+        return service.list_comments(home_of(user), slug, page)
+
+    @app.post("/api/bubbles/{slug}/pages/{page}/comments")
+    def post_comment(slug: str, page: str, body: CommentCreateIn, user: str = Depends(current_user)):
+        try:
+            return {"thread": service.create_comment(home_of(user), slug, page, user, body.body, body.anchor)}
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    @app.post("/api/bubbles/{slug}/pages/{page}/comments/{thread_id}/replies")
+    def post_comment_reply(slug: str, page: str, thread_id: str, body: CommentReplyIn,
+                           user: str = Depends(current_user)):
+        try:
+            return {"message": service.reply_comment(home_of(user), slug, page, thread_id, user, body.body)}
+        except KeyError:
+            raise HTTPException(status_code=404, detail="No such review thread.")
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    @app.patch("/api/bubbles/{slug}/pages/{page}/comments/{thread_id}/messages/{message_id}")
+    def patch_comment_message(slug: str, page: str, thread_id: str, message_id: str,
+                              body: CommentEditIn, user: str = Depends(current_user)):
+        try:
+            return {"message": service.edit_comment_message(home_of(user), slug, page, thread_id, message_id, user, body.body)}
+        except KeyError:
+            raise HTTPException(status_code=404, detail="No such review message.")
+        except PermissionError as e:
+            raise HTTPException(status_code=403, detail=str(e))
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    @app.patch("/api/bubbles/{slug}/pages/{page}/comments/{thread_id}")
+    def patch_comment_status(slug: str, page: str, thread_id: str, body: CommentStatusIn,
+                             user: str = Depends(current_user)):
+        try:
+            return {"thread": service.set_comment_status(home_of(user), slug, page, thread_id, body.status, user)}
+        except KeyError:
+            raise HTTPException(status_code=404, detail="No such review thread.")
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    @app.delete("/api/bubbles/{slug}/pages/{page}/comments/{thread_id}")
+    def del_comment(slug: str, page: str, thread_id: str, user: str = Depends(current_user)):
+        if not service.delete_comment(home_of(user), slug, page, thread_id):
+            raise HTTPException(status_code=404, detail="No such review thread.")
+        return {"ok": True}
 
     @app.patch("/api/bubbles/{slug}/pages/{page}")
     def patch_page(slug: str, page: str, body: PageRenameIn, user: str = Depends(current_user)):

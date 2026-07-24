@@ -41,8 +41,9 @@ On phones, tap **☰** (top-left) to open the sidebar.
 
 Use the theme button in the top bar to cycle the colour scheme. Open
 **⚙️ Settings → Aesthetics** to choose which of **🌙 Dark, ☀️ Light, 🦄 Pink, 🤖 Techno,**
-and **⚪ Pearl** appear in that cycle. Your selection is remembered for your workspace and
-also limits the theme switcher on every public page you share. The landing page is always Dark.
+and **⚪ Pearl** appear in that cycle. Your selection is remembered for your workspace. Owner
+previews and public shared pages deliberately offer only **Dark** and **Light**. The landing page
+is always Dark.
 
 ## Your account
 
@@ -487,10 +488,11 @@ Open any bubble and use the view dropdown in the toolbar:
 **Save**: click the leftmost sync icon in the editor toolbar, or press **Ctrl/⌘+S**. It changes to
 **✎** while there are unsaved edits and **⚠** when a disk conflict needs attention.
 
-The editor toolbar shows: **↶ undo**, **↷ redo**, text colour, **≡ center selected text**, insert table, insert image,
-insert link, the page visibility eye, **☷ Show hidden pages**, and the leftmost sync icon. The eye hides
-or shows the current page in read-only previews and public shares; hidden page tabs stay out of
-the way until you use **☷**, then appear right-aligned in the tab bar.
+From left to right, the editor toolbar shows: the **sync** icon, **💬 Toggle review**, insert image,
+insert table, text colour, **≡ center selected text**, insert link, the page visibility eye,
+**☷ Show hidden pages**, **↶ undo**, and **↷ redo**. The eye hides or shows the current page
+in read-only previews and public shares; hidden page tabs stay out of the way until you use
+**☷**, then appear right-aligned in the tab bar.
 
 Use **⛶** in the page controls to enter a focused workspace that hides the navigation and chat;
 click it again to exit.
@@ -502,6 +504,27 @@ dropdown. Switch between **👁 Read** and **✏️ Edit** right from that dropd
 **↗** link in the top-right corner opens the read-only preview of the current page. Papers and
 the research chat live behind the floating **📚** and **💬** buttons. (Sharing is done from a
 larger screen.)
+
+---
+
+## Review comments
+
+Review comments are private to signed-in members of the active workspace. They are never
+included in read-only previews or unlisted shared links.
+
+On a desktop, switch to **✏️ Edit** or **◧ Split**, then use **💬 Toggle review** in the editor
+toolbar. In Edit mode, Review appears beside the source editor; in Split mode it sits between
+the editor and preview. Read, focused, and mobile views stay free of review UI.
+
+To start a review, select source text and click the coloured **+** in the Review header. The
+selected text receives a subtle yellow highlight in the editor. Click that highlighted text to
+open its thread. Threads are collapsed by default; opening one collapses the others.
+
+The Review header separates **Open** and **Resolved** threads. Workspace members can reply,
+resolve/reopen, or delete a thread. You can double-click only your own comment or reply to edit
+it in place; save with **Ctrl/⌘+Enter** or **Save**. If later edits remove the selected text, the
+thread remains in its original review-list position with an **Unanchored** badge, but no text is
+highlighted. Deleting a report page also removes all of that page's reviews.
 
 ---
 
@@ -619,13 +642,12 @@ proposition, assumption, corollary, and remark labels.
 ## Figures
 
 Every Markdown image in a bubble is numbered in page order and receives a caption beneath it.
-Put a figure label inside the image caption, then refer to it anywhere in the bubble. For
-example, write ![Blue ellipses show level sets of $x^\top C x$ \label{fig:ellipses}](assets/ellipses.png)
-and later write \figref{fig:ellipses}.
+To add a captioned figure, insert an image with descriptive alt text; that text becomes the
+caption in the rendered page. Add a `\\label{fig:your-key}` inside the same alt text when you
+want to refer to the figure elsewhere with `\\figref{fig:your-key}`.
 
-This renders the caption as **Figure 1: Blue ellipses show level sets of ...** and the reference
-as a purple **Figure 1**. Figure numbers and references are bubble-wide, so they
-remain correct across pages. Type \figref{ in the editor to choose an existing figure label.
+Figure numbers and references are bubble-wide, so they remain correct across pages. Type
+`\\figref{` in the editor to choose an existing figure label.
 
 ---
 
@@ -691,8 +713,8 @@ APP_USAGE_BRIEF = (
     "- Reports are multi-page Markdown wikis, one per bubble; the editor is on the left, a "
     "live preview on the right. The user writes the reports themselves.\n"
     "- In Settings → Aesthetics, users choose which themes appear in their top-bar cycle. Those "
-    "same enabled themes are the only choices on owner previews and public share links; the "
-    "landing page is always Dark.\n"
+    "owner previews and public share links offer only Dark and Light; the landing page is "
+    "always Dark.\n"
     "- Math: $...$ inline, $$...$$ display. Number a display equation by putting \\label{name} "
     "inside its $$ block, then reference it with \\eqref{name} (renders as its number). Equation "
     "and theorem (\\thmref) numbers/refs are bubble-wide — they work across pages and inside math.\n"

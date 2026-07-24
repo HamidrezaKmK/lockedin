@@ -33,13 +33,13 @@ class AestheticsConfigTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 service.save_aesthetics_config(home, [])
 
-    def test_shared_preview_receives_only_enabled_themes(self):
+    def test_shared_preview_offers_only_dark_and_light(self):
         html = server._render_preview_html(
             name="Test", page="overview", all_pages=[{"page_slug": "overview", "title": "Overview"}],
             content="# Test", slug="test", link_base="/share/token", asset_base="/share/token/assets",
             show_back=False, themes=["dark", "pink"])
-        self.assertIn('const THEMES=["dark", "pink"];', html)
-        self.assertNotIn('const THEMES=["dark", "light", "pink", "techno", "pearl"];', html)
+        self.assertIn('const THEMES=["dark", "light"];', html)
+        self.assertNotIn('const THEMES=["dark", "pink"];', html)
 
     def test_private_preview_keeps_its_workspace_on_page_links(self):
         html = server._render_preview_html(

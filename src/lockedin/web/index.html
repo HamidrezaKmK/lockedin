@@ -466,6 +466,7 @@
   .sync-toolbar.stale,.sync-toolbar.saving{color:var(--warn)!important}
   .sync-toolbar.conflict{color:var(--bad)!important}
   .sync-toolbar.saving{opacity:.8}
+  #reviewToolbarButton.active{color:var(--accent)!important;box-shadow:inset 0 -2px 0 var(--accent)}
   .toolbar{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
   .color-tool{position:relative;display:inline-flex;align-items:center;height:24px}
   .color-tool-btn{position:relative;display:inline-flex;align-items:center;justify-content:center;
@@ -553,6 +554,33 @@
   #editorHost{flex:1;min-height:0;min-width:0;display:flex;overflow:hidden;overflow:clip}
   #editorWrap{flex:1;min-height:0;min-width:0;overflow:hidden;overflow:clip}
   #editorWrap .toastui-editor-defaultUI{height:100%}
+  #reviewWrap{flex:0 0 300px;min-width:240px;overflow:auto;border-left:1px solid var(--line);
+    background:var(--panel2);font-family:var(--font-ui)}
+  #editorHost.review-closed #reviewWrap,#editorHost.mode-view #reviewWrap{display:none}
+  #editorHost.mode-split #reviewWrap{order:1}
+  #editorHost.mode-split #previewWrap{order:2}
+  .review-hd{position:sticky;top:0;z-index:2;display:flex;gap:5px;align-items:center;padding:9px 10px;
+    background:var(--panel2);border-bottom:1px solid var(--line)}
+  .review-tab{font-size:12px;padding:4px 7px;border-radius:6px;background:transparent;border:1px solid transparent;color:var(--muted)}
+  .review-tab.active{color:var(--ink);border-color:var(--accent);background:var(--panel)}
+  .review-add{min-width:25px;padding:3px 7px!important;background:color-mix(in srgb,var(--accent) 24%,var(--panel))!important;
+    border-color:color-mix(in srgb,var(--accent) 55%,var(--line))!important;color:var(--accent)!important;font-weight:700}
+  .review-add:hover{background:color-mix(in srgb,var(--accent) 38%,var(--panel))!important}
+  .review-thread{margin:9px;border:1px solid var(--line);border-radius:8px;background:var(--panel);overflow:hidden}
+  .review-thread.selected{border-color:var(--accent);box-shadow:0 0 0 1px color-mix(in srgb,var(--accent) 35%,transparent)}
+  .review-thread summary{cursor:pointer;padding:8px 9px;font-size:12px;list-style:none}
+  .review-thread summary::-webkit-details-marker{display:none}
+  .review-thread summary::before{content:"▸ ";color:var(--muted)}
+  .review-thread[open] summary::before{content:"▾ "}
+  .review-meta{color:var(--muted);font-size:11px;margin-top:3px}
+  .review-body{padding:0 9px 9px;font-size:13px;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere}
+  .review-msg{border-top:1px solid var(--line);padding:8px 9px;font-size:13px;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere}
+  .review-thread summary>b,.review-msg b{font-size:11px;color:var(--accent);font-weight:700}
+  .review-actions{display:flex;gap:5px;flex-wrap:wrap;padding:8px 9px;border-top:1px solid var(--line)}
+  .review-actions button{font-size:11px;padding:3px 6px}.review-compose{display:flex;flex-direction:column;gap:6px;padding:8px 9px;border-top:1px solid var(--line)}
+  .review-compose textarea{min-height:58px;resize:vertical;font:inherit;font-size:12px}.review-orphan{color:var(--warn);font-size:11px;font-weight:700}
+  .review-inline-edit{display:block;width:100%;box-sizing:border-box;min-height:66px;resize:vertical;font:inherit;font-size:13px}
+  ::highlight(lockedin-review){background-color:rgba(245,204,62,.24)}
   #previewWrap{flex:1;overflow:auto;padding:12px 16px;min-width:0;min-height:0;line-height:1.6;
     overflow-anchor:none}
   /* The editor pane has three view modes, chosen from the toolbar dropdown:
@@ -620,6 +648,7 @@
 
   /* ── Mobile ── */
   @media (max-width:700px){
+    #reviewWrap{display:none!important}
     /* Safari zooms the viewport when focusing a form field below 16px. Keep every editable
        control at the platform threshold; the viewport declaration above also disables pinch zoom. */
     input,textarea,select{font-size:16px!important}
@@ -1429,6 +1458,7 @@
     baseMtime:null, autosaveTimer:null, saving:false, syncState:"synced", applyingRemote:false,
     previewEl:null, remoteChangePending:false, papersMenu:null, chatPane:null,
     detailWrap:null,
+    comments:[], reviewOpen:false, reviewTab:"open", selectedComment:null, lastCommentsMtime:null,
     refAc:null,
     healthTimer:null, healthSeq:0, verifiedActive:null,
     shareActive:false, shareToken:"", bubbleFocus:false, showHiddenPages:false, renderVersion:0,
@@ -1497,6 +1527,7 @@
     S.editor=null; S.bubble=null; S.page=null; S.pages=[]; S.previewEl=null;
     S.chatPane=null; S.detailWrap=null; S.papersMenu=null;
     S.remoteChangePending=false; S.sessionId=null; S.sessionTitle=null;
+    try{ if(window.CSS&&CSS.highlights)CSS.highlights.delete("lockedin-review"); }catch(e){}
   }
 
   // ================= AUTH =================
@@ -2802,6 +2833,7 @@
     const token=S.openToken=(S.openToken||0)+1;
     if(!noRoute)pushRoute("bubble/"+slug);
     S.bubble=slug; S.chat=[]; S.page=null; S.pages=[]; S.sessionId=null; S.sessionTitle=null;
+    S.selectedComment=null;
     S.previewEl=null; S.remoteChangePending=false; S.papersMenu=null; S.chatPane=null; S.detailWrap=null;
     S.baseMtime=null; S.saving=false; S.syncState="synced";
     S.shareActive=false; S.shareToken=""; S.editingTitles=false; S.nameInput=null; S.showHiddenPages=false;
@@ -2881,17 +2913,20 @@
     fetchRefs().then(()=>updatePreview());   // bubble-wide eqn/thm numbering for the preview
     const tabs=el("div",{class:"ptabs",id:"ptabs"});
     const editorWrap=el("div",{id:"editorWrap"});
+    const reviewWrap=el("aside",{id:"reviewWrap","aria-label":"Review comments"});
     S.previewEl=el("div",{id:"previewWrap",class:"preview"});
     // Open in the user's last-used view mode for this bubble (persisted across refreshes),
     // defaulting to reading view. The toolbar dropdown switches to editor / side-by-side.
     S.viewMode=loadViewMode(b.slug);
-    const host=el("div",{id:"editorHost",class:"mode-"+S.viewMode});
-    host.append(editorWrap, S.previewEl);
+    S.reviewOpen=localStorage.getItem("lockedin:review:"+b.slug)==="1";
+    const host=el("div",{id:"editorHost",class:"mode-"+S.viewMode+(S.reviewOpen?"":" review-closed")});
+    host.append(editorWrap, reviewWrap, S.previewEl);
     left.append(tabs,host);
 
     // init editor with the home page content
     initEditor(editorWrap, b.content||"");
     S.page=b.home; S.syncState="synced";
+    loadComments();
     refreshTabs();
     startPolling();
     primeSync();          // capture the home page's base mtime for conflict detection
@@ -3037,42 +3072,37 @@
   }
 
   function initEditor(host, initialValue){
+    // Toast UI's built-in toolbar accepts custom DOM controls alongside standard items. Keeping
+    // the complete sequence here avoids fragile post-construction index insertion.
+    const histBtn=(label,title,redo)=>{
+      const b=document.createElement("button");
+      b.type="button"; b.textContent=label; b.title=title;
+      b.style.cssText="font:inherit;font-size:16px;line-height:1;background:none;border:none;color:inherit;cursor:pointer;margin:0;padding:0 2px";
+      b.addEventListener("mousedown",e=>e.preventDefault());
+      b.addEventListener("click",e=>{ e.preventDefault(); editorHistoryCmd(redo); });
+      return b;
+    };
     S.editor=new toastui.Editor({
       el:host, height:"100%", theme:"dark", initialEditType:"markdown",
       previewStyle:"tab", initialValue, usageStatistics:false,
       autofocus:false,   // don't grab focus on load: it scrolls a long page's editor into
                          // view, which can scroll the whole document and hide the app
-      toolbarItems:[['table','image','link']],   // undo/redo added below; everything else removed
+      toolbarItems:[[
+        {name:"page-sync",tooltip:"Page sync status",el:buildSyncTool()},
+        {name:"review-toggle",tooltip:"Toggle review comments",el:buildReviewTool()},
+        'image','table',
+        {name:"text-color",tooltip:"Color selected text",el:buildColorTool()},
+        {name:"center-text",tooltip:"Center selected text",el:buildCenterTextTool()},
+        'link',
+        {name:"page-visibility",tooltip:"Toggle page visibility",el:buildPageVisibilityTool()},
+        {name:"hidden-pages",tooltip:"Show hidden pages",el:buildHiddenPagesTool()},
+        {name:"undo",tooltip:"Undo (Ctrl+Z)",el:histBtn("↶","Undo",false)},
+        {name:"redo",tooltip:"Redo (Ctrl+Shift+Z)",el:histBtn("↷","Redo",true)}
+      ]],
       hooks:{ addImageBlobHook:(blob,cb)=>uploadImage(S.bubble,blob,cb) },
     });
-    // Undo/redo toolbar buttons (the editor only ships keyboard shortcuts for these).
-    const histBtn=(label,title,redo)=>{
-      const b=document.createElement("button");
-      b.type="button"; b.textContent=label; b.title=title;
-      b.style.cssText="font:inherit;font-size:16px;line-height:1;background:none;border:none;color:inherit;cursor:pointer;margin:0;padding:0 2px";
-      b.addEventListener("mousedown",e=>e.preventDefault());   // keep editor selection
-      b.addEventListener("click",e=>{ e.preventDefault(); editorHistoryCmd(redo); });
-      return b;
-    };
-    try{
-      S.editor.insertToolbarItem({groupIndex:0,itemIndex:0},
-        {name:"redo",tooltip:"Redo (Ctrl+Shift+Z)",el:histBtn("↷","Redo",true)});
-      S.editor.insertToolbarItem({groupIndex:0,itemIndex:0},
-        {name:"undo",tooltip:"Undo (Ctrl+Z)",el:histBtn("↶","Undo",false)});
-      S.editor.insertToolbarItem({groupIndex:0,itemIndex:2},
-        {name:"text-color",tooltip:"Color selected text",el:buildColorTool()});
-      S.editor.insertToolbarItem({groupIndex:0,itemIndex:3},
-        {name:"center-text",tooltip:"Center selected text",el:buildCenterTextTool()});
-      // Keep page-specific status controls alongside the built-in Insert link button.
-      // Their handlers prevent focus loss, so they do not disturb the editor selection.
-      S.editor.insertToolbarItem({groupIndex:0,itemIndex:6},
-        {name:"page-visibility",tooltip:"Toggle page visibility",el:buildPageVisibilityTool()});
-      S.editor.insertToolbarItem({groupIndex:0,itemIndex:7},
-        {name:"hidden-pages",tooltip:"Show hidden pages",el:buildHiddenPagesTool()});
-      S.editor.insertToolbarItem({groupIndex:0,itemIndex:0},
-        {name:"page-sync",tooltip:"Page sync status",el:buildSyncTool()});
-    }catch(e){}
     installReferenceAutocomplete(host);
+    installEditorCommentHighlights(host);
     // Ctrl/Cmd+S should save the page. The editor maps Mod-s to strikethrough, so we
     // catch the key in the capture phase (before it reaches the editor's keymap) and
     // save instead. Bound once on document; acts only while a report page is open.
@@ -3089,6 +3119,7 @@
       if(S.applyingRemote)return;            // programmatic setMarkdown — not a user edit
       markStale(); scheduleAutosave();
       refreshReferenceAutocomplete();
+      resolveCommentAnchors(); renderEditorCommentHighlights(); renderReview();
       clearTimeout(deb); deb=setTimeout(updatePreview,300); });
     // A newly opened report should start its animations from the beginning. Ordinary
     // typing updates below deliberately keep the existing GIF elements in place.
@@ -3421,6 +3452,42 @@
     else restorePreviewResources(S.previewEl,savedResources);
     const restoreScroll=()=>{ S.previewEl.scrollTop=sTop; S.previewEl.scrollLeft=sLeft; };
     restoreScroll(); requestAnimationFrame(restoreScroll);
+  }
+
+  function installEditorCommentHighlights(host){
+    const view=editorView();
+    // CSS Highlights are bound to real DOM Ranges, so CodeMirror scrolls and reflows them with
+    // its text. Unlike an absolute overlay, there is no independent geometry to drift.
+    const openCommentAtPointer=e=>{
+      try{
+        let pos=null, caret=null;
+        if(document.caretPositionFromPoint)caret=document.caretPositionFromPoint(e.clientX,e.clientY);
+        else if(document.caretRangeFromPoint)caret=document.caretRangeFromPoint(e.clientX,e.clientY);
+        if(caret&&caret.offsetNode)pos=view.posAtDOM(caret.offsetNode,caret.offset);
+        else if(caret&&caret.startContainer)pos=view.posAtDOM(caret.startContainer,caret.startOffset);
+        if(pos==null)pos=view.posAtCoords({x:e.clientX,y:e.clientY});
+        const thread=(S.comments||[]).find(t=>t.status!=="resolved"&&t._start>=0&&pos>=t._start&&pos<=t._end);
+        if(!thread)return;
+        S.selectedComment=thread.id; if(!S.reviewOpen)toggleReview(); renderReview();
+      }catch(err){}
+    };
+    if(view&&view.dom){view.dom.addEventListener("click",openCommentAtPointer);view.dom.addEventListener("dblclick",openCommentAtPointer);}
+    window.addEventListener("resize",renderEditorCommentHighlights,{passive:true});
+  }
+  function renderEditorCommentHighlights(){
+    const view=editorView();
+    if(!(window.CSS&&CSS.highlights&&window.Highlight)){return;}
+    CSS.highlights.delete("lockedin-review");
+    if(!view||S.viewMode==="view")return;
+    const ranges=[];
+    (S.comments||[]).filter(t=>t._start>=0&&t.status!=="resolved").forEach(t=>{
+      try{
+        const from=view.domAtPos(t._start), to=view.domAtPos(t._end), range=document.createRange();
+        range.setStart(from.node,from.offset); range.setEnd(to.node,to.offset);
+        ranges.push(range);
+      }catch(e){}
+    });
+    if(ranges.length)CSS.highlights.set("lockedin-review",new Highlight(...ranges));
   }
 
   // Rendering Markdown replaces the preview DOM. Keep every unchanged external resource through
@@ -3834,6 +3901,7 @@
       const r=await api("/api/bubbles/"+bubble+"/poll?page="+page);
       if(S.bubble!==bubble||S.page!==page)return;
       S.baseMtime=r.page_mtime; S.lastPageMtime=r.page_mtime; S.lastManifestMtime=r.manifest_mtime;
+      S.lastCommentsMtime=r.comments_mtime;
     }catch(e){}
   }
   // Scroll the editor and preview panes back to the top. Called on page navigation so a
@@ -3861,6 +3929,7 @@
     finally{ setTimeout(()=>{ S.applyingRemote=false; },0); }
     // A remote/page load is intentional navigation, so start any report GIFs afresh.
     setTimeout(()=>updatePreview({restartGifs:true}),150);
+    setTimeout(renderEditorCommentHighlights,180);
     setTimeout(resetEditorHistory,200);   // loaded content is the undo baseline (see initEditor)
   }
   async function switchPage(target,{noRoute=false}={}){
@@ -3875,7 +3944,7 @@
     const c=(await api("/api/bubbles/"+S.bubble+"/pages/"+match.page_slug)).content;
     S.page=match.page_slug; S.remoteChangePending=false;
     if(!noRoute)pushRoute("bubble/"+S.bubble+"/"+S.page);   // keep the page across refresh
-    applyRemote(c||""); markSynced(); refreshTabs();
+    applyRemote(c||""); markSynced(); refreshTabs(); S.selectedComment=null; S.comments=[]; renderEditorCommentHighlights(); S.lastCommentsMtime=null; loadComments();
     scrollContentTop();                                     // start the new page at the top
     primeSync();
   }
@@ -3946,6 +4015,134 @@
     b.addEventListener("click",e=>{ e.preventDefault(); onClick(); });
     return b;
   }
+  function buildReviewTool(){
+    const b=editorToolButton("reviewToolbarButton","Toggle review comments",toggleReview);
+    b.classList.toggle("active",!!S.reviewOpen);
+    b.textContent="💬"; return b;
+  }
+  function toggleReview(){
+    if(S.viewMode==="view")return;
+    S.reviewOpen=!S.reviewOpen;
+    try{localStorage.setItem("lockedin:review:"+S.bubble,S.reviewOpen?"1":"0");}catch(e){}
+    const host=$("#editorHost"); if(host)host.classList.toggle("review-closed",!S.reviewOpen);
+    const b=$("#reviewToolbarButton"); if(b)b.classList.toggle("active",S.reviewOpen);
+    if(S.reviewOpen)renderReview();
+  }
+  function commentAnchorFromSelection(){
+    const md=S.editor&&S.editor.getMarkdown?S.editor.getMarkdown():"", view=editorView(); let sel=null;
+    // Review anchors use the DOM range → CodeMirror mapping so their overlay agrees exactly
+    // with the visible selection. Keep the generic selection helper untouched for Center/Color.
+    try{
+      const nativeSel=window.getSelection&&window.getSelection();
+      if(nativeSel&&nativeSel.rangeCount&&view&&view.dom&&view.dom.contains(nativeSel.anchorNode)
+        &&view.dom.contains(nativeSel.focusNode)){
+        const from=view.posAtDOM(nativeSel.anchorNode,nativeSel.anchorOffset);
+        const to=view.posAtDOM(nativeSel.focusNode,nativeSel.focusOffset);
+        if(from!==to)sel={from:Math.min(from,to),to:Math.max(from,to)};
+      }
+    }catch(e){}
+    if(!sel)sel=currentEditorSelectionOffsets();
+    if(!sel||sel.from===sel.to)return null;
+    return {start:sel.from,quote:md.slice(sel.from,sel.to),prefix:md.slice(Math.max(0,sel.from-96),sel.from),suffix:md.slice(sel.to,sel.to+96)};
+  }
+  function startComment(){
+    const anchor=commentAnchorFromSelection();
+    if(!anchor){toast("Select text first");return;}
+    if(!S.reviewOpen)toggleReview();
+    S.commentDraftAnchor=anchor; S.selectedComment=null; renderReview();
+  }
+  function resolveCommentAnchors(){
+    const md=S.editor&&S.editor.getMarkdown?S.editor.getMarkdown():"";
+    (S.comments||[]).forEach(t=>{
+      const a=t.anchor||{}, q=String(a.quote||""); let best=-1, score=-1, pos=md.indexOf(q);
+      while(pos>=0){
+        const prefixOK=!a.prefix||md.slice(Math.max(0,pos-a.prefix.length),pos)===a.prefix;
+        const suffixOK=!a.suffix||md.slice(pos+q.length,pos+q.length+a.suffix.length)===a.suffix;
+        // A comment may move when text is inserted before it, but it must retain at least one
+        // original neighbour (or still be at its original offset). Never jump to a later copy of
+        // a deleted selection merely because it happens to contain the same next word.
+        if(pos===Number(a.start||0) || prefixOK || suffixOK){
+          const n=(prefixOK?4:0)+(suffixOK?4:0)-Math.abs(pos-Number(a.start||0))/Math.max(1,md.length);
+          if(n>score){score=n;best=pos;}
+        }
+        pos=md.indexOf(q,pos+1);
+      }
+      t._start=best; t._end=best<0?-1:best+q.length;
+    });
+  }
+  async function loadComments(){
+    if(!S.bubble||!S.page)return;
+    const bubble=S.bubble,page=S.page;
+    try{const r=await api("/api/bubbles/"+bubble+"/pages/"+page+"/comments");
+      if(S.bubble===bubble&&S.page===page){S.comments=r.threads||[];resolveCommentAnchors();renderEditorCommentHighlights();renderReview();updatePreview();}}
+    catch(e){}
+  }
+  function reviewThreads(){
+    const status=S.reviewTab||"open";
+    return (S.comments||[]).filter(t=>(t.status||"open")===status).sort((a,b)=>{
+      // A detached thread stays where its original source selection was, rather than falling
+      // to the end of review. This preserves the reviewer’s spatial reading order.
+      const aa=a._start<0?Number((a.anchor||{}).start||0):a._start;
+      const bb=b._start<0?Number((b.anchor||{}).start||0):b._start; return aa-bb;
+    });
+  }
+  function renderReview(){
+    const wrap=$("#reviewWrap"); if(!wrap)return; wrap.innerHTML="";
+    const hd=el("div",{class:"review-hd"});
+    ["open","resolved"].forEach(tab=>hd.append(el("button",{class:"review-tab "+(S.reviewTab===tab?"active":""),onclick:()=>{S.reviewTab=tab;renderReview();}},tab[0].toUpperCase()+tab.slice(1))));
+    hd.append(el("span",{class:"spacer"}),el("button",{class:"ghost small review-add",title:"Add comment to selected text","aria-label":"Add comment to selected text",onmousedown:e=>e.preventDefault(),onclick:startComment},"+"));
+    wrap.append(hd);
+    if(S.commentDraftAnchor){
+      const ta=el("textarea",{placeholder:"Add a review comment…"}), save=el("button",{class:"primary small"},"Comment");
+      save.onclick=async()=>{try{await api("/api/bubbles/"+S.bubble+"/pages/"+S.page+"/comments",{method:"POST",body:JSON.stringify({body:ta.value,anchor:S.commentDraftAnchor})});S.commentDraftAnchor=null;await loadComments();}catch(e){toast(e.message);}};
+      wrap.append(el("div",{class:"review-compose"},el("b",{},"New review"),ta,save)); setTimeout(()=>ta.focus(),0);
+    }
+    const rows=reviewThreads(); if(!rows.length&&!S.commentDraftAnchor)wrap.append(el("div",{class:"muted",style:"padding:12px;font-size:12px"},"No "+S.reviewTab+" reviews."));
+    rows.forEach(t=>wrap.append(reviewThreadNode(t)));
+  }
+  function reviewThreadNode(t){
+    const messages=t.messages||[], first=messages[0]||{}, details=el("details",{class:"review-thread"+(S.selectedComment===t.id?" selected":"")});
+    details.open=S.selectedComment===t.id;
+    const replyCount=Math.max(0,messages.length-1);
+    const summary=el("summary",{},el("b",{},first.author||"Unknown"),
+      el("div",{class:"review-meta"},replyCount?(replyCount+" "+(replyCount===1?"reply":"replies")):"No replies"));
+    if(t._start<0)summary.append(el("span",{class:"review-orphan"}," Unanchored"));
+    summary.onclick=e=>{e.preventDefault();S.selectedComment=t.id;if(t._start>=0)scrollToCommentAnchor(t);renderReview();}; details.append(summary);
+    (t.messages||[]).forEach(msg=>{
+      const row=el("div",{class:"review-msg"},el("b",{},msg.author||"Unknown")," "+msg.body);
+      if(msg.author===S.user){
+        row.title="Double-click to edit";
+        row.ondblclick=e=>{ e.preventDefault(); e.stopPropagation(); inlineEditReviewMessage(t,msg,row); };
+      }
+      details.append(row);
+    });
+    const reply=el("textarea",{placeholder:"Reply…"}), actions=el("div",{class:"review-actions"});
+    actions.append(el("button",{class:"ghost",onclick:()=>replyReview(t,reply)},"Reply"));
+    actions.append(el("button",{class:"ghost",onclick:()=>setReviewStatus(t,t.status==="resolved"?"open":"resolved")},t.status==="resolved"?"Reopen":"Resolve"));
+    actions.append(el("button",{class:"ghost",onclick:()=>deleteReview(t)},"Delete"));
+    details.append(el("div",{class:"review-compose"},reply,actions)); return details;
+  }
+  async function replyReview(t,ta){try{await api("/api/bubbles/"+S.bubble+"/pages/"+S.page+"/comments/"+t.id+"/replies",{method:"POST",body:JSON.stringify({body:ta.value})});await loadComments();}catch(e){toast(e.message);}}
+  function inlineEditReviewMessage(t,msg,row){
+    if(row.dataset.editing)return; row.dataset.editing="1"; row.replaceChildren();
+    const ta=el("textarea",{class:"review-inline-edit"}); ta.value=msg.body;
+    const save=el("button",{class:"primary small"},"Save"), cancel=el("button",{class:"ghost small"},"Cancel");
+    const finish=async()=>{const body=ta.value.trim();if(!body){toast("Comment text required");return;}save.disabled=true;try{
+      await api("/api/bubbles/"+S.bubble+"/pages/"+S.page+"/comments/"+t.id+"/messages/"+msg.id,{method:"PATCH",body:JSON.stringify({body})});await loadComments();
+    }catch(e){save.disabled=false;toast(e.message);}};
+    save.onclick=finish; cancel.onclick=()=>renderReview();
+    ta.onkeydown=e=>{if((e.ctrlKey||e.metaKey)&&e.key==="Enter"){e.preventDefault();finish();}if(e.key==="Escape"){e.preventDefault();renderReview();}};
+    row.append(ta,el("div",{class:"review-actions"},save,cancel)); ta.focus(); ta.setSelectionRange(ta.value.length,ta.value.length);
+  }
+  async function setReviewStatus(t,status){try{await api("/api/bubbles/"+S.bubble+"/pages/"+S.page+"/comments/"+t.id,{method:"PATCH",body:JSON.stringify({status})});await loadComments();}catch(e){toast(e.message);}}
+  async function deleteReview(t){if(!confirm("Delete this review and all replies?"))return;try{await api("/api/bubbles/"+S.bubble+"/pages/"+S.page+"/comments/"+t.id,{method:"DELETE"});await loadComments();}catch(e){toast(e.message);}}
+  function scrollToCommentAnchor(t){
+    const view=editorView(), scroller=view&&view.scrollDOM; if(!view||!scroller||t._start<0)return;
+    try{
+      const rect=view.coordsAtPos(t._start), box=scroller.getBoundingClientRect();
+      if(rect)scroller.scrollTop+=rect.top-box.top-(box.height*.32);
+    }catch(e){}
+  }
   function buildSyncTool(){
     const b=editorToolButton("syncToolbarButton","Saved automatically; click to save now",clickSave);
     b.className="sync-toolbar "+(S.syncState||"synced");
@@ -3999,7 +4196,7 @@
   function stopPolling(){
     if(S.pollTimer){ clearInterval(S.pollTimer); S.pollTimer=null; }
     clearTimeout(S.autosaveTimer); S.autosaveTimer=null;
-    S.lastPageMtime=null; S.lastManifestMtime=null; S.remoteChangePending=false;
+    S.lastPageMtime=null; S.lastCommentsMtime=null; S.lastManifestMtime=null; S.remoteChangePending=false;
     S.baseMtime=null; S.saving=false; S.syncState="synced";
   }
   async function pollSync(){
@@ -4027,6 +4224,8 @@
           toast("File changed on disk — click ⟳ to save (you'll be asked about the remote version).");
         }
       }
+      if(S.lastCommentsMtime!==null&&r.comments_mtime!==S.lastCommentsMtime) loadComments();
+      S.lastCommentsMtime=r.comments_mtime;
       S.lastPageMtime=r.page_mtime;
     }catch(e){}
   }
@@ -4059,6 +4258,7 @@
     saveViewMode(S.bubble,mode);
     host.classList.remove("mode-view","mode-edit","mode-split");
     host.classList.add("mode-"+mode);
+    renderEditorCommentHighlights();
     updatePreview();                       // keep the rendered side current (view + split)
     if(mode!=="view"){
       // the editor may have been laid out while hidden; nudge CodeMirror to recompute, then focus

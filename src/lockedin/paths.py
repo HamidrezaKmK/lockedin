@@ -124,6 +124,15 @@ def bubble_chats_dir(slug: str) -> Path:
     return bubble_dir(slug) / "chats"
 
 
+def bubble_comments_dir(slug: str) -> Path:
+    """Private review-thread metadata, kept separate from report Markdown."""
+    return bubble_dir(slug) / "comments"
+
+
+def bubble_page_comments_path(slug: str, page_slug: str) -> Path:
+    return bubble_comments_dir(slug) / f"{page_slug}.json"
+
+
 def ensure_user_dirs(user: str) -> None:
     """Create a user's ASSETS/, REPORTS/, config/ (idempotent)."""
     home = user_home(user)
