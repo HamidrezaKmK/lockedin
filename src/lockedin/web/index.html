@@ -37,36 +37,123 @@
     --shadow-sm:0 1px 6px rgba(0,0,0,.4); --shadow:0 6px 24px rgba(0,0,0,.55);
   }
   body.theme-light{
-    --bg:#f8fafc; --panel:#e7edf5; --panel2:#cfd8e6; --line:#9eacbe;
-    --ink:#171b24; --muted:#526073; --accent:#5b3ee8; --accent2:#087f69;
-    --warn:#b45309; --bad:#dc2626; --good:#16a34a; --assistant-bg:#e7edff;
-    --ref-accent:#6d4aff;
-    --text-color-1:#5b3ee8; --text-color-2:#087f69; --text-color-3:#b45309; --text-color-4:#be185d; --text-color-5:#0369a1;
-    --shadow-sm:0 1px 8px rgba(17,24,39,.16); --shadow:0 8px 28px rgba(17,24,39,.24);
+    --bg:#eaf0f7; --panel:#fbfdff; --panel2:#d8e2ef; --line:#9eafc3;
+    --ink:#111b2d; --muted:#3f5067; --accent:#4338ca; --accent2:#0b6b63;
+    --warn:#92400e; --bad:#b91c36; --good:#166534; --assistant-bg:#e2e9ff;
+    --ref-accent:#4338ca;
+    --text-color-1:#4338ca; --text-color-2:#0b6b63; --text-color-3:#92400e; --text-color-4:#86198f; --text-color-5:#075985;
+    --shadow-sm:0 1px 5px rgba(17,27,45,.14); --shadow:0 10px 30px rgba(17,27,45,.2);
   }
+  body.theme-light #topbar,body.theme-light #side{
+    --ink:#f5f3ff; --muted:#c7c3e8; --panel:#29234f; --panel2:#393166; --line:#50477f;
+    --accent:#c4b5fd; --accent2:#67e8d2;
+    background:linear-gradient(135deg,#272148 0%,#322a60 58%,#3a3170 100%);
+    box-shadow:0 1px 0 rgba(43,34,83,.28)
+  }
+  body.theme-light #topbar .brand{color:#fff}
+  body.theme-light #accountMenu{
+    --bg:#eaf0f7; --panel:#fff; --panel2:#e8eef7; --line:#bdc8d8;
+    --ink:#111b2d; --muted:#3f5067; --accent:#4338ca; --accent2:#0b6b63;
+    background:#fff;color:#111b2d;box-shadow:0 14px 34px rgba(17,27,45,.22)
+  }
+  body.theme-light #side{
+    --panel:#4a3f82; --panel2:#5a4c99; --line:#786bb6; --accent:#ddd6fe; --accent2:#99f6e4;
+    background:linear-gradient(160deg,#51458d 0%,#5f50a3 48%,#6c5bb3 100%)
+  }
+  body.theme-light #side .navbtn.active{background:rgba(196,181,253,.2);border-color:rgba(196,181,253,.68)}
+  body.theme-light .editor-pane>.ptabs{
+    --bg:#372f66; --panel:#493d80; --panel2:#5a4c98; --line:#786bb6;
+    --ink:#f6f4ff; --muted:#d0caec; --accent:#ddd6fe; --accent2:#99f6e4;
+    background:linear-gradient(105deg,#40366f,#514586);border-bottom-color:#786bb6
+  }
+  body.theme-light .editor-pane>.ptabs .ptab{color:#fff}
+  body.theme-light .card,body.theme-light .pane,body.theme-light .acard{box-shadow:0 1px 2px rgba(22,32,51,.04)}
   body.theme-pink{
-    --bg:#fff0fa; --panel:#ffe0f3; --panel2:#ffc7e8; --line:#ff94d2;
-    --ink:#57113e; --muted:#9b4b7d; --accent:#ff1493; --accent2:#00b8a9;
-    --warn:#c06b00; --bad:#e11d75; --good:#00a86b; --assistant-bg:#ffd6ee;
+    --bg:#f6e9f2; --panel:#fff8fc; --panel2:#efd5e6; --line:#cc9dbb;
+    --ink:#42102f; --muted:#81506d; --accent:#b51f70; --accent2:#087f78;
+    --warn:#9a5b08; --bad:#bd185d; --good:#08765e; --assistant-bg:#f2dcec;
     --ref-accent:var(--accent2);
-    --text-color-1:#ff1493; --text-color-2:#b5179e; --text-color-3:#00a6a6; --text-color-4:#ff6f59; --text-color-5:#7b2cbf;
-    --shadow-sm:0 1px 8px rgba(255,20,147,.18); --shadow:0 8px 28px rgba(255,20,147,.24);
+    --text-color-1:#b51f70; --text-color-2:#8f287f; --text-color-3:#087f78; --text-color-4:#b64c38; --text-color-5:#643b9d;
+    --shadow-sm:0 1px 6px rgba(66,16,47,.14); --shadow:0 10px 30px rgba(66,16,47,.2);
   }
   body.theme-techno{
-    --bg:#020704; --panel:#07110a; --panel2:#0b1b10; --line:#174f25;
-    --ink:#d7f4dc; --muted:#82b58a; --accent:#35c85a; --accent2:#8bd68f;
-    --warn:#c6d65a; --bad:#ff4d6d; --good:#35c85a; --assistant-bg:#06180c;
+    --bg:#07100b; --panel:#0e1b13; --panel2:#162b1c; --line:#315d3d;
+    --ink:#e0f4e3; --muted:#9cc5a4; --accent:#4bd16e; --accent2:#8ce6a1;
+    --warn:#d4d96c; --bad:#ff6680; --good:#4bd16e; --assistant-bg:#10261a;
     --ref-accent:var(--accent2);
-    --text-color-1:#35c85a; --text-color-2:#8bd68f; --text-color-3:#b7d36b; --text-color-4:#5ed0a0; --text-color-5:#7aa88a;
-    --shadow-sm:0 1px 8px rgba(53,200,90,.14); --shadow:0 8px 30px rgba(53,200,90,.2);
+    --text-color-1:#4bd16e; --text-color-2:#8ce6a1; --text-color-3:#d4d96c; --text-color-4:#67d5aa; --text-color-5:#9ecfa9;
+    --shadow-sm:0 1px 6px rgba(0,0,0,.36); --shadow:0 10px 30px rgba(0,0,0,.5);
   }
   body.theme-pearl{
-    --bg:#fffdf7; --panel:#fffaf0; --panel2:#f3f0e8; --line:#d8d2c4;
-    --ink:#3f3f3b; --muted:#7c7168; --accent:#d9480f; --accent2:#f06d3a;
-    --warn:#c05621; --bad:#b42318; --good:#6f8f3f; --assistant-bg:#fff1e8;
+    --bg:#f1eee8; --panel:#fffaf2; --panel2:#e4ddd1; --line:#c9bbab;
+    --ink:#36312d; --muted:#70645b; --accent:#a84216; --accent2:#bf592a;
+    --warn:#9c501d; --bad:#a92d25; --good:#55743a; --assistant-bg:#f5e6d9;
     --ref-accent:var(--accent2);
-    --text-color-1:#d9480f; --text-color-2:#f06d3a; --text-color-3:#b7791f; --text-color-4:#7c7168; --text-color-5:#9a3412;
-    --shadow-sm:0 1px 8px rgba(217,72,15,.12); --shadow:0 8px 28px rgba(217,72,15,.18);
+    --text-color-1:#a84216; --text-color-2:#bf592a; --text-color-3:#95651e; --text-color-4:#756052; --text-color-5:#833416;
+    --shadow-sm:0 1px 6px rgba(54,49,45,.12); --shadow:0 10px 30px rgba(54,49,45,.17);
+  }
+  body.theme-pink #topbar,body.theme-pink #side{
+    --ink:#fff7fc; --muted:#e4bfd4; --panel:#531838; --panel2:#6e2450; --line:#8e3d67;
+    --accent:#f4a7cd; --accent2:#7de0d2;
+    background:linear-gradient(135deg,#49142f 0%,#642047 58%,#742957 100%);
+    box-shadow:0 1px 0 rgba(66,16,47,.3)
+  }
+  body.theme-pink #topbar .brand{color:#fff}
+  body.theme-pink #side{
+    --panel:#76305a; --panel2:#8c416c; --line:#aa6286; --accent:#ffd1e5; --accent2:#9bf0e3;
+    background:linear-gradient(160deg,#73305b 0%,#873d6b 48%,#99507a 100%)
+  }
+  body.theme-pink #side .navbtn.active{background:rgba(255,209,229,.18);border-color:rgba(255,209,229,.66)}
+  body.theme-pink .editor-pane>.ptabs{
+    --bg:#642047; --panel:#793058; --panel2:#8d416c; --line:#aa6286;
+    --ink:#fff8fc; --muted:#e5c3d6; --accent:#ffd1e5; --accent2:#9bf0e3;
+    background:linear-gradient(105deg,#68264d,#7d3861);border-bottom-color:#aa6286
+  }
+  body.theme-pink .editor-pane>.ptabs .ptab{color:#fff}
+  body.theme-pink #accountMenu{
+    --bg:#f6e9f2; --panel:#fff8fc; --panel2:#f0dce9; --line:#d5adc4;
+    --ink:#42102f; --muted:#81506d; --accent:#b51f70; --accent2:#087f78;
+    background:#fff8fc;color:#42102f;box-shadow:0 14px 34px rgba(66,16,47,.22)
+  }
+  body.theme-techno #topbar,body.theme-techno #side{
+    --ink:#ebfff0; --muted:#b4d8bb; --panel:#102b18; --panel2:#1a4025; --line:#39704a;
+    --accent:#8af0a0; --accent2:#b5f5be;
+    background:linear-gradient(135deg,#0b2413 0%,#12351b 58%,#194322 100%);
+    box-shadow:0 1px 0 rgba(0,0,0,.4)
+  }
+  body.theme-techno #side{
+    --panel:#1a4827; --panel2:#285d35; --line:#4a8158; --accent:#b3f8c1; --accent2:#d0ffd4;
+    background:linear-gradient(160deg,#194726 0%,#245833 48%,#306a3e 100%)
+  }
+  body.theme-techno #side .navbtn.active{background:rgba(179,248,193,.14);border-color:rgba(179,248,193,.6)}
+  body.theme-techno .editor-pane>.ptabs{
+    --bg:#14381e; --panel:#20502b; --panel2:#2d6338; --line:#4a8158;
+    --ink:#edfff0; --muted:#bfdfc4; --accent:#b3f8c1; --accent2:#d0ffd4;
+    background:linear-gradient(105deg,#174322,#235430);border-bottom-color:#4a8158
+  }
+  body.theme-techno .editor-pane>.ptabs .ptab{color:#edfff0}
+  body.theme-pearl #topbar,body.theme-pearl #side{
+    --ink:#fffaf1; --muted:#e7cbb8; --panel:#61351f; --panel2:#7a482c; --line:#9a6544;
+    --accent:#ffd0af; --accent2:#ffc29d;
+    background:linear-gradient(135deg,#57301e 0%,#704027 58%,#804b2e 100%);
+    box-shadow:0 1px 0 rgba(54,49,45,.26)
+  }
+  body.theme-pearl #topbar .brand{color:#fff}
+  body.theme-pearl #side{
+    --panel:#824c2f; --panel2:#995e3d; --line:#b47a56; --accent:#ffe0c8; --accent2:#ffd0af;
+    background:linear-gradient(160deg,#854f31 0%,#985d3c 48%,#a96c47 100%)
+  }
+  body.theme-pearl #side .navbtn.active{background:rgba(255,224,200,.18);border-color:rgba(255,224,200,.64)}
+  body.theme-pearl .editor-pane>.ptabs{
+    --bg:#704027; --panel:#854e30; --panel2:#995e3d; --line:#b47a56;
+    --ink:#fffaf2; --muted:#ecd0bb; --accent:#ffe0c8; --accent2:#ffd0af;
+    background:linear-gradient(105deg,#77452b,#8b5334);border-bottom-color:#b47a56
+  }
+  body.theme-pearl .editor-pane>.ptabs .ptab{color:#fff}
+  body.theme-pearl #accountMenu{
+    --bg:#f1eee8; --panel:#fffaf2; --panel2:#eee5d9; --line:#d2c3b2;
+    --ink:#36312d; --muted:#70645b; --accent:#a84216; --accent2:#bf592a;
+    background:#fffaf2;color:#36312d;box-shadow:0 14px 34px rgba(54,49,45,.2)
   }
   body.theme-light .toastui-editor-defaultUI{filter:invert(1) hue-rotate(180deg)}
   body.theme-light .toastui-editor-defaultUI img{filter:invert(1) hue-rotate(180deg)}
@@ -241,6 +328,7 @@
   /* minimal authorship credit, pinned to the bottom of the side pane */
   .side-credit{margin-top:auto;padding:12px 8px 4px;font-family:var(--font-ui);font-size:11px;
         color:var(--muted);line-height:1.4}
+  .side-credit .heart{color:var(--accent);font-size:14px;vertical-align:-1px}
   .side-credit a{color:var(--muted);text-decoration:none}
   .side-credit a:hover{color:var(--accent)}
   /* min-height/min-width:0 let the grid track govern size (no hardcoded topbar height,
@@ -783,14 +871,14 @@
     <div class="landing-inner">
       <section class="landing-hero" aria-labelledby="landing-title">
         <div>
-          <div class="landing-kicker"><span class="landing-lock">🔒</span> private research workspace</div>
+          <div class="landing-kicker"><span class="landing-lock">🔒</span> Research command center for grad students</div>
           <h1 id="landing-title"><span class="lock">locked</span>in</h1>
-          <p class="landing-lede">A calm command center for papers, math notes, topic wikis, research chat, and the small TODOs that keep a project moving.</p>
-          <p class="landing-copy">Upload PDFs, organize them into bubbles, write math-aware reports, cite your own library, and keep model-powered research help close to the work without moving your notes into a public platform.</p>
+          <p class="landing-lede">Turn a pile of papers and ideas into a rigorous research</p>
+          <p class="landing-copy">Collect PDFs, shape ideas into bubbles, write technical reports, and keep your notes, references, TODOs, and AI-assisted research close to the work.</p>
           <div class="landing-points">
-            <div class="landing-point"><b>Paper-first</b><span>Your library keeps source PDFs, tags, notes, summaries, and BibTeX together.</span></div>
-            <div class="landing-point"><b>Math-aware</b><span>Reports render equations, theorem boxes, citations, wikilinks, and TODO references.</span></div>
-            <div class="landing-point"><b>Private by default</b><span>Run locally or expose it only through your own HTTPS tunnel when needed.</span></div>
+            <div class="landing-point"><b>Organize Research</b><span>Keep PDFs, notes, tags, summaries, and BibTeX in a fully indexed library.</span></div>
+            <div class="landing-point"><b>Math Help with AI</b><span>Build bubbles and math-aware reports that evolve with your project.</span></div>
+            <div class="landing-point"><b>Keep Connected</b><span>Use Slack and your preferred models without losing the context of your work.</span></div>
           </div>
         </div>
         <form class="landing-auth-panel col" onsubmit="return false" aria-label="Account access">
@@ -809,57 +897,55 @@
       <section class="landing-section" aria-labelledby="scientist-install-title">
         <div class="scientist-install">
         <div class="landing-section-head">
-          <h2 id="scientist-install-title">Use Scientist from your computer</h2>
-          <p>A small, dependency-free companion for your installed Codex, Claude, or Antigravity CLI. It mirrors only your authorized workspace and keeps it synchronized while you work.</p>
+          <h2 id="scientist-install-title">Bring your own AI subscription</h2>
+          <p>Install the lightweight Scientist companion, authorize, and work synchronized on the website with Codex, Claude, or Antigravity.</p>
         </div>
         <div class="scientist-platforms">
           <article class="scientist-platform">
             <h3>macOS or Linux</h3>
-            <p>Requires Python 3.11+ and adds one command to <code>~/.local/bin</code>.</p>
+            <p>Python 3.11+ required. Installs only the Scientist client in your user PATH.</p>
             <code class="command">curl -fsSL https://raw.githubusercontent.com/HamidrezaKmK/lockedin/scientist/install.sh | bash</code>
           </article>
           <article class="scientist-platform">
             <h3>Windows PowerShell</h3>
-            <p>Requires Python 3.11+ and installs the client under your local app data folder.</p>
+            <p>Python 3.11+ required. Installs the client in local app data.</p>
             <code class="command">irm https://raw.githubusercontent.com/HamidrezaKmK/lockedin/scientist/install.ps1 | iex</code>
           </article>
         </div>
         <ol class="scientist-steps">
-          <li><b>Sign in once</b>Authorize this device in your browser.<code class="command">lockedin-scientist login --server https://lockedin.codes</code></li>
-          <li><b>Choose a bubble</b>See the active bubble names and slugs you may use.<code class="command">lockedin-scientist bubbles</code></li>
-          <li><b>Sync any time</b>Pull/push once without starting an assistant.<code class="command">lockedin-scientist sync</code></li>
-          <li><b>Start your assistant</b>Use its slug with Codex, Claude, or Antigravity.<code class="command">lockedin-scientist &lt;codex|claude|agy&gt; &lt;bubble-slug&gt;</code></li>
+          <li><b>Authorize</b>Sign in to your lockedin account in the browser.<code class="command">lockedin-scientist login --server https://lockedin.codes</code></li>
+          <li><b>Pick a bubble</b>List the active workspace names and slugs available to you.<code class="command">lockedin-scientist bubbles</code></li>
+          <li><b>Stay in sync</b>Pull website changes and push local report work without starting an agent.<code class="command">lockedin-scientist sync</code></li>
+          <li><b>Start working</b>Launch the coding CLI you already use against one bubble.<code class="command">lockedin-scientist &lt;codex|claude|agy&gt; &lt;bubble-name&gt;</code></li>
         </ol>
         </div>
       </section>
 
       <section class="landing-section" aria-labelledby="workflow-title">
         <div class="landing-section-head">
-          <h2 id="workflow-title">From paper pile to working theory</h2>
-          <p>lockedin follows the everyday research loop: collect sources, shape topic clusters, write technical notes, then use chat, sharing, and tasks to keep context alive.</p>
+          <h2 id="workflow-title">Paper pile to working theory</h2>
+          <p>Collect sources, shape topic clusters, write technical notes, then chat/share/track.</p>
         </div>
         <div class="workflow-grid">
-          <div class="workflow-step"><span class="workflow-num">01</span><b>Upload papers</b><span>Add PDFs or PDF links, then capture titles, tags, source URLs, summaries, notes, and BibTeX.</span></div>
-          <div class="workflow-step"><span class="workflow-num">02</span><b>Organize into bubbles</b><span>Group papers into approved topic spaces with their own multi-page wiki and attached papers.</span></div>
-          <div class="workflow-step"><span class="workflow-num">03</span><b>Write reports</b><span>Use Markdown with KaTeX equations, labels, theorem environments, citations, TODO refs, and wikilinks.</span></div>
-          <div class="workflow-step"><span class="workflow-num">04</span><b>Chat, share, track</b><span>Discuss a bubble with grounded research chat, publish read-only links, and keep TODOs connected to notes.</span></div>
+          <div class="workflow-step"><span class="workflow-num">01</span><b>Bubble</b><span>Create a theme or idea you would like to research on</span></div>
+          <div class="workflow-step"><span class="workflow-num">02</span><b>Library</b><span>Enrich the context of that research bubble with papers and use AI-assisted summaries</span></div>
+          <div class="workflow-step"><span class="workflow-num">03</span><b>Editing + AI-Assist</b><span>Start editing the bubble, add pages, equations, figures, like an Overleaf environment. Open up the CLI and start editing with AI, ask for relevant literature, validate theorems, and keep up-to-date.</span></div>
+          <div class="workflow-step"><span class="workflow-num">04</span><b>Share</b><span>Share ideas with team-members or compose blogposts to share with the public.</span></div>
         </div>
       </section>
 
       <section class="landing-section" aria-labelledby="components-title">
         <div class="landing-section-head">
-          <h2 id="components-title">The pieces that stay connected</h2>
-          <p>Every view is built around repeated research work rather than a separate marketing funnel.</p>
+          <h2 id="components-title">Library</h2>
+          <p>Every view is built around repeated research work.</p>
         </div>
         <div class="feature-grid">
-          <div class="feature-card"><div class="feature-icon">📚</div><b>Library</b><br><span>Your complete paper collection with upload, URL fetch, filters, notes, tags, summaries, and BibTeX validation.</span></div>
-          <div class="feature-card"><div class="feature-icon">🫧</div><b>Bubbles</b><br><span>Topic workspaces that bind papers, pages, chat sessions, citations, and share settings.</span></div>
-          <div class="feature-card"><div class="feature-icon">∑</div><b>Reports</b><br><span>Markdown pages with rendered math, numbered equations, theorem boxes, references, images, and tables.</span></div>
-          <div class="feature-card"><div class="feature-icon">✅</div><b>TODOs</b><br><span>Issue-style tasks with report references, open/done filters, notes, and automatic reference cleanup.</span></div>
-          <div class="feature-card"><div class="feature-icon">💬</div><b>Research Chat</b><br><span>A read-only assistant grounded in the current bubble, paper summaries, and selected deep-read PDFs.</span></div>
-          <div class="feature-card"><div class="feature-icon">#</div><b>Slackbot</b><br><span>Use Slack to select bubbles, ask questions, add papers, and manage TODOs.</span></div>
-          <div class="feature-card"><div class="feature-icon">⚙️</div><b>Model Settings</b><br><span>Switch between Qwen, OpenAI, Claude, and Gemini, configure keys, and manage math macros.</span></div>
-          <div class="feature-card"><div class="feature-icon">🔗</div><b>Sharing</b><br><span>Publish unlisted read-only bubble links, copy them, and revoke access without changing the private workspace.</span></div>
+          <div class="feature-card"><div class="feature-icon">📚</div><b>Library</b><br><span>Keep track of your papers, books, and other research materials with appropriate notes and links to idea bubbles and bibtex entries.</span></div>
+          <div class="feature-card"><div class="feature-icon">🫧</div><b>Idea Bubbles</b><br><span>Create idea bubbles to organize your research ideas and connect them to your papers and other research materials.</span></div>
+          <div class="feature-card"><div class="feature-icon">🔗</div><b>Share Latex</b><br><span>Share your latex code with your collaborators and get feedback on your writing.</span></div>
+          <div class="feature-card"><div class="feature-icon">🤖</div><b>AI-powered help</b><br><span>Use your favourite LLM models to help with your research from your CLI and power it with a better context.</span></div>
+          <div class="feature-card"><div class="feature-icon">💬</div><b>Slack Sync</b><br><span>Sync papers and research notes across devices using Slack.</span></div>
+          <div class="feature-card"><div class="feature-icon">📋</div><b>TODOs</b><br><span>Track open research tasks and link them from your report pages with Github issue style referencing.</span></div>
         </div>
       </section>
 
@@ -877,7 +963,7 @@
         </div>
       </section>
 
-      <div class="landing-footer">Made for focused research sessions by a PhD student</div>
+      <div class="landing-footer">Made with 💜 by a PhD student</div>
     </div>
   </main>
 </div>
@@ -906,7 +992,7 @@
     <button class="navbtn" data-view="todos">✅ TODOs</button>
     <button class="navbtn" data-view="workspace">🗂️ Workspace</button>
     <button class="navbtn" data-view="settings">⚙️ Settings</button>
-    <div class="side-credit">Made with 💜 + 🤖 by a PhD student</div>
+    <div class="side-credit">Made with <span class="heart" aria-label="love">♥</span> + 🤖 by a PhD student</div>
   </div>
 
   <div id="main"></div>
