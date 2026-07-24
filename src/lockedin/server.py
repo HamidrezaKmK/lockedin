@@ -1458,10 +1458,6 @@ def build_app():
         return FileResponse(p, media_type="application/pdf",
                             headers={"Content-Disposition": "inline"})
 
-    @app.get("/api/attention")
-    def attention(user: str = Depends(current_user)):
-        return {"assets": service.attention_queue(home_of(user))}
-
     # ---- installed Scientist client -------------------------------------------------
     @app.post("/api/scientist/v1/device")
     def scientist_device_start(body: ScientistDeviceIn):

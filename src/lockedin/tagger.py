@@ -4,7 +4,7 @@ Runs after every upload (via FastAPI BackgroundTasks). The summary is cached so 
 report generation stay low-latency (read-once, reuse).
 
 The whole pipeline is fail-safe: any error is logged and leaves the asset usable (it just
-ends up in the attention queue for manual tagging). Reports are never auto-generated here.
+is marked as requiring attention for manual tagging). Reports are never auto-generated here.
 """
 from __future__ import annotations
 

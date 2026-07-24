@@ -137,11 +137,6 @@ def resummarize_asset(home: Path, pdf_id: str) -> str:
         return summary
 
 
-def attention_queue(home: Path) -> list[dict]:
-    with paths.use_root(home):
-        return assets.attention_queue()
-
-
 # ---- bubbles ----
 def list_bubbles(home: Path) -> list[dict]:
     with paths.use_root(home):

@@ -150,7 +150,7 @@ state when auto-suggested; you must approve them before the wiki opens.
 ## Creating & approving
 
 Click **+ New bubble** in the Bubbles view, or tag any paper with a new topic name.
-Auto-suggested bubbles land in the **🔔 Attention** queue — approve them there.
+New bubbles are created explicitly from the Bubbles view.
 
 ## Renaming & deleting
 
@@ -244,17 +244,16 @@ Leave tags blank to let the AI auto-suggest them in the background.
 Click any asset card to open its detail panel:
 - Edit title, tags, notes, source URL
 - Open the paper PDF
-- **Move to attention queue** if you want to review or summarize it later
-- **Remove from attention queue** once it no longer needs attention
+- **Requires attention** if you want to review or summarize it later
+- **Clear attention** once it no longer needs attention
 
-## Auto-tagging & the Attention queue
+## Auto-tagging & Requires attention
 
 After upload, papers without tags are summarised and given suggested tags. They appear in
-**🔔 Attention** until you review the suggestions. Auto-suggested bubbles also appear there
-until approved.
+the Library's **Requires attention** filter until you review the suggestions.
 
-The Library view is always the active workspace's full paper inventory. Attention is just a queue toggle on
-those same papers: every paper stays visible in Library whether or not it is in Attention.
+The Library is always the active workspace's full paper inventory. Use its filter menu to switch
+between **Requires attention**, **Unassigned**, all papers, or a specific bubble.
 
 ## Finding papers
 

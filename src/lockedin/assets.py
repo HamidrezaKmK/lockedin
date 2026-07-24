@@ -355,7 +355,7 @@ def delete_asset(pdf_id: str) -> bool:
     return True
 
 
-def attention_queue() -> list[dict]:
+def requires_attention() -> list[dict]:
     return [m for m in list_assets() if m.get("attention_flag")]
 
 

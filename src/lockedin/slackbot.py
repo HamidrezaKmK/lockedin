@@ -496,7 +496,7 @@ def handle(event: dict, say) -> None:
                     files={"file": (name, data, "application/pdf")},
                     data={"title": _asset_title(name), "url_source": link},
                 ).raise_for_status()
-                say(f"📎 Added *{name}* to your assets — it's in the attention queue for tagging.")
+                say(f"📎 Added *{name}* to your assets — it is marked as requiring attention for tagging.")
             except Exception as e:
                 if _is_unauthorized(e):
                     _ask_reauth(uid, say)

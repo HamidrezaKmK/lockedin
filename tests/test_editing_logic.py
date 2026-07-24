@@ -305,16 +305,18 @@ class PublisherPdfFallback(unittest.TestCase):
         self.assertEqual(fallback, "https://inria.hal.science/inria-00274768/document")
 
 
-class AssetAttentionDefaults(unittest.TestCase):
-    def test_new_assets_start_in_attention_queue_until_explicitly_cleared(self):
+class AssetRequiresAttentionDefaults(unittest.TestCase):
+    def test_new_assets_require_attention_until_explicitly_cleared(self):
         with temp_home() as home:
             pid = service.save_asset(home, b"%PDF-1", "a.pdf", title="A",
                                      tags=["Diffusion Models"])
             meta = service.get_asset(home, pid)
             self.assertTrue(meta["attention_flag"])
-            self.assertEqual([a["pdf_id"] for a in service.attention_queue(home)], [pid])
+            with paths.use_root(home):
+                self.assertEqual([a["pdf_id"] for a in assets.requires_attention()], [pid])
             service.update_asset(home, pid, attention_flag=False)
-            self.assertEqual(service.attention_queue(home), [])
+            with paths.use_root(home):
+                self.assertEqual(assets.requires_attention(), [])
 
 
 # --------------------------------------------------------------------------- #

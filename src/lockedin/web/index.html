@@ -164,6 +164,7 @@
   .landing-auth-panel .row{flex-wrap:wrap}
   .landing-auth-panel button{flex:1 1 120px}
   .landing-section{padding:54px 0;border-top:1px solid color-mix(in srgb,var(--line) 72%,transparent)}
+  .home-landing .landing-section:first-of-type{border-top:0}
   .landing-section-head{display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1fr);gap:30px;align-items:end;margin-bottom:24px}
   .landing-section h2{font-size:28px;line-height:1.15;margin:0;letter-spacing:0}
   .landing-section-head p{margin:0;color:var(--muted)}
@@ -899,9 +900,9 @@
   </div>
 
   <div id="side">
+    <button class="navbtn" data-view="home">🏠 Home</button>
     <button class="navbtn active" data-view="assets">📚 Library</button>
     <button class="navbtn" data-view="bubbles">🫧 Bubbles</button>
-    <button class="navbtn" data-view="attention">🔔 Attention <span id="attnCount" class="muted"></span></button>
     <button class="navbtn" data-view="todos">✅ TODOs</button>
     <button class="navbtn" data-view="workspace">🗂️ Workspace</button>
     <button class="navbtn" data-view="settings">⚙️ Settings</button>
@@ -1025,8 +1026,8 @@
   function applyHash(){
     const h=location.hash.replace(/^#/,"");
     if(!h||h==="assets"){switchView("assets",{noRoute:true});return;}
+    if(h==="home"){switchView("home",{noRoute:true});return;}
     if(h==="bubbles"){switchView("bubbles",{noRoute:true});return;}
-    if(h==="attention"){switchView("attention",{noRoute:true});return;}
     if(h==="workspace"){switchView("workspace",{noRoute:true});return;}
     if(h==="settings"){switchView("settings",{noRoute:true});return;}
     if(h==="todos"){switchView("todos",{noRoute:true});return;}
@@ -2098,17 +2099,27 @@
     $("#previewArrow").classList.add("hide");   // left the bubble → hide the mobile preview link
     document.querySelectorAll(".navbtn").forEach(b=>b.classList.toggle("active",b.dataset.view===v));
     if(!noRoute)pushRoute(v==="assets"?"":v);
-    if(v==="assets")viewAssets();
+    if(v==="home")viewHome();
+    else if(v==="assets")viewAssets();
     else if(v==="bubbles")viewBubbles();
-    else if(v==="attention")viewAttention();
     else if(v==="todos")viewTodos();
     else if(v==="workspace")viewWorkspace();
     else if(v==="settings")viewSettings();
-    refreshAttnCount();
   }
-  async function refreshAttnCount(){
-    try{ const r=await api("/api/attention"); $("#attnCount").textContent=r.assets.length?`(${r.assets.length})`:""; }
-    catch(e){}
+
+  function viewHome(){
+    const {m}=beginMainRender();
+    // Reuse the public landing copy, but omit account access because this is an authenticated
+    // in-app destination. The source landing remains the single editable content surface.
+    const source=$("#auth .landing"); if(!source)return;
+    const home=source.cloneNode(true);
+    home.classList.add("home-landing");
+    const hero=home.querySelector(".landing-hero"); if(hero)hero.remove();
+    const authPanel=home.querySelector(".landing-auth-panel"); if(authPanel)authPanel.remove();
+    const footer=home.querySelector(".landing-footer"); if(footer)footer.remove();
+    home.removeAttribute("aria-labelledby");
+    home.querySelectorAll("[id]").forEach(node=>node.removeAttribute("id"));
+    m.append(home);
   }
 
   // ================= ASSETS =================
@@ -2189,14 +2200,17 @@
     const filterText=el("input",{placeholder:"Search your library by title, author, tag, notes, or BibTeX key…"});
     filterText.value=S.assetSearch||"";
     const filterBubble=el("select");
+    const REQUIRES_ATTENTION="__requires_attention__";
     const UNASSIGNED_BUBBLE="__unassigned__";
+    const attentionCount=r.assets.filter(a=>a.attention_flag).length;
     const unassignedCount=r.assets.filter(a=>!(a.idea_bubbles||[]).length).length;
+    filterBubble.append(el("option",{value:REQUIRES_ATTENTION},`Requires attention (${attentionCount})`));
     filterBubble.append(el("option",{value:UNASSIGNED_BUBBLE},`Unassigned (${unassignedCount})`));
     filterBubble.append(el("option",{value:""},"All papers"));
     bubbles.forEach(b=>filterBubble.append(el("option",{value:b.slug},b.name||b.slug)));
-    // A full library can be large. Start a fresh Library visit with the papers that still need
-    // a research home, while preserving an explicit selection during this browser session.
-    if(S.assetBubble==null) S.assetBubble=UNASSIGNED_BUBBLE;
+    // A full library can be large. Start with papers that need review, while preserving an
+    // explicit selection during this browser session.
+    if(S.assetBubble==null) S.assetBubble=REQUIRES_ATTENTION;
     filterBubble.value=S.assetBubble;
     const count=el("div",{class:"asset-count"});
     const filters=el("div",{class:"asset-filter"},
@@ -2217,19 +2231,21 @@
       const q=filterText.value.trim().toLowerCase();
       const bs=filterBubble.value;
       const shown=r.assets.filter(a=>{
-        if(bs===UNASSIGNED_BUBBLE) {
+        if(bs===REQUIRES_ATTENTION){
+          if(!a.attention_flag)return false;
+        } else if(bs===UNASSIGNED_BUBBLE) {
           if((a.idea_bubbles||[]).length) return false;
         } else if(bs && !(a.idea_bubbles||[]).includes(bs)) return false;
         return !q || haystack(a).includes(q);
       });
       grid.innerHTML="";
-      const label=bs===UNASSIGNED_BUBBLE?"unassigned papers":"papers";
-      const population=bs===UNASSIGNED_BUBBLE?unassignedCount:r.assets.length;
+      const label=bs===REQUIRES_ATTENTION?"papers requiring attention":bs===UNASSIGNED_BUBBLE?"unassigned papers":"papers";
+      const population=bs===REQUIRES_ATTENTION?attentionCount:bs===UNASSIGNED_BUBBLE?unassignedCount:r.assets.length;
       count.textContent=shown.length===population?`${shown.length} ${label}`:`${shown.length} of ${population} ${label}`;
       if(!shown.length){
-        grid.append(el("div",{class:"muted"},bs===UNASSIGNED_BUBBLE
-          ? "Every paper is assigned to at least one bubble."
-          : "No papers match these filters."));
+        grid.append(el("div",{class:"muted"},bs===REQUIRES_ATTENTION
+          ? "No papers currently require attention."
+          : bs===UNASSIGNED_BUBBLE?"Every paper is assigned to at least one bubble.":"No papers match these filters."));
         return;
       }
       appendCardsInFrames(grid,shown,assetCard,version,renderId,()=>filterRender);
@@ -2239,7 +2255,7 @@
     renderFiltered();
     m.append(filters,grid);
   }
-  function assetCard(a,{returnTo="assets"}={}){
+  function assetCard(a){
     const c=el("div",{class:"acard"});
     const paperTitle=a.extracted_title||a.title||"Extracting paper title…";
     const titleBox=el("div",{class:"acard-title"},el("h4",{},paperTitle));
@@ -2250,7 +2266,7 @@
     const head=el("div",{class:"acard-head"},titleBox);
     const badges=el("div",{class:"row",style:"gap:5px;flex-wrap:wrap;justify-content:flex-end"});
     if((a.bibliography||"").trim())badges.append(el("span",{class:"badge bib",title:"BibTeX available"},"✓ BibTeX"));
-    if(a.attention_flag)badges.append(el("span",{class:"badge"},"needs review"));
+    if(a.attention_flag)badges.append(el("span",{class:"badge"},"requires attention"));
     if(badges.childNodes.length)head.append(badges);
     c.append(head);
     c.append(renderAssetTags(a));
@@ -2266,13 +2282,13 @@
         e.stopPropagation();
         const next=!a.attention_flag;
         await api("/api/assets/"+a.pdf_id,{method:"PATCH",body:JSON.stringify({attention_flag:next})});
-        toast(next?"Added to attention queue":"Removed from attention queue");
-        (returnTo==="attention"?viewAttention:viewAssets)(); refreshAttnCount();
-      }},a.attention_flag?"Clear queue":"Queue"),
+        toast(next?"Marked as requiring attention":"Cleared attention flag");
+        viewAssets();
+      }},a.attention_flag?"Clear attention":"Requires attention"),
       el("button",{class:"ghost small",onclick:e=>{
-        e.stopPropagation(); openAssetEditor(a,{returnTo});
+        e.stopPropagation(); openAssetEditor(a);
       }},"Manage")));
-    c.onclick=()=>openAssetEditor(a,{returnTo});
+    c.onclick=()=>openAssetEditor(a);
     return c;
   }
   function renderAssetTags(a,{emptyText=""}={}){
@@ -2296,7 +2312,7 @@
     try{
       const r=await api("/api/assets/"+encodeURIComponent(pdfId));
       if(!isCurrentRender(version))return;
-      await openAssetEditor(r.meta,{returnTo:"assets",noRoute:true,renderVersion:version});
+      await openAssetEditor(r.meta,{noRoute:true,renderVersion:version});
     }catch(e){
       if(!isCurrentRender(version))return;
       toast(e.message);
@@ -2304,14 +2320,13 @@
     }
   }
   async function openAssetEditor(a, opts={}){
-    const returnTo=opts.returnTo||"assets";
-    const goBack=()=>returnTo==="attention"?viewAttention():viewAssets();
+    const goBack=()=>viewAssets();
     if(!opts.noRoute)pushRoute("asset/"+encodeURIComponent(a.pdf_id));
     if(opts.renderVersion==null)leaveBubbleWorkspace();
     const render=opts.renderVersion==null?beginMainRender():{m:$("#main"),version:opts.renderVersion};
     const {m,version}=render;
     if(!isCurrentRender(version))return;
-    m.append(el("button",{class:"ghost small",onclick:goBack},returnTo==="attention"?"← Attention":"← Library"));
+    m.append(el("button",{class:"ghost small",onclick:goBack},"← Library"));
     const box=el("div",{class:"card col",style:"margin-top:12px;max-width:720px"});
     const title=el("input",{value:a.title||""});
     const notes=el("textarea",{rows:"4"}); notes.value=a.notes||"";
@@ -2448,22 +2463,22 @@
       const payload={title:title.value,notes:notes.value,url_source:url.value};
       if(attentionFlag!==undefined)payload.attention_flag=attentionFlag;
       await api("/api/assets/"+a.pdf_id,{method:"PATCH",body:JSON.stringify(payload)});
-      toast(attentionFlag===false?"Saved and cleared from attention queue":attentionFlag===true?"Saved and moved to attention queue":"Saved");
-      goBack(); refreshAttnCount();
+      toast(attentionFlag===false?"Saved and cleared attention flag":attentionFlag===true?"Saved as requiring attention":"Saved");
+      goBack();
     };
     const actionRow=el("div",{class:"row"},
       el("button",{class:"primary",onclick:async()=>saveAsset(undefined)},"Save"));
     if(a.attention_flag){
-      actionRow.append(el("button",{class:"ghost",onclick:async()=>saveAsset(false)},"Remove from attention queue"));
+      actionRow.append(el("button",{class:"ghost",onclick:async()=>saveAsset(false)},"Clear attention"));
     }else{
-      actionRow.append(el("button",{class:"ghost",onclick:async()=>saveAsset(true)},"Move to attention queue"));
+      actionRow.append(el("button",{class:"ghost",onclick:async()=>saveAsset(true)},"Requires attention"));
     }
     actionRow.append(
       el("a",{href:workspaceUrl("/api/assets/"+a.pdf_id+"/pdf"),target:"_blank"},
         el("button",{class:"ghost"},"Open PDF")),
       el("span",{class:"spacer"}),
       el("button",{class:"ghost",onclick:async()=>{ if(confirm("Delete this asset?")){
-        await api("/api/assets/"+a.pdf_id,{method:"DELETE"}); toast("Deleted"); goBack(); refreshAttnCount(); }}},"Delete"));
+        await api("/api/assets/"+a.pdf_id,{method:"DELETE"}); toast("Deleted"); goBack(); }}},"Delete"));
     box.append(actionRow);
     m.append(box);
     // show cached summary
@@ -4430,21 +4445,6 @@
           node.innerHTML=renderMarkdown("⚠ "+ev.detail);
         }
       });
-  }
-
-  // ================= ATTENTION =================
-  async function viewAttention(){
-    const {m,version}=beginMainRender(); m.append(el("h2",{class:"section-title"},"🔔 Attention Queue"));
-    const loading=viewLoading("Loading review queue…",4); m.append(loading);
-    let r;
-    try{ r=await api("/api/attention"); }
-    catch(e){ if(isCurrentRender(version))loading.replaceWith(el("div",{class:"err"},e.message)); return; }
-    if(!isCurrentRender(version))return;
-    loading.remove();
-    if(!r.assets.length){ m.append(el("div",{class:"muted"},"Nothing needs your attention. 🎉")); return; }
-    const grid=el("div",{class:"grid"});
-    r.assets.forEach(a=>grid.append(assetCard(a,{returnTo:"attention"})));
-    m.append(grid);
   }
 
   // ================= NEWS (premium) =================
