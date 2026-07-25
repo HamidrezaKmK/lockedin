@@ -58,6 +58,7 @@ def welcome() -> None:
     print(f"  {cyan('3.')} {dim('See approved bubbles in that workspace')}\n     {cyan('lockedin-scientist bubbles')}")
     print(f"  {cyan('4.')} {dim('Sync once without starting an assistant')}\n     {cyan('lockedin-scientist sync')}")
     print(f"  {cyan('5.')} {dim('Launch the coding CLI you use')}\n     {cyan('lockedin-scientist codex <bubble-slug>')}\n     {cyan('lockedin-scientist claude <bubble-slug>')}\n     {cyan('lockedin-scientist agy <bubble-slug>')}")
+    print(f"  {cyan('↗')} {dim('Grant an external directory for one session')}\n     {cyan('lockedin-scientist codex <bubble-slug> --add-dir <directory>')}")
     print()
     print(bold("Troubleshooting & cleanup"))
     print(f"  {cyan('↻')} {dim('Replace the mirror with the current website state')}\n     {cyan('lockedin-scientist sync --from-server')}")
