@@ -94,7 +94,7 @@ lockedin-scientist agy <bubble-slug>
 To let a session work in a local directory outside the report mirror, add a temporary directory
 grant (repeat `--add-dir` as needed):
 ```bash
-lockedin-scientist codex <bubble-slug> --add-dir ~/projects/learning-projections
+lockedin-scientist codex <bubble-slug> --add-dir <directory>
 ```
 The granted directory is local read/write access for that session only. It is never synchronized
 to LockedIn or saved for later sessions.

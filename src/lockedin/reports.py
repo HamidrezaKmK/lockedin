@@ -391,13 +391,12 @@ interactive approval behavior; it does not enable auto-approval or bypass permis
 Add an existing directory when the assistant needs to work outside its LockedIn report mirror:
 
 ```
-lockedin-scientist codex <bubble-slug> --add-dir ~/projects/learning-projections
+lockedin-scientist codex <bubble-slug> --add-dir <directory>
 ```
 
 Repeat `--add-dir` for more directories. Each grant is local read/write access for that session
 only and applies to the complete directory subtree; it is not saved, synchronized, or uploaded to
-LockedIn. To limit a notebook task, grant its nearest directory, for example
-`--add-dir ~/projects/learning-projections/dev`.
+LockedIn. To limit a notebook task, grant the notebook's containing directory.
 
 ### Sync without an agent
 

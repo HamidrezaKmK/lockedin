@@ -632,7 +632,7 @@ def _main() -> None:
   lockedin-scientist sync
   lockedin-scientist sync --from-server
   lockedin-scientist codex <bubble-slug>
-  lockedin-scientist codex <bubble-slug> --add-dir ~/projects/learning-projections
+  lockedin-scientist codex <bubble-slug> --add-dir <directory>
   lockedin-scientist claude <bubble-slug>
   lockedin-scientist agy <bubble-slug>
   lockedin-scientist uninstall
