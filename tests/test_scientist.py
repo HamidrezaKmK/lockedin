@@ -401,6 +401,49 @@ class ScientistClientTest(unittest.TestCase):
         self.assertIn("REPORTS/work/assets", prompt)
         self.assertIn("/api/bubbles/work/assets/filename.gif", prompt)
 
+    def test_external_dirs_resolve_deduplicate_and_require_directories(self):
+        with tempfile.TemporaryDirectory() as directory:
+            external = Path(directory) / "external"
+            external.mkdir()
+            grants = scientist_cli.external_dirs([str(external), str(external / ".")])
+            self.assertEqual(grants, [external.resolve()])
+            with self.assertRaisesRegex(RuntimeError, "does not exist or is not a directory"):
+                scientist_cli.external_dirs([str(external / "missing")])
+            file = external / "file.txt"; file.write_text("not a directory")
+            with self.assertRaisesRegex(RuntimeError, "does not exist or is not a directory"):
+                scientist_cli.external_dirs([str(file)])
+
+    def test_all_vendor_launchers_receive_external_directory_grants(self):
+        with temp_data_home(), tempfile.TemporaryDirectory() as directory:
+            mirror = scientist_cli.Mirror({"server": "https://example.test", "user": "alice", "token": "t"})
+            grants = scientist_cli.external_dirs([directory])
+            for model in ("codex", "claude", "agy"):
+                with patch.object(scientist_cli, "require_bubble"), \
+                     patch.object(scientist_cli.shutil, "which", return_value=f"/{model}"), \
+                     patch.object(mirror, "sync"), \
+                     patch.object(scientist_cli.subprocess, "run", return_value=type("Result", (), {"returncode": 0})()) as run:
+                    self.assertEqual(scientist_cli.run_agent(model, mirror, "work", grants), 0)
+                cmd = run.call_args.args[0]
+                self.assertIn("--add-dir", cmd)
+                self.assertEqual(cmd[cmd.index("--add-dir") + 1], str(grants[0]))
+                self.assertIn(str(grants[0]), "\n".join(cmd))
+
+    def test_run_command_passes_external_directory_grants_without_persisting_them(self):
+        account = {"server": "https://example.test", "user": "alice", "token": "t"}
+        original_argv = list(scientist_cli.sys.argv)
+        try:
+            with temp_data_home(), tempfile.TemporaryDirectory() as directory, \
+                 patch.object(scientist_cli, "choose_account", return_value=account), \
+                 patch.object(scientist_cli.Mirror, "sync"), \
+                 patch.object(scientist_cli, "run_agent", return_value=0) as run:
+                scientist_cli.sys.argv = ["lockedin-scientist", "codex", "work", "--add-dir", directory]
+                with self.assertRaises(SystemExit) as exited:
+                    scientist_cli._main()
+        finally:
+            scientist_cli.sys.argv = original_argv
+        self.assertEqual(exited.exception.code, 0)
+        self.assertEqual(run.call_args.args[3], [Path(directory).resolve()])
+
     def test_sync_pushes_a_new_local_gif_not_yet_in_the_server_manifest(self):
         with temp_data_home():
             mirror = scientist_cli.Mirror({"server": "https://example.test", "user": "alice", "token": "t"})

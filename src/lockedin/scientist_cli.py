@@ -522,13 +522,34 @@ def switch_workspace(account: dict, query: str) -> None:
     print(green("✓") + " Active workspace: " + bold(matches[0]["name"]))
 
 
-def role(mirror: Mirror, bubble: str) -> str:
+def external_dirs(values: list[str]) -> list[Path]:
+    """Resolve explicit, per-session external workspace grants."""
+    resolved: list[Path] = []
+    seen: set[Path] = set()
+    for value in values:
+        path = Path(value).expanduser().resolve()
+        if not path.is_dir():
+            raise RuntimeError(f"External workspace directory does not exist or is not a directory: {value}")
+        if path not in seen:
+            resolved.append(path)
+            seen.add(path)
+    return resolved
+
+
+def role(mirror: Mirror, bubble: str, add_dirs: list[Path] | None = None) -> str:
     inventory_path = mirror.root / "REPORTS" / bubble / "_lockedin_papers.md"
     inventory = inventory_path.read_text() if inventory_path.exists() else "(inventory unavailable; run lockedin-scientist sync)"
-    return f"""You are LockedIn Scientist. Work only in REPORTS/{bubble}/pages and REPORTS/{bubble}/assets.
+    external_scope = "\n".join(f"- {path}" for path in add_dirs or []) or "(none)"
+    return f"""You are LockedIn Scientist. In the LockedIn mirror, work only in REPORTS/{bubble}/pages and REPORTS/{bubble}/assets.
 This workspace is synchronized with the LockedIn website every five seconds. Re-read a page immediately before editing it.
 If a sync conflict is reported, re-read the current page and reapply your intended change instead of restoring stale text.
 Never edit credentials, TODOs, bubbles.yaml, or unrelated bubbles. Describe intended report edits before writing.
+
+EXTERNAL WORKSPACE GRANTS:
+- You may freely read and edit files under only these explicitly authorized external directories:
+{external_scope}
+- Those directories are local-only: never place their contents in the LockedIn mirror or assume they synchronize to the website.
+- Do not access other external directories unless the user starts a new session with an appropriate --add-dir grant.
 
 NEW REPORT PAGES:
 - To add a website page, create one flat Markdown file at REPORTS/{bubble}/pages/<page-slug>.md.
@@ -574,16 +595,18 @@ def require_bubble(mirror: Mirror, bubble: str) -> None:
     raise RuntimeError(f"No approved bubble with slug {bubble!r}. Available: {available}")
 
 
-def run_agent(model: str, mirror: Mirror, bubble: str) -> int:
+def run_agent(model: str, mirror: Mirror, bubble: str, add_dirs: list[Path] | None = None) -> int:
     require_bubble(mirror, bubble)
     if not shutil.which(model): raise RuntimeError(f"{model} is not installed on PATH.")
+    add_dirs = add_dirs or []
     prompt = "Introduce yourself as the LockedIn research-report assistant and ask what to work on."
-    instructions = role(mirror, bubble)
+    instructions = role(mirror, bubble, add_dirs)
+    add_dir_args = [arg for directory in add_dirs for arg in ("--add-dir", str(directory))]
     # Use each vendor CLI's ordinary interactive permission behavior.  Do not opt into any
     # bypass/auto-accept mode; Codex can still ask for escalation when it judges it necessary.
-    if model == "codex": cmd = ["codex", "--cd", str(mirror.root), "--sandbox", "workspace-write", "--ask-for-approval", "on-request", "--search", "-c", f"developer_instructions={instructions}", prompt]
-    elif model == "claude": cmd = ["claude", "--append-system-prompt", instructions, prompt]
-    else: cmd = ["agy", "-i", instructions + "\n\n" + prompt]
+    if model == "codex": cmd = ["codex", "--cd", str(mirror.root), *add_dir_args, "--sandbox", "workspace-write", "--ask-for-approval", "on-request", "--search", "-c", f"developer_instructions={instructions}", prompt]
+    elif model == "claude": cmd = ["claude", *add_dir_args, "--append-system-prompt", instructions, prompt]
+    else: cmd = ["agy", *add_dir_args, "-i", instructions + "\n\n" + prompt]
     stop = threading.Event()
     def supervise():
         while not stop.wait(5):
@@ -609,12 +632,15 @@ def _main() -> None:
   lockedin-scientist sync
   lockedin-scientist sync --from-server
   lockedin-scientist codex <bubble-slug>
+  lockedin-scientist codex <bubble-slug> --add-dir ~/projects/learning-projections
   lockedin-scientist claude <bubble-slug>
   lockedin-scientist agy <bubble-slug>
   lockedin-scientist uninstall
   lockedin-scientist uninstall --purge-data --yes
 
 The short model form above is equivalent to `lockedin-scientist run <model> <bubble-slug>`.
+`--add-dir DIR` is repeatable and grants the launched assistant local read/write access to an
+existing directory for that session only; it is never synchronized or saved by LockedIn.
 `sync` performs one safe pull/push cycle without launching a model. `sync --from-server` archives
 local safe files, resets sync bookkeeping, and makes the website state authoritative (it asks for
 confirmation; use --yes only for a deliberate non-interactive recovery). During a model session,
@@ -644,6 +670,8 @@ for plain terminal output.""",
                            description="Sync first, verify the slug, then launch the chosen installed CLI.")
     p_run.add_argument("model", choices=("codex", "claude", "agy"), help="Installed coding CLI to run.")
     p_run.add_argument("bubble", metavar="BUBBLE-SLUG", help="Slug shown by `lockedin-scientist bubbles`.")
+    p_run.add_argument("--add-dir", action="append", default=[], metavar="DIR",
+                       help="Grant this existing directory local read/write access for this session only; repeatable.")
     args = parser.parse_args()
     if args.command is None:
         welcome()
@@ -673,9 +701,14 @@ for plain terminal output.""",
             print(green("✓") + " Synced workspace\n  " + dim(mirror.root))
         return
     if args.command == "run":
+        add_dirs = external_dirs(args.add_dir)
         mirror.sync()
         print(green("✓") + f" Synced. Starting {bold(args.model)} in {cyan(args.bubble)}…")
-        raise SystemExit(run_agent(args.model, mirror, args.bubble))
+        if add_dirs:
+            print(dim("External workspace grants:"))
+            for directory in add_dirs:
+                print("  " + cyan(directory))
+        raise SystemExit(run_agent(args.model, mirror, args.bubble, add_dirs))
     parser.print_help()
 
 

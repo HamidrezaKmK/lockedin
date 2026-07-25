@@ -386,6 +386,19 @@ lockedin-scientist agy <bubble-slug>
 The CLI verifies the slug before launching an assistant. It uses the vendor CLI's normal
 interactive approval behavior; it does not enable auto-approval or bypass permissions.
 
+### Work in another local directory
+
+Add an existing directory when the assistant needs to work outside its LockedIn report mirror:
+
+```
+lockedin-scientist codex <bubble-slug> --add-dir ~/projects/learning-projections
+```
+
+Repeat `--add-dir` for more directories. Each grant is local read/write access for that session
+only and applies to the complete directory subtree; it is not saved, synchronized, or uploaded to
+LockedIn. To limit a notebook task, grant its nearest directory, for example
+`--add-dir ~/projects/learning-projections/dev`.
+
 ### Sync without an agent
 
 Use `sync` when you want to pull website changes and push your local report edits without
