@@ -89,7 +89,11 @@ lockedin-scientist sync
 lockedin-scientist codex <bubble-slug>
 lockedin-scientist claude <bubble-slug>
 lockedin-scientist agy <bubble-slug>
+lockedin-scientist resume codex <bubble-slug>
 ```
+
+`resume` reopens the latest session for that vendor in the selected workspace mirror while
+Scientist keeps syncing.
 
 To let a session work in a local directory outside the report mirror, add a temporary directory
 grant (repeat `--add-dir` as needed):

@@ -1534,6 +1534,7 @@
   }
 
   // ---------- state ----------
+  const WORKSPACE_STORAGE_KEY="li_workspace";
   const S = { user:null, model:null, premium:false, premiumRequestedAt:"", admin:false,
     workspaceId:null, personalWorkspaceId:null, workspaces:[],
     mathMacros:{}, refs:null, view:"assets", bubble:null, chat:[],
@@ -1672,6 +1673,7 @@
     }
     actions.append(el("button",{class:"ghost small",style:"color:var(--bad)",onclick:async()=>{
       await api("/api/logout",{method:"POST"});
+      localStorage.removeItem(WORKSPACE_STORAGE_KEY);
       location.reload();
     }},"Log out"));
     menu.append(actions);
@@ -1689,6 +1691,7 @@
     try{
       const math=await api("/api/settings/math"); S.mathMacros=math.macros||{};
       S.bubble=null; S.page=null; S.pages=[]; S.chat=[]; S.todos=[]; S.todosById={};
+      localStorage.setItem(WORKSPACE_STORAGE_KEY,id);
       refreshAccountButton(); $("#accountMenu").classList.add("hide"); switchView("assets");
       toast("Switched workspace");
     }catch(e){ S.workspaceId=old; toast(e.message); }
@@ -1752,9 +1755,21 @@
     workspaceUrl("/api/bubbles/"+S.bubble+"/preview/"+(S.page||S.home||"overview")),"_blank"); };
 
   async function boot(){
-    let me; try{ me=await api("/api/me"); }catch(e){ return; }
+    const savedWorkspace=localStorage.getItem(WORKSPACE_STORAGE_KEY);
+    if(savedWorkspace)S.workspaceId=savedWorkspace;
+    let me;
+    try{ me=await api("/api/me"); }
+    catch(e){
+      // Membership can change while a tab is closed. Fall back to Personal instead of leaving
+      // the app unusable because a browser-local workspace selection became stale.
+      if(!savedWorkspace || (e.status!==403&&e.status!==404))return;
+      localStorage.removeItem(WORKSPACE_STORAGE_KEY);
+      S.workspaceId=null;
+      try{ me=await api("/api/me"); }catch(_){ return; }
+    }
     S.user=me.user; S.model=me.model; S.premium=!!me.premium;
     S.workspaceId=me.workspace_id||null; S.personalWorkspaceId=me.personal_workspace_id||null;
+    if(S.workspaceId)localStorage.setItem(WORKSPACE_STORAGE_KEY,S.workspaceId);
     S.premiumRequestedAt=me.premium_requested_at||""; S.admin=!!me.admin;
     S.availableThemes=Array.isArray(me.themes)?me.themes:THEMES.slice();
     $("#auth").style.display="none"; $("#app").style.display="grid";

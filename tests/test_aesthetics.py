@@ -96,6 +96,14 @@ class AestheticsConfigTests(unittest.TestCase):
         self.assertIn('class:"small ghost mobile-workspace-control",onclick:newPage', source)
         self.assertIn('class:"small ghost mobile-workspace-control",title:"Page view mode"', source)
 
+    def test_browser_restores_a_valid_workspace_and_recovers_from_stale_storage(self):
+        source = (Path(server.WEB_DIR) / "index.html").read_text()
+        self.assertIn('const WORKSPACE_STORAGE_KEY="li_workspace"', source)
+        self.assertIn('const savedWorkspace=localStorage.getItem(WORKSPACE_STORAGE_KEY);', source)
+        self.assertIn('localStorage.setItem(WORKSPACE_STORAGE_KEY,id);', source)
+        self.assertIn('localStorage.removeItem(WORKSPACE_STORAGE_KEY);', source)
+        self.assertIn('if(!savedWorkspace || (e.status!==403&&e.status!==404))return;', source)
+
     def test_library_defaults_to_the_requires_attention_filter(self):
         source = (Path(server.WEB_DIR) / "index.html").read_text()
         self.assertIn('const REQUIRES_ATTENTION="__requires_attention__"', source)

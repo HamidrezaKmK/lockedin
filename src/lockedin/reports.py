@@ -386,6 +386,20 @@ lockedin-scientist agy <bubble-slug>
 The CLI verifies the slug before launching an assistant. It uses the vendor CLI's normal
 interactive approval behavior; it does not enable auto-approval or bypass permissions.
 
+### Resume an assistant session
+
+Resume the latest Codex, Claude Code, or Antigravity session from the selected local workspace
+mirror without losing Scientist's five-second synchronization:
+
+```
+lockedin-scientist resume codex <bubble-slug>
+lockedin-scientist resume claude <bubble-slug>
+lockedin-scientist resume agy <bubble-slug>
+```
+
+Vendor session history is scoped to the workspace mirror, not to one bubble. Re-supply any
+temporary `--add-dir <directory>` grants needed by the resumed session.
+
 ### Work in another local directory
 
 Add an existing directory when the assistant needs to work outside its LockedIn report mirror:

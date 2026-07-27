@@ -58,6 +58,7 @@ def welcome() -> None:
     print(f"  {cyan('3.')} {dim('See approved bubbles in that workspace')}\n     {cyan('lockedin-scientist bubbles')}")
     print(f"  {cyan('4.')} {dim('Sync once without starting an assistant')}\n     {cyan('lockedin-scientist sync')}")
     print(f"  {cyan('5.')} {dim('Launch the coding CLI you use')}\n     {cyan('lockedin-scientist codex <bubble-slug>')}\n     {cyan('lockedin-scientist claude <bubble-slug>')}\n     {cyan('lockedin-scientist agy <bubble-slug>')}")
+    print(f"  {cyan('↻')} {dim('Resume the latest session with syncing')}\n     {cyan('lockedin-scientist resume <codex|claude|agy> <bubble-slug>')}")
     print(f"  {cyan('↗')} {dim('Grant an external directory for one session')}\n     {cyan('lockedin-scientist codex <bubble-slug> --add-dir <directory>')}")
     print()
     print(bold("Troubleshooting & cleanup"))
@@ -596,7 +597,9 @@ def require_bubble(mirror: Mirror, bubble: str) -> None:
     raise RuntimeError(f"No approved bubble with slug {bubble!r}. Available: {available}")
 
 
-def run_agent(model: str, mirror: Mirror, bubble: str, add_dirs: list[Path] | None = None) -> int:
+def run_agent(model: str, mirror: Mirror, bubble: str, add_dirs: list[Path] | None = None,
+              *, resume: bool = False) -> int:
+    """Launch or resume a vendor session while supervising mirror synchronization."""
     require_bubble(mirror, bubble)
     if not shutil.which(model): raise RuntimeError(f"{model} is not installed on PATH.")
     add_dirs = add_dirs or []
@@ -605,9 +608,20 @@ def run_agent(model: str, mirror: Mirror, bubble: str, add_dirs: list[Path] | No
     add_dir_args = [arg for directory in add_dirs for arg in ("--add-dir", str(directory))]
     # Use each vendor CLI's ordinary interactive permission behavior.  Do not opt into any
     # bypass/auto-accept mode; Codex can still ask for escalation when it judges it necessary.
-    if model == "codex": cmd = ["codex", "--cd", str(mirror.root), *add_dir_args, "--sandbox", "workspace-write", "--ask-for-approval", "on-request", "--search", "-c", f"developer_instructions={instructions}", prompt]
-    elif model == "claude": cmd = ["claude", *add_dir_args, "--append-system-prompt", instructions, prompt]
-    else: cmd = ["agy", *add_dir_args, "-i", instructions + "\n\n" + prompt]
+    if model == "codex":
+        cmd = ["codex", *( ["resume", "--last"] if resume else []), "--cd", str(mirror.root),
+               *add_dir_args, "--sandbox", "workspace-write", "--ask-for-approval", "on-request",
+               "--search", "-c", f"developer_instructions={instructions}"]
+        if not resume: cmd.append(prompt)
+    elif model == "claude":
+        cmd = ["claude", *add_dir_args]
+        if resume:
+            cmd.extend(["--continue", "--append-system-prompt", instructions])
+        else:
+            cmd.extend(["--append-system-prompt", instructions, prompt])
+    else:
+        cmd = ["agy", *add_dir_args, "--continue"] if resume else ["agy", *add_dir_args,
+              "-i", instructions + "\n\n" + prompt]
     stop = threading.Event()
     def supervise():
         while not stop.wait(5):
@@ -636,10 +650,13 @@ def _main() -> None:
   lockedin-scientist codex <bubble-slug> --add-dir <directory>
   lockedin-scientist claude <bubble-slug>
   lockedin-scientist agy <bubble-slug>
+  lockedin-scientist resume codex <bubble-slug>
   lockedin-scientist uninstall
   lockedin-scientist uninstall --purge-data --yes
 
 The short model form above is equivalent to `lockedin-scientist run <model> <bubble-slug>`.
+`resume <model> <bubble-slug>` reopens that vendor's latest session in the selected workspace
+mirror while Scientist keeps syncing. Vendor histories are workspace-wide, not bubble-specific.
 `--add-dir DIR` is repeatable and grants the launched assistant local read/write access to an
 existing directory for that session only; it is never synchronized or saved by LockedIn.
 `sync` performs one safe pull/push cycle without launching a model. `sync --from-server` archives
@@ -673,6 +690,12 @@ for plain terminal output.""",
     p_run.add_argument("bubble", metavar="BUBBLE-SLUG", help="Slug shown by `lockedin-scientist bubbles`.")
     p_run.add_argument("--add-dir", action="append", default=[], metavar="DIR",
                        help="Grant this existing directory local read/write access for this session only; repeatable.")
+    p_resume = sub.add_parser("resume", help="Resume the latest vendor session with Scientist synchronization.",
+                              description="Resume the latest session in the selected workspace mirror; vendor histories are not bubble-specific.")
+    p_resume.add_argument("model", choices=("codex", "claude", "agy"), help="Installed coding CLI to resume.")
+    p_resume.add_argument("bubble", metavar="BUBBLE-SLUG", help="Approved bubble used for Scientist context.")
+    p_resume.add_argument("--add-dir", action="append", default=[], metavar="DIR",
+                          help="Grant this existing directory local read/write access for this session only; repeatable.")
     args = parser.parse_args()
     if args.command is None:
         welcome()
@@ -701,15 +724,17 @@ for plain terminal output.""",
             mirror.sync()
             print(green("✓") + " Synced workspace\n  " + dim(mirror.root))
         return
-    if args.command == "run":
+    if args.command in ("run", "resume"):
         add_dirs = external_dirs(args.add_dir)
         mirror.sync()
-        print(green("✓") + f" Synced. Starting {bold(args.model)} in {cyan(args.bubble)}…")
+        action = "Resuming latest" if args.command == "resume" else "Starting"
+        print(green("✓") + f" Synced. {action} {bold(args.model)} in {cyan(args.bubble)}…")
         if add_dirs:
             print(dim("External workspace grants:"))
             for directory in add_dirs:
                 print("  " + cyan(directory))
-        raise SystemExit(run_agent(args.model, mirror, args.bubble, add_dirs))
+        raise SystemExit(run_agent(args.model, mirror, args.bubble, add_dirs,
+                                   resume=args.command == "resume"))
     parser.print_help()
 
 
