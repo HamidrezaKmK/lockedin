@@ -63,6 +63,11 @@ class ScientistGuideTest(unittest.TestCase):
     def test_client_and_server_agree_on_the_required_scientist_version(self):
         self.assertEqual(scientist_cli.SCIENTIST_CLIENT_VERSION, server.SCIENTIST_CLIENT_VERSION)
 
+    def test_server_upgrade_response_includes_both_reinstall_commands(self):
+        source = Path(server.__file__).read_text()
+        self.assertIn("install.sh | bash", source)
+        self.assertIn("install.ps1 | iex", source)
+
     def test_client_sends_its_scientist_version_header(self):
         captured = {}
 

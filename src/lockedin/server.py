@@ -933,8 +933,11 @@ def build_app():
         if x_lockedin_scientist_version != SCIENTIST_CLIENT_VERSION:
             raise HTTPException(
                 status_code=426,
-                detail=("LockedIn Scientist is out of date. Reinstall the newest version and retry. "
-                        "See the Scientist CLI guide for the current install command."),
+                detail=("LockedIn Scientist is out of date. Reinstall the newest version, then retry. "
+                        "macOS/Linux: curl -fsSL "
+                        "https://raw.githubusercontent.com/HamidrezaKmK/lockedin/scientist/install.sh | bash; "
+                        "Windows PowerShell: irm "
+                        "https://raw.githubusercontent.com/HamidrezaKmK/lockedin/scientist/install.ps1 | iex"),
             )
         token = (authorization or "").removeprefix("Bearer ").strip()
         user = auth.scientist_token_user(token)
