@@ -115,7 +115,7 @@ class AestheticsConfigTests(unittest.TestCase):
 
     def test_library_card_attention_action_uses_compact_labels(self):
         source = (Path(server.WEB_DIR) / "index.html").read_text()
-        self.assertIn('a.attention_flag?"Clear":"Needs review"', source)
+        self.assertIn('a.attention_flag?"Clear":"Review"', source)
         self.assertIn('title:a.attention_flag?"Clear attention flag":"Mark as requiring attention"', source)
 
     def test_bubbles_view_has_a_reversible_archive_filter(self):
