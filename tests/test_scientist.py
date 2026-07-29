@@ -390,6 +390,15 @@ class ScientistClientTest(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "No approved bubble.*missing.*real"):
                     scientist_cli.run_agent("codex", mirror, "missing")
 
+    def test_transient_sync_failures_do_not_interrupt_the_agent_session(self):
+        error = RuntimeError("server returned 502")
+        self.assertIsNone(scientist_cli._sync_failure_message(1, error))
+        self.assertIsNone(scientist_cli._sync_failure_message(2, error))
+        message = scientist_cli._sync_failure_message(scientist_cli._SYNC_WARNING_AFTER, error)
+        self.assertIn("sync paused", message)
+        self.assertIn("Will keep retrying", message)
+        self.assertIsNone(scientist_cli._sync_failure_message(scientist_cli._SYNC_WARNING_AFTER + 1, error))
+
     def test_role_uses_the_bubble_specific_paper_inventory(self):
         with temp_data_home():
             mirror = scientist_cli.Mirror({"server": "https://example.test", "user": "alice", "token": "t"})

@@ -22,6 +22,7 @@ import webbrowser
 from pathlib import Path
 
 APP = "lockedin-scientist"
+_SYNC_WARNING_AFTER = 3
 
 
 def _colour(text: object, code: str) -> str:
@@ -597,6 +598,14 @@ def require_bubble(mirror: Mirror, bubble: str) -> None:
     raise RuntimeError(f"No approved bubble with slug {bubble!r}. Available: {available}")
 
 
+def _sync_failure_message(failures: int, error: Exception) -> str | None:
+    """Avoid interrupting an agent session for brief, self-healing sync outages."""
+    if failures != _SYNC_WARNING_AFTER:
+        return None
+    return (f"[{APP} sync paused] {failures} consecutive sync attempts failed: {error}. "
+            "Will keep retrying.")
+
+
 def run_agent(model: str, mirror: Mirror, bubble: str, add_dirs: list[Path] | None = None,
               *, resume: bool = False) -> int:
     """Launch or resume a vendor session while supervising mirror synchronization."""
@@ -624,9 +633,22 @@ def run_agent(model: str, mirror: Mirror, bubble: str, add_dirs: list[Path] | No
               "-i", instructions + "\n\n" + prompt]
     stop = threading.Event()
     def supervise():
+        failures = 0
+        warning_reported = False
         while not stop.wait(5):
-            try: mirror.sync()
-            except Exception as e: print(f"[{APP} sync warning] {e}", file=sys.stderr)
+            try:
+                mirror.sync()
+            except Exception as e:
+                failures += 1
+                if message := _sync_failure_message(failures, e):
+                    print(message, file=sys.stderr)
+                    warning_reported = True
+            else:
+                if warning_reported:
+                    print(f"[{APP} sync recovered] Synchronization resumed after {failures} failed attempts.",
+                          file=sys.stderr)
+                failures = 0
+                warning_reported = False
     worker = threading.Thread(target=supervise, daemon=True); worker.start()
     try: return subprocess.run(cmd, cwd=mirror.root).returncode
     finally: stop.set(); mirror.sync()
