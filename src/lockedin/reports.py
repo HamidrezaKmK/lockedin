@@ -405,7 +405,7 @@ temporary `--add-dir <directory>` grants needed by the resumed session.
 Add an existing directory when the assistant needs to work outside its LockedIn report mirror:
 
 ```
-lockedin-scientist codex <bubble-slug> --add-dir <directory>
+lockedin-scientist <codex|claude|agy> <bubble-slug> --add-dir <directory>
 ```
 
 Repeat `--add-dir` for more directories. Each grant is local read/write access for that session

@@ -1540,7 +1540,7 @@
     mathMacros:{}, refs:null, view:"assets", bubble:null, chat:[],
     editor:null, page:null, pages:[], home:null, bubbleInstr:"", bubbleAssets:[],
     sessionId:null, sessionTitle:null,
-    todos:[], todosById:{}, todoFilter:"open",
+    todos:[], todosById:{}, todoFilter:"open", bubbleFilter:"active",
     chatCollapsed:false,  // persisted in li_chat
     pollTimer:null, lastPageMtime:null, lastManifestMtime:null,
     baseMtime:null, autosaveTimer:null, saving:false, syncState:"synced", applyingRemote:false,
@@ -2621,23 +2621,31 @@
   }
   async function viewBubbles(){
     const {m,version}=beginMainRender();
+    const filter=S.bubbleFilter||"active";
     const head=el("div",{class:"row"}, el("h2",{class:"section-title",style:"margin:0"},"🫧 Bubbles"),
       el("span",{class:"spacer"}),
+      el("button",{class:"ghost small",onclick:()=>{ S.bubbleFilter=filter==="active"?"archived":"active"; viewBubbles(); }},
+        filter==="active"?"Show archive":"Show active"),
       el("button",{class:"primary small",onclick:newBubble},"+ New bubble"));
     const loading=viewLoading("Loading bubbles…",4);
     m.append(head, el("div",{style:"height:14px"}),loading);
     let r;
-    try{ r=await api("/api/bubbles"); }
+    try{ r=await api("/api/bubbles?archived="+(filter==="archived")); }
     catch(e){ if(isCurrentRender(version))loading.replaceWith(el("div",{class:"err"},e.message)); return; }
     if(!isCurrentRender(version))return;
     loading.remove();
-    if(!r.bubbles.length){ m.append(el("div",{class:"muted"},"No bubbles yet. Tag a PDF or create one.")); return; }
+    if(!r.bubbles.length){ m.append(el("div",{class:"muted"},filter==="archived"
+      ? "No archived bubbles." : "No bubbles yet. Tag a PDF or create one.")); return; }
     const grid=el("div",{class:"grid"});
     r.bubbles.forEach(b=>{
       const c=el("div",{class:"acard"});
       const h=el("div",{class:"row"}, el("h4",{style:"margin:0"},b.name));
       // delete button — stopPropagation so it doesn't also open the bubble
       h.append(el("span",{class:"spacer"}));
+      h.append(el("button",{class:"ghost small",style:"padding:3px 7px",
+        title:b.archived?"Restore this bubble":"Archive this bubble",
+        onclick:async(e)=>{ e.stopPropagation(); await setBubbleArchived(b.slug, !b.archived); }
+      },b.archived?"Restore":"Archive"));
       h.append(el("button",{class:"ghost small",style:"opacity:.5;padding:3px 7px",
         title:"Delete this bubble",
         onclick:(e)=>{ e.stopPropagation(); deleteBubble(b.slug, b.name, viewBubbles); }
@@ -2687,6 +2695,13 @@
     if(!confirm(`Delete the bubble "${name}"?\n\nThis permanently removes all its report pages and figures. PDFs tagged with it will have this tag removed. This cannot be undone.`)) return;
     try{ await api("/api/bubbles/"+slug,{method:"DELETE"}); toast("Bubble deleted"); onDone&&onDone(); }
     catch(e){ toast("Error: "+e.message); }
+  }
+  async function setBubbleArchived(slug, archived){
+    try{
+      await api("/api/bubbles/"+slug+"/archive",{method:"PATCH",body:JSON.stringify({archived})});
+      toast(archived?"Bubble archived":"Bubble restored");
+      viewBubbles();
+    }catch(e){ toast("Error: "+e.message); }
   }
 
   function startBubbleRename(nameSpan, slug){

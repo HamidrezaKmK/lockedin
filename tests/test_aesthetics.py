@@ -117,3 +117,10 @@ class AestheticsConfigTests(unittest.TestCase):
         source = (Path(server.WEB_DIR) / "index.html").read_text()
         self.assertIn('a.attention_flag?"Clear":"Needs review"', source)
         self.assertIn('title:a.attention_flag?"Clear attention flag":"Mark as requiring attention"', source)
+
+    def test_bubbles_view_has_a_reversible_archive_filter(self):
+        source = (Path(server.WEB_DIR) / "index.html").read_text()
+        self.assertIn('bubbleFilter:"active"', source)
+        self.assertIn('filter==="active"?"Show archive":"Show active"', source)
+        self.assertIn('api("/api/bubbles?archived="+(filter==="archived"))', source)
+        self.assertIn('b.archived?"Restore":"Archive"', source)

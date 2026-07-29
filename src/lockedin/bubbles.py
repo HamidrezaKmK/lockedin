@@ -58,7 +58,7 @@ def touch_bubble(slug: str, *, when: "str | None" = None) -> None:
     reg = load_registry()
     entry = reg.get(slug)
     if entry is None:
-        entry = {"name": slug_to_name(slug), "approved": False, "instructions": "",
+        entry = {"name": slug_to_name(slug), "approved": False, "archived": False, "instructions": "",
                  "created_at": _now_iso()}
     entry["last_edited_at"] = when or _now_iso()
     reg[slug] = entry
@@ -131,7 +131,7 @@ def propose_bubble(name: str) -> str:
     reg = load_registry()
     if slug not in reg:
         now = _now_iso()
-        reg[slug] = {"name": name.strip(), "approved": False, "instructions": "",
+        reg[slug] = {"name": name.strip(), "approved": False, "archived": False, "instructions": "",
                      "created_at": now, "last_edited_at": now}
         save_registry(reg)
     return slug
@@ -172,10 +172,11 @@ def create_bubble(name: str) -> str:
     entry = reg.get(slug)
     if entry is None:
         now = _now_iso()
-        reg[slug] = {"name": name.strip(), "approved": True, "instructions": "",
+        reg[slug] = {"name": name.strip(), "approved": True, "archived": False, "instructions": "",
                      "created_at": now, "last_edited_at": now}
     else:
         entry["approved"] = True
+        entry["archived"] = False
         entry["last_edited_at"] = _now_iso()
     save_registry(reg)
     return slug
@@ -187,10 +188,11 @@ def approve_bubble(slug: str, instructions: str = "") -> dict:
     if entry is None:
         # bubble exists only via PDF tags — materialize it in the registry
         now = _now_iso()
-        entry = {"name": slug_to_name(slug), "approved": True, "instructions": instructions,
+        entry = {"name": slug_to_name(slug), "approved": True, "archived": False, "instructions": instructions,
                  "created_at": now, "last_edited_at": now}
     else:
         entry["approved"] = True
+        entry["archived"] = False
         if instructions:
             entry["instructions"] = instructions
         entry["last_edited_at"] = _now_iso()
@@ -209,6 +211,16 @@ def rename_bubble(slug: str, new_name: str) -> dict:
         raise KeyError(f"Bubble {slug!r} not found.")
     reg[slug]["name"] = new_name
     reg[slug]["last_edited_at"] = _now_iso()
+    save_registry(reg)
+    return reg[slug]
+
+
+def set_bubble_archived(slug: str, archived: bool) -> dict:
+    """Reversibly hide a bubble without changing its reports, assets, or memberships."""
+    reg = load_registry()
+    if slug not in reg:
+        raise KeyError(f"Bubble {slug!r} not found.")
+    reg[slug]["archived"] = bool(archived)
     save_registry(reg)
     return reg[slug]
 
@@ -420,6 +432,7 @@ def all_bubbles() -> list[dict]:
             "name": name,
             "tag": tag_for_slug(slug, reg=reg, pdf_names=pdf_names),
             "approved": bool(entry.get("approved", False)),
+            "archived": bool(entry.get("archived", False)),
             "in_registry": slug in reg,
             "pdf_count": counts.get(slug, 0),
             "page_count": _page_count(slug),
@@ -448,6 +461,7 @@ def bubble_detail(slug: str) -> dict:
         "name": entry.get("name") or slug_to_name(slug, reg=reg, pdf_names=pdf_names),
         "tag": tag_for_slug(slug, reg=reg, pdf_names=pdf_names),
         "approved": approved,
+        "archived": bool(entry.get("archived", False)),
         "in_registry": slug in reg,
         "instructions": entry.get("instructions", ""),
         "last_edited_at": entry.get("last_edited_at") or entry.get("created_at") or "",
@@ -477,7 +491,7 @@ def set_share_active(slug: str, active: bool) -> dict:
     reg = load_registry()
     entry = reg.get(slug)
     if entry is None:
-        entry = {"name": slug_to_name(slug), "approved": True, "instructions": "",
+        entry = {"name": slug_to_name(slug), "approved": True, "archived": False, "instructions": "",
                  "created_at": _now_iso()}
     token = entry.get("share_token") or secrets.token_urlsafe(16)
     entry["share_token"] = token

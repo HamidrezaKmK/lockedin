@@ -205,6 +205,22 @@ class BubbleIdentity(unittest.TestCase):
         self.assertEqual(calls, 1)
         self.assertEqual({row["slug"] for row in rows}, {"first-topic", "second-topic"})
 
+    def test_archived_bubbles_are_reversible_and_hidden_from_active_inventory(self):
+        with temp_home() as home:
+            active = service.create_bubble(home, "Active topic")
+            archived = service.create_bubble(home, "Archived topic")
+            with paths.use_root(home):
+                bubbles.ensure_pages(archived)
+                bubbles.save_page(archived, "overview", "# Preserved\n")
+            result = service.set_bubble_archived(home, archived, True)
+            self.assertTrue(result["archived"])
+            self.assertEqual([b["slug"] for b in service.list_bubbles(home)], [active])
+            self.assertEqual([b["slug"] for b in service.list_bubbles(home, archived=True)], [archived])
+            self.assertEqual(service.bubble_detail(home, archived)["content"], "# Preserved\n")
+            result = service.set_bubble_archived(home, archived, False)
+            self.assertFalse(result["archived"])
+            self.assertEqual({b["slug"] for b in service.list_bubbles(home)}, {active, archived})
+
 
 class BubbleRelevance(unittest.TestCase):
     def test_legacy_membership_defaults_to_score_five_and_sorts(self):

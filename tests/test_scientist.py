@@ -359,6 +359,7 @@ class ScientistClientTest(unittest.TestCase):
         self.assertIn("lockedin-scientist claude", output.getvalue())
         self.assertIn("lockedin-scientist agy", output.getvalue())
         self.assertIn("--add-dir <directory>", output.getvalue())
+        self.assertIn("<codex|claude|agy> <bubble-slug> --add-dir <directory>", output.getvalue())
         self.assertIn("lockedin-scientist resume", output.getvalue())
         self.assertIn("lockedin-scientist sync --from-server", output.getvalue())
         self.assertIn("lockedin-scientist uninstall", output.getvalue())

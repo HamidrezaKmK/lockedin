@@ -138,9 +138,10 @@ def resummarize_asset(home: Path, pdf_id: str) -> str:
 
 
 # ---- bubbles ----
-def list_bubbles(home: Path) -> list[dict]:
+def list_bubbles(home: Path, *, archived: bool = False) -> list[dict]:
     with paths.use_root(home):
-        return [b for b in bubbles.all_bubbles() if b.get("approved")]
+        return [b for b in bubbles.all_bubbles()
+                if b.get("approved") and bool(b.get("archived")) == archived]
 
 
 def bubble_detail(home: Path, slug: str) -> dict:
@@ -164,6 +165,11 @@ def register_user_tags(home: Path, tags: list[str]) -> None:
 def rename_bubble(home: Path, slug: str, new_name: str) -> dict:
     with paths.use_root(home):
         return bubbles.rename_bubble(slug, new_name)
+
+
+def set_bubble_archived(home: Path, slug: str, archived: bool) -> dict:
+    with paths.use_root(home):
+        return bubbles.set_bubble_archived(slug, archived)
 
 
 def approve_bubble(home: Path, slug: str, instructions: str = "") -> dict:

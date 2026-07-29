@@ -785,6 +785,9 @@ def build_app():
     class BubbleRenameIn(BaseModel):
         name: str
 
+    class BubbleArchiveIn(BaseModel):
+        archived: bool
+
     class AddPdfIn(BaseModel):
         pdf_id: str
 
@@ -1538,8 +1541,8 @@ def build_app():
 
     # ---- bubbles ----
     @app.get("/api/bubbles")
-    def list_bubbles(user: str = Depends(current_user)):
-        return {"bubbles": service.list_bubbles(home_of(user))}
+    def list_bubbles(archived: bool = False, user: str = Depends(current_user)):
+        return {"bubbles": service.list_bubbles(home_of(user), archived=archived)}
 
     @app.post("/api/bubbles")
     def create_bubble(body: BubbleIn, user: str = Depends(current_user)):
@@ -1559,6 +1562,13 @@ def build_app():
             return {"bubble": service.rename_bubble(home_of(user), slug, body.name)}
         except (KeyError, ValueError) as e:
             raise HTTPException(status_code=400, detail=str(e))
+
+    @app.patch("/api/bubbles/{slug}/archive")
+    def archive_bubble(slug: str, body: BubbleArchiveIn, user: str = Depends(current_user)):
+        try:
+            return {"bubble": service.set_bubble_archived(home_of(user), slug, body.archived)}
+        except KeyError as e:
+            raise HTTPException(status_code=404, detail=str(e))
 
     @app.post("/api/bubbles/{slug}/approve")
     def approve_bubble(slug: str, body: ApproveIn, user: str = Depends(current_user)):
