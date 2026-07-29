@@ -25,7 +25,7 @@ APP = "lockedin-scientist"
 # Bump this together with ``SCIENTIST_CLIENT_VERSION`` in server.py whenever a Scientist
 # release requires every installed client to be refreshed. The server rejects missing or old
 # protocol versions before it reads or changes a synchronized workspace.
-SCIENTIST_CLIENT_VERSION = "2026.07.28.1"
+SCIENTIST_CLIENT_VERSION = "2026.07.28.2"
 _SYNC_WARNING_AFTER = 3
 
 
