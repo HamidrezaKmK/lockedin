@@ -2379,13 +2379,13 @@
       el("a",{href:workspaceUrl("/api/assets/"+a.pdf_id+"/pdf"),target:"_blank",title:"Open PDF",onclick:e=>e.stopPropagation()},
         el("button",{class:"primary small",onclick:e=>e.stopPropagation()},"↗ PDF")),
       el("span",{class:"spacer"}),
-      el("button",{class:"ghost small",onclick:async(e)=>{
+      el("button",{class:"ghost small",title:a.attention_flag?"Clear attention flag":"Mark as requiring attention",onclick:async(e)=>{
         e.stopPropagation();
         const next=!a.attention_flag;
         await api("/api/assets/"+a.pdf_id,{method:"PATCH",body:JSON.stringify({attention_flag:next})});
         toast(next?"Marked as requiring attention":"Cleared attention flag");
         viewAssets();
-      }},a.attention_flag?"Clear attention":"Requires attention"),
+      }},a.attention_flag?"Clear":"Needs review"),
       el("button",{class:"ghost small",onclick:e=>{
         e.stopPropagation(); openAssetEditor(a);
       }},"Manage")));

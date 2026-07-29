@@ -112,3 +112,8 @@ class AestheticsConfigTests(unittest.TestCase):
         self.assertIn('const UNASSIGNED_BUBBLE="__unassigned__"', source)
         self.assertIn('`Unassigned (${unassignedCount})`', source)
         self.assertIn('"Every paper is assigned to at least one bubble."', source)
+
+    def test_library_card_attention_action_uses_compact_labels(self):
+        source = (Path(server.WEB_DIR) / "index.html").read_text()
+        self.assertIn('a.attention_flag?"Clear":"Needs review"', source)
+        self.assertIn('title:a.attention_flag?"Clear attention flag":"Mark as requiring attention"', source)
