@@ -354,6 +354,10 @@ irm https://raw.githubusercontent.com/HamidrezaKmK/lockedin/scientist/install.ps
 The installer adds `lockedin-scientist` to your user PATH. On macOS/Linux, ensure
 `~/.local/bin` is on PATH if your shell cannot find the command.
 
+Scientist checks its compatible client version whenever it contacts a synchronized workspace. If
+it asks you to reinstall, rerun the installer above for your platform. This refreshes only the
+standalone client; your authorization and local mirror remain in place.
+
 ### Sign in and choose work
 
 Authorize a device once; the command opens a browser page on the server you specify:

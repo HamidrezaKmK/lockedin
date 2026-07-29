@@ -58,6 +58,26 @@ class ScientistGuideTest(unittest.TestCase):
         self.assertIn("normal\ninteractive approval", section)
         self.assertIn("REPORTS/<bubble-slug>/assets/", section)
         self.assertIn("my-figure.gif", section)
+        self.assertIn("checks its compatible client version", section)
+
+    def test_client_and_server_agree_on_the_required_scientist_version(self):
+        self.assertEqual(scientist_cli.SCIENTIST_CLIENT_VERSION, server.SCIENTIST_CLIENT_VERSION)
+
+    def test_client_sends_its_scientist_version_header(self):
+        captured = {}
+
+        class Response:
+            def __enter__(self): return self
+            def __exit__(self, *args): return False
+            def read(self): return b"{}"
+
+        def open_request(request, timeout):
+            captured.update(request.headers)
+            return Response()
+
+        with patch.object(scientist_cli.urllib.request, "urlopen", side_effect=open_request):
+            self.assertEqual(scientist_cli.request("https://example.test", "GET", "/version"), {})
+        self.assertEqual(captured["X-lockedin-scientist-version"], scientist_cli.SCIENTIST_CLIENT_VERSION)
 
     def test_editguide_remains_the_canonical_editing_section(self):
         self.assertEqual(reports.guide_section("Missing"), "")
@@ -364,6 +384,18 @@ class ScientistClientTest(unittest.TestCase):
         self.assertIn("lockedin-scientist sync --from-server", output.getvalue())
         self.assertIn("lockedin-scientist uninstall", output.getvalue())
         self.assertIn("lockedin-scientist uninstall --purge-data --yes", output.getvalue())
+
+    def test_bare_invocation_rejects_an_outdated_configured_client(self):
+        original_argv = list(scientist_cli.sys.argv)
+        try:
+            with temp_data_home():
+                scientist_cli.save_config({"accounts": [{"server": "https://example.test", "user": "alice", "token": "t"}]})
+                scientist_cli.sys.argv = ["lockedin-scientist"]
+                with patch.object(scientist_cli, "request", side_effect=RuntimeError("LockedIn Scientist is out of date")):
+                    with self.assertRaisesRegex(RuntimeError, "out of date"):
+                        scientist_cli._main()
+        finally:
+            scientist_cli.sys.argv = original_argv
 
     def test_help_describes_all_models_and_sync_without_an_account(self):
         original_argv = list(scientist_cli.sys.argv)

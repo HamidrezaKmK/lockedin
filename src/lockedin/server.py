@@ -37,6 +37,10 @@ _LABEL_RE = re.compile(r'\\label\{([^}]+)\}')
 _CITE_RE = re.compile(r'\\cite\{([^}]+)\}')
 _REQUEST_WORKSPACE: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "lockedin_request_workspace", default=None)
+# Keep this equal to ``scientist_cli.SCIENTIST_CLIENT_VERSION``. Bump both when a Scientist
+# release needs an installed client refresh; the dependency-free installed client cannot import
+# package metadata from this server.
+SCIENTIST_CLIENT_VERSION = "2026.07.28.1"
 
 
 def _build_refs(pages: "list[dict]", bibliography: "dict | None" = None) -> dict:
@@ -924,7 +928,14 @@ def build_app():
 
     def scientist_user(authorization: Optional[str] = Header(default=None),
                        x_lockedin_workspace: Optional[str] = Header(default=None),
+                       x_lockedin_scientist_version: Optional[str] = Header(default=None),
                        workspace: Optional[str] = None) -> str:
+        if x_lockedin_scientist_version != SCIENTIST_CLIENT_VERSION:
+            raise HTTPException(
+                status_code=426,
+                detail=("LockedIn Scientist is out of date. Reinstall the newest version and retry. "
+                        "See the Scientist CLI guide for the current install command."),
+            )
         token = (authorization or "").removeprefix("Bearer ").strip()
         user = auth.scientist_token_user(token)
         if not user:

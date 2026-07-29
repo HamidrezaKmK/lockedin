@@ -22,6 +22,10 @@ import webbrowser
 from pathlib import Path
 
 APP = "lockedin-scientist"
+# Bump this together with ``SCIENTIST_CLIENT_VERSION`` in server.py whenever a Scientist
+# release requires every installed client to be refreshed. The server rejects missing or old
+# protocol versions before it reads or changes a synchronized workspace.
+SCIENTIST_CLIENT_VERSION = "2026.07.28.1"
 _SYNC_WARNING_AFTER = 3
 
 
@@ -151,7 +155,8 @@ def request(server: str, method: str, path: str, body: dict | None = None, token
     # Some reverse proxies reject Python's default ``Python-urllib/x.y`` bot user
     # agent. Identify this deterministic client without assuming a particular server.
     headers = {"Content-Type": "application/json", "Accept": "application/json",
-               "User-Agent": f"{APP}/0.1"}
+               "User-Agent": f"{APP}/{SCIENTIST_CLIENT_VERSION}",
+               "X-LockedIn-Scientist-Version": SCIENTIST_CLIENT_VERSION}
     if token: headers["Authorization"] = "Bearer " + token
     if workspace: headers["X-LockedIn-Workspace"] = workspace
     req = urllib.request.Request(server.rstrip("/") + path, data=data, headers=headers, method=method)
@@ -159,6 +164,12 @@ def request(server: str, method: str, path: str, body: dict | None = None, token
         with urllib.request.urlopen(req, timeout=60) as r: return json.loads(r.read())
     except urllib.error.HTTPError as e:
         detail = e.read().decode(errors="replace")
+        if e.code == 426:
+            raise RuntimeError(
+                "LockedIn Scientist is out of date. Reinstall the newest version, then retry:\n"
+                "  macOS/Linux: curl -fsSL https://raw.githubusercontent.com/HamidrezaKmK/lockedin/scientist/install.sh | bash\n"
+                "  Windows: irm https://raw.githubusercontent.com/HamidrezaKmK/lockedin/scientist/install.ps1 | iex"
+            ) from e
         raise RuntimeError(f"server returned {e.code}: {detail}") from e
 
 
@@ -482,6 +493,22 @@ def choose_account() -> dict:
     return accounts[-1]
 
 
+def check_version_if_configured() -> None:
+    """Make a bare invocation report a required upgrade without making the welcome online-only."""
+    accounts = load_config().get("accounts", [])
+    if not accounts:
+        return
+    account = accounts[-1]
+    try:
+        request(account["server"], "GET", "/api/scientist/v1/workspaces",
+                token=account["token"], workspace=account.get("workspace_id", ""))
+    except RuntimeError as exc:
+        # The welcome remains useful while offline, but an explicit server upgrade requirement
+        # must never be hidden behind that offline fallback.
+        if "out of date" in str(exc).lower():
+            raise
+
+
 def print_bubbles(account: dict) -> None:
     """List approved bubbles without starting an agent or synchronizing the workspace."""
     rows = account_request(account, "GET", "/api/scientist/v1/bubbles").get("bubbles", [])
@@ -688,6 +715,7 @@ the workspace is synchronized every five seconds. `uninstall` removes only the c
 default; `uninstall --purge-data --yes` also removes the mirror and authorization. Use NO_COLOR=1
 for plain terminal output.""",
         formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--version", action="version", version=f"%(prog)s {SCIENTIST_CLIENT_VERSION}")
     sub = parser.add_subparsers(dest="command", title="commands", metavar="COMMAND")
     p_login = sub.add_parser("login", help="Authorize this computer in a browser.",
                              description="Open a browser device-authorization flow for a LockedIn server.")
@@ -720,6 +748,7 @@ for plain terminal output.""",
                           help="Grant this existing directory local read/write access for this session only; repeatable.")
     args = parser.parse_args()
     if args.command is None:
+        check_version_if_configured()
         welcome()
         return
     if args.command == "login": login(args.server); return
