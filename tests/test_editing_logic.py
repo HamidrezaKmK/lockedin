@@ -17,6 +17,7 @@ Run: ``uv run python -m unittest discover -s tests -t .``
 from __future__ import annotations
 
 import os
+import re
 import tempfile
 import unittest
 from contextlib import contextmanager
@@ -419,6 +420,75 @@ class MathNormalization(unittest.TestCase):
                 done = run_chat(home, slug, "explain the score", PAGE)
         self.assertIn(r"$\nabla_x \log p(x)$", done["chat_text"])
         self.assertNotIn(r"\(", done["chat_text"])
+
+
+class DisplayMathOpenerNormalization(unittest.TestCase):
+    """Guard: Toast UI treats ``$$`` + a letter as its own custom-block widget opener.
+
+    Its parser opens a widget on a line matching ``/^(\\$\\$)(\\s*[a-zA-Z])+/`` that has no second
+    ``$$`` on the same line, and closes it *only* on a line equal to ``$$``. Multi-line display math
+    like ``$$K_\\theta=...,`` therefore opened a block that never closed, and the editor painted the
+    rest of the page with the widget background. Saving moves such an opener onto its own line.
+    """
+
+    # The real rules, lifted verbatim from toastui-editor-all.min.js.
+    OPENS = re.compile(r"^(\$\$)(\s*[a-zA-Z])+")
+    SAME_LINE = re.compile(r"^(\$\$)(\s*[a-zA-Z])+.*(\$\$)")
+    CLOSES = re.compile(r"^\$\$$")
+
+    def unclosed_widget_line(self, text: str):
+        """Return the line number that opens a never-closed widget block, else None."""
+        opened = None
+        for number, line in enumerate(text.split("\n"), start=1):
+            if opened is None:
+                if self.OPENS.match(line) and not self.SAME_LINE.match(line):
+                    opened = number
+            elif self.CLOSES.match(line):
+                opened = None
+        return opened
+
+    def test_multiline_display_math_no_longer_runs_away(self):
+        src = ("Fix one generator\n\n"
+               "$$K_\\theta=U_\\theta^\\ast S_\\theta U_\\theta,\n"
+               "\\qquad\n"
+               "S_\\theta=M_\\theta-M_\\theta^\\top,$$\n\n"
+               "## A heading that used to be swallowed\n")
+        self.assertEqual(self.unclosed_widget_line(src), 3)      # the bug, before normalization
+        fixed = bubbles.normalize_display_math(src)
+        self.assertIsNone(self.unclosed_widget_line(fixed))
+        self.assertEqual(fixed.count("$$"), src.count("$$"))     # no delimiter invented or lost
+        self.assertIn("$$\nK_\\theta=", fixed)
+
+    def test_safe_math_is_left_exactly_as_written(self):
+        # Single-line display math closes on its own line; a non-letter opener never starts a
+        # widget. Neither should be reformatted, so ordinary pages keep their diffs clean.
+        for src in ("text $$E = mc^2$$ tail\n",
+                    "$$\\operatorname{Cay}(K_\\theta)\n=(I-K)^{-1}(I+K).$$\n",
+                    "$$\n\\alpha\n+\\beta\n$$\n",
+                    "inline $a+b$ only\n"):
+            with self.subTest(src=src):
+                self.assertEqual(bubbles.normalize_display_math(src), src)
+                self.assertIsNone(self.unclosed_widget_line(src))
+
+    def test_normalization_is_idempotent(self):
+        src = "$$A_{ki}:=\\langle u_k,\\varphi_i\\rangle,\n\\qquad i>N.$$\n"
+        once = bubbles.normalize_display_math(src)
+        self.assertEqual(bubbles.normalize_display_math(once), once)
+
+    def test_math_inside_fenced_code_is_never_rewritten(self):
+        src = ("```\n$$K_\\theta=U,\n\\qquad x\n$$\n```\n")
+        self.assertEqual(bubbles.normalize_display_math(src), src)
+
+    def test_saving_a_page_normalizes_the_opener_on_disk(self):
+        with temp_home() as home:
+            slug = make_bubble(home)
+            body = "$$K_\\theta=U_\\theta,\n\\qquad R>0,$$\n\n## Later section\n"
+            with paths.use_root(home):
+                bubbles.save_page(slug, "overview", body)
+                stored = bubbles.get_page(slug, "overview")
+        self.assertIn("$$\nK_\\theta=U_\\theta,", stored)
+        self.assertIsNone(self.unclosed_widget_line(stored))
+        self.assertIn("## Later section", stored)
 
 
 class PreviewMathRendering(unittest.TestCase):

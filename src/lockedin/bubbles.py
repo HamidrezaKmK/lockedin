@@ -705,6 +705,42 @@ def normalize_wikilinks(slug: str, content: str) -> str:
     return _WIKILINK_RE.sub(repl, content)
 
 
+_FENCED_RE = re.compile(r"(^[ \t]*(?:```|~~~).*?(?:^[ \t]*(?:```|~~~)[ \t]*$|\Z))", re.S | re.M)
+_DISPLAY_MATH_BLOCK_RE = re.compile(r"\$\$(?!\$)(.+?)\$\$", re.S)
+
+
+def normalize_display_math(content: str) -> str:
+    """Move a multi-line display-math opener onto its own line.
+
+    Toast UI's markdown parser claims ``$$`` for its own custom-block widgets, which has nothing
+    to do with math. A line matching ``$$`` followed by a letter *opens* a widget block, and only a
+    line that is exactly ``$$`` closes it. So ``$$K_\\theta = ...`` spread over several lines opens
+    a block whose closing ``,$$`` (at the end of the last line, not alone) never matches — and the
+    editor paints every remaining line of the page with the custom-block background.
+
+    A bare ``$$`` opener matches nothing, so moving the math down one line keeps the editor's
+    highlighting intact. Only blocks that actually trip the parser are touched: single-line math is
+    already safe (the widget rule ignores a ``$$…$$`` pair closed on its own line), and so is math
+    whose first character is not a letter, such as ``$$\\operatorname{Cay}(K)``. KaTeX ignores the
+    extra newline, so nothing about the rendered output changes. Idempotent.
+    """
+
+    def fix(text: str) -> str:
+        def repl(m: "re.Match") -> str:
+            inner = m.group(1)
+            if "\n" not in inner or inner.startswith("\n"):
+                return m.group(0)          # single-line, or already normalized
+            if not re.match(r"[ \t]*[a-zA-Z]", inner):
+                return m.group(0)          # never opens a Toast UI widget block
+            return "$$\n" + inner + "$$"
+
+        return _DISPLAY_MATH_BLOCK_RE.sub(repl, text)
+
+    # Fenced code shows math source verbatim; rewriting inside it would corrupt an example.
+    return "".join(part if i % 2 else fix(part)
+                   for i, part in enumerate(_FENCED_RE.split(content)))
+
+
 class PageConflict(Exception):
     """Page changed on disk since the editor loaded it.
 
@@ -722,7 +758,7 @@ class PageConflict(Exception):
 
 def save_page(slug: str, page_slug: str, content: str,
               base_mtime: "float | None" = None) -> float:
-    """Write a page atomically (after wikilink normalization); return its new mtime.
+    """Write a page atomically (after wikilink + display-math normalization); return its new mtime.
 
     If ``base_mtime`` is given, it's an optimistic-concurrency guard: when the file's
     current mtime differs (an external edit happened since it was loaded), raise
@@ -734,7 +770,7 @@ def save_page(slug: str, page_slug: str, content: str,
         disk_mtime = path.stat().st_mtime
         if abs(disk_mtime - base_mtime) > 1e-6:
             raise PageConflict(disk_mtime)
-    _atomic_write(path, normalize_wikilinks(slug, content))
+    _atomic_write(path, normalize_display_math(normalize_wikilinks(slug, content)))
     touch_bubble(slug)
     return path.stat().st_mtime
 
@@ -763,7 +799,8 @@ def register_page(slug: str, page_slug: str, content: str) -> None:
     data = manifest(slug)
     if any(p["page_slug"] == page_slug for p in data.get("pages", [])):
         raise ValueError("Page already exists.")
-    _atomic_write(paths.bubble_page_path(slug, page_slug), normalize_wikilinks(slug, content))
+    _atomic_write(paths.bubble_page_path(slug, page_slug),
+                  normalize_display_math(normalize_wikilinks(slug, content)))
     data.setdefault("pages", []).append({"page_slug": page_slug,
                                           "title": page_slug.replace("-", " ")})
     _save_manifest(slug, data)

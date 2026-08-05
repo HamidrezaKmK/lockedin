@@ -682,6 +682,14 @@
   /* Hide Toast UI's built-in preview controls — we use our own custom renderer */
   .toastui-editor-mode-switch{display:none!important}
   .toastui-editor-tabs{display:none!important}
+  /* Toast UI claims $$ for its own custom-block widgets, which we never use: a line like
+     "$$K = ..." opens a widget block that only a line of exactly "$$" can close, so multi-line
+     display math used to paint the rest of the page with the widget's brown background. Saving
+     a page now moves such an opener onto its own line (bubbles.normalize_display_math), but
+     pages saved before that fix still parse this way — so neutralize the widget styling and
+     keep the math looking like the text it is. */
+  .toastui-editor-md-custom-block-line-background{background-color:transparent!important}
+  .toastui-editor-md-custom-block{color:inherit!important}
   .wikilink{color:var(--accent2);border-bottom:1px dashed var(--accent2);cursor:pointer}
   .centered-text{text-align:center}
   .todoref{color:var(--accent);font-weight:500;cursor:pointer;text-decoration:none;
