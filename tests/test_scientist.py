@@ -746,6 +746,28 @@ class ScientistClientTest(unittest.TestCase):
             self.assertEqual(fake.files[rel], b"# Website edit\n")
             self.assertEqual((mirror.root / rel).read_bytes(), b"# Website edit\n")
 
+    def test_every_vendor_session_propagates_a_deletion_identically(self):
+        """Synchronization must not depend on which coding CLI the session launched."""
+        for model in ("codex", "claude", "agy"):
+            with self.subTest(model=model), temp_data_home():
+                mirror = self._mirror()
+                rel = "REPORTS/work/pages/scratch.md"
+                fake = FakeServer({rel: b"# Scratch\n",
+                                   "REPORTS/work/pages/overview.md": b"# Overview\n"})
+                def session(*_args, **_kwargs):
+                    """Stand in for the vendor CLI: the agent deletes one page, then exits."""
+                    (mirror.root / rel).unlink()
+                    return type("Result", (), {"returncode": 0})()
+
+                with patch.object(scientist_cli, "request", side_effect=fake), \
+                     patch.object(scientist_cli, "require_bubble"), \
+                     patch.object(scientist_cli.shutil, "which", return_value=f"/{model}"), \
+                     patch.object(scientist_cli.subprocess, "run", side_effect=session):
+                    mirror.sync()  # `run`/`resume` always sync before launching a vendor CLI
+                    self.assertEqual(scientist_cli.run_agent(model, mirror, "work"), 0)
+                self.assertNotIn(rel, fake.files)
+                self.assertIn("REPORTS/work/pages/overview.md", fake.files)
+
     def test_scientist_instructions_explain_how_to_delete_a_page(self):
         with temp_data_home():
             mirror = self._mirror()
