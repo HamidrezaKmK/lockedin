@@ -128,7 +128,7 @@ class AestheticsConfigTests(unittest.TestCase):
         source = (Path(server.WEB_DIR) / "index.html").read_text()
         self.assertIn("width:100%", source.split("input,textarea,select{")[1][:200])
         self.assertIn(".migrate-row input[type=checkbox]{width:16px", source)
-        self.assertIn(".migrate-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto", source)
+        self.assertIn(".migrate-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto auto", source)
         # The title cell must be the only flexible column, and must be able to shrink to ellipsis.
         self.assertIn(".migrate-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}", source)
         # A <label> row would forward a click on the relevance select to the checkbox.
@@ -139,6 +139,15 @@ class AestheticsConfigTests(unittest.TestCase):
         self.assertIn('onclick:()=>viewMigratePapers()},"Migrate resources")', source)
         self.assertIn('if(h==="migrate"){viewMigratePapers({noRoute:true});return;}', source)
         self.assertIn('"/api/bubbles/"+dest+"/migrate-papers"', source)
+
+    def test_migrate_rows_link_each_paper_to_its_asset_page_in_a_new_tab(self):
+        """A vague title must be checkable without losing the selections already made."""
+        source = (Path(server.WEB_DIR) / "index.html").read_text()
+        self.assertIn('el("a",{class:"migrate-open",href:workspaceAssetRoute(a.pdf_id),target:"_blank"', source)
+        self.assertIn('rel:"noopener"', source)
+        # workspaceAssetRoute keeps the active workspace in the hash, so the new tab opens the
+        # asset in the same workspace rather than falling back to Personal.
+        self.assertIn('"#w/"+encodeURIComponent(S.workspaceId)+"/asset/"', source)
 
     def test_bubbles_view_has_a_reversible_archive_filter(self):
         source = (Path(server.WEB_DIR) / "index.html").read_text()
