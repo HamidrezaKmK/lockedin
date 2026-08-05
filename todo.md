@@ -33,6 +33,15 @@ Two consequences, both agy-only:
 Confirmed against the installed binary (`agy --help`): there is **no** `--append-system-prompt` or
 any other system-prompt flag. `-i` is `--prompt-interactive`. So there is no direct equivalent.
 
+**Clearing the conversation makes this worse.** Verified interactively (claude 2.1.222, tmux): after
+`/clear` the model loses all conversation history but still reports a marker planted via
+`--append-system-prompt`, because the system prompt is process-level and is rebuilt into the new
+session. codex should behave the same way (`-c developer_instructions=` is process config; not
+verified empirically). agy's instructions live *in the conversation*, so any clear / new-conversation
+wipes the LockedIn role completely — scope boundaries, delete rules, and paper inventory included —
+while the mirror keeps syncing underneath. `.agents/AGENTS.md` fixes this case too, since agy
+re-reads project-local instructions per session rather than per conversation.
+
 **Proposed fix.** agy auto-loads project-local instructions from `.agents/` at the project root
 (`GEMINI.md` / `AGENTS.md`). agy already runs with `cwd=mirror.root`, so writing `role(mirror,
 bubble, add_dirs)` into `<mirror>/.agents/AGENTS.md` immediately before launch would cover **both**
