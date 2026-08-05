@@ -738,6 +738,15 @@
   .quick-add-paper input,.quick-add-paper textarea{padding:7px 9px;font-size:12px}
   .quick-add-paper textarea{min-height:68px;resize:vertical;font-family:var(--font-mono);line-height:1.35}
   .quick-add-paper .row{justify-content:flex-end}
+  /* Migrate-resources picker. The base rule above sets width:100% on every input, which stretches
+     a bare checkbox across the whole row — its glyph then draws centred in that box, so each row's
+     tick lands at a different x. Size the controls explicitly and use a grid so columns line up. */
+  .migrate-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;gap:10px;
+    align-items:center;padding:6px 0;border-top:1px solid var(--line)}
+  .migrate-row:first-of-type{border-top:none}
+  .migrate-row input[type=checkbox]{width:16px;height:16px;min-width:0;margin:0;padding:0;flex:none}
+  .migrate-row select{width:auto;min-width:64px}
+  .migrate-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .membership-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto auto;gap:6px;
     align-items:center;border:1px solid var(--line);border-radius:8px;padding:7px 8px;background:var(--panel2)}
   .membership-row .score{font-variant-numeric:tabular-nums;color:var(--muted);white-space:nowrap}
@@ -2746,18 +2755,22 @@
         table.append(el("div",{class:"muted",style:"font-size:12px;margin-bottom:8px"},
           (all.length-movable.length)+" paper(s) are already in the destination and are not listed."));
       }
+      const list=el("div",{});
       movable.forEach(a=>{
+        const label=a.title||a.filename||a.pdf_id;
         const check=el("input",{type:"checkbox"}); check.checked=true; check.onchange=refreshCount;
-        const scoreSel=el("select",{style:"width:auto;min-width:56px"},
-          ...[5,4,3,2,1].map(n=>el("option",{value:String(n)},String(n))));
+        const scoreSel=el("select",{},...[5,4,3,2,1].map(n=>el("option",{value:String(n)},String(n))));
         scoreSel.value=String(Number(a.bubble_score||5));
-        table.append(el("div",{class:"row",style:"align-items:center;gap:10px;padding:4px 0"},
+        // A <label> around the whole row would forward a click on the relevance select to the
+        // checkbox, so toggle from the title explicitly instead.
+        list.append(el("div",{class:"migrate-row",title:label},
           check,
-          el("span",{style:"flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap",
-            title:a.title||a.filename||a.pdf_id}, a.title||a.filename||a.pdf_id),
-          el("span",{class:"muted",style:"font-size:12px;flex:0 0 auto"},"relevance"), scoreSel));
+          el("span",{class:"migrate-title",style:"cursor:pointer",
+            onclick:()=>{ check.checked=!check.checked; refreshCount(); }},label),
+          el("span",{class:"muted",style:"font-size:12px"},"relevance"), scoreSel));
         rows.push({pdf_id:a.pdf_id,check,scoreSel});
       });
+      table.append(list);
       migrateBtn.onclick=async()=>{
         const items=rows.filter(r=>r.check.checked)
           .map(r=>({pdf_id:r.pdf_id,score:Number(r.scoreSel.value)}));

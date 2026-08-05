@@ -118,6 +118,28 @@ class AestheticsConfigTests(unittest.TestCase):
         self.assertIn('a.attention_flag?"Clear":"Review"', source)
         self.assertIn('title:a.attention_flag?"Clear attention flag":"Mark as requiring attention"', source)
 
+    def test_migrate_picker_rows_survive_the_global_full_width_input_rule(self):
+        """The base ``input,textarea,select`` rule sets width:100%.
+
+        A bare checkbox therefore stretches across its whole row and draws its tick centred in
+        that box, which put every row's checkbox at a different x. The picker must size its
+        checkbox explicitly and lay the row out as a grid so the columns line up.
+        """
+        source = (Path(server.WEB_DIR) / "index.html").read_text()
+        self.assertIn("width:100%", source.split("input,textarea,select{")[1][:200])
+        self.assertIn(".migrate-row input[type=checkbox]{width:16px", source)
+        self.assertIn(".migrate-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto", source)
+        # The title cell must be the only flexible column, and must be able to shrink to ellipsis.
+        self.assertIn(".migrate-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}", source)
+        # A <label> row would forward a click on the relevance select to the checkbox.
+        self.assertIn('el("div",{class:"migrate-row"', source)
+
+    def test_bubbles_view_reaches_the_migrate_picker(self):
+        source = (Path(server.WEB_DIR) / "index.html").read_text()
+        self.assertIn('onclick:()=>viewMigratePapers()},"Migrate resources")', source)
+        self.assertIn('if(h==="migrate"){viewMigratePapers({noRoute:true});return;}', source)
+        self.assertIn('"/api/bubbles/"+dest+"/migrate-papers"', source)
+
     def test_bubbles_view_has_a_reversible_archive_filter(self):
         source = (Path(server.WEB_DIR) / "index.html").read_text()
         self.assertIn('bubbleFilter:"active"', source)
