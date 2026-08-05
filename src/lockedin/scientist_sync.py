@@ -171,6 +171,46 @@ def register_orphan_pages(home: Path) -> None:
                     continue
 
 
+def apply_deletes(home: Path, deletes: list[dict]) -> dict:
+    """Apply revision-guarded deletions of report pages and figures.
+
+    Removing the Markdown file is not enough: a page also has a manifest entry, so this routes
+    through ``bubbles.delete_page`` and keeps ``pages.yaml`` authoritative.  Conflicts return the
+    current content so a client can restore its mirror rather than lose the file locally.
+    """
+    conflicts, applied = [], []
+    for item in deletes:
+        rel = str(item.get("path", ""))
+        if not writable_path(home, rel):
+            conflicts.append({"path": rel, "reason": "read-only or invalid scientist path"})
+            continue
+        target = _target(home, rel)
+        current = target.read_bytes() if target.exists() else b""
+        if str(item.get("base_revision", "")) != revision(current):
+            conflicts.append({"path": rel, "reason": "stale revision", "revision": revision(current),
+                              "content_b64": base64.b64encode(current).decode("ascii")})
+            continue
+        parts = Path(rel).parts
+        slug = parts[1]
+        with paths.use_root(home):
+            if parts[2] == "pages":
+                try:
+                    removed = bubbles.delete_page(slug, Path(parts[3]).stem)
+                except ValueError as exc:  # the home page is deliberately undeletable
+                    conflicts.append({"path": rel, "reason": str(exc), "revision": revision(current),
+                                      "content_b64": base64.b64encode(current).decode("ascii")})
+                    continue
+            else:
+                removed = bubbles.delete_bubble_asset(slug, parts[3])
+                if removed:
+                    bubbles.touch_bubble(slug)
+        if not removed:
+            conflicts.append({"path": rel, "reason": "no such scientist file"})
+            continue
+        applied.append({"path": rel})
+    return {"applied": applied, "conflicts": conflicts}
+
+
 def apply_writes(home: Path, writes: list[dict]) -> dict:
     """Apply revision-guarded writes; conflicts return current content without mutation."""
     conflicts, applied = [], []

@@ -40,7 +40,7 @@ _REQUEST_WORKSPACE: contextvars.ContextVar[str | None] = contextvars.ContextVar(
 # Keep this equal to ``scientist_cli.SCIENTIST_CLIENT_VERSION``. Bump both when a Scientist
 # release needs an installed client refresh; the dependency-free installed client cannot import
 # package metadata from this server.
-SCIENTIST_CLIENT_VERSION = "2026.07.28.2"
+SCIENTIST_CLIENT_VERSION = "2026.08.05.1"
 
 
 def _build_refs(pages: "list[dict]", bibliography: "dict | None" = None) -> dict:
@@ -868,6 +868,9 @@ def build_app():
     class ScientistPushIn(BaseModel):
         writes: list[dict] = []
 
+    class ScientistDeleteIn(BaseModel):
+        deletes: list[dict] = []
+
     class ScientistPageCreateIn(BaseModel):
         bubble: str
         page_slug: str
@@ -1547,6 +1550,11 @@ def build_app():
     @app.post("/api/scientist/v1/push")
     def scientist_push(body: ScientistPushIn, user: str = Depends(scientist_user)):
         return scientist_sync.apply_writes(home_of(user), body.writes)
+
+    @app.post("/api/scientist/v1/deletes")
+    def scientist_delete(body: ScientistDeleteIn, user: str = Depends(scientist_user)):
+        """Remove report pages/figures a Scientist session deleted, manifest entry included."""
+        return scientist_sync.apply_deletes(home_of(user), body.deletes)
 
     @app.post("/api/scientist/v1/pages")
     def scientist_create_page(body: ScientistPageCreateIn, user: str = Depends(scientist_user)):

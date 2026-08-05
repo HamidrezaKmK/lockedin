@@ -464,6 +464,15 @@ To add a page from Scientist, create a flat Markdown file at
 the page tab title is derived from the filename with hyphens replaced by spaces. Do not edit
 `pages.yaml` yourself.
 
+### Deleting pages and figures
+
+Ask the assistant to delete the page's file at `REPORTS/<bubble-slug>/pages/<page-slug>.md`.
+Scientist removes the page and its website navigation entry on the next sync; deleting a file in
+`REPORTS/<bubble-slug>/assets/` removes that figure the same way. Blanking a page instead of
+deleting its file does nothing: an empty sync write is refused so a damaged mirror can never wipe
+a report. A bubble's home page cannot be deleted from Scientist; that removal is reported as a
+conflict and the file is restored in the mirror. Delete the home page in the browser instead.
+
 ### Figures and GIFs
 
 Scientist can add report figures and animated GIFs using the same format as the browser editor.

@@ -103,6 +103,10 @@ lockedin-scientist <codex|claude|agy> <bubble-slug> --add-dir <directory>
 The granted directory is local read/write access for that session only. It is never synchronized
 to LockedIn or saved for later sessions.
 
+Report pages and figures created, edited, or **deleted** in the mirror are applied to the website
+on the next sync — deleting `REPORTS/<bubble-slug>/pages/<page-slug>.md` also removes its
+`pages.yaml` entry. A bubble's home page can only be deleted in the browser.
+
 Scientist checks its compatible client version whenever it contacts the synchronized workspace.
 If it asks you to reinstall, rerun the installer for your platform above; it replaces only the
 standalone client command and keeps your authorization and local mirror.

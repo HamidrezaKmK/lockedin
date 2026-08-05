@@ -4,9 +4,10 @@ from __future__ import annotations
 import base64
 import io
 import os
+import shutil
 import tempfile
 import unittest
-from contextlib import contextmanager, redirect_stdout
+from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
@@ -43,6 +44,55 @@ def workspace():
             slug = bubbles.create_bubble("Current Work")
             bubbles.ensure_pages(slug)
         yield home, slug
+
+
+class FakeServer:
+    """In-memory stand-in for the Scientist sync endpoints, with the same revision guards."""
+
+    def __init__(self, files: dict, undeletable: tuple = ()):
+        self.files = dict(files)
+        self.undeletable = set(undeletable)
+        self.calls: list[str] = []
+
+    @staticmethod
+    def _conflict(path: str, reason: str, current: bytes) -> dict:
+        return {"path": path, "reason": reason, "revision": scientist_cli.Mirror.rev(current),
+                "content_b64": base64.b64encode(current).decode()}
+
+    def __call__(self, _server, _method, endpoint, payload=None, token=None, workspace=None):
+        self.calls.append(endpoint)
+        rev = scientist_cli.Mirror.rev
+        if endpoint.endswith("/manifest"):
+            return {"files": [{"path": path, "revision": rev(raw)} for path, raw in self.files.items()]}
+        if endpoint.endswith("/files"):
+            return {"files": [{"path": path, "revision": rev(self.files[path]),
+                               "content_b64": base64.b64encode(self.files[path]).decode()}
+                              for path in payload["paths"] if path in self.files]}
+        if endpoint.endswith("/deletes"):
+            out: dict = {"applied": [], "conflicts": []}
+            for item in payload["deletes"]:
+                current = self.files.get(item["path"], b"")
+                if item["base_revision"] != rev(current):
+                    out["conflicts"].append(self._conflict(item["path"], "stale revision", current))
+                elif item["path"] in self.undeletable:
+                    out["conflicts"].append(
+                        self._conflict(item["path"], "Cannot delete the home page.", current))
+                else:
+                    self.files.pop(item["path"], None)
+                    out["applied"].append({"path": item["path"]})
+            return out
+        if endpoint.endswith("/push"):
+            out = {"applied": [], "conflicts": []}
+            for item in payload["writes"]:
+                raw = base64.b64decode(item["content_b64"])
+                current = self.files.get(item["path"], b"")
+                if item["base_revision"] != rev(current):
+                    out["conflicts"].append(self._conflict(item["path"], "stale revision", current))
+                else:
+                    self.files[item["path"]] = raw
+                    out["applied"].append({"path": item["path"], "revision": rev(raw)})
+            return out
+        raise AssertionError(endpoint)
 
 
 class ScientistGuideTest(unittest.TestCase):
@@ -248,6 +298,68 @@ class SafeSyncBoundaryTest(unittest.TestCase):
         self.assertEqual(result["applied"], [])
         self.assertIn("refusing to replace", result["conflicts"][0]["reason"])
         self.assertEqual(base64.b64decode(result["conflicts"][0]["content_b64"]), b"important report")
+
+    def test_deleting_a_page_also_removes_its_manifest_entry(self):
+        with workspace() as (home, slug):
+            with paths.use_root(home):
+                bubbles.create_page(slug, "Scratch Notes")
+            rel = f"REPORTS/{slug}/pages/scratch-notes.md"
+            result = scientist_sync.apply_deletes(home, [{
+                "path": rel, "base_revision": scientist_sync.revision((home / rel).read_bytes())}])
+            with paths.use_root(home):
+                pages = [p["page_slug"] for p in bubbles.list_pages(slug)]
+            self.assertFalse((home / rel).exists())
+        self.assertEqual([item["path"] for item in result["applied"]], [rel])
+        self.assertEqual(result["conflicts"], [])
+        self.assertNotIn("scratch-notes", pages)
+
+    def test_home_page_deletion_is_refused_and_returns_current_content(self):
+        with workspace() as (home, slug):
+            rel = f"REPORTS/{slug}/pages/overview.md"
+            result = scientist_sync.apply_deletes(home, [{
+                "path": rel, "base_revision": scientist_sync.revision((home / rel).read_bytes())}])
+            with paths.use_root(home):
+                pages = [p["page_slug"] for p in bubbles.list_pages(slug)]
+            self.assertTrue((home / rel).exists())
+        self.assertEqual(result["applied"], [])
+        self.assertIn("home page", result["conflicts"][0]["reason"])
+        self.assertTrue(base64.b64decode(result["conflicts"][0]["content_b64"]))
+        self.assertIn("overview", pages)
+
+    def test_stale_delete_never_removes_a_page_edited_on_the_website(self):
+        with workspace() as (home, slug):
+            with paths.use_root(home):
+                bubbles.create_page(slug, "Scratch Notes")
+            rel = f"REPORTS/{slug}/pages/scratch-notes.md"
+            (home / rel).write_bytes(b"# Rewritten in the browser\n")
+            result = scientist_sync.apply_deletes(home, [{
+                "path": rel, "base_revision": scientist_sync.revision(b"# Scratch Notes\n\n")}])
+            with paths.use_root(home):
+                pages = [p["page_slug"] for p in bubbles.list_pages(slug)]
+        self.assertEqual(result["applied"], [])
+        self.assertEqual(result["conflicts"][0]["reason"], "stale revision")
+        self.assertEqual(base64.b64decode(result["conflicts"][0]["content_b64"]),
+                         b"# Rewritten in the browser\n")
+        self.assertIn("scratch-notes", pages)
+
+    def test_report_figure_deletion_is_applied_and_unsafe_deletes_are_rejected(self):
+        with workspace() as (home, slug):
+            rel = f"REPORTS/{slug}/assets/plot.png"
+            (home / rel).parent.mkdir(parents=True)
+            (home / rel).write_bytes(b"image")
+            applied = scientist_sync.apply_deletes(home, [{
+                "path": rel, "base_revision": scientist_sync.revision(b"image")}])
+            rejected = scientist_sync.apply_deletes(home, [
+                {"path": "todos.yaml", "base_revision": scientist_sync.revision(b"")},
+                {"path": "ASSETS/paper/summary.md", "base_revision": scientist_sync.revision(b"")},
+                {"path": f"REPORTS/{slug}/pages/../../todos.yaml",
+                 "base_revision": scientist_sync.revision(b"")},
+            ])
+            self.assertFalse((home / rel).exists())
+        self.assertEqual([item["path"] for item in applied["applied"]], [rel])
+        self.assertEqual(rejected["applied"], [])
+        self.assertEqual(len(rejected["conflicts"]), 3)
+        self.assertTrue(all("read-only" in item["reason"] for item in rejected["conflicts"]))
 
 
 class ScientistClientTest(unittest.TestCase):
@@ -563,6 +675,83 @@ class ScientistClientTest(unittest.TestCase):
             self.assertEqual([item["path"] for item in pushed], [rel])
             self.assertEqual(remote[rel], b"GIF89a-new")
             self.assertEqual(requested_files, [])
+
+    def _mirror(self):
+        return scientist_cli.Mirror({"server": "https://example.test", "user": "alice", "token": "t"})
+
+    def test_sync_deletes_a_page_the_agent_removed_from_the_mirror(self):
+        with temp_data_home():
+            mirror = self._mirror()
+            rel = "REPORTS/work/pages/scratch.md"
+            fake = FakeServer({rel: b"# Scratch\n", "REPORTS/work/pages/overview.md": b"# Overview\n"})
+            with patch.object(scientist_cli, "request", side_effect=fake):
+                mirror.sync()
+                (mirror.root / rel).unlink()
+                mirror.sync()
+                fake.calls.clear()
+                mirror.sync()
+            self.assertNotIn(rel, fake.files)
+            self.assertIn("REPORTS/work/pages/overview.md", fake.files)
+            # The page must stay deleted: no resurrection and no repeated delete request.
+            self.assertFalse((mirror.root / rel).exists())
+            self.assertNotIn("/api/scientist/v1/deletes", fake.calls)
+
+    def test_a_wiped_mirror_is_restored_instead_of_deleting_website_pages(self):
+        with temp_data_home():
+            mirror = self._mirror()
+            rel = "REPORTS/work/pages/scratch.md"
+            fake = FakeServer({rel: b"# Scratch\n", "REPORTS/work/pages/overview.md": b"# Overview\n"})
+            errors = io.StringIO()
+            with patch.object(scientist_cli, "request", side_effect=fake):
+                mirror.sync()
+                shutil.rmtree(mirror.root / "REPORTS")
+                with redirect_stderr(errors):
+                    mirror.sync()
+            self.assertNotIn("/api/scientist/v1/deletes", fake.calls)
+            self.assertIn(rel, fake.files)
+            self.assertTrue((mirror.root / rel).exists())
+            self.assertIn("lost mirror", errors.getvalue())
+
+    def test_an_undeletable_page_is_reported_and_restored_in_the_mirror(self):
+        with temp_data_home():
+            mirror = self._mirror()
+            home_rel = "REPORTS/work/pages/overview.md"
+            fake = FakeServer({home_rel: b"# Overview\n", "REPORTS/work/pages/notes.md": b"# Notes\n"},
+                              undeletable=(home_rel,))
+            errors = io.StringIO()
+            with patch.object(scientist_cli, "request", side_effect=fake):
+                mirror.sync()
+                (mirror.root / home_rel).unlink()
+                with redirect_stderr(errors):
+                    mirror.sync()
+            self.assertIn("Could not delete", errors.getvalue())
+            self.assertIn("home page", errors.getvalue())
+            self.assertIn(home_rel, fake.files)
+            self.assertEqual((mirror.root / home_rel).read_bytes(), b"# Overview\n")
+
+    def test_a_rejected_push_is_reported_instead_of_failing_silently(self):
+        with temp_data_home():
+            mirror = self._mirror()
+            rel = "REPORTS/work/pages/overview.md"
+            fake = FakeServer({rel: b"# Overview\n"})
+            errors = io.StringIO()
+            with patch.object(scientist_cli, "request", side_effect=fake):
+                mirror.sync()
+                (mirror.root / rel).write_bytes(b"# Local edit\n")
+                fake.files[rel] = b"# Website edit\n"
+                with redirect_stderr(errors):
+                    mirror.sync()
+            self.assertIn("Could not save", errors.getvalue())
+            self.assertIn(rel, errors.getvalue())
+            self.assertEqual(fake.files[rel], b"# Website edit\n")
+            self.assertEqual((mirror.root / rel).read_bytes(), b"# Website edit\n")
+
+    def test_scientist_instructions_explain_how_to_delete_a_page(self):
+        with temp_data_home():
+            mirror = self._mirror()
+            instructions = scientist_cli.role(mirror, "work")
+        self.assertIn("delete its file REPORTS/work/pages/<page-slug>.md", instructions)
+        self.assertIn("Never edit\n  pages.yaml to delete a page", instructions)
 
 
 if __name__ == "__main__":

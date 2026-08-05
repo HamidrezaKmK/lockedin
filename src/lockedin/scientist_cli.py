@@ -25,7 +25,7 @@ APP = "lockedin-scientist"
 # Bump this together with ``SCIENTIST_CLIENT_VERSION`` in server.py whenever a Scientist
 # release requires every installed client to be refreshed. The server rejects missing or old
 # protocol versions before it reads or changes a synchronized workspace.
-SCIENTIST_CLIENT_VERSION = "2026.07.28.2"
+SCIENTIST_CLIENT_VERSION = "2026.08.05.1"
 _SYNC_WARNING_AFTER = 3
 
 
@@ -323,6 +323,24 @@ class Mirror:
         p = Path(rel).parts
         return len(p) == 4 and p[0] == "REPORTS" and ((p[2] == "pages" and rel.endswith(".md")) or p[2] == "assets")
 
+    def forget(self, tracked: dict, rel: str) -> None:
+        """Drop a path from sync bookkeeping, including any stored conflict base."""
+        old = tracked.pop(rel, None) or {}
+        name = old.get("base_file", "")
+        if name:
+            for directory in (self.base_dir, self.fallback_base_dir, self.legacy_base_dir):
+                try: (directory / name).unlink()
+                except OSError: pass
+
+    def restore(self, tracked: dict, rel: str, raw: bytes, revision: str = "") -> None:
+        """Put the website's copy back in the mirror and record it as the known revision."""
+        target = self.root / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(raw)
+        tracked[rel] = {"revision": revision or self.rev(raw)}
+        if name := self.save_base(rel, raw):
+            tracked[rel]["base_file"] = name
+
     def retry(self, rel: str, base: bytes, local: bytes, remote: bytes) -> None:
         for directory in (self.retry_dir, self.fallback_retry_dir):
             try:
@@ -392,9 +410,27 @@ class Mirror:
 
         by_path = get_manifest()
         writes = []
+        deletes = []
         new_pages = []
+        # A vanished mirror is an accident (a wiped directory, an unmounted disk), not a request
+        # to delete a person's research. Only propagate removals while some writable file is still
+        # present; otherwise leave the website alone and let the pull below restore the mirror.
+        editable = [rel for rel in tracked if self.writable(rel)]
+        mirror_intact = any((self.root / rel).exists() for rel in editable)
+        suppressed = False
         for rel, old in list(tracked.items()):
             if rel not in by_path or not self.writable(rel): continue
+            if not (self.root / rel).exists():
+                # A deleted page must also lose its pages.yaml entry, so it cannot be expressed as
+                # an empty write — the server refuses those to protect against a truncated mirror.
+                if mirror_intact:
+                    deletes.append({"path": rel, "base_revision": old["revision"]})
+                elif not suppressed:
+                    suppressed = True
+                    print(f"[{APP} sync] Every local report file is missing, so this looks like a lost "
+                          "mirror rather than a deletion. Nothing was removed from the website; "
+                          "pulling the current state instead.", file=sys.stderr)
+                continue
             raw = self.local_raw(rel)
             if self.rev(raw) != old["revision"]:
                 writes.append({"path": rel, "base_revision": old["revision"],
@@ -432,6 +468,21 @@ class Mirror:
                     target = self.root / rel; target.parent.mkdir(parents=True, exist_ok=True); target.write_bytes(current)
                 print(f"[{APP} sync conflict] Could not create {rel}: {conflict['reason']}. "
                       "Saved the local version as a retry packet.", file=sys.stderr)
+        if deletes:
+            result = account_request(self.account, "POST", "/api/scientist/v1/deletes", {"deletes": deletes})
+            for applied in result["applied"]:
+                rel = applied["path"]
+                self.forget(tracked, rel)
+                by_path.pop(rel, None)
+            for conflict in result["conflicts"]:
+                rel = conflict["path"]
+                current = base64.b64decode(conflict.get("content_b64", ""))
+                note = "Restored the website copy in the mirror." if current else "Nothing was changed."
+                print(f"[{APP} sync conflict] Could not delete {rel}: {conflict['reason']}. {note}",
+                      file=sys.stderr)
+                if current:
+                    self.restore(tracked, rel, current, conflict.get("revision", ""))
+                    by_path[rel] = {"path": rel, "revision": tracked[rel]["revision"]}
         if writes:
             result = account_request(self.account, "POST", "/api/scientist/v1/push", {"writes": writes})
             # A successful write already gives us the authoritative revision. Record it locally
@@ -447,12 +498,19 @@ class Mirror:
                     tracked[rel]["base_file"] = name
             for conflict in result["conflicts"]:
                 rel = conflict["path"]
+                # A rejected write used to be completely silent, so an agent could believe an edit
+                # had reached the website. Always say what happened to the local content.
                 if conflict.get("content_b64"):
                     current = base64.b64decode(conflict["content_b64"])
                     local = self.local_raw(rel)
                     base = self.base_raw(tracked.get(rel, {}), rel)
                     self.retry(rel, base, local, current)
                     target = self.root / rel; target.parent.mkdir(parents=True, exist_ok=True); target.write_bytes(current)
+                    note = "Saved the local version as a retry packet and restored the website copy."
+                else:
+                    note = "The local file was left unchanged."
+                print(f"[{APP} sync conflict] Could not save {rel}: {conflict['reason']}. {note}",
+                      file=sys.stderr)
             by_path = get_manifest()
 
         changed = [rel for rel, item in by_path.items()
@@ -463,7 +521,11 @@ class Mirror:
             raw = base64.b64decode(item["content_b64"])
             local = self.local_raw(rel)
             old = tracked.get(rel)
-            if not old or self.rev(local) == old["revision"] or not self.writable(rel):
+            # A file that is simply absent has no local edit to protect, so it must be restored.
+            # Comparing its empty content against the tracked revision would instead treat every
+            # missing file as an unsaved change and leave the mirror permanently incomplete.
+            missing = not (self.root / rel).exists()
+            if not old or missing or self.rev(local) == old["revision"] or not self.writable(rel):
                 target = self.root / rel; target.parent.mkdir(parents=True, exist_ok=True); target.write_bytes(raw)
             tracked[rel] = {"revision": item["revision"]}
             if self.writable(rel):
@@ -478,12 +540,7 @@ class Mirror:
             if not self.writable(rel) or self.rev(local) == old["revision"]:
                 try: (self.root / rel).unlink()
                 except FileNotFoundError: pass
-                name = old.get("base_file", "")
-                if name:
-                    for directory in (self.base_dir, self.fallback_base_dir, self.legacy_base_dir):
-                        try: (directory / name).unlink()
-                        except OSError: pass
-                tracked.pop(rel, None)
+                self.forget(tracked, rel)
         self.save_state(state)
 
 
@@ -585,6 +642,16 @@ NEW REPORT PAGES:
 - To add a website page, create one flat Markdown file at REPORTS/{bubble}/pages/<page-slug>.md.
 - Use a lowercase hyphenated filename. Scientist registers it automatically; its website tab title is
   the filename with hyphens replaced by spaces. Never create or edit pages.yaml yourself.
+
+DELETING PAGES AND FIGURES:
+- To remove a website page, delete its file REPORTS/{bubble}/pages/<page-slug>.md and nothing
+  else. Scientist removes the page and its website navigation entry on the next sync. Never edit
+  pages.yaml to delete a page, and never blank a page's contents instead of deleting the file.
+- Renaming a page means deleting the old file and creating the new one; move its content across.
+- The bubble's home page cannot be deleted. Sync reports that conflict and restores the file.
+- Deleting a file under REPORTS/{bubble}/assets removes that figure from the website. Check that
+  no report page still embeds it first.
+- Never delete _lockedin_papers.md or anything under ASSETS/ (the paper library).
 
 TERMINAL OUTPUT RULE:
 - In normal terminal conversation, do not emit LaTeX commands, delimiters, or raw equation source.
