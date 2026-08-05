@@ -798,6 +798,10 @@ def build_app():
     class PaperScoreIn(BaseModel):
         score: int
 
+    class MigratePapersIn(BaseModel):
+        source: str
+        items: list[dict] = []
+
     class PageContentIn(BaseModel):
         content: str
         # Optimistic-concurrency token: the page mtime the editor's content was loaded
@@ -1615,6 +1619,18 @@ def build_app():
                              user: str = Depends(current_user)):
         try:
             return {"bubble": service.set_pdf_bubble_score(home_of(user), slug, pdf_id, body.score)}
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail="No such asset.")
+        except KeyError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    @app.post("/api/bubbles/{slug}/migrate-papers")
+    def migrate_papers(slug: str, body: MigratePapersIn, user: str = Depends(current_user)):
+        """Copy papers from ``body.source`` into ``slug`` (the destination) in one request."""
+        try:
+            return service.migrate_papers(home_of(user), body.source, slug, body.items)
         except FileNotFoundError:
             raise HTTPException(status_code=404, detail="No such asset.")
         except KeyError as e:

@@ -203,6 +203,54 @@ def set_pdf_bubble_score(home: Path, slug: str, pdf_id: str, score: int) -> dict
         return bubbles.bubble_detail(slug)
 
 
+def migrate_papers(home: Path, source: str, dest: str, items: list[dict]) -> dict:
+    """Copy chosen papers from one bubble into another at explicit relevance scores.
+
+    Papers are shared assets and membership is a tag, so this copies without duplicating any file
+    and leaves the source bubble entirely untouched. Each item is ``{"pdf_id": str, "score": 1-5}``.
+
+    Only current members of ``source`` are eligible, and a paper already in ``dest`` is skipped
+    rather than re-scored: the picker hides those, so accepting them here would silently overwrite
+    a relevance the user never saw. Both rules are enforced server-side so a stale browser tab
+    cannot turn this into "tag any asset into any bubble".
+    """
+    if source == dest:
+        raise ValueError("Pick two different bubbles.")
+    # Validate every score before touching anything. Tagging happens before scoring, so a bad
+    # score found halfway through would otherwise leave that paper in the destination unscored.
+    planned = []
+    for item in items:
+        try:
+            score = int(item.get("score", 5))
+        except (TypeError, ValueError):
+            raise ValueError("Relevance score must be an integer from 1 to 5.")
+        if not 1 <= score <= 5:
+            raise ValueError("Relevance score must be an integer from 1 to 5.")
+        planned.append((str(item.get("pdf_id") or ""), score))
+    with paths.use_root(home):
+        registry = bubbles.load_registry()
+        for slug in (source, dest):
+            if slug not in registry:
+                raise KeyError(f"No such bubble: {slug!r}")
+        eligible = {m["pdf_id"] for m in bubbles.pdfs_for_bubble(source)}
+        already = {m["pdf_id"] for m in bubbles.pdfs_for_bubble(dest)}
+        migrated, skipped = [], []
+        for pdf_id, score in planned:
+            if pdf_id not in eligible or pdf_id in already:
+                skipped.append(pdf_id)
+                continue
+            # add_pdf_to_bubble tags via bubbles.tag_for_slug, which is what keeps a renamed
+            # destination from splitting into a phantom slug. Never hand-roll that tag.
+            bubbles.add_pdf_to_bubble(dest, pdf_id)
+            bubbles.set_pdf_bubble_score(dest, pdf_id, score)
+            migrated.append(pdf_id)
+        # Setting a score does not refresh the generated inventory, and its "[Relevance N]"
+        # headings are what a Scientist session reads as the authoritative paper list. Rewrite it
+        # once, after the batch has settled.
+        bubbles.write_citation_file(dest)
+        return {"migrated": migrated, "skipped": skipped, "bubble": bubbles.bubble_detail(dest)}
+
+
 # ---- public sharing ----
 def set_bubble_share(home: Path, slug: str, active: bool) -> dict:
     """Toggle a bubble's unlisted public share and register its token in the global index."""

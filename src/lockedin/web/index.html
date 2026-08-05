@@ -1125,6 +1125,7 @@
     if(h==="workspace"){switchView("workspace",{noRoute:true});return;}
     if(h==="settings"){switchView("settings",{noRoute:true});return;}
     if(h==="todos"){switchView("todos",{noRoute:true});return;}
+    if(h==="migrate"){viewMigratePapers({noRoute:true});return;}
     const tm=h.match(/^todos\/(\d+)$/);
     if(tm){viewTodo(+tm[1]);return;}
     const wam=h.match(/^w\/([^/]+)\/asset\/([^/]+)$/);
@@ -2632,6 +2633,8 @@
     const filter=S.bubbleFilter||"active";
     const head=el("div",{class:"row"}, el("h2",{class:"section-title",style:"margin:0"},"🫧 Bubbles"),
       el("span",{class:"spacer"}),
+      el("button",{class:"ghost small",title:"Copy papers from one bubble into another",
+        onclick:()=>viewMigratePapers()},"Migrate resources"),
       el("button",{class:"ghost small",onclick:()=>{ S.bubbleFilter=filter==="active"?"archived":"active"; viewBubbles(); }},
         filter==="active"?"Show archive":"Show active"),
       el("button",{class:"primary small",onclick:newBubble},"+ New bubble"));
@@ -2668,6 +2671,113 @@
     });
     m.append(grid);
   }
+
+  // Copy papers between bubbles in one pass. Papers are shared assets and membership is a tag,
+  // so this never duplicates a file — the source bubble is left exactly as it was.
+  async function viewMigratePapers({noRoute=false}={}){
+    leaveBubbleWorkspace();
+    S.view="bubbles";
+    $("#previewArrow").classList.add("hide");
+    document.querySelectorAll(".navbtn").forEach(b=>b.classList.toggle("active",b.dataset.view==="bubbles"));
+    if(!noRoute)pushRoute("migrate");
+    const {m,version}=beginMainRender();
+    m.append(el("a",{class:"wikilink",style:"font-size:13px",onclick:()=>viewBubbles()},"← All bubbles"));
+    m.append(el("h2",{style:"margin:10px 0 2px"},"Migrate resources"));
+    m.append(el("div",{class:"muted",style:"font-size:12px;margin-bottom:14px"},
+      "Copy papers from one bubble into another. The source bubble keeps everything; "
+      +"relevance starts from the paper's score in the source and stays editable."));
+    const loading=viewLoading("Loading bubbles…",2);
+    m.append(loading);
+    let list;
+    try{ list=(await api("/api/bubbles")).bubbles||[]; }
+    catch(e){ if(isCurrentRender(version))loading.replaceWith(el("div",{class:"err"},e.message)); return; }
+    if(!isCurrentRender(version))return;
+    loading.remove();
+    if(list.length<2){
+      m.append(el("div",{class:"muted"},"You need at least two bubbles to migrate papers between them."));
+      return;
+    }
+    const opts=(placeholder)=>[el("option",{value:""},placeholder),
+      ...list.map(b=>el("option",{value:b.slug},b.name+" ("+b.pdf_count+" paper"+(b.pdf_count===1?"":"s")+")"))];
+    const srcSel=el("select",{},...opts("Choose a source…"));
+    const dstSel=el("select",{},...opts("Choose a destination…"));
+    srcSel.value=list[0].slug;
+    const pickers=el("div",{class:"card",style:"display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end"},
+      el("label",{style:"flex:1 1 220px"},el("div",{class:"muted",style:"font-size:12px;margin-bottom:4px"},"Source bubble"),srcSel),
+      el("label",{style:"flex:1 1 220px"},el("div",{class:"muted",style:"font-size:12px;margin-bottom:4px"},"Destination bubble"),dstSel));
+    const body=el("div",{style:"margin-top:14px"});
+    m.append(pickers, body);
+
+    let rows=[];                       // {pdf_id, check, scoreSel}
+    const countLabel=el("span",{class:"muted",style:"font-size:12px"});
+    const migrateBtn=el("button",{class:"primary small"},"Migrate");
+    function refreshCount(){
+      const n=rows.filter(r=>r.check.checked).length;
+      countLabel.textContent=n+" of "+rows.length+" selected";
+      migrateBtn.disabled=!n;
+    }
+    async function rebuild(){
+      const source=srcSel.value, dest=dstSel.value;
+      rows=[]; body.innerHTML="";
+      if(!source||!dest){ body.append(el("div",{class:"muted"},"Pick a source and a destination bubble.")); return; }
+      if(source===dest){ body.append(el("div",{class:"muted"},"Pick two different bubbles.")); return; }
+      const busy=viewLoading("Loading papers…",3); body.append(busy);
+      let src,dst;
+      try{ [src,dst]=await Promise.all([api("/api/bubbles/"+source),api("/api/bubbles/"+dest)]); }
+      catch(e){ body.innerHTML=""; body.append(el("div",{class:"err"},e.message)); return; }
+      if(!isCurrentRender(version))return;
+      body.innerHTML="";
+      const present=new Set((dst.bubble.assets||[]).map(a=>a.pdf_id));
+      const all=src.bubble.assets||[];
+      const movable=all.filter(a=>!present.has(a.pdf_id));
+      if(!all.length){ body.append(el("div",{class:"muted"},"That source bubble has no papers yet.")); return; }
+      if(!movable.length){
+        body.append(el("div",{class:"muted"},
+          "All "+all.length+" paper(s) in that bubble are already in the destination. Nothing to copy."));
+        return;
+      }
+      const table=el("div",{class:"card"});
+      const head=el("div",{class:"row",style:"align-items:center;gap:10px;margin-bottom:8px"},
+        el("b",{},"Papers to copy"), el("span",{class:"spacer"}), countLabel,
+        el("button",{class:"ghost small",onclick:()=>{rows.forEach(r=>r.check.checked=true);refreshCount();}},"Select all"),
+        el("button",{class:"ghost small",onclick:()=>{rows.forEach(r=>r.check.checked=false);refreshCount();}},"Select none"));
+      table.append(head);
+      if(all.length!==movable.length){
+        table.append(el("div",{class:"muted",style:"font-size:12px;margin-bottom:8px"},
+          (all.length-movable.length)+" paper(s) are already in the destination and are not listed."));
+      }
+      movable.forEach(a=>{
+        const check=el("input",{type:"checkbox"}); check.checked=true; check.onchange=refreshCount;
+        const scoreSel=el("select",{style:"width:auto;min-width:56px"},
+          ...[5,4,3,2,1].map(n=>el("option",{value:String(n)},String(n))));
+        scoreSel.value=String(Number(a.bubble_score||5));
+        table.append(el("div",{class:"row",style:"align-items:center;gap:10px;padding:4px 0"},
+          check,
+          el("span",{style:"flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap",
+            title:a.title||a.filename||a.pdf_id}, a.title||a.filename||a.pdf_id),
+          el("span",{class:"muted",style:"font-size:12px;flex:0 0 auto"},"relevance"), scoreSel));
+        rows.push({pdf_id:a.pdf_id,check,scoreSel});
+      });
+      migrateBtn.onclick=async()=>{
+        const items=rows.filter(r=>r.check.checked)
+          .map(r=>({pdf_id:r.pdf_id,score:Number(r.scoreSel.value)}));
+        if(!items.length)return;
+        migrateBtn.disabled=true;
+        try{
+          const r=await api("/api/bubbles/"+dest+"/migrate-papers",
+            {method:"POST",body:JSON.stringify({source,items})});
+          toast("Copied "+r.migrated.length+" paper(s) into "+dst.bubble.name);
+          openBubble(dest);
+        }catch(e){ toast(e.message); migrateBtn.disabled=false; }
+      };
+      table.append(el("div",{class:"row",style:"margin-top:12px;gap:8px"},migrateBtn));
+      body.append(table);
+      refreshCount();
+    }
+    srcSel.onchange=rebuild; dstSel.onchange=rebuild;
+    rebuild();
+  }
+
   function requestTextDialog({title,label,placeholder,submitLabel}){
     return new Promise(resolve=>{
       const overlay=el("div",{class:"overlay",role:"dialog","aria-modal":"true","aria-label":title});

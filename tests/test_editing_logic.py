@@ -223,6 +223,100 @@ class BubbleIdentity(unittest.TestCase):
             self.assertEqual({b["slug"] for b in service.list_bubbles(home)}, {active, archived})
 
 
+# --------------------------------------------------------------------------- #
+# Copying papers between bubbles (service.migrate_papers). Membership is a tag on a shared
+# asset, so a migration must add to the destination and never disturb the source.
+# --------------------------------------------------------------------------- #
+class PaperMigration(unittest.TestCase):
+    def _workspace(self, home):
+        """Two bubbles; one paper in the source at a non-default relevance."""
+        with paths.use_root(home):
+            source = bubbles.create_bubble("Source topic")
+            dest = bubbles.create_bubble("Dest topic")
+            pdf_id = assets.save_asset(b"%PDF-1", "paper.pdf", tags=[bubbles.tag_for_slug(source)])
+            bubbles.set_pdf_bubble_score(source, pdf_id, 2)
+        return source, dest, pdf_id
+
+    def _score(self, home, slug, pdf_id):
+        with paths.use_root(home):
+            for m in bubbles.pdfs_for_bubble(slug):
+                if m["pdf_id"] == pdf_id:
+                    return int(m["bubble_score"])
+        return None
+
+    def test_copy_adds_to_destination_and_leaves_the_source_untouched(self):
+        with temp_home() as home:
+            source, dest, pdf_id = self._workspace(home)
+            out = service.migrate_papers(home, source, dest, [{"pdf_id": pdf_id, "score": 4}])
+            self.assertEqual(out["migrated"], [pdf_id])
+            self.assertEqual(self._score(home, dest, pdf_id), 4)
+            # The source keeps both the paper and its own relevance.
+            self.assertEqual(self._score(home, source, pdf_id), 2)
+
+    def test_a_paper_already_in_the_destination_keeps_its_relevance(self):
+        with temp_home() as home:
+            source, dest, pdf_id = self._workspace(home)
+            service.migrate_papers(home, source, dest, [{"pdf_id": pdf_id, "score": 3}])
+            out = service.migrate_papers(home, source, dest, [{"pdf_id": pdf_id, "score": 1}])
+            self.assertEqual(out["migrated"], [])
+            self.assertEqual(out["skipped"], [pdf_id])
+            # Not re-scored behind the user's back: the picker never showed this row.
+            self.assertEqual(self._score(home, dest, pdf_id), 3)
+
+    def test_an_asset_outside_the_source_bubble_is_never_tagged(self):
+        with temp_home() as home:
+            source, dest, _ = self._workspace(home)
+            with paths.use_root(home):
+                other = assets.save_asset(b"%PDF-1", "unrelated.pdf", tags=["something else"])
+            out = service.migrate_papers(home, source, dest, [{"pdf_id": other}])
+            self.assertEqual(out["migrated"], [])
+            self.assertEqual(out["skipped"], [other])
+            with paths.use_root(home):
+                self.assertNotIn(dest, assets.load_meta(other).get("idea_bubbles", []))
+
+    def test_same_bubble_and_unknown_bubble_are_rejected(self):
+        with temp_home() as home:
+            source, dest, pdf_id = self._workspace(home)
+            with self.assertRaises(ValueError):
+                service.migrate_papers(home, source, source, [])
+            with self.assertRaises(KeyError):
+                service.migrate_papers(home, source, "no-such-bubble", [])
+
+    def test_a_rejected_score_tags_nothing_at_all(self):
+        # Tagging happens before scoring, so an out-of-range score must be caught up front or the
+        # paper lands in the destination unscored — a half-applied migration.
+        with temp_home() as home:
+            source, dest, pdf_id = self._workspace(home)
+            with self.assertRaises(ValueError):
+                service.migrate_papers(home, source, dest, [{"pdf_id": pdf_id, "score": 9}])
+            with paths.use_root(home):
+                self.assertNotIn(dest, assets.load_meta(pdf_id).get("idea_bubbles", []))
+                self.assertEqual(bubbles.pdfs_for_bubble(dest), [])
+
+    def test_a_renamed_destination_still_receives_the_paper_under_its_own_slug(self):
+        # The phantom-slug regression: tagging by display name would split the bubble.
+        with temp_home() as home:
+            source, dest, pdf_id = self._workspace(home)
+            with paths.use_root(home):
+                bubbles.rename_bubble(dest, "Completely Different Name")
+            service.migrate_papers(home, source, dest, [{"pdf_id": pdf_id, "score": 5}])
+            with paths.use_root(home):
+                slugs = assets.load_meta(pdf_id).get("idea_bubbles", [])
+        self.assertIn(dest, slugs)
+        self.assertNotIn("completely-different-name", slugs)
+
+    def test_destination_inventory_reflects_the_new_relevance(self):
+        # _lockedin_papers.md is what a Scientist session reads; set_pdf_bubble_score alone does
+        # not refresh it, so the batch must rewrite it at the end.
+        with temp_home() as home:
+            source, dest, pdf_id = self._workspace(home)
+            service.migrate_papers(home, source, dest, [{"pdf_id": pdf_id, "score": 4}])
+            with paths.use_root(home):
+                inventory = (paths.bubble_dir(dest) / "_lockedin_papers.md").read_text()
+        self.assertIn("[Relevance 4]", inventory)
+        self.assertIn(pdf_id, inventory)
+
+
 class BubbleRelevance(unittest.TestCase):
     def test_legacy_membership_defaults_to_score_five_and_sorts(self):
         with temp_home() as home:
