@@ -1,8 +1,9 @@
 name: Scientist client release
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - "scientist-v*"
 
 permissions:
   contents: write
@@ -17,7 +18,7 @@ jobs:
       - name: Verify that the release tag is on main
         run: |
           git fetch origin main
-          release_commit="$(git rev-list -n 1 "${{ github.event.release.tag_name }}")"
+          release_commit="$(git rev-list -n 1 "${{ github.ref_name }}")"
           git merge-base --is-ancestor "$release_commit" origin/main || {
             echo "Refusing to publish Scientist: release tag is not reachable from main." >&2
             exit 1
