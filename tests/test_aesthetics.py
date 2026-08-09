@@ -63,6 +63,13 @@ class AestheticsConfigTests(unittest.TestCase):
         self.assertIn("captionStore", html)
         self.assertIn("@@LI_CAP", html)
 
+    def test_preview_resolves_portable_relative_report_figure_links(self):
+        html = server._render_preview_html(
+            name="Test", page="overview", all_pages=[{"page_slug": "overview", "title": "Overview"}],
+            content='![A figure](assets/figure.png)', slug="test", link_base="/share/token",
+            asset_base="/share/token/assets", show_back=False)
+        self.assertIn("/share/token/assets/figure.png", html)
+
     def test_live_editor_preview_preserves_all_resources_between_typing_updates(self):
         source = (Path(server.WEB_DIR) / "index.html").read_text()
         self.assertIn("const savedResources=restartGifs?null:collectPreviewResources(S.previewEl);", source)

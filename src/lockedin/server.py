@@ -380,6 +380,12 @@ def _render_preview_html(*, name: str, page: str, all_pages: list, content: str,
     md = content
     # point figure URLs at the right (possibly public) asset route
     md = md.replace(f"/api/bubbles/{slug}/assets/", f"{asset_base}/")
+    # Report pages use `assets/<filename>` as their portable figure syntax.  A standalone
+    # preview/share page has a different browser base URL, so make the bubble asset route
+    # explicit before marked.js turns the Markdown image into an <img> element.
+    md = re.sub(r'(!\[[^\]\n]*\]\()assets/([^\s)]+)(\))',
+                lambda match: f"{match.group(1)}{asset_base}/{quote(match.group(2))}{match.group(3)}",
+                md)
 
     # Return to the editor, not a browser history step: the preview opens in its own tab and
     # navigating between pages inside it builds history, so history.back() would just walk those

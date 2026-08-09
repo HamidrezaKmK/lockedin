@@ -281,9 +281,9 @@ def bubbles_command(account: dict) -> list[dict]:
     return rows
 
 
-SKILL_VERSION = 6
+SKILL_VERSION = 7
 
-SKILL_RULES = """<!-- lockedin-scientist-skill: 6 -->
+SKILL_RULES = """<!-- lockedin-scientist-skill: 7 -->
 # LockedIn Scientist research and publication skill
 
 This project is synchronized with one LockedIn bubble. Read this file before editing.
@@ -324,6 +324,11 @@ only through LockedIn workspace settings.
 experiments, figures, intermediate conclusions, and material that should be shared through the
 LockedIn bubble. Its changes are synchronized continuously. It is normal for a report page to be
 exploratory or to evolve quickly, but keep claims and citations accurate.
+
+For a report figure stored in `.lockedin/reports/assets/`, use a portable relative Markdown image
+link: `![descriptive caption](assets/filename.png)`. Do not paste a browser URL, a local absolute
+path, or an `/api/...` URL. Relative `assets/` links render in LockedIn, its standalone previews,
+and public shares, while staying valid when the bubble or workspace changes.
 
 ## Sync and conflicts
 

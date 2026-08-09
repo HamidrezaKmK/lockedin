@@ -1288,9 +1288,15 @@
     if(opts.sourceMarkers) s=withSourceMarkers(s);
     // Stored report Markdown predates workspaces. Add the active workspace capability at render
     // time so existing report figures keep working after a workspace switch or in a new tab.
+    // `assets/<filename>` is the portable report syntax; resolve it against this bubble rather
+    // than the browser route (which would otherwise request `/assets/<filename>`).
     if(S.workspaceId){
       s=s.replace(/\/api\/bubbles\/([^/?\s)]+)\/assets\/([^?\s)"']+)(?:\?workspace=[^\s)"']*)?/g,
         (_,slug,file)=>workspaceUrl("/api/bubbles/"+slug+"/assets/"+file));
+      if(S.bubble){
+        s=s.replace(/(!\[[^\]\n]*\]\()assets\/([^\s)]+)(\))/g,
+          (_,open,file,close)=>open+workspaceUrl("/api/bubbles/"+encodeURIComponent(S.bubble)+"/assets/"+encodeURIComponent(file))+close);
+      }
     }
     // Keep image alt text out of general math stashing. Markdown emits it as an HTML attribute,
     // where replacing `$...$` would corrupt the caption before decorateFigures sees it.

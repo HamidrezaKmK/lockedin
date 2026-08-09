@@ -384,12 +384,13 @@ class ScientistProfileAndWorkersTest(unittest.TestCase):
         self.assertIn("the sync worker registers it automatically", scientist_cli.SKILL_RULES)
         self.assertIn("the sync worker removes it", scientist_cli.SKILL_RULES)
         self.assertIn("config/math.yaml", scientist_cli.SKILL_RULES)
-        self.assertIn("lockedin-scientist-skill: 6", scientist_cli.SKILL_RULES)
+        self.assertIn("lockedin-scientist-skill: 7", scientist_cli.SKILL_RULES)
         self.assertIn("Outside `.lockedin/`, work on this repository normally", scientist_cli.SKILL_RULES)
         self.assertIn("manuscript changes stay local until that explicit sync", scientist_cli.SKILL_RULES)
         self.assertIn("create or edit `.tex`, `.bib`, `.sty`, `.cls`", scientist_cli.SKILL_RULES)
         self.assertIn("Reports: the live research record", scientist_cli.SKILL_RULES)
         self.assertIn("the curated publication source", scientist_cli.SKILL_RULES)
+        self.assertIn("portable relative Markdown image", scientist_cli.SKILL_RULES)
 
     def test_skill_embeds_the_active_math_macro_table(self):
         skill = scientist_cli.skill_document("## Markdown\n", {"\\E": "\\mathbb{E}"})
