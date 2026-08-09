@@ -1043,6 +1043,7 @@ class FigureReferences(unittest.TestCase):
         self.assertEqual(refs["figStart"], {"p1": 0, "p2": 1})
         self.assertEqual(refs["fig"]["fig:first"], {"number": 1, "page_slug": "p1"})
         self.assertEqual(refs["fig"]["fig:second"], {"number": 2, "page_slug": "p2"})
+        self.assertEqual(len({entry["number"] for entry in refs["fig"].values()}), len(refs["fig"]))
 
     def test_figure_reference_and_caption_are_rendered(self):
         html = server._render_preview_html(

@@ -582,6 +582,7 @@ blockquote p{{margin:5px 0}}
   const _theoStore={json.dumps(theo_store)};
   const _figRefs={json.dumps(fig_map)};
   let _nextFigure={int(fig_start)};
+  const _usedFigureNumbers=new Set();
   const escHtml=t=>String(t||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
   const escAttr=t=>escHtml(t).replace(/"/g,"&quot;");
   const renderTextColor=src=>src.replace(/\\\\textcolor\\{{(#[0-9a-fA-F]{{3}}(?:[0-9a-fA-F]{{3}})?)\\}}\\{{([^{{}}\\n]*)\\}}/g,
@@ -626,7 +627,10 @@ blockquote p{{margin:5px 0}}
     const labelMatch=/\\\\label\\{{([^}}]+)\\}}/.exec(rawCaption);
     const label=labelMatch&&labelMatch[1];
     const caption=rawCaption.replace(/\\\\label\\{{[^}}]+\\}}/g,"").trim();
-    const number=label&&_figRefs[label]?_figRefs[label].number:_nextFigure;
+    let number=label&&_figRefs[label]?Number(_figRefs[label].number):_nextFigure;
+    if(!Number.isInteger(number)||number<1||_usedFigureNumbers.has(number)) number=_nextFigure;
+    while(_usedFigureNumbers.has(number)) number++;
+    _nextFigure=Math.max(_nextFigure,number); _usedFigureNumbers.add(number);
     const paragraph=img.parentElement, figure=document.createElement("figure");
     if(label)figure.id="fig-"+encodeURIComponent(label);
     paragraph.replaceWith(figure); figure.append(img);

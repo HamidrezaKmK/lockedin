@@ -1534,13 +1534,17 @@
   function decorateFigures(root){
     const refs=S.refs||{}, figLabels=refs.fig||{};
     let nextFigure=Number((refs.figStart||{})[S.page]||0);
+    const usedFigureNumbers=new Set();
     root.querySelectorAll("p > img:only-child[alt]").forEach(img=>{
       nextFigure++;
       const rawCaption=img.getAttribute("alt")||"";
       const labelMatch=/\\label\{([^}]+)\}/.exec(rawCaption);
       const label=labelMatch&&labelMatch[1];
       const caption=rawCaption.replace(/\\label\{[^}]+\}/g,"").trim();
-      const number=label&&figLabels[label]?figLabels[label].number:nextFigure;
+      let number=label&&figLabels[label]?Number(figLabels[label].number):nextFigure;
+      if(!Number.isInteger(number)||number<1||usedFigureNumbers.has(number)) number=nextFigure;
+      while(usedFigureNumbers.has(number)) number++;
+      nextFigure=Math.max(nextFigure,number); usedFigureNumbers.add(number);
       const paragraph=img.parentElement, figure=document.createElement("figure");
       if(label)figure.id="fig-"+encodeURIComponent(label);
       if(paragraph.dataset.sourceStart)figure.dataset.sourceStart=paragraph.dataset.sourceStart;
@@ -3146,7 +3150,7 @@
     leaveBubbleWorkspace({preserveFocus:true});
     const token=S.openToken=(S.openToken||0)+1;
     if(!noRoute)pushRoute("bubble/"+slug);
-    S.bubble=slug; S.chat=[]; S.page=null; S.pages=[]; S.sessionId=null; S.sessionTitle=null;
+    S.bubble=slug; S.refs=null; S.chat=[]; S.page=null; S.pages=[]; S.sessionId=null; S.sessionTitle=null;
     S.selectedComment=null;
     S.previewEl=null; S.remoteChangePending=false; S.papersMenu=null; S.chatPane=null; S.detailWrap=null;
     S.baseMtime=null; S.saving=false; S.syncState="synced";
