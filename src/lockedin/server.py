@@ -40,7 +40,7 @@ _REQUEST_WORKSPACE: contextvars.ContextVar[str | None] = contextvars.ContextVar(
 # Keep this equal to ``scientist_cli.SCIENTIST_CLIENT_VERSION``. Bump both when a Scientist
 # release needs an installed client refresh; the dependency-free installed client cannot import
 # package metadata from this server.
-SCIENTIST_CLIENT_VERSION = "2026.08.05.1"
+SCIENTIST_CLIENT_VERSION = "2026.08.09.6"
 
 
 def _build_refs(pages: "list[dict]", bibliography: "dict | None" = None) -> dict:
@@ -707,6 +707,7 @@ def build_app():
     # One-time-compatible, idempotent repair for share links created before content became
     # workspace-owned. Existing links retain their tokens and now target Personal workspaces.
     service.migrate_share_index_to_workspaces()
+    service.migrate_overleaf_fields()
     if CROSS_SITE:
         app.add_middleware(CORSMiddleware, allow_origins=PUBLIC_ORIGINS,
                            allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
@@ -791,6 +792,9 @@ def build_app():
 
     class BubbleArchiveIn(BaseModel):
         archived: bool
+
+    class OverleafIn(BaseModel):
+        project: str = ""
 
     class AddPdfIn(BaseModel):
         pdf_id: str
@@ -942,9 +946,9 @@ def build_app():
                 status_code=426,
                 detail=("LockedIn Scientist is out of date. Reinstall the newest version, then retry. "
                         "macOS/Linux: curl -fsSL "
-                        "https://raw.githubusercontent.com/HamidrezaKmK/lockedin/scientist/install.sh | bash; "
+                        "https://raw.githubusercontent.com/HamidrezaKmK/lockedin/main/install.sh | bash; "
                         "Windows PowerShell: irm "
-                        "https://raw.githubusercontent.com/HamidrezaKmK/lockedin/scientist/install.ps1 | iex"),
+                        "https://raw.githubusercontent.com/HamidrezaKmK/lockedin/main/install.ps1 | iex"),
             )
         token = (authorization or "").removeprefix("Bearer ").strip()
         user = auth.scientist_token_user(token)
@@ -1483,16 +1487,16 @@ def build_app():
                             headers={"Content-Disposition": "inline"})
 
     # ---- installed Scientist client -------------------------------------------------
-    @app.post("/api/scientist/v1/device")
+    @app.post("/api/scientist/v2/device")
     def scientist_device_start(body: ScientistDeviceIn):
         code = secrets.token_urlsafe(18)
         _SCIENTIST_DEVICES[code] = {"expires": time.time() + 600,
                                     "client_name": body.client_name[:120], "user": "", "token": ""}
         return {"device_code": code,
-                "verification_uri": f"/api/scientist/v1/device/{code}",
+                "verification_uri": f"/api/scientist/v2/device/{code}",
                 "expires_in": 600, "interval": 2}
 
-    @app.get("/api/scientist/v1/device/{code}")
+    @app.get("/api/scientist/v2/device/{code}")
     def scientist_device_page(code: str):
         rec = _SCIENTIST_DEVICES.get(code)
         if not rec or rec["expires"] < time.time():
@@ -1502,7 +1506,7 @@ def build_app():
         from fastapi.responses import RedirectResponse
         return RedirectResponse(url=f"/?scientist_device={code}", status_code=303)
 
-    @app.post("/api/scientist/v1/device/{code}/approve")
+    @app.post("/api/scientist/v2/device/{code}/approve")
     def scientist_device_approve(code: str, user: str = Depends(current_user)):
         rec = _SCIENTIST_DEVICES.get(code)
         if not rec or rec["expires"] < time.time():
@@ -1512,7 +1516,7 @@ def build_app():
         from fastapi.responses import HTMLResponse
         return HTMLResponse("<p>LockedIn Scientist authorized. You may return to your terminal.</p>")
 
-    @app.get("/api/scientist/v1/device/{code}/token")
+    @app.get("/api/scientist/v2/device/{code}/token")
     def scientist_device_token(code: str):
         rec = _SCIENTIST_DEVICES.get(code)
         if not rec or rec["expires"] < time.time():
@@ -1523,46 +1527,57 @@ def build_app():
         _SCIENTIST_DEVICES.pop(code, None)
         return {"status": "authorized", "token": token, "user": user}
 
-    @app.get("/api/scientist/v1/snapshot")
-    def scientist_snapshot(user: str = Depends(scientist_user)):
-        return scientist_sync.snapshot(home_of(user))
+    @app.get("/api/scientist/v2/bubbles/{slug}/manifest")
+    def scientist_manifest(slug: str, user: str = Depends(scientist_user)):
+        try:
+            return scientist_sync.manifest(home_of(user), slug)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="No such approved bubble.")
 
-    @app.get("/api/scientist/v1/manifest")
-    def scientist_manifest(user: str = Depends(scientist_user)):
-        return scientist_sync.manifest(home_of(user))
-
-    @app.post("/api/scientist/v1/files")
-    def scientist_files(body: ScientistFilesIn, user: str = Depends(scientist_user)):
+    @app.post("/api/scientist/v2/bubbles/{slug}/files")
+    def scientist_files(slug: str, body: ScientistFilesIn, user: str = Depends(scientist_user)):
         # Bound a request so a malformed client cannot turn this into an unbounded payload.
         if len(body.paths) > 500:
             raise HTTPException(status_code=400, detail="Request at most 500 files at once.")
-        return scientist_sync.read_files(home_of(user), body.paths)
+        try:
+            return scientist_sync.read_files(home_of(user), slug, body.paths)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="No such approved bubble.")
 
-    @app.get("/api/scientist/v1/bubbles")
+    @app.get("/api/scientist/v2/bubbles")
     def scientist_bubbles(user: str = Depends(scientist_user)):
-        """Small preflight inventory for the installed client before it launches an agent."""
+        """Small preflight inventory for the installed project-local client."""
         return {"bubbles": [{"slug": b["slug"], "name": b.get("name") or b["slug"],
                              "last_edited_at": b.get("last_edited_at") or ""}
                             for b in service.list_bubbles(home_of(user))]}
 
-    @app.get("/api/scientist/v1/workspaces")
+    @app.get("/api/scientist/v2/workspaces")
     def scientist_workspaces(user: str = Depends(scientist_user)):
         rec = auth.load_accounts().get(user, {})
         return {"workspaces": workspaces.list_for_user(user),
                 "personal_workspace_id": rec.get("personal_workspace_id", "")}
 
-    @app.post("/api/scientist/v1/push")
-    def scientist_push(body: ScientistPushIn, user: str = Depends(scientist_user)):
-        return scientist_sync.apply_writes(home_of(user), body.writes)
+    @app.get("/api/scientist/v2/guide")
+    def scientist_guide(user: str = Depends(scientist_user)):
+        """Canonical report-editing conventions for the generated project-local skill."""
+        from . import reports
+        return {"guide": reports.guide_section("Editing Guide"),
+                "math_macros": service.load_math_config(home_of(user)).get("macros", {})}
 
-    @app.post("/api/scientist/v1/deletes")
-    def scientist_delete(body: ScientistDeleteIn, user: str = Depends(scientist_user)):
+    @app.post("/api/scientist/v2/bubbles/{slug}/push")
+    def scientist_push(slug: str, body: ScientistPushIn, user: str = Depends(scientist_user)):
+        return scientist_sync.apply_writes(home_of(user), slug, body.writes)
+
+    @app.post("/api/scientist/v2/bubbles/{slug}/deletes")
+    def scientist_delete(slug: str, body: ScientistDeleteIn, user: str = Depends(scientist_user)):
         """Remove report pages/figures a Scientist session deleted, manifest entry included."""
-        return scientist_sync.apply_deletes(home_of(user), body.deletes)
+        return scientist_sync.apply_deletes(home_of(user), slug, body.deletes)
 
-    @app.post("/api/scientist/v1/pages")
-    def scientist_create_page(body: ScientistPageCreateIn, user: str = Depends(scientist_user)):
-        return scientist_sync.register_page(home_of(user), body.bubble, body.page_slug,
+    @app.post("/api/scientist/v2/bubbles/{slug}/pages")
+    def scientist_create_page(slug: str, body: ScientistPageCreateIn, user: str = Depends(scientist_user)):
+        if body.bubble and body.bubble != slug:
+            raise HTTPException(status_code=400, detail="Bubble path and body disagree.")
+        return scientist_sync.register_page(home_of(user), slug, body.page_slug,
                                             body.content_b64, body.base_revision)
 
     # ---- bubbles ----
@@ -1647,6 +1662,22 @@ def build_app():
     def set_share(slug: str, body: ShareIn, user: str = Depends(current_user)):
         """Toggle the bubble's unlisted public share link (stable token)."""
         return service.set_bubble_share(home_of(user), slug, body.active)
+
+    @app.put("/api/bubbles/{slug}/overleaf")
+    def set_bubble_overleaf(slug: str, body: OverleafIn, user: str = Depends(current_user)):
+        try:
+            return {"bubble": service.set_bubble_overleaf(home_of(user), slug, body.project)}
+        except KeyError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    @app.delete("/api/bubbles/{slug}/overleaf")
+    def clear_bubble_overleaf(slug: str, user: str = Depends(current_user)):
+        try:
+            return {"bubble": service.set_bubble_overleaf(home_of(user), slug, None)}
+        except KeyError as e:
+            raise HTTPException(status_code=404, detail=str(e))
 
     # ---- todos (global per-user; referenced from report pages as @<id>) ----
     @app.get("/api/todos")

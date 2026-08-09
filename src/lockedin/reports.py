@@ -97,7 +97,7 @@ see; unsaved report edits must be saved or discarded first.
 ## Shared math macros
 
 **Math Macros** lives inside the active workspace settings. A macro belongs to the workspace,
-not an individual account, so every member, preview, public share, and Scientist mirror uses the
+not an individual account, so every member, preview, public share, and Scientist client uses the
 same definitions. Add or edit a macro there before using it in report math.
 """,
     },
@@ -144,19 +144,18 @@ chat pane lets you switch between or delete saved conversations.
 ## What is a bubble?
 
 A **bubble** is a topic group. Each bubble has a name, a multi-page Markdown wiki,
-attached papers, and a read-only research chat sidebar. Bubbles start in an unapproved
-state when auto-suggested; you must approve them before the wiki opens.
+attached papers, and a read-only research chat sidebar. Bubbles created in the app are
+available immediately.
 
-## Creating & approving
+## Creating
 
 Click **+ New bubble** in the Bubbles view, or tag any paper with a new topic name.
 New bubbles are created explicitly from the Bubbles view.
 
 ## Renaming & deleting
 
-Rename a bubble from its detail view: an **approved** bubble is renamed via **🏷️ Edit titles**
-in the view dropdown (the same mode that renames its pages); an **unapproved** one has a ✏️
-pencil next to its name. The 🗑 icon on a bubble card deletes the bubble **and all its wiki pages**.
+Rename a bubble from its detail view via **🏷️ Edit titles** in the view dropdown (the same mode
+that renames its pages). The 🗑 icon on a bubble card deletes the bubble **and all its wiki pages**.
 
 ## Page tabs
 
@@ -187,7 +186,7 @@ are rewritten automatically.
 
 Click **🔗 Share** in the bubble header to publish an unlisted, read-only link. While
 sharing is active the button shows **🟢 Sharing** and a **📋 Copy link** button appears.
-Anyone with the link can browse all pages (no login needed). Toggle off to revoke
+Anyone with the link can browse visible pages (no login needed). Toggle off to revoke
 immediately; toggle back on to restore the same URL.
 
 Hovering a heading on the shared page reveals a 🔗 anchor for deep-linking to a section.
@@ -237,7 +236,7 @@ Use **📚 Library** to add a PDF or a paper URL. You can optionally set:
 - **Tags** — comma-separated topic names; each tag links the paper to a bubble
 - **Source URL** — the paper's arXiv/DOI link
 
-Leave tags blank to let the AI auto-suggest them in the background.
+Leave tags blank to keep the paper unassigned until you organize it into a bubble.
 
 ## Editing an asset
 
@@ -247,10 +246,11 @@ Click any asset card to open its detail panel:
 - **Requires attention** if you want to review or summarize it later
 - **Clear attention** once it no longer needs attention
 
-## Auto-tagging & Requires attention
+## Background processing & Requires attention
 
-After upload, papers without tags are summarised and given suggested tags. They appear in
-the Library's **Requires attention** filter until you review the suggestions.
+After upload, LockedIn extracts text, records model-derived title and author metadata, and
+caches a summary. New papers appear in the Library's **Requires attention** filter until you
+clear that flag.
 
 The Library is always the active workspace's full paper inventory. Use its filter menu to switch
 between **Requires attention**, **Unassigned**, all papers, or a specific bubble.
@@ -332,31 +332,29 @@ OpenAI, Claude, or Gemini with your own API key in the web settings.
         "content": """\
 ## Work on a bubble from your terminal
 
-`lockedin-scientist` is a small companion for an already installed **Codex**, **Claude Code**,
-or **Antigravity** CLI. It keeps an authorized local mirror of your LockedIn workspace in sync
-while the coding assistant works. It does not install the LockedIn server or send your workspace
-to a model by itself.
+`lockedin-scientist` synchronizes one approved bubble into `.lockedin/` in the project where you
+run it. It does not launch Codex, Claude Code, or Antigravity: start your preferred agent normally
+after installing its native `lockedin-scientist` bootstrap skill.
 
 ### Install
 
 On macOS or Linux (Python 3.11+):
 
 ```
-curl -fsSL https://raw.githubusercontent.com/HamidrezaKmK/lockedin/scientist/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/HamidrezaKmK/lockedin/main/install.sh | bash
 ```
 
 On Windows PowerShell (Python 3.11+):
 
 ```
-irm https://raw.githubusercontent.com/HamidrezaKmK/lockedin/scientist/install.ps1 | iex
+irm https://raw.githubusercontent.com/HamidrezaKmK/lockedin/main/install.ps1 | iex
 ```
 
 The installer adds `lockedin-scientist` to your user PATH. On macOS/Linux, ensure
 `~/.local/bin` is on PATH if your shell cannot find the command.
 
-Scientist checks its compatible client version whenever it contacts a synchronized workspace. If
-it asks you to reinstall, rerun the installer above for your platform. This refreshes only the
-standalone client; your authorization and local mirror remain in place.
+Scientist checks its compatible client version whenever it contacts the server. If it asks you to
+reinstall, rerun the installer for your platform. Authorization and active workspace persist.
 
 ### Sign in and choose work
 
@@ -366,149 +364,132 @@ Authorize a device once; the command opens a browser page on the server you spec
 lockedin-scientist login --server https://lockedin.codes
 ```
 
-List the bubbles currently approved for this account. This is deterministic and does not start
-an AI assistant. First list your available workspaces and select one; `bubbles`, `sync`, and
-agent commands then operate only in that selected workspace:
+List the bubbles currently approved for this account. First list your available workspaces and
+select one; the selected workspace is saved across all local projects:
 
 ```
 lockedin-scientist workspaces
-lockedin-scientist switch <workspace-id-or-name>
+lockedin-scientist workspaces switch <workspace-id-or-name>
 lockedin-scientist bubbles
+lockedin-scientist sync <bubble-slug>
 ```
 
-The initial selection is your Personal workspace. `switch` saves the selection in this Scientist
-client only; it does not change the website or Slackbot selection.
+### Native agent skills
 
-Then launch the coding CLI you already use with a bubble slug from that list:
-
-```
-lockedin-scientist codex <bubble-slug>
-lockedin-scientist claude <bubble-slug>
-lockedin-scientist agy <bubble-slug>
-```
-
-The CLI verifies the slug before launching an assistant. It uses the vendor CLI's normal
-interactive approval behavior; it does not enable auto-approval or bypass permissions.
-
-### Resume an assistant session
-
-Resume the latest Codex, Claude Code, or Antigravity session from the selected local workspace
-mirror without losing Scientist's five-second synchronization:
+Install the `lockedin-scientist` bootstrap once for each agent you use:
 
 ```
-lockedin-scientist resume codex <bubble-slug>
-lockedin-scientist resume claude <bubble-slug>
-lockedin-scientist resume agy <bubble-slug>
+lockedin-scientist codex setup
+lockedin-scientist claude setup
+lockedin-scientist agy setup
 ```
 
-Vendor session history is scoped to the workspace mirror, not to one bubble. Re-supply any
-temporary `--add-dir <directory>` grants needed by the resumed session.
+The bootstrap is intentionally short. In a synchronized project it reads the complete current
+guide at `.lockedin/SKILL.md`, including that workspace's math macros and the bubble's editing
+rules. Invoke `$lockedin-scientist` in Codex, `/lockedin-scientist` in Claude Code, or select it
+through agy's `/skills` interface. Setup updates only the managed bootstrap and never overwrites
+a user-owned skill with the same name.
 
-### Work in another local directory
-
-Add an existing directory when the assistant needs to work outside its LockedIn report mirror:
-
-```
-lockedin-scientist <codex|claude|agy> <bubble-slug> --add-dir <directory>
-```
-
-Repeat `--add-dir` for more directories. Each grant is local read/write access for that session
-only and applies to the complete directory subtree; it is not saved, synchronized, or uploaded to
-LockedIn. To limit a notebook task, grant the notebook's containing directory.
-
-### Sync without an agent
-
-Use `sync` when you want to pull website changes and push your local report edits without
-opening Codex, Claude, or Antigravity:
-
-```
-lockedin-scientist sync
-```
-
-It prints the selected workspace's local mirror location when complete. Mirrors are isolated by
-workspace, so bubbles with the same slug in two workspaces cannot collide. During an agent
-session, this same safe pull/push cycle runs every five seconds.
-
-### Recover the website state
-
-If local Scientist bookkeeping has become damaged or you intentionally want the website to be
-authoritative, run:
-
-```
-lockedin-scientist sync --from-server
-```
-
-It first archives local safe mirror files in the client cache, resets only synchronization
-bookkeeping, then pulls the website's current state without pushing stale local changes. It asks
-for confirmation. For a deliberate non-interactive recovery, use:
-
-```
-lockedin-scientist sync --from-server --yes
-```
+`sync` creates `.lockedin/` and a background worker that pulls/pushes every five seconds. Git
+ignores this directory through the project-local exclude file, leaving tracked project files alone.
 
 ### Sync behavior and scope
 
-The initial launch pulls your safe workspace content into a durable local mirror. During a
-session it checks for website and local changes every five seconds and pushes local report edits
-with revision checks. A concurrent website edit is preserved and recorded as a retry packet
-instead of being overwritten.
+The initial sync populates one project-local bubble. Within `.lockedin/`, `assets/<pdf-id>/` and
+`config/` are server-authoritative and read-only: they are restored from the server and detached
+papers are removed locally. Within that directory, only `reports/pages/` and `reports/assets/` are
+writable. The rest of the repository remains available to your coding agent under its normal
+permissions. A concurrent website edit restores the server copy and leaves the rejected local copy
+and a patch in `config/conflicts/`.
 
-Only pages and report assets inside an **approved** bubble can be written back. Credentials,
-sessions, chat history, TODOs, bubble settings, and paper PDFs are never writable by Scientist.
-Use `lockedin-scientist sync` to pull/push once without launching a coding CLI.
+Only pages and report assets inside the selected **approved** bubble can be written back.
+Credentials, sessions, chat history, TODOs, bubble settings, PDFs, and paper summaries are never
+writable by Scientist.
 
 ### New report pages
 
 To add a page from Scientist, create a flat Markdown file at
-`REPORTS/<bubble-slug>/pages/<page-slug>.md`. Scientist registers it in the website automatically;
+`.lockedin/reports/pages/<page-slug>.md`. Scientist registers it in the website automatically;
 the page tab title is derived from the filename with hyphens replaced by spaces. Do not edit
-`pages.yaml` yourself.
+`.lockedin/reports/pages.yaml` yourself.
 
 ### Deleting pages and figures
 
-Ask the assistant to delete the page's file at `REPORTS/<bubble-slug>/pages/<page-slug>.md`.
+Ask the assistant to delete the page's file at `.lockedin/reports/pages/<page-slug>.md`.
 Scientist removes the page and its website navigation entry on the next sync; deleting a file in
-`REPORTS/<bubble-slug>/assets/` removes that figure the same way. Blanking a page instead of
-deleting its file does nothing: an empty sync write is refused so a damaged mirror can never wipe
+`.lockedin/reports/assets/` removes that figure the same way. Blanking a page instead of
+deleting its file does nothing: an empty sync write is refused so a damaged local copy can never wipe
 a report. A bubble's home page cannot be deleted from Scientist; that removal is reported as a
-conflict and the file is restored in the mirror. Delete the home page in the browser instead.
+conflict and the file is restored locally. Delete the home page in the browser instead.
 
 ### Figures and GIFs
 
 Scientist can add report figures and animated GIFs using the same format as the browser editor.
-Place a descriptively named file in `REPORTS/<bubble-slug>/assets/`, then embed it in a page:
+Place a descriptively named file in `.lockedin/reports/assets/`, then embed it in a page:
 
 ```
 ![Description of the figure](/api/bubbles/<bubble-slug>/assets/my-figure.gif)
 ```
 
-Keep report artwork out of `ASSETS/`, which is reserved for the paper library. Preview and shared
+Keep report artwork out of `.lockedin/assets/`, which is reserved for the paper library. Preview and shared
 bubble pages restart GIFs from their first frame whenever they render.
 
-### Uninstall
-
-To remove the installed command and client source while keeping your local mirror and saved
-authorization for a later reinstall, run:
+### Manage workers and recover
 
 ```
-lockedin-scientist uninstall
+lockedin-scientist ps
+lockedin-scientist stop <worker-id>
+lockedin-scientist hard-reset <bubble-slug>
+lockedin-scientist overleaf help
 ```
 
-To also delete the local mirror, authorization, and sync state, use the explicit destructive
-form:
+`stop` leaves `.lockedin/` intact. `hard-reset` stops the project worker, replaces the directory
+with the current server bubble, and starts a new worker. It preserves a connected Overleaf checkout
+unless you explicitly add `--discard-overleaf`.
+
+### Overleaf: an explicit publication workflow
+
+Each bubble can optionally link one Overleaf Cloud project from its header. The link is workspace
+metadata managed by LockedIn; Scientist only reads it. After the worker has downloaded the link,
+connect the local checkout:
 
 ```
-lockedin-scientist uninstall --purge-data --yes
+lockedin-scientist overleaf help
+lockedin-scientist overleaf connect
+lockedin-scientist overleaf status
 ```
 
-### Troubleshooting at a glance
+This creates `.lockedin/overleaf/`. It is deliberately separate from the report workspace:
 
-| Need | Command |
-|------|---------|
-| Pull/push normally | `lockedin-scientist sync` |
-| Replace the mirror with the current website state (with a local cache backup) | `lockedin-scientist sync --from-server` |
-| Remove only the installed command and client source | `lockedin-scientist uninstall` |
-| Remove the client, mirror, authorization, and sync state | `lockedin-scientist uninstall --purge-data --yes` |
+- `.lockedin/reports/` is the live, continuously synchronized research record for evolving notes,
+  experiments, and report figures.
+- `.lockedin/overleaf/` is the curated publication manuscript. You and your normal coding agent
+  may edit `.tex`, `.bib`, styles, figures, and other project files there. Review report material
+  before transferring it, preserve the manuscript's conventions, and compile when available.
+- The background Scientist worker never pulls, pushes, alters, or deletes the Overleaf checkout.
+  Do not change `.git/` or its configured remote.
+
+Publish Overleaf changes only when you explicitly ask for it:
+
+```
+lockedin-scientist overleaf sync
+lockedin-scientist overleaf abort
+lockedin-scientist overleaf disconnect
+```
+
+`sync` commits local checkout changes, fetches the linked remote's actual default branch,
+rebases, and pushes only after a clean result. It never force-pushes, stashes, or resolves a
+conflict. On the first Git prompt, enter username `git` and your Overleaf Git token. If no OS
+keychain helper is configured, Scientist installs one owner-only credential store for your user,
+globally scoped in Git only to `git.overleaf.com`; future LockedIn projects reuse it and the token
+never lives in the project directory. If synchronization fails, inspect `git status`, fetch and
+rebase the `lockedin-overleaf` remote's branch, resolve and commit the conflict manually, then
+push. `overleaf abort` cancels a rebase started by Scientist.
+
+If `ps` shows a **failed** worker because `.lockedin/config/binding.json` is missing, it prints the
+exact recovery command. Copy any unsynchronized report work elsewhere first, then run
+`lockedin-scientist hard-reset <bubble-slug>` from that project. Scientist does not guess which
+bubble a damaged local directory belongs to.
 """,
     },
     {
@@ -741,8 +722,8 @@ APP_USAGE_GUIDE = "\n\n".join(s["content"] for s in APP_USAGE_GUIDE_SECTIONS)
 
 def guide_section(title: str) -> str:
     """Return the markdown body of the usage-guide section with the given title (matched by
-    title, not index), or "" if there is none. Single source of truth for the `lockedin
-    editguide` CLI command and the scientist launchers."""
+    title, not index), or "" if there is none. Single source of truth for the website and the
+    project-local Scientist skill."""
     return next((s["content"] for s in APP_USAGE_GUIDE_SECTIONS if s["title"] == title), "")
 
 # A SHORT, model-safe summary for the chat system prompt — facts only, no fenced code blocks.
@@ -886,35 +867,6 @@ def bubble_paper_context(slug: str, *, include_paths: bool = False,
         if summary_budget is not None:
             summary = _clip(summary, summary_budget, "paper summary")
         lines.append(summary or "(no summary)")
-    return "\n".join(lines)
-
-
-def scientist_context(slug: str) -> str:
-    """Generated context artifact for a scientist session scoped to one bubble."""
-    name = bubbles.slug_to_name(slug)
-    pages = bubbles.list_pages(slug)
-    papers = paths.bubble_dir(slug) / "_lockedin_papers.md"
-    lines = [
-        f"# lockedin Scientist Context: {name}",
-        "",
-        f"- Bubble slug: `{slug}`",
-        f"- Bubble report dir: `{paths.bubble_dir(slug)}`",
-        f"- Attached-paper inventory: `{papers}`",
-        "",
-        "Use only this bubble's report pages and the attached papers listed below. Higher",
-        "relevance scores should be prioritized for reading, retrieval, comparison, and citation.",
-        "",
-        "## Report Pages",
-    ]
-    if pages:
-        for p in pages:
-            page_path = paths.bubble_page_path(slug, p["page_slug"])
-            hidden = " hidden" if p.get("hidden") else ""
-            lines.append(f"- {p['title']} (`{p['page_slug']}`{hidden}): `{page_path}`")
-    else:
-        lines.append("- (no report pages yet)")
-    lines.extend(["", "## Attached Papers", "",
-                  bubble_paper_context(slug, include_paths=True, summary_budget=500)])
     return "\n".join(lines)
 
 

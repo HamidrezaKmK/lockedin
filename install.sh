@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Install only the dependency-free lockedin-scientist client from the Scientist branch.
+# Install only the dependency-free lockedin-scientist client from the released main branch.
 set -euo pipefail
-BRANCH="${LOCKEDIN_SCIENTIST_BRANCH:-scientist}"
+BRANCH="main"
 PYTHON="${PYTHON:-python3}"
 if ! command -v "$PYTHON" >/dev/null 2>&1; then
   echo "Python 3.11+ is required (set PYTHON to its executable and rerun)." >&2
@@ -17,7 +17,7 @@ mkdir -p "$root" "$bin"
 tmp="$(mktemp)"; trap 'rm -f "$tmp"' EXIT
 commit="$(curl -fsSL "https://api.github.com/repos/HamidrezaKmK/lockedin/commits/$BRANCH" | sed -n 's/^[[:space:]]*"sha": "\([0-9a-f]\{40\}\)".*/\1/p' | head -n 1)"
 if [ -z "$commit" ]; then
-  echo "Could not resolve the current LockedIn Scientist commit for branch $BRANCH." >&2
+  echo "Could not resolve the current LockedIn Scientist release from main." >&2
   exit 1
 fi
 # Fetch an immutable commit URL rather than a branch URL: raw GitHub branch responses can be
@@ -32,4 +32,3 @@ echo "Installed only lockedin-scientist. Ensure $bin is on PATH, then run: locke
 echo "Updated command: $bin/lockedin-scientist"
 echo "Updated source:  $root/scientist_cli.py"
 echo "Source commit:   $commit"
-echo "To remove it later: lockedin-scientist uninstall"

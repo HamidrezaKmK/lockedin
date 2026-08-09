@@ -11,7 +11,7 @@ By default, the deployment is private and local-only (`127.0.0.1`). For web acce
 ## ✨ Features
 
 - **📄 Paper Management:** Upload papers, extract text, generate one-time summaries, and cache report context.
-- **🏷️ Auto-Tagging:** Automatically group uploaded documents into contextual "bubbles".
+- **🏷️ Bubble Organization:** Group uploaded documents into contextual topic bubbles, with per-paper relevance scores.
 - **📝 Markdown Reports:** Create multi-page Markdown reports featuring internal links, figures, KaTeX math support, and live previews.
 - **✅ TODO Manager:** GitHub-issue-style task items. Reference a TODO in any report page using `@id` (creates a clickable link). Notes support math/markdown. TODOs can only be deleted once all `@id` references are removed. Manage via web or Slack bot.
 - **💬 Research Chat:** Read-only chat grounded in your report pages and paper summaries.
@@ -42,14 +42,15 @@ cd lockedin
 uv sync
 ```
 
-### 3. Set Up the Local Model
-The default model is Qwen via Ollama. Install Ollama and pull the model:
+### 3. Choose a Model
+The app defaults to OpenAI until an account configures a provider. To use local Qwen, install
+Ollama and pull the model:
 
 ```bash
+ollama serve
 ollama pull qwen2.5:7b-instruct
-uv run lockedin doctor
 ```
-*(If you prefer OpenAI, Claude, or Gemini, you can skip this and configure them in the web UI settings instead.)*
+*(Configure OpenAI, Claude, or Gemini in the web UI Settings. Qwen is available to premium accounts.)*
 
 ### 4. Run the Server
 For interactive local use:
@@ -57,7 +58,7 @@ For interactive local use:
 ```bash
 uv run lockedin serve
 ```
-Open `http://127.0.0.1:8000/`. Sign up as the first user (becomes admin automatically), upload a paper, and start editing reports! Any subsequent sign-ups will stay pending until approved from **Settings → User access**.
+Open `http://127.0.0.1:8000/`. The first account becomes an admin and has premium access; later accounts can sign in immediately and may request premium access from an admin. Upload a paper, organize it into a bubble, and start editing reports.
 
 ---
 
@@ -66,50 +67,88 @@ Open `http://127.0.0.1:8000/`. Sign up as the first user (becomes admin automati
 <details>
 <summary><b>Installed Scientist CLI</b></summary>
 
-The optional, dependency-free `lockedin-scientist` client keeps a private local mirror of your
-LockedIn workspace and launches an installed `codex`, `claude`, or `agy` CLI against a selected
-bubble. It does **not** install the LockedIn server package. It authorizes in the browser once,
-then retains a revocable local token. Python 3.11+ is required.
+The optional, dependency-free `lockedin-scientist` client synchronizes one approved bubble into a
+project-local `.lockedin/` directory. It does **not** install or launch Codex, Claude, agy, or the
+LockedIn server. Install its small native bootstrap skill for the agent you use, then start that
+agent normally in the project.
+Python 3.11+ is required.
 
 macOS/Linux:
 ```bash
-curl -fsSL https://raw.githubusercontent.com/HamidrezaKmK/lockedin/scientist/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/HamidrezaKmK/lockedin/main/install.sh | bash
 ```
 
 Windows PowerShell:
 ```powershell
-irm https://raw.githubusercontent.com/HamidrezaKmK/lockedin/scientist/install.ps1 | iex
+irm https://raw.githubusercontent.com/HamidrezaKmK/lockedin/main/install.ps1 | iex
 ```
 
-Then authorize and launch a bubble:
+Then authorize and synchronize a bubble from the project where you want the files:
 ```bash
 lockedin-scientist login --server https://lockedin.codes
+lockedin-scientist workspaces
+lockedin-scientist workspaces switch <workspace-id-or-name>
 lockedin-scientist bubbles
-lockedin-scientist sync
-lockedin-scientist codex <bubble-slug>
-lockedin-scientist claude <bubble-slug>
-lockedin-scientist agy <bubble-slug>
-lockedin-scientist resume codex <bubble-slug>
+lockedin-scientist sync <bubble-slug>
 ```
 
-`resume` reopens the latest session for that vendor in the selected workspace mirror while
-Scientist keeps syncing.
-
-To let a session work in a local directory outside the report mirror, add a temporary directory
-grant (repeat `--add-dir` as needed):
+Install the native agent integration once on this computer. It is named `lockedin-scientist` and
+always reads the full, bubble-specific guide generated at `.lockedin/SKILL.md`:
 ```bash
-lockedin-scientist <codex|claude|agy> <bubble-slug> --add-dir <directory>
+lockedin-scientist codex setup
+lockedin-scientist claude setup
+lockedin-scientist agy setup
 ```
-The granted directory is local read/write access for that session only. It is never synchronized
-to LockedIn or saved for later sessions.
+In Codex, invoke `$lockedin-scientist`; in Claude Code, invoke `/lockedin-scientist`; in agy,
+use `/skills` to select `lockedin-scientist`. Run the respective setup again to update only the
+managed bootstrap skill; it will refuse to overwrite a user-owned skill with the same name.
 
-Report pages and figures created, edited, or **deleted** in the mirror are applied to the website
-on the next sync — deleting `REPORTS/<bubble-slug>/pages/<page-slug>.md` also removes its
-`pages.yaml` entry. A bubble's home page can only be deleted in the browser.
+The global profile retains your login and active workspace across projects. `sync` creates a
+single bubble-bound `.lockedin/` directory and starts one background worker for that project. It
+pulls paper assets/configuration read-only and publishes only report pages and report assets from
+inside `.lockedin/`; it does not limit an agent's normal access to the rest of the project.
+`.lockedin/` is added to the repository's local Git exclude file, not its tracked `.gitignore`.
+
+Manage workers or rebuild a project from the server:
+```bash
+lockedin-scientist ps
+lockedin-scientist stop <worker-id>
+lockedin-scientist hard-reset <bubble-slug>
+```
+`stop` preserves `.lockedin/`. `hard-reset` stops that project worker, replaces `.lockedin/` with
+the current selected bubble, then starts a new worker. Concurrent report edits are revision-guarded:
+the server version is restored locally and the rejected local copy plus a patch are retained in
+`.lockedin/config/conflicts/`. A bubble can optionally link one Overleaf Cloud project from its
+website header. Once that link has synchronized, use `lockedin-scientist overleaf connect` to
+clone it into `.lockedin/overleaf/`. Reports are the continuously synchronized research record;
+the Overleaf checkout is the curated publication manuscript and is never changed by the worker.
+Agents may edit its LaTeX, bibliography, figures, and other ordinary project files, but
+`lockedin-scientist overleaf sync` is always an explicit, foreground publish step.
+
+```bash
+lockedin-scientist overleaf help
+lockedin-scientist overleaf connect
+lockedin-scientist overleaf status
+lockedin-scientist overleaf sync
+lockedin-scientist overleaf abort
+lockedin-scientist overleaf disconnect
+```
+
+On the first Git prompt, enter username `git` and your Overleaf Git token. When no OS keychain
+helper is installed, Scientist configures one owner-only credential store for your user, scoped
+in Git to `git.overleaf.com`; subsequent LockedIn projects reuse it. It is not stored in the
+repository. If a sync needs manual recovery, use `git status`, fetch/rebase the configured
+`lockedin-overleaf` remote branch, resolve conflicts, and push manually. `hard-reset` preserves a
+connected Overleaf checkout unless you explicitly add `--discard-overleaf`.
+
+If `lockedin-scientist ps` reports a **failed** worker because `binding.json` is missing, Scientist
+will show the recovery command. First copy any unsynchronized report work out of `.lockedin/`, then
+run `lockedin-scientist hard-reset <bubble-slug>` from that project. This deliberately rebuilds the
+directory from the server instead of guessing which bubble a damaged local directory belongs to.
 
 Scientist checks its compatible client version whenever it contacts the synchronized workspace.
 If it asks you to reinstall, rerun the installer for your platform above; it replaces only the
-standalone client command and keeps your authorization and local mirror.
+standalone client command and keeps your authorization and projects intact.
 </details>
 
 <details>
@@ -200,29 +239,38 @@ Full setup: [docs/SLACKBOT_SETUP.md](docs/SLACKBOT_SETUP.md).
 
 ## 📂 Data Layout
 
-All per-user content lives under `data/users/<username>/` and is git-ignored:
+All runtime data is git-ignored under `data/`. Research content belongs to a workspace; account credentials and model settings remain private to the account:
 
 ```text
 data/landing.yaml              # optional global public landing-page copy
-data/users/<username>/
-  config/active_model.yaml
-  ASSETS/<pdf_id>/
-    paper.pdf
-    text.txt
-    summary.md
-    meta.yaml
-  REPORTS/<bubble_slug>/
-    pages.yaml
-    pages/<page_slug>.md
-  bubbles.yaml
+data/users/
+  accounts.yaml                # account records, password hashes, Scientist tokens
+  share_index.yaml             # public-share token index
+  <username>/
+    config/active_model.yaml   # account-private model configuration and API keys
+data/workspaces/
+  workspaces.yaml              # workspace membership and roles
+  <workspace-id>/
+    config/math.yaml
+    config/aesthetics.yaml
+    ASSETS/<pdf_id>/
+      paper.pdf
+      text.txt
+      summary.md
+      meta.yaml
+    REPORTS/<bubble_slug>/
+      pages.yaml
+      pages/<page_slug>.md
+    bubbles.yaml
+    todos.yaml
 ```
 
 ## Public Landing Page Copy
 
 The unauthenticated `/` landing page can be edited without rebuilding the app by creating
-`data/landing.yaml`. The server reads this file at startup, so restart `lockedin-serve.service`
-after edits. Missing fields fall back to the built-in defaults, so you can override only the
-parts you want:
+`data/landing.yaml`. The server reads this file on each request, so a browser refresh shows
+changes without restarting the service. Missing fields fall back to the built-in defaults, so you
+can override only the parts you want:
 
 ```yaml
 hero:
@@ -282,8 +330,8 @@ footer: "Made for focused research sessions."
 ## 🏗️ Architecture
 
 - `server.py`: HTTP/SSE glue over `service.py`.
-- `paths.py`: Contextvar root for per-user isolation.
+- `paths.py`: Contextvar root for the active workspace.
 - `models.py`: Active-model interface across Ollama, OpenAI, Anthropic, and Gemini.
-- `tagger.py`: Runs ingest tagging.
+- `tagger.py`: Extracts text and model metadata, then caches an ingest summary.
 - `reports.py`: Stores and renders per-bubble Markdown pages.
 - **Frontend:** Single `src/lockedin/web/index.html` app using CDN-hosted libraries.

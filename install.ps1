@@ -24,9 +24,9 @@ $root = Join-Path $env:LOCALAPPDATA 'LockedInScientist\client'
 $bin = Join-Path $env:LOCALAPPDATA 'LockedInScientist\bin'
 New-Item -ItemType Directory -Force -Path $root, $bin | Out-Null
 $client = Join-Path $root 'scientist_cli.py'
-$branch = if ($env:LOCKEDIN_SCIENTIST_BRANCH) { $env:LOCKEDIN_SCIENTIST_BRANCH } else { 'scientist' }
+$branch = 'main'
 $commit = (Invoke-RestMethod "https://api.github.com/repos/HamidrezaKmK/lockedin/commits/$branch").sha
-if (-not $commit) { throw "Could not resolve the current LockedIn Scientist commit for branch $branch." }
+if (-not $commit) { throw 'Could not resolve the current LockedIn Scientist release from main.' }
 # Fetch an immutable commit URL rather than a branch URL: raw GitHub branch responses can be
 # served from an older CDN cache immediately after a release.
 $clientTemp = Join-Path $root ("scientist_cli." + [guid]::NewGuid().ToString('N') + '.tmp')
@@ -57,4 +57,3 @@ Write-Host "Installed only lockedin-scientist. Run: lockedin-scientist login --s
 Write-Host "Updated command: $bin\lockedin-scientist.cmd"
 Write-Host "Updated source:  $client"
 Write-Host "Source commit:   $commit"
-Write-Host "To remove it later: lockedin-scientist uninstall"

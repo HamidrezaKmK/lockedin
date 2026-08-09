@@ -1,37 +1,31 @@
-"""Regression tests for the installed, deterministic Scientist client and sync boundary."""
+"""Regression tests for Scientist v2 project-local bubble synchronization."""
 from __future__ import annotations
 
 import base64
 import io
+import json
 import os
-import shutil
 import tempfile
 import unittest
-from contextlib import contextmanager, redirect_stderr, redirect_stdout
+from contextlib import contextmanager, redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
-from lockedin import bubbles, paths, reports, scientist_cli, scientist_sync, server
+from lockedin import assets, bubbles, paths, scientist_cli, scientist_sync, service
 
 
 @contextmanager
 def temp_data_home():
-    old_data = os.environ.get("XDG_DATA_HOME")
-    old_cache = os.environ.get("XDG_CACHE_HOME")
+    old = os.environ.get("XDG_DATA_HOME")
     with tempfile.TemporaryDirectory() as directory:
         os.environ["XDG_DATA_HOME"] = directory
-        os.environ["XDG_CACHE_HOME"] = str(Path(directory) / "cache")
         try:
             yield Path(directory)
         finally:
-            if old_data is None:
+            if old is None:
                 os.environ.pop("XDG_DATA_HOME", None)
             else:
-                os.environ["XDG_DATA_HOME"] = old_data
-            if old_cache is None:
-                os.environ.pop("XDG_CACHE_HOME", None)
-            else:
-                os.environ["XDG_CACHE_HOME"] = old_cache
+                os.environ["XDG_DATA_HOME"] = old
 
 
 @contextmanager
@@ -40,740 +34,376 @@ def workspace():
         home = Path(directory)
         for name in ("ASSETS", "REPORTS", "config"):
             (home / name).mkdir(parents=True)
-        with paths.use_root(home):
-            slug = bubbles.create_bubble("Current Work")
-            bubbles.ensure_pages(slug)
+        slug = service.create_bubble(home, "Current Work")
+        service.approve_bubble(home, slug)
         yield home, slug
 
 
-class FakeServer:
-    """In-memory stand-in for the Scientist sync endpoints, with the same revision guards."""
-
-    def __init__(self, files: dict, undeletable: tuple = ()):
+class FakeBubbleServer:
+    def __init__(self, files: dict[str, bytes]):
         self.files = dict(files)
-        self.undeletable = set(undeletable)
-        self.calls: list[str] = []
 
-    @staticmethod
-    def _conflict(path: str, reason: str, current: bytes) -> dict:
-        return {"path": path, "reason": reason, "revision": scientist_cli.Mirror.rev(current),
-                "content_b64": base64.b64encode(current).decode()}
-
-    def __call__(self, _server, _method, endpoint, payload=None, token=None, workspace=None):
-        self.calls.append(endpoint)
-        rev = scientist_cli.Mirror.rev
+    def request(self, _server, method, endpoint, body=None, token="", workspace=""):
+        if endpoint.endswith("/guide"):
+            return {"guide": "## Markdown\n\nUse the canonical guide.\n\n## Math\n\nUse dollar delimiters.",
+                    "math_macros": {"\\bmu": "\\boldsymbol{\\mu}"}}
+        assert "/api/scientist/v2/bubbles/work/" in endpoint
         if endpoint.endswith("/manifest"):
-            return {"files": [{"path": path, "revision": rev(raw)} for path, raw in self.files.items()]}
+            return {"files": [{"path": path, "revision": scientist_sync.revision(raw)}
+                              for path, raw in sorted(self.files.items())]}
         if endpoint.endswith("/files"):
-            return {"files": [{"path": path, "revision": rev(self.files[path]),
+            return {"files": [{"path": path, "revision": scientist_sync.revision(self.files[path]),
                                "content_b64": base64.b64encode(self.files[path]).decode()}
-                              for path in payload["paths"] if path in self.files]}
-        if endpoint.endswith("/deletes"):
-            out: dict = {"applied": [], "conflicts": []}
-            for item in payload["deletes"]:
-                current = self.files.get(item["path"], b"")
-                if item["base_revision"] != rev(current):
-                    out["conflicts"].append(self._conflict(item["path"], "stale revision", current))
-                elif item["path"] in self.undeletable:
-                    out["conflicts"].append(
-                        self._conflict(item["path"], "Cannot delete the home page.", current))
-                else:
-                    self.files.pop(item["path"], None)
-                    out["applied"].append({"path": item["path"]})
-            return out
+                              for path in body["paths"] if path in self.files]}
         if endpoint.endswith("/push"):
-            out = {"applied": [], "conflicts": []}
-            for item in payload["writes"]:
-                raw = base64.b64decode(item["content_b64"])
-                current = self.files.get(item["path"], b"")
-                if item["base_revision"] != rev(current):
-                    out["conflicts"].append(self._conflict(item["path"], "stale revision", current))
+            applied, conflicts = [], []
+            for write in body["writes"]:
+                path, current = write["path"], self.files.get(write["path"], b"")
+                if write["base_revision"] != scientist_sync.revision(current):
+                    conflicts.append({"path": path, "revision": scientist_sync.revision(current),
+                                      "content_b64": base64.b64encode(current).decode()})
                 else:
-                    self.files[item["path"]] = raw
-                    out["applied"].append({"path": item["path"], "revision": rev(raw)})
-            return out
-        raise AssertionError(endpoint)
+                    raw = base64.b64decode(write["content_b64"])
+                    self.files[path] = raw
+                    applied.append({"path": path, "revision": scientist_sync.revision(raw)})
+            return {"applied": applied, "conflicts": conflicts}
+        if endpoint.endswith("/deletes"):
+            applied, conflicts = [], []
+            for delete in body["deletes"]:
+                path, current = delete["path"], self.files.get(delete["path"], b"")
+                if delete["base_revision"] != scientist_sync.revision(current):
+                    conflicts.append({"path": path, "revision": scientist_sync.revision(current),
+                                      "content_b64": base64.b64encode(current).decode()})
+                else:
+                    self.files.pop(path, None); applied.append({"path": path})
+            return {"applied": applied, "conflicts": conflicts}
+        if endpoint.endswith("/pages"):
+            path = "reports/pages/" + body["page_slug"] + ".md"
+            if path in self.files:
+                return {"applied": [], "conflicts": [{"path": path, "revision": scientist_sync.revision(self.files[path]),
+                                                          "content_b64": base64.b64encode(self.files[path]).decode()}]}
+            raw = base64.b64decode(body["content_b64"]); self.files[path] = raw
+            return {"applied": [{"path": path, "revision": scientist_sync.revision(raw)}], "conflicts": []}
+        raise AssertionError((method, endpoint))
 
 
-class ScientistGuideTest(unittest.TestCase):
-    def test_help_has_a_self_contained_scientist_tab(self):
-        section = reports.guide_section("Scientist CLI")
-        self.assertIn("lockedin-scientist login --server", section)
-        self.assertIn("lockedin-scientist bubbles", section)
-        self.assertIn("lockedin-scientist sync", section)
-        self.assertIn("lockedin-scientist sync --from-server", section)
-        self.assertIn("lockedin-scientist uninstall --purge-data --yes", section)
-        self.assertIn("lockedin-scientist agy", section)
-        self.assertIn("curl -fsSL", section)
-        self.assertIn("normal\ninteractive approval", section)
-        self.assertIn("REPORTS/<bubble-slug>/assets/", section)
-        self.assertIn("my-figure.gif", section)
-        self.assertIn("checks its compatible client version", section)
-
-    def test_client_and_server_agree_on_the_required_scientist_version(self):
-        self.assertEqual(scientist_cli.SCIENTIST_CLIENT_VERSION, server.SCIENTIST_CLIENT_VERSION)
-
-    def test_server_upgrade_response_includes_both_reinstall_commands(self):
-        source = Path(server.__file__).read_text()
-        self.assertIn("install.sh | bash", source)
-        self.assertIn("install.ps1 | iex", source)
-
-    def test_client_sends_its_scientist_version_header(self):
-        captured = {}
-
-        class Response:
-            def __enter__(self): return self
-            def __exit__(self, *args): return False
-            def read(self): return b"{}"
-
-        def open_request(request, timeout):
-            captured.update(request.headers)
-            return Response()
-
-        with patch.object(scientist_cli.urllib.request, "urlopen", side_effect=open_request):
-            self.assertEqual(scientist_cli.request("https://example.test", "GET", "/version"), {})
-        self.assertEqual(captured["X-lockedin-scientist-version"], scientist_cli.SCIENTIST_CLIENT_VERSION)
-
-    def test_editguide_remains_the_canonical_editing_section(self):
-        self.assertEqual(reports.guide_section("Missing"), "")
-        guide = reports.guide_section("Editing Guide")
-        self.assertIn("## The editor", guide)
-        self.assertIn("centered-text", guide)
-
-    def test_windows_installer_persists_and_refreshes_path(self):
-        installer = (Path(__file__).resolve().parents[1] / "install.ps1").read_text()
-        self.assertIn("SetEnvironmentVariable('Path'", installer)
-        self.assertIn('$env:Path = "$bin;$env:Path"', installer)
-        self.assertIn("Get-Command py", installer)
-        self.assertIn("$env:PYTHON", installer)
-        self.assertIn("[guid]::NewGuid()", installer)
-        self.assertIn("Move-Item -Force -Path $clientTemp -Destination $client", installer)
-        self.assertNotIn("setx ", installer.lower())
+ACCOUNT = {"server": "https://example.test", "user": "alice", "token": "token", "workspace_id": "personal"}
 
 
-class SafeSyncBoundaryTest(unittest.TestCase):
-    def test_scientist_registers_new_page_and_filename_title(self):
-        with workspace() as (home, slug):
-            result = scientist_sync.register_page(home, slug, "methods-and-results",
-                base64.b64encode(b"# Different heading\n").decode(), scientist_sync.revision(b""))
-            with paths.use_root(home):
-                pages = bubbles.list_pages(slug)
-                content = bubbles.get_page(slug, "methods-and-results")
-        self.assertEqual([item["path"] for item in result["applied"]],
-                         [f"REPORTS/{slug}/pages/methods-and-results.md"])
-        self.assertIn({"page_slug": "methods-and-results", "title": "methods and results"}, pages)
-        self.assertEqual(content, "# Different heading\n")
-        self.assertEqual(base64.b64decode(result["applied"][0]["content_b64"]), b"# Different heading\n")
-
-    def test_scientist_manifest_registers_existing_orphan_page(self):
-        with workspace() as (home, slug):
-            orphan = home / "REPORTS" / slug / "pages" / "agent-notes.md"
-            orphan.write_text("# Notes\n")
-            scientist_sync.manifest(home)
-            with paths.use_root(home):
-                pages = bubbles.list_pages(slug)
-        self.assertIn({"page_slug": "agent-notes", "title": "agent notes"}, pages)
-
-    def test_generic_scientist_push_cannot_create_orphan_page(self):
-        with workspace() as (home, slug):
-            rel = f"REPORTS/{slug}/pages/orphan.md"
-            result = scientist_sync.apply_writes(home, [{
-                "path": rel, "base_revision": scientist_sync.revision(b""),
-                "content_b64": base64.b64encode(b"# Orphan\n").decode(),
-            }])
-        self.assertEqual(result["applied"], [])
-        self.assertIn("read-only", result["conflicts"][0]["reason"])
-
-    def test_scientist_page_registration_rejects_existing_page(self):
-        with workspace() as (home, slug):
-            result = scientist_sync.register_page(home, slug, "overview",
-                base64.b64encode(b"# Replacement\n").decode(), scientist_sync.revision(b""))
-        self.assertEqual(result["applied"], [])
-        self.assertEqual(result["conflicts"][0]["reason"], "stale revision")
-
-    def test_manifest_excludes_sensitive_and_large_workspace_content(self):
-        with workspace() as (home, slug):
-            (home / "REPORTS" / slug / "pages" / "note.md").write_text("note")
-            report_assets = home / "REPORTS" / slug / "assets"
-            report_assets.mkdir(parents=True)
-            (report_assets / "plot.png").write_bytes(b"image")
-            asset = home / "ASSETS" / "paper"
-            asset.mkdir(parents=True)
-            (asset / "meta.yaml").write_text("title: paper")
-            (asset / "paper.pdf").write_bytes(b"private-pdf")
-            chats = home / "REPORTS" / slug / "chats"
-            chats.mkdir(parents=True)
-            (chats / "thread.json").write_text("private chat")
-            (home / "credentials.json").write_text("secret")
-            names = {item["path"] for item in scientist_sync.manifest(home)["files"]}
-        self.assertIn(f"REPORTS/{slug}/pages/note.md", names)
-        self.assertIn("ASSETS/paper/meta.yaml", names)
-        self.assertNotIn("ASSETS/paper/paper.pdf", names)
-        self.assertNotIn(f"REPORTS/{slug}/chats/thread.json", names)
-        self.assertNotIn("credentials.json", names)
-
-    def test_requested_files_are_deduplicated_and_unsafe_paths_are_ignored(self):
-        with workspace() as (home, slug):
-            rel = f"REPORTS/{slug}/pages/note.md"
-            (home / rel).write_text("note")
-            result = scientist_sync.read_files(home, [rel, rel, "../../credentials.json"])
-        self.assertEqual([item["path"] for item in result["files"]], [rel])
-        self.assertEqual(base64.b64decode(result["files"][0]["content_b64"]), b"note")
-
-    def test_only_existing_approved_bubble_pages_and_assets_are_writable(self):
-        with workspace() as (home, slug):
-            rel = f"REPORTS/{slug}/pages/overview.md"
-            outcome = scientist_sync.apply_writes(home, [{
-                "path": rel, "base_revision": scientist_sync.revision((home / rel).read_bytes()),
-                "content_b64": base64.b64encode(b"updated").decode(),
-            }])
-            self.assertEqual([item["path"] for item in outcome["applied"]], [rel])
-            self.assertEqual((home / rel).read_bytes(), b"updated")
-            rel = f"REPORTS/{slug}/assets/plot.png"
-            outcome = scientist_sync.apply_writes(home, [{
-                "path": rel, "base_revision": scientist_sync.revision(b""),
-                "content_b64": base64.b64encode(b"new").decode(),
-            }])
-            self.assertEqual([item["path"] for item in outcome["applied"]], [rel])
-            self.assertEqual((home / rel).read_bytes(), b"new")
-            rejected = scientist_sync.apply_writes(home, [{
-                "path": "todos.yaml", "base_revision": scientist_sync.revision(b""),
-                "content_b64": base64.b64encode(b"bad").decode(),
-            }])
-        self.assertEqual(rejected["applied"], [])
-        self.assertEqual(rejected["conflicts"][0]["reason"], "read-only or invalid scientist path")
-
-    def test_animated_gif_is_synchronized_as_a_report_asset(self):
-        with workspace() as (home, slug):
-            rel = f"REPORTS/{slug}/assets/convergence.gif"
-            gif = b"GIF89a\\x01\\x00\\x01\\x00"
-            result = scientist_sync.apply_writes(home, [{
-                "path": rel, "base_revision": scientist_sync.revision(b""),
-                "content_b64": base64.b64encode(gif).decode(),
-            }])
-            self.assertIn(b"NETSCAPE2.0", (home / rel).read_bytes())
-        self.assertEqual([item["path"] for item in result["applied"]], [rel])
-
-    def test_scientist_adds_loop_metadata_to_a_single_play_gif(self):
-        # Header + logical screen descriptor; sufficient to test lossless GIF metadata handling.
-        single_play = b"GIF89a\x01\x00\x01\x00\x00\x00\x00" + b";"
-        looping = bubbles.ensure_looping_gif(single_play)
-        self.assertIn(b"NETSCAPE2.0", looping)
-        self.assertTrue(looping.endswith(b";"))
-        self.assertEqual(bubbles.ensure_looping_gif(looping), looping)
-
-    def test_unapproved_bubble_and_path_traversal_are_rejected(self):
+class ScientistServerBoundaryTest(unittest.TestCase):
+    def test_overleaf_field_normalizes_and_is_exported_only_when_assigned(self):
         with workspace() as (home, slug):
             with paths.use_root(home):
-                bubbles.propose_bubble("Draft")
-            writes = [
-                {"path": "REPORTS/draft/pages/x.md", "base_revision": scientist_sync.revision(b""), "content_b64": ""},
-                {"path": f"REPORTS/{slug}/pages/../../config/keys.md", "base_revision": scientist_sync.revision(b""), "content_b64": ""},
-                {"path": f"REPORTS/{slug}/assets/nested/figure.gif", "base_revision": scientist_sync.revision(b""), "content_b64": ""},
-            ]
-            result = scientist_sync.apply_writes(home, writes)
+                self.assertIsNone(bubbles.bubble_detail(slug)["overleaf_project_id"])
+                self.assertNotIn("config/overleaf.yaml", {f["path"] for f in scientist_sync.manifest(home, slug)["files"]})
+                bubbles.set_overleaf_project(slug, "https://git@git.overleaf.com/abcDEF123")
+                detail = bubbles.bubble_detail(slug)
+                self.assertEqual(detail["overleaf_project_id"], "abcDEF123")
+                self.assertEqual(detail["overleaf_url"], "https://www.overleaf.com/project/abcDEF123")
+                self.assertIn("config/overleaf.yaml", {f["path"] for f in scientist_sync.manifest(home, slug)["files"]})
+                with self.assertRaises(ValueError):
+                    bubbles.set_overleaf_project(slug, "https://example.test/project/abcDEF123")
+
+    def test_overleaf_field_migration_is_idempotent(self):
+        with workspace() as (home, slug):
+            with paths.use_root(home):
+                reg = bubbles.load_registry(); reg[slug].pop("overleaf_project_id", None); bubbles.save_registry(reg)
+                self.assertEqual(bubbles.migrate_overleaf_fields(), 1)
+                self.assertEqual(bubbles.migrate_overleaf_fields(), 0)
+                self.assertIsNone(bubbles.load_registry()[slug]["overleaf_project_id"])
+
+    def test_manifest_is_one_bubble_with_only_attached_papers(self):
+        with workspace() as (home, slug):
+            other = service.create_bubble(home, "Other")
+            service.approve_bubble(home, other)
+            attached = service.save_asset(home, b"%PDF attached", "attached.pdf")
+            detached = service.save_asset(home, b"%PDF detached", "detached.pdf")
+            with paths.use_root(home):
+                assets.save_summary(attached, "attached summary")
+                assets.save_summary(detached, "detached summary")
+                bubbles.add_pdf_to_bubble(slug, attached)
+                report = paths.bubble_dir(slug)
+                (report / "chats").mkdir(); (report / "chats" / "private.md").write_text("private")
+                names = {item["path"] for item in scientist_sync.manifest(home, slug)["files"]}
+        self.assertIn(f"assets/{attached}/paper.pdf", names)
+        self.assertIn(f"assets/{attached}/summary.md", names)
+        self.assertNotIn(f"assets/{detached}/paper.pdf", names)
+        self.assertNotIn("reports/chats/private.md", names)
+
+    def test_only_report_pages_and_flat_report_assets_are_writable(self):
+        with workspace() as (home, slug):
+            with paths.use_root(home):
+                result = scientist_sync.apply_writes(home, slug, [
+                    {"path": "assets/paper/summary.md", "base_revision": scientist_sync.revision(b""), "content_b64": ""},
+                    {"path": "config/math.yaml", "base_revision": scientist_sync.revision(b""), "content_b64": ""},
+                    {"path": "reports/assets/nested/figure.png", "base_revision": scientist_sync.revision(b""), "content_b64": ""},
+                ])
         self.assertEqual(len(result["conflicts"]), 3)
-        self.assertTrue(all("read-only" in item["reason"] for item in result["conflicts"]))
 
-    def test_stale_write_returns_current_content_without_overwriting_web_edit(self):
+    def test_page_creation_is_bubble_scoped(self):
         with workspace() as (home, slug):
-            rel = f"REPORTS/{slug}/pages/overview.md"
-            (home / rel).write_bytes(b"website version")
-            result = scientist_sync.apply_writes(home, [{
-                "path": rel, "base_revision": scientist_sync.revision(b"old"),
-                "content_b64": base64.b64encode(b"local version").decode(),
-            }])
-            current = (home / rel).read_bytes()
-        self.assertEqual(current, b"website version")
-        self.assertEqual(base64.b64decode(result["conflicts"][0]["content_b64"]), b"website version")
-
-    def test_empty_scientist_write_cannot_erase_existing_content(self):
-        with workspace() as (home, slug):
-            rel = f"REPORTS/{slug}/pages/overview.md"
-            (home / rel).write_bytes(b"important report")
-            result = scientist_sync.apply_writes(home, [{
-                "path": rel, "base_revision": scientist_sync.revision(b"important report"),
-                "content_b64": base64.b64encode(b"").decode(),
-            }])
-        self.assertEqual(result["applied"], [])
-        self.assertIn("refusing to replace", result["conflicts"][0]["reason"])
-        self.assertEqual(base64.b64decode(result["conflicts"][0]["content_b64"]), b"important report")
-
-    def test_deleting_a_page_also_removes_its_manifest_entry(self):
-        with workspace() as (home, slug):
-            with paths.use_root(home):
-                bubbles.create_page(slug, "Scratch Notes")
-            rel = f"REPORTS/{slug}/pages/scratch-notes.md"
-            result = scientist_sync.apply_deletes(home, [{
-                "path": rel, "base_revision": scientist_sync.revision((home / rel).read_bytes())}])
-            with paths.use_root(home):
-                pages = [p["page_slug"] for p in bubbles.list_pages(slug)]
-            self.assertFalse((home / rel).exists())
-        self.assertEqual([item["path"] for item in result["applied"]], [rel])
-        self.assertEqual(result["conflicts"], [])
-        self.assertNotIn("scratch-notes", pages)
-
-    def test_home_page_deletion_is_refused_and_returns_current_content(self):
-        with workspace() as (home, slug):
-            rel = f"REPORTS/{slug}/pages/overview.md"
-            result = scientist_sync.apply_deletes(home, [{
-                "path": rel, "base_revision": scientist_sync.revision((home / rel).read_bytes())}])
-            with paths.use_root(home):
-                pages = [p["page_slug"] for p in bubbles.list_pages(slug)]
-            self.assertTrue((home / rel).exists())
-        self.assertEqual(result["applied"], [])
-        self.assertIn("home page", result["conflicts"][0]["reason"])
-        self.assertTrue(base64.b64decode(result["conflicts"][0]["content_b64"]))
-        self.assertIn("overview", pages)
-
-    def test_stale_delete_never_removes_a_page_edited_on_the_website(self):
-        with workspace() as (home, slug):
-            with paths.use_root(home):
-                bubbles.create_page(slug, "Scratch Notes")
-            rel = f"REPORTS/{slug}/pages/scratch-notes.md"
-            (home / rel).write_bytes(b"# Rewritten in the browser\n")
-            result = scientist_sync.apply_deletes(home, [{
-                "path": rel, "base_revision": scientist_sync.revision(b"# Scratch Notes\n\n")}])
-            with paths.use_root(home):
-                pages = [p["page_slug"] for p in bubbles.list_pages(slug)]
-        self.assertEqual(result["applied"], [])
-        self.assertEqual(result["conflicts"][0]["reason"], "stale revision")
-        self.assertEqual(base64.b64decode(result["conflicts"][0]["content_b64"]),
-                         b"# Rewritten in the browser\n")
-        self.assertIn("scratch-notes", pages)
-
-    def test_report_figure_deletion_is_applied_and_unsafe_deletes_are_rejected(self):
-        with workspace() as (home, slug):
-            rel = f"REPORTS/{slug}/assets/plot.png"
-            (home / rel).parent.mkdir(parents=True)
-            (home / rel).write_bytes(b"image")
-            applied = scientist_sync.apply_deletes(home, [{
-                "path": rel, "base_revision": scientist_sync.revision(b"image")}])
-            rejected = scientist_sync.apply_deletes(home, [
-                {"path": "todos.yaml", "base_revision": scientist_sync.revision(b"")},
-                {"path": "ASSETS/paper/summary.md", "base_revision": scientist_sync.revision(b"")},
-                {"path": f"REPORTS/{slug}/pages/../../todos.yaml",
-                 "base_revision": scientist_sync.revision(b"")},
-            ])
-            self.assertFalse((home / rel).exists())
-        self.assertEqual([item["path"] for item in applied["applied"]], [rel])
-        self.assertEqual(rejected["applied"], [])
-        self.assertEqual(len(rejected["conflicts"]), 3)
-        self.assertTrue(all("read-only" in item["reason"] for item in rejected["conflicts"]))
+            other = service.create_bubble(home, "Other")
+            service.approve_bubble(home, other)
+            raw = base64.b64encode(b"# New\n").decode()
+            created = scientist_sync.register_page(home, slug, "new-page", raw, scientist_sync.revision(b""))
+            self.assertTrue(created["applied"])
+            self.assertFalse((paths.bubble_dir(other) / "pages" / "new-page.md").exists())
 
 
-class ScientistClientTest(unittest.TestCase):
-    def test_terminal_colours_can_be_disabled_or_forced(self):
-        with patch.dict(os.environ, {"NO_COLOR": "1"}):
-            self.assertEqual(scientist_cli._colour("plain", "31"), "plain")
-        with patch.dict(os.environ, {"NO_COLOR": "", "FORCE_COLOR": "1"}, clear=False):
-            self.assertIn("\033[31m", scientist_cli._colour("red", "31"))
+class ScientistProjectSyncTest(unittest.TestCase):
+    def test_initialization_creates_required_layout_and_binding(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+                scientist_cli, "request", return_value={"guide": "## Markdown\n\nCanonical guidance."}):
+            project = Path(directory); (project / ".git" / "info").mkdir(parents=True)
+            sync = scientist_cli.ProjectSync(ACCOUNT, project, "work")
+            sync.validate_or_initialize()
+            root = project / ".lockedin"
+            self.assertEqual(json.loads((root / "config" / "binding.json").read_text())["bubble"], "work")
+            self.assertTrue((root / "reports" / "pages").is_dir())
+            self.assertTrue((root / "reports" / "assets").is_dir())
+            self.assertIn("Complete LockedIn editing guide", (root / "SKILL.md").read_text())
+            self.assertFalse((root / "overleaf").exists())
+            self.assertIn(".lockedin/", (project / ".git" / "info" / "exclude").read_text())
+            with self.assertRaises(RuntimeError):
+                scientist_cli.ProjectSync(ACCOUNT, project, "other").validate_or_initialize()
 
-    def test_uninstall_removes_client_but_preserves_data_by_default(self):
-        with temp_data_home() as root, tempfile.TemporaryDirectory() as bin_dir:
-            client = scientist_cli.client_install_path()
-            client.parent.mkdir(parents=True)
-            client.write_text("standalone client")
-            (root / "data" / "users" / "alice").mkdir(parents=True)
-            (root / "accounts.json").write_text("{}")
-            for name in ("lockedin-scientist", "lockedin_scientist"):
-                (Path(bin_dir) / name).write_text("wrapper")
-            with patch.object(scientist_cli, "__file__", str(client)), \
-                 patch.object(scientist_cli, "command_bin_dir", return_value=Path(bin_dir)):
-                scientist_cli.uninstall(purge_data=False, assume_yes=True)
-            self.assertFalse(client.parent.exists())
-            self.assertFalse((Path(bin_dir) / "lockedin-scientist").exists())
-            self.assertTrue((root / "data" / "users" / "alice").exists())
-            self.assertTrue((root / "accounts.json").exists())
-
-    def test_uninstall_purge_removes_all_client_data(self):
-        with temp_data_home() as root, tempfile.TemporaryDirectory() as bin_dir:
-            client = scientist_cli.client_install_path()
-            client.parent.mkdir(parents=True)
-            client.write_text("standalone client")
-            (root / "data").mkdir()
-            with patch.object(scientist_cli, "__file__", str(client)), \
-                 patch.object(scientist_cli, "command_bin_dir", return_value=Path(bin_dir)):
-                scientist_cli.uninstall(purge_data=True, assume_yes=True)
-            self.assertFalse((root / "lockedin-scientist").exists())
-
-    def test_same_user_gets_a_stable_mirror_across_reauthorization(self):
-        with temp_data_home():
-            first = scientist_cli.Mirror({"server": "https://one.example", "user": "alice", "token": "one"})
-            second = scientist_cli.Mirror({"server": "https://other.example", "user": "alice", "token": "two"})
-        self.assertEqual(first.root, second.root)
-        self.assertEqual(first.root.parts[-3:], ("data", "users", "alice"))
-
-    def test_conflict_bases_live_outside_the_mirrored_workspace(self):
-        with temp_data_home():
-            mirror = scientist_cli.Mirror({"server": "https://example.test", "user": "alice", "token": "t"})
-            # Simulate a protected/malformed preferred runtime directory. The client must
-            # transparently move conflict bookkeeping to its cache fallback.
-            mirror.base_dir.parent.mkdir(parents=True)
-            mirror.base_dir.write_text("not a directory")
-            name = mirror.save_base("REPORTS/work/pages/overview.md", b"base")
-            self.assertEqual((mirror.base_dir / name).read_bytes(), b"base")
-            self.assertEqual(mirror.base_dir, mirror.fallback_base_dir)
-            self.assertEqual(mirror.base_raw({"base_file": name}, "ignored"), b"base")
-
-    def test_unwritable_sidecar_is_nonfatal_and_keeps_state_in_memory(self):
-        with temp_data_home():
-            mirror = scientist_cli.Mirror({"server": "https://example.test", "user": "alice", "token": "t"})
-            for path in (mirror.state_path, mirror.fallback_state_path):
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.parent.chmod(0o500)
-            try:
-                state = {"files": {"REPORTS/work/pages/overview.md": {"revision": "abc"}}}
-                mirror.save_state(state)
-                self.assertEqual(mirror.state(), state)
-            finally:
-                for path in (mirror.state_path, mirror.fallback_state_path):
-                    path.parent.chmod(0o700)
-
-    def test_server_recovery_archives_local_files_before_resetting_sync_state(self):
-        with temp_data_home():
-            mirror = scientist_cli.Mirror({"server": "https://example.test", "user": "alice", "token": "t"})
-            local = mirror.root / "REPORTS" / "work" / "pages" / "overview.md"
-            local.parent.mkdir(parents=True)
-            local.write_text("local draft")
-            with patch.object(mirror, "sync") as sync:
-                backup = mirror.recover_from_server()
-            self.assertEqual((backup / "REPORTS" / "work" / "pages" / "overview.md").read_text(), "local draft")
-            sync.assert_called_once()
-
-    def test_legacy_url_hashed_mirror_is_migrated_once(self):
-        with temp_data_home():
-            account = {"server": "https://example.test", "user": "alice", "token": "t"}
-            key = scientist_cli.urllib.parse.quote(account["server"], safe="")
-            old = scientist_cli.data_root() / "servers" / key / "data" / "users" / "alice"
-            old.mkdir(parents=True)
-            (old / "marker").write_text("keep")
-            mirror = scientist_cli.Mirror(account)
-            self.assertEqual((mirror.root / "marker").read_text(), "keep")
-            self.assertFalse(old.exists())
-
-    def test_bubbles_command_is_deterministic_and_does_not_sync(self):
-        account = {"server": "https://example.test", "user": "alice", "token": "t"}
-        original_argv = list(scientist_cli.sys.argv)
-        try:
-            with temp_data_home(), patch.object(scientist_cli, "choose_account", return_value=account), \
-                 patch.object(scientist_cli.Mirror, "sync", side_effect=AssertionError("must not sync")), \
-                 patch.object(scientist_cli, "request", return_value={"bubbles": [
-                     {"slug": "older", "name": "Older", "last_edited_at": "2026-01-01T00:00:00+00:00"},
-                     {"slug": "newer", "name": "Newer", "last_edited_at": "2026-02-01T00:00:00+00:00"},
-                     {"slug": "a-tie", "name": "A tie", "last_edited_at": "2026-01-01T00:00:00+00:00"},
-                 ]}):
-                scientist_cli.sys.argv = ["lockedin-scientist", "bubbles"]
-                output = io.StringIO()
-                with redirect_stdout(output):
-                    scientist_cli.main()
-        finally:
-            scientist_cli.sys.argv = original_argv
-        text = output.getvalue()
-        self.assertLess(text.index("Newer"), text.index("Older"))
-        self.assertLess(text.index("A tie"), text.index("Older"))
-        self.assertIn("slug  newer", text)
-        self.assertIn("<bubble-slug>", text)
-
-    def test_scientist_bubble_endpoint_keeps_website_recency_metadata(self):
-        source = Path(server.__file__).read_text()
-        self.assertIn('"last_edited_at": b.get("last_edited_at") or ""', source)
-
-    def test_no_argument_invocation_shows_a_welcome_without_an_account(self):
-        original_argv = list(scientist_cli.sys.argv)
-        try:
-            with temp_data_home():
-                scientist_cli.sys.argv = ["lockedin-scientist"]
-                output = io.StringIO()
-                with redirect_stdout(output):
-                    scientist_cli.main()
-        finally:
-            scientist_cli.sys.argv = original_argv
-        self.assertIn("LockedIn Scientist", output.getvalue())
-        self.assertIn("Get started", output.getvalue())
-        self.assertIn("lockedin-scientist bubbles", output.getvalue())
-        self.assertIn("lockedin-scientist sync", output.getvalue())
-        self.assertIn("lockedin-scientist claude", output.getvalue())
-        self.assertIn("lockedin-scientist agy", output.getvalue())
-        self.assertIn("--add-dir <directory>", output.getvalue())
-        self.assertIn("<codex|claude|agy> <bubble-slug> --add-dir <directory>", output.getvalue())
-        self.assertIn("lockedin-scientist resume", output.getvalue())
-        self.assertIn("lockedin-scientist sync --from-server", output.getvalue())
-        self.assertIn("lockedin-scientist uninstall", output.getvalue())
-        self.assertIn("lockedin-scientist uninstall --purge-data --yes", output.getvalue())
-
-    def test_bare_invocation_rejects_an_outdated_configured_client(self):
-        original_argv = list(scientist_cli.sys.argv)
-        try:
-            with temp_data_home():
-                scientist_cli.save_config({"accounts": [{"server": "https://example.test", "user": "alice", "token": "t"}]})
-                scientist_cli.sys.argv = ["lockedin-scientist"]
-                with patch.object(scientist_cli, "request", side_effect=RuntimeError("LockedIn Scientist is out of date")):
-                    with self.assertRaisesRegex(RuntimeError, "out of date"):
-                        scientist_cli._main()
-        finally:
-            scientist_cli.sys.argv = original_argv
-
-    def test_help_describes_all_models_and_sync_without_an_account(self):
-        original_argv = list(scientist_cli.sys.argv)
-        try:
-            scientist_cli.sys.argv = ["lockedin-scientist", "--help"]
-            output = io.StringIO()
-            with redirect_stdout(output), self.assertRaises(SystemExit) as exited:
-                scientist_cli.main()
-        finally:
-            scientist_cli.sys.argv = original_argv
-        self.assertEqual(exited.exception.code, 0)
-        text = output.getvalue()
-        self.assertIn("Pull/push once", text)
-        self.assertIn("lockedin-scientist codex", text)
-        self.assertIn("lockedin-scientist claude", text)
-        self.assertIn("lockedin-scientist agy", text)
-        self.assertIn("sync --from-server", text)
-        self.assertIn("uninstall --purge-data --yes", text)
-
-    def test_unknown_slug_fails_before_a_vendor_cli_is_started(self):
-        with temp_data_home():
-            mirror = scientist_cli.Mirror({"server": "https://example.test", "user": "alice", "token": "t"})
-            with patch.object(scientist_cli, "request", return_value={"bubbles": [{"slug": "real", "name": "Real"}]}), \
-                 patch.object(scientist_cli.subprocess, "run", side_effect=AssertionError("must not run")):
-                with self.assertRaisesRegex(RuntimeError, "No approved bubble.*missing.*real"):
-                    scientist_cli.run_agent("codex", mirror, "missing")
-
-    def test_transient_sync_failures_do_not_interrupt_the_agent_session(self):
-        error = RuntimeError("server returned 502")
-        self.assertIsNone(scientist_cli._sync_failure_message(1, error))
-        self.assertIsNone(scientist_cli._sync_failure_message(2, error))
-        message = scientist_cli._sync_failure_message(scientist_cli._SYNC_WARNING_AFTER, error)
-        self.assertIn("sync paused", message)
-        self.assertIn("Will keep retrying", message)
-        self.assertIsNone(scientist_cli._sync_failure_message(scientist_cli._SYNC_WARNING_AFTER + 1, error))
-
-    def test_role_uses_the_bubble_specific_paper_inventory(self):
-        with temp_data_home():
-            mirror = scientist_cli.Mirror({"server": "https://example.test", "user": "alice", "token": "t"})
-            inventory = mirror.root / "REPORTS" / "work" / "_lockedin_papers.md"
-            inventory.parent.mkdir(parents=True)
-            inventory.write_text("# Attached papers\n- Exact current paper")
-            prompt = scientist_cli.role(mirror, "work")
-        self.assertIn("Exact current paper", prompt)
-        self.assertIn("never reuse an earlier answer", prompt)
-        self.assertIn("normal terminal conversation", prompt)
-        self.assertIn("REPORTS/work/assets", prompt)
-        self.assertIn("/api/bubbles/work/assets/filename.gif", prompt)
-
-    def test_external_dirs_resolve_deduplicate_and_require_directories(self):
+    def test_missing_binding_is_an_actionable_preflight_error(self):
         with tempfile.TemporaryDirectory() as directory:
-            external = Path(directory) / "external"
-            external.mkdir()
-            grants = scientist_cli.external_dirs([str(external), str(external / ".")])
-            self.assertEqual(grants, [external.resolve()])
-            with self.assertRaisesRegex(RuntimeError, "does not exist or is not a directory"):
-                scientist_cli.external_dirs([str(external / "missing")])
-            file = external / "file.txt"; file.write_text("not a directory")
-            with self.assertRaisesRegex(RuntimeError, "does not exist or is not a directory"):
-                scientist_cli.external_dirs([str(file)])
+            project = Path(directory)
+            (project / ".lockedin" / "config").mkdir(parents=True)
+            with self.assertRaisesRegex(RuntimeError, "hard-reset <bubble>"):
+                scientist_cli.ProjectSync(ACCOUNT, project, "work").validate_or_initialize()
 
-    def test_all_vendor_launchers_receive_external_directory_grants(self):
-        with temp_data_home(), tempfile.TemporaryDirectory() as directory:
-            mirror = scientist_cli.Mirror({"server": "https://example.test", "user": "alice", "token": "t"})
-            grants = scientist_cli.external_dirs([directory])
-            for model in ("codex", "claude", "agy"):
-                with patch.object(scientist_cli, "require_bubble"), \
-                     patch.object(scientist_cli.shutil, "which", return_value=f"/{model}"), \
-                     patch.object(mirror, "sync"), \
-                     patch.object(scientist_cli.subprocess, "run", return_value=type("Result", (), {"returncode": 0})()) as run:
-                    self.assertEqual(scientist_cli.run_agent(model, mirror, "work", grants), 0)
-                cmd = run.call_args.args[0]
-                self.assertIn("--add-dir", cmd)
-                self.assertEqual(cmd[cmd.index("--add-dir") + 1], str(grants[0]))
-                self.assertIn(str(grants[0]), "\n".join(cmd))
+    def test_pull_only_assets_are_restored_and_detached_assets_removed(self):
+        files = {"assets/paper/paper.pdf": b"server pdf", "assets/paper/summary.md": b"server summary",
+                 "config/math.yaml": b"math", "config/overleaf.yaml": b'{"overleaf_project_id":"abcDEF123"}', "reports/pages.yaml": b"pages: []\n",
+                 "reports/_lockedin_papers.md": b"# Papers\n", "reports/pages/overview.md": b"# Overview\n"}
+        fake = FakeBubbleServer(files)
+        with tempfile.TemporaryDirectory() as directory, patch.object(scientist_cli, "request", side_effect=fake.request):
+            sync = scientist_cli.ProjectSync(ACCOUNT, Path(directory), "work")
+            sync.sync_once()
+            pdf = sync.root / "assets" / "paper" / "paper.pdf"
+            pdf.chmod(0o644); pdf.write_bytes(b"local mutation")
+            (sync.root / "assets").chmod(0o755)
+            stale = sync.root / "assets" / "removed" / "paper.pdf"; stale.parent.mkdir(); stale.write_bytes(b"old")
+            sync.sync_once()
+            self.assertEqual(pdf.read_bytes(), b"server pdf")
+            self.assertFalse(stale.exists())
+            self.assertFalse(os.stat(pdf).st_mode & 0o222)
+            self.assertTrue((sync.root / "reports" / "pages.yaml").exists())
+            self.assertTrue((sync.root / "reports" / "_lockedin_papers.md").exists())
+            self.assertTrue((sync.root / "config" / "overleaf.yaml").exists())
+            self.assertFalse((sync.root / "overleaf").exists())
+            self.assertIn("`\\bmu`", (sync.root / "SKILL.md").read_text())
 
-    def test_all_vendor_launchers_resume_latest_without_new_session_prompt(self):
-        expected = {
-            "codex": ("resume", "--last"),
-            "claude": ("--continue",),
-            "agy": ("--continue",),
-        }
-        with temp_data_home():
-            mirror = scientist_cli.Mirror({"server": "https://example.test", "user": "alice", "token": "t"})
-            for model, flags in expected.items():
-                with patch.object(scientist_cli, "require_bubble"), \
-                     patch.object(scientist_cli.shutil, "which", return_value=f"/{model}"), \
-                     patch.object(mirror, "sync"), \
-                     patch.object(scientist_cli.subprocess, "run", return_value=type("Result", (), {"returncode": 0})()) as run:
-                    self.assertEqual(scientist_cli.run_agent(model, mirror, "work", resume=True), 0)
-                cmd = run.call_args.args[0]
-                for flag in flags:
-                    self.assertIn(flag, cmd)
-                self.assertNotIn("Introduce yourself as the LockedIn research-report assistant and ask what to work on.", cmd)
-                if model == "agy": self.assertNotIn("-i", cmd)
+    def test_report_conflict_restores_server_copy_and_keeps_patch(self):
+        files = {"reports/pages/overview.md": b"# Server\n"}
+        fake = FakeBubbleServer(files)
+        with tempfile.TemporaryDirectory() as directory, patch.object(scientist_cli, "request", side_effect=fake.request):
+            sync = scientist_cli.ProjectSync(ACCOUNT, Path(directory), "work")
+            sync.sync_once()
+            page = sync.root / "reports" / "pages" / "overview.md"; page.write_bytes(b"# Local\n")
+            fake.files["reports/pages/overview.md"] = b"# New server\n"
+            sync.sync_once()
+            self.assertEqual(page.read_bytes(), b"# New server\n")
+            self.assertTrue(list((sync.root / "config" / "conflicts").rglob("*.patch")))
 
-    def test_run_command_passes_external_directory_grants_without_persisting_them(self):
-        account = {"server": "https://example.test", "user": "alice", "token": "t"}
-        original_argv = list(scientist_cli.sys.argv)
+    def test_new_page_and_delete_are_sent_to_server(self):
+        files = {"reports/pages/overview.md": b"# Overview\n"}
+        fake = FakeBubbleServer(files)
+        with tempfile.TemporaryDirectory() as directory, patch.object(scientist_cli, "request", side_effect=fake.request):
+            sync = scientist_cli.ProjectSync(ACCOUNT, Path(directory), "work")
+            sync.sync_once()
+            page = sync.root / "reports" / "pages" / "new-page.md"; page.write_text("# New\n")
+            sync.sync_once()
+            self.assertEqual(fake.files["reports/pages/new-page.md"], b"# New\n")
+            page.unlink(); sync.sync_once()
+            self.assertNotIn("reports/pages/new-page.md", fake.files)
+
+    def test_page_deleted_on_server_is_removed_locally_without_becoming_a_new_page(self):
+        files = {"reports/pages/overview.md": b"# Overview\n",
+                 "reports/assets/figure.png": b"figure"}
+        fake = FakeBubbleServer(files)
+        with tempfile.TemporaryDirectory() as directory, patch.object(scientist_cli, "request", side_effect=fake.request):
+            sync = scientist_cli.ProjectSync(ACCOUNT, Path(directory), "work")
+            sync.sync_once()
+            del fake.files["reports/pages/overview.md"]
+            del fake.files["reports/assets/figure.png"]
+            sync.sync_once()
+            self.assertFalse((sync.root / "reports" / "pages" / "overview.md").exists())
+            self.assertFalse((sync.root / "reports" / "assets" / "figure.png").exists())
+
+
+class ScientistProfileAndWorkersTest(unittest.TestCase):
+    def test_overleaf_help_and_unlinked_connect_are_actionable(self):
+        output = io.StringIO()
+        with redirect_stdout(output): scientist_cli.overleaf_help_command()
+        self.assertIn("website", output.getvalue())
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(RuntimeError, "Link one from its LockedIn website page"):
+                scientist_cli.overleaf_connect(Path(directory))
+
+    def test_overleaf_connect_replaces_only_the_retired_placeholder(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(scientist_cli, "_git") as git, patch.object(
+                scientist_cli, "_configure_overleaf_credential_store", return_value=None):
+            project = Path(directory); config = project / ".lockedin" / "config"; config.mkdir(parents=True)
+            (config / "overleaf.yaml").write_text('{"overleaf_git_url":"https://git@git.overleaf.com/abcDEF123"}')
+            legacy = project / ".lockedin" / "overleaf"; legacy.mkdir()
+            (legacy / "README.md").write_text(scientist_cli.LEGACY_OVERLEAF_README_PREFIX)
+            git.return_value = scientist_cli.subprocess.CompletedProcess([], 0, stdout="helper")
+            scientist_cli.overleaf_connect(project)
+            self.assertFalse(legacy.exists())
+
+    def test_overleaf_fallback_credentials_are_private_and_user_scoped(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(scientist_cli, "_git") as git, patch.object(
+                scientist_cli, "data_root", return_value=Path(directory) / "profile"), patch.object(
+                scientist_cli.shutil, "which", return_value="/usr/bin/git"), patch.object(
+                scientist_cli.subprocess, "run", return_value=scientist_cli.subprocess.CompletedProcess([], 1, stdout="")):
+            project = Path(directory) / "project"; checkout = project / ".lockedin" / "overleaf"
+            checkout.mkdir(parents=True)
+            stored = scientist_cli._configure_overleaf_credential_store(project, checkout)
+            self.assertTrue(stored and stored.is_file())
+            self.assertEqual(stored.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(stored, scientist_cli._overleaf_credential_path())
+            self.assertIn("--global", git.call_args_list[0].args[0])
+            self.assertIn(f"store --file={stored}", git.call_args_list[0].args[0])
+
+    def test_overleaf_uses_the_remote_default_branch_not_master(self):
+        checkout = Path("/tmp/lockedin-overleaf-branch-test")
+        with patch.object(scientist_cli, "_git", return_value=scientist_cli.subprocess.CompletedProcess(
+                [], 0, stdout="ref: refs/heads/main\tHEAD\n")) as git:
+            self.assertEqual(scientist_cli._overleaf_remote_branch(checkout), "main")
+            self.assertEqual(git.call_args.args[0], ["ls-remote", "--symref", "lockedin-overleaf", "HEAD"])
+
+    def test_git_error_without_captured_output_remains_actionable(self):
+        with patch.object(scientist_cli.shutil, "which", return_value="/usr/bin/git"), patch.object(
+                scientist_cli.subprocess, "run", return_value=scientist_cli.subprocess.CompletedProcess([], 1)):
+            with self.assertRaisesRegex(RuntimeError, "Overleaf sync did not complete"):
+                scientist_cli._git(["fetch"], Path.cwd())
+
+    def test_empty_command_shows_the_v2_guided_overview(self):
+        original = list(scientist_cli.sys.argv)
         try:
-            with temp_data_home(), tempfile.TemporaryDirectory() as directory, \
-                 patch.object(scientist_cli, "choose_account", return_value=account), \
-                 patch.object(scientist_cli.Mirror, "sync"), \
-                 patch.object(scientist_cli, "run_agent", return_value=0) as run:
-                scientist_cli.sys.argv = ["lockedin-scientist", "codex", "work", "--add-dir", directory]
-                with self.assertRaises(SystemExit) as exited:
-                    scientist_cli._main()
+            scientist_cli.sys.argv = ["lockedin-scientist"]
+            output = io.StringIO()
+            with redirect_stdout(output): scientist_cli._main()
         finally:
-            scientist_cli.sys.argv = original_argv
-        self.assertEqual(exited.exception.code, 0)
-        self.assertEqual(run.call_args.args[3], [Path(directory).resolve()])
+            scientist_cli.sys.argv = original
+        self.assertIn("one bubble, in your project", output.getvalue())
+        self.assertIn("hard-reset <bubble-slug>", output.getvalue())
+        self.assertIn("Manual Overleaf publishing", output.getvalue())
+        self.assertIn("overleaf help", output.getvalue())
 
-    def test_resume_command_requests_latest_session_with_sync_supervision(self):
-        account = {"server": "https://example.test", "user": "alice", "token": "t"}
-        original_argv = list(scientist_cli.sys.argv)
-        try:
-            with temp_data_home(), patch.object(scientist_cli, "choose_account", return_value=account), \
-                 patch.object(scientist_cli.Mirror, "sync"), \
-                 patch.object(scientist_cli, "run_agent", return_value=0) as run:
-                scientist_cli.sys.argv = ["lockedin-scientist", "resume", "codex", "work"]
-                with self.assertRaises(SystemExit) as exited:
-                    scientist_cli._main()
-        finally:
-            scientist_cli.sys.argv = original_argv
-        self.assertEqual(exited.exception.code, 0)
-        self.assertTrue(run.call_args.kwargs["resume"])
+    def test_bubbles_are_presented_as_a_numbered_terminal_list(self):
+        with patch.object(scientist_cli, "request", return_value={"bubbles": [
+                {"slug": "current-work", "name": "Current Work"},
+                {"slug": "literature", "name": "Literature"},
+        ]}):
+            output = io.StringIO()
+            with redirect_stdout(output): scientist_cli.bubbles_command(dict(ACCOUNT))
+        rendered = output.getvalue()
+        self.assertIn("1.", rendered)
+        self.assertIn("Current Work", rendered)
+        self.assertIn("sync <bubble-slug>", rendered)
 
-    def test_sync_pushes_a_new_local_gif_not_yet_in_the_server_manifest(self):
+    def test_degraded_worker_marker_is_orange(self):
+        with patch.dict(os.environ, {"FORCE_COLOR": "1", "NO_COLOR": ""}, clear=False):
+            self.assertIn("38;5;214", scientist_cli.orange("●"))
+
+    def test_workspace_switch_persists_in_global_profile(self):
+        with temp_data_home(), patch.object(scientist_cli, "request", return_value={"workspaces": [
+                {"id": "personal", "name": "Personal"}, {"id": "lab", "name": "Lab"}]}) as request:
+            scientist_cli.save_config({"accounts": [dict(ACCOUNT)]})
+            account = dict(ACCOUNT)
+            output = io.StringIO()
+            with redirect_stdout(output): scientist_cli.switch_workspace(account, "Lab")
+            self.assertEqual(scientist_cli.load_config()["accounts"][0]["workspace_id"], "lab")
+            self.assertEqual(account["workspace_id"], "lab")
+            self.assertIn("Lab  ✓ active", output.getvalue())
+            self.assertEqual(request.call_count, 1)
+
+    def test_ps_marks_a_dead_worker_stopped_without_touching_project(self):
+        with temp_data_home(), tempfile.TemporaryDirectory() as project:
+            lockedin = Path(project) / ".lockedin"; lockedin.mkdir(); marker = lockedin / "keep"; marker.write_text("yes")
+            scientist_cli.save_workers({"workers": {"dead": {"id": "dead", "pid": 0, "project": project,
+                                                                  "bubble": "work", "status": "running"}}})
+            output = io.StringIO()
+            with redirect_stdout(output): scientist_cli.ps_command()
+            self.assertIn("dead", output.getvalue())
+            self.assertEqual(scientist_cli.load_workers()["workers"]["dead"]["status"], "stopped")
+            self.assertTrue(marker.exists())
+
+    def test_ps_shows_recovery_for_a_missing_binding_failure(self):
         with temp_data_home():
-            mirror = scientist_cli.Mirror({"server": "https://example.test", "user": "alice", "token": "t"})
-            rel = "REPORTS/work/assets/new-animation.gif"
-            local = mirror.root / rel
-            local.parent.mkdir(parents=True)
-            local.write_bytes(b"GIF89a-new")
-            remote = {}
-            pushed = []
-            requested_files = []
+            scientist_cli.save_workers({"workers": {"failed": {
+                "id": "failed", "pid": 0, "project": "/project", "bubble": "work",
+                "status": "failed", "error": "missing .lockedin binding",
+            }}})
+            output = io.StringIO()
+            with redirect_stdout(output): scientist_cli.ps_command()
+            self.assertIn("hard-reset work", output.getvalue())
 
-            def fake_request(_server, _method, endpoint, payload=None, token=None):
-                if endpoint.endswith("/manifest"):
-                    return {"files": [{"path": path, "revision": scientist_cli.Mirror.rev(raw)}
-                                      for path, raw in remote.items()]}
-                if endpoint.endswith("/push"):
-                    applied = []
-                    for item in payload["writes"]:
-                        raw = base64.b64decode(item["content_b64"])
-                        remote[item["path"]] = raw
-                        pushed.append(item)
-                        applied.append({"path": item["path"], "revision": scientist_cli.Mirror.rev(raw)})
-                    return {"applied": applied, "conflicts": []}
-                if endpoint.endswith("/files"):
-                    requested_files.extend(payload["paths"])
-                    return {"files": [{"path": path, "revision": scientist_cli.Mirror.rev(remote[path]),
-                                       "content_b64": base64.b64encode(remote[path]).decode()}
-                                      for path in payload["paths"]]}
-                raise AssertionError(endpoint)
+    def test_worker_history_keeps_live_workers_and_only_recent_terminal_records(self):
+        data = {"workers": {
+            "live": {"id": "live", "status": "running", "started_at": 1},
+            "failed": {"id": "failed", "status": "failed", "started_at": 2},
+            **{f"old-{index}": {"id": f"old-{index}", "status": "stopped", "stopped_at": index}
+               for index in range(scientist_cli.WORKER_HISTORY_LIMIT + 3)},
+        }}
+        scientist_cli._prune_worker_history(data)
+        self.assertIn("live", data["workers"])
+        self.assertIn("failed", data["workers"])
+        self.assertEqual(len(data["workers"]), scientist_cli.WORKER_HISTORY_LIMIT + 2)
+        self.assertNotIn("old-0", data["workers"])
 
-            with patch.object(scientist_cli, "request", side_effect=fake_request):
-                mirror.sync()
-            self.assertEqual([item["path"] for item in pushed], [rel])
-            self.assertEqual(remote[rel], b"GIF89a-new")
-            self.assertEqual(requested_files, [])
+    def test_command_surface_has_no_vendor_wrappers(self):
+        source = Path(scientist_cli.__file__).read_text()
+        self.assertNotIn('add_parser("resume")', source)
+        self.assertNotIn("def " + "run" + "_agent", source)
+        self.assertNotIn("--from-server", source)
+        self.assertIn('add_parser("hard-reset")', source)
+        self.assertIn('add_parser("overleaf")', source)
+        self.assertIn("the sync worker registers it automatically", scientist_cli.SKILL_RULES)
+        self.assertIn("the sync worker removes it", scientist_cli.SKILL_RULES)
+        self.assertIn("config/math.yaml", scientist_cli.SKILL_RULES)
+        self.assertIn("lockedin-scientist-skill: 6", scientist_cli.SKILL_RULES)
+        self.assertIn("Outside `.lockedin/`, work on this repository normally", scientist_cli.SKILL_RULES)
+        self.assertIn("manuscript changes stay local until that explicit sync", scientist_cli.SKILL_RULES)
+        self.assertIn("create or edit `.tex`, `.bib`, `.sty`, `.cls`", scientist_cli.SKILL_RULES)
+        self.assertIn("Reports: the live research record", scientist_cli.SKILL_RULES)
+        self.assertIn("the curated publication source", scientist_cli.SKILL_RULES)
 
-    def _mirror(self):
-        return scientist_cli.Mirror({"server": "https://example.test", "user": "alice", "token": "t"})
+    def test_skill_embeds_the_active_math_macro_table(self):
+        skill = scientist_cli.skill_document("## Markdown\n", {"\\E": "\\mathbb{E}"})
+        self.assertIn("| `\\E` | `\\mathbb{E}` |", skill)
 
-    def test_sync_deletes_a_page_the_agent_removed_from_the_mirror(self):
-        with temp_data_home():
-            mirror = self._mirror()
-            rel = "REPORTS/work/pages/scratch.md"
-            fake = FakeServer({rel: b"# Scratch\n", "REPORTS/work/pages/overview.md": b"# Overview\n"})
-            with patch.object(scientist_cli, "request", side_effect=fake):
-                mirror.sync()
-                (mirror.root / rel).unlink()
-                mirror.sync()
-                fake.calls.clear()
-                mirror.sync()
-            self.assertNotIn(rel, fake.files)
-            self.assertIn("REPORTS/work/pages/overview.md", fake.files)
-            # The page must stay deleted: no resurrection and no repeated delete request.
-            self.assertFalse((mirror.root / rel).exists())
-            self.assertNotIn("/api/scientist/v1/deletes", fake.calls)
+    def test_vendor_setup_installs_named_native_bootstraps_without_a_profile(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(scientist_cli.shutil, "which", return_value="/usr/bin/agy"), patch.object(
+                scientist_cli.subprocess, "run", return_value=scientist_cli.subprocess.CompletedProcess([], 0)) as run:
+            home = Path(directory)
+            codex = scientist_cli.setup_vendor_skill("codex", home=home)
+            claude = scientist_cli.setup_vendor_skill("claude", home=home)
+            agy = scientist_cli.setup_vendor_skill("agy", home=home)
+            for targets in (codex, claude, agy):
+                skill = next(path for path in targets if path.name == "SKILL.md")
+                content = skill.read_text()
+                self.assertIn("name: lockedin-scientist", content)
+                self.assertIn(".lockedin/SKILL.md", content)
+            plugin = json.loads(agy[0].read_text())
+            self.assertEqual(plugin["name"], "lockedin-scientist")
+            self.assertEqual(plugin["managed_by"], "lockedin-scientist")
+            run.assert_called_once_with(
+                ["/usr/bin/agy", "plugin", "install", str(agy[0].parent)],
+                stdin=scientist_cli.subprocess.DEVNULL, capture_output=True, text=True, timeout=60,
+            )
 
-    def test_a_wiped_mirror_is_restored_instead_of_deleting_website_pages(self):
-        with temp_data_home():
-            mirror = self._mirror()
-            rel = "REPORTS/work/pages/scratch.md"
-            fake = FakeServer({rel: b"# Scratch\n", "REPORTS/work/pages/overview.md": b"# Overview\n"})
-            errors = io.StringIO()
-            with patch.object(scientist_cli, "request", side_effect=fake):
-                mirror.sync()
-                shutil.rmtree(mirror.root / "REPORTS")
-                with redirect_stderr(errors):
-                    mirror.sync()
-            self.assertNotIn("/api/scientist/v1/deletes", fake.calls)
-            self.assertIn(rel, fake.files)
-            self.assertTrue((mirror.root / rel).exists())
-            self.assertIn("lost mirror", errors.getvalue())
-
-    def test_an_undeletable_page_is_reported_and_restored_in_the_mirror(self):
-        with temp_data_home():
-            mirror = self._mirror()
-            home_rel = "REPORTS/work/pages/overview.md"
-            fake = FakeServer({home_rel: b"# Overview\n", "REPORTS/work/pages/notes.md": b"# Notes\n"},
-                              undeletable=(home_rel,))
-            errors = io.StringIO()
-            with patch.object(scientist_cli, "request", side_effect=fake):
-                mirror.sync()
-                (mirror.root / home_rel).unlink()
-                with redirect_stderr(errors):
-                    mirror.sync()
-            self.assertIn("Could not delete", errors.getvalue())
-            self.assertIn("home page", errors.getvalue())
-            self.assertIn(home_rel, fake.files)
-            self.assertEqual((mirror.root / home_rel).read_bytes(), b"# Overview\n")
-
-    def test_a_rejected_push_is_reported_instead_of_failing_silently(self):
-        with temp_data_home():
-            mirror = self._mirror()
-            rel = "REPORTS/work/pages/overview.md"
-            fake = FakeServer({rel: b"# Overview\n"})
-            errors = io.StringIO()
-            with patch.object(scientist_cli, "request", side_effect=fake):
-                mirror.sync()
-                (mirror.root / rel).write_bytes(b"# Local edit\n")
-                fake.files[rel] = b"# Website edit\n"
-                with redirect_stderr(errors):
-                    mirror.sync()
-            self.assertIn("Could not save", errors.getvalue())
-            self.assertIn(rel, errors.getvalue())
-            self.assertEqual(fake.files[rel], b"# Website edit\n")
-            self.assertEqual((mirror.root / rel).read_bytes(), b"# Website edit\n")
-
-    def test_every_vendor_session_propagates_a_deletion_identically(self):
-        """Synchronization must not depend on which coding CLI the session launched."""
-        for model in ("codex", "claude", "agy"):
-            with self.subTest(model=model), temp_data_home():
-                mirror = self._mirror()
-                rel = "REPORTS/work/pages/scratch.md"
-                fake = FakeServer({rel: b"# Scratch\n",
-                                   "REPORTS/work/pages/overview.md": b"# Overview\n"})
-                def session(*_args, **_kwargs):
-                    """Stand in for the vendor CLI: the agent deletes one page, then exits."""
-                    (mirror.root / rel).unlink()
-                    return type("Result", (), {"returncode": 0})()
-
-                with patch.object(scientist_cli, "request", side_effect=fake), \
-                     patch.object(scientist_cli, "require_bubble"), \
-                     patch.object(scientist_cli.shutil, "which", return_value=f"/{model}"), \
-                     patch.object(scientist_cli.subprocess, "run", side_effect=session):
-                    mirror.sync()  # `run`/`resume` always sync before launching a vendor CLI
-                    self.assertEqual(scientist_cli.run_agent(model, mirror, "work"), 0)
-                self.assertNotIn(rel, fake.files)
-                self.assertIn("REPORTS/work/pages/overview.md", fake.files)
-
-    def test_scientist_instructions_explain_how_to_delete_a_page(self):
-        with temp_data_home():
-            mirror = self._mirror()
-            instructions = scientist_cli.role(mirror, "work")
-        self.assertIn("delete its file REPORTS/work/pages/<page-slug>.md", instructions)
-        self.assertIn("Never edit\n  pages.yaml to delete a page", instructions)
+    def test_vendor_setup_refuses_to_overwrite_a_user_owned_skill(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / ".claude" / "skills" / "lockedin-scientist" / "SKILL.md"
+            path.parent.mkdir(parents=True)
+            path.write_text("# My skill\n")
+            with self.assertRaisesRegex(RuntimeError, "Refusing to overwrite"):
+                scientist_cli.setup_vendor_skill("claude", home=Path(directory))
 
 
 if __name__ == "__main__":

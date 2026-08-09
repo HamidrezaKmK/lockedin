@@ -108,6 +108,11 @@ def list_for_user(user: str) -> list[dict]:
     return sorted(rows, key=lambda r: (r["kind"] != "personal", r["name"].lower(), r["id"]))
 
 
+def all_homes() -> list[Path]:
+    """Workspace roots used by idempotent server-wide metadata migrations."""
+    return [workspace_home(wid) for wid in _load().get("workspaces", {})]
+
+
 def resolve(user: str, workspace_id: str, *, admin: bool = False) -> tuple[dict, Path]:
     rec = get(workspace_id)
     if not rec:

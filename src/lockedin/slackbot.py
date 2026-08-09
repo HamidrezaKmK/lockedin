@@ -471,7 +471,7 @@ def handle(event: dict, say) -> None:
                 files={"file": (filename, data, "application/pdf")},
                 data={"title": _asset_title(filename)},
             ).raise_for_status()
-            say(f"Uploaded *{f.get('name', 'file')}* — auto-tagging in background.")
+            say(f"Uploaded *{f.get('name', 'file')}* — background processing has started; organize it into a bubble from the Library.")
         except Exception as e:
             if _is_unauthorized(e):
                 _ask_reauth(uid, say)

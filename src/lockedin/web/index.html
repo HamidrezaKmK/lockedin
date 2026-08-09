@@ -572,6 +572,16 @@
     cursor:pointer;padding:0;background:var(--swatch)}
   .color-swatch:hover{border-color:var(--ink);transform:translateY(-1px)}
   .small{font-size:12px;padding:5px 9px}
+  /* Bubble-header actions are presented as paired controls: one visual boundary per related
+     action, with a subtle divider for the secondary action. */
+  .bubble-tool-group{display:inline-flex;align-items:stretch;overflow:hidden;border:1px solid var(--line);
+    border-radius:9px;background:var(--panel2);box-shadow:0 1px 0 color-mix(in srgb,var(--panel) 70%,transparent)}
+  .bubble-tool-group button{border:0!important;border-radius:0;background:transparent!important;min-height:34px}
+  .bubble-tool-group button:hover{background:color-mix(in srgb,var(--accent) 10%,var(--panel))!important}
+  .bubble-tool-group .bubble-tool-secondary{padding-left:8px;padding-right:8px;border-left:1px solid var(--line)!important;color:var(--muted)}
+  .bubble-tool-group .bubble-tool-secondary:hover{color:var(--ink)}
+  .overleaf-mark{display:block;width:16px;height:16px;object-fit:contain;flex:0 0 auto}
+  .overleaf-label{display:inline-flex;align-items:center;gap:6px;font-weight:650}
   .deepitem{display:flex;align-items:center;gap:8px;padding:5px 0;border-top:1px solid var(--line)}
   h2.section-title{margin:0 0 18px;font-family:var(--font-ui);font-weight:700;
     letter-spacing:-.02em;font-size:20px}
@@ -924,19 +934,19 @@
           <article class="scientist-platform">
             <h3>macOS or Linux</h3>
             <p>Python 3.11+ required. Installs only the Scientist client in your user PATH.</p>
-            <code class="command">curl -fsSL https://raw.githubusercontent.com/HamidrezaKmK/lockedin/scientist/install.sh | bash</code>
+            <code class="command">curl -fsSL https://raw.githubusercontent.com/HamidrezaKmK/lockedin/main/install.sh | bash</code>
           </article>
           <article class="scientist-platform">
             <h3>Windows PowerShell</h3>
             <p>Python 3.11+ required. Installs the client in local app data.</p>
-            <code class="command">irm https://raw.githubusercontent.com/HamidrezaKmK/lockedin/scientist/install.ps1 | iex</code>
+            <code class="command">irm https://raw.githubusercontent.com/HamidrezaKmK/lockedin/main/install.ps1 | iex</code>
           </article>
         </div>
         <ol class="scientist-steps">
           <li><b>Authorize</b>Sign in to your lockedin account in the browser.<code class="command">lockedin-scientist login --server https://lockedin.codes</code></li>
           <li><b>Pick a bubble</b>List the active workspace names and slugs available to you.<code class="command">lockedin-scientist bubbles</code></li>
-          <li><b>Stay in sync</b>Pull website changes and push local report work without starting an agent.<code class="command">lockedin-scientist sync</code></li>
-          <li><b>Start working</b>Launch the coding CLI you already use against one bubble.<code class="command">lockedin-scientist &lt;codex|claude|agy&gt; &lt;bubble-name&gt;</code></li>
+          <li><b>Stay in sync</b>Create a project-local bubble workspace that keeps reports synchronized in the background.<code class="command">lockedin-scientist sync &lt;bubble-slug&gt;</code></li>
+          <li><b>Install a native skill</b>Set up the lockedin-scientist skill once for the agent you use.<code class="command">lockedin-scientist &lt;codex|claude|agy&gt; setup</code></li>
         </ol>
         </div>
       </section>
@@ -1801,7 +1811,7 @@
     const deviceCode=new URLSearchParams(location.search).get("scientist_device");
     if(deviceCode){
       try{
-        await api("/api/scientist/v1/device/"+encodeURIComponent(deviceCode)+"/approve",{method:"POST"});
+        await api("/api/scientist/v2/device/"+encodeURIComponent(deviceCode)+"/approve",{method:"POST"});
         history.replaceState(null,"",location.pathname+location.hash);
         toast("LockedIn Scientist authorized. You can return to your terminal.");
       }catch(e){ toast("Scientist authorization failed: "+e.message); }
@@ -3067,7 +3077,7 @@
   }
 
   function buildShareControls(slug,onShareState){
-    const wrap=el("span",{class:"row",style:"gap:6px;align-items:center;flex-shrink:0"});
+    const wrap=el("span",{class:"bubble-tool-group",title:"Public sharing controls"});
     const btn=el("button",{class:"ghost small"});
     const copy=el("button",{class:"ghost small",title:"Open the shared page in a new tab",
       style:"opacity:.8"},"↗ Open link");
@@ -3089,7 +3099,37 @@
       }catch(e){ toast(e.message); } finally{ btn.disabled=false; }
     };
     copy.onclick=()=>window.open(shareUrl(),"_blank","noopener");
+    copy.classList.add("bubble-tool-secondary");
     wrap.append(btn,copy); render();
+    return wrap;
+  }
+
+  function openOverleafModal(b){
+    const overlay=el("div",{class:"overlay",role:"dialog","aria-modal":"true","aria-label":"Link Overleaf project"});
+    const box=el("div",{class:"diffbox create-dialog"});
+    const input=el("input",{type:"text",placeholder:"Overleaf Cloud project URL, Git URL, or project ID",value:b.overleaf_project_id||"",autocomplete:"off"});
+    const cancel=el("button",{class:"ghost",onclick:()=>overlay.remove()},"Cancel");
+    const remove=el("button",{class:"ghost",style:"color:var(--danger,#d55)"},"Remove link");
+    const save=el("button",{class:"primary"},"Save link");
+    const refresh=async()=>{ overlay.remove(); await openBubble(b.slug,{noRoute:true,page:S.page}); };
+    save.onclick=async()=>{ save.disabled=true; try{ await api("/api/bubbles/"+encodeURIComponent(b.slug)+"/overleaf",{method:"PUT",body:JSON.stringify({project:input.value.trim()})}); await refresh(); }catch(e){save.disabled=false;toast(e.message);} };
+    remove.onclick=async()=>{ remove.disabled=true; try{await api("/api/bubbles/"+encodeURIComponent(b.slug)+"/overleaf",{method:"DELETE"});await refresh();}catch(e){remove.disabled=false;toast(e.message);} };
+    box.append(el("div",{class:"create-dialog-header"},el("b",{},"Overleaf project")),
+      el("div",{class:"diffbody create-dialog-body"},el("p",{class:"muted"},"This bubble can optionally link to one Overleaf Cloud project."),input),
+      el("div",{class:"create-dialog-footer"},remove,cancel,save));
+    if(!b.overleaf_project_id)remove.classList.add("hide");
+    overlay.append(box);overlay.onclick=e=>{if(e.target===overlay)overlay.remove();};document.body.append(overlay);setTimeout(()=>input.focus(),0);
+  }
+
+  function buildOverleafControls(b){
+    const wrap=el("span",{class:"bubble-tool-group",title:"Overleaf project controls"});
+    const open=el("button",{class:"ghost small",title:b.overleaf_url?"Open this bubble’s Overleaf project":"Link an Overleaf project to this bubble"});
+    open.append(el("span",{class:"overleaf-label"},
+      el("img",{class:"overleaf-mark",alt:"",src:"https://images.ctfassets.net/nrgyaltdicpt/451Wbu94Q1X3M5QIk74QLL/08e42061e965fb152a329ded74cdc3ce/overleaf-o-logo-primary.svg"}),
+      document.createTextNode("Overleaf")));
+    open.onclick=()=>b.overleaf_url?window.open(b.overleaf_url,"_blank","noopener"):openOverleafModal(b);
+    wrap.append(open);
+    if(b.overleaf_url)wrap.append(el("button",{class:"ghost small bubble-tool-secondary",title:"Change or remove Overleaf project",onclick:()=>openOverleafModal(b)},"✏️"));
     return wrap;
   }
 
@@ -3134,11 +3174,12 @@
       // bubble name (sharing/preview are done from a larger screen) to keep the page minimal.
       // "👁 Preview" opens the server-rendered, read-only page — exactly what a share viewer sees.
       const tools=el("span",{class:"row desktop-only-tool",style:"gap:6px;align-items:center;flex-shrink:0"});
-      const preview=el("button",{class:"ghost small",title:"Preview the read-only page your share viewers see",
+      const preview=el("button",{class:"small",title:"Preview the read-only page your share viewers see",
         onclick:()=>openReadOnlyPreview(slug)},"👁 Preview");
       tools.append(preview);
-      tools.append(el("button",{class:"ghost small",title:"Browse, upload, or download this bubble's files",
+      tools.append(el("button",{class:"small",title:"Browse, upload, or download this bubble's files",
         onclick:()=>openBubbleAssets(slug)},"📁 Assets"));
+      tools.append(buildOverleafControls(b));
       tools.append(buildShareControls(slug,active=>preview.classList.toggle("hide",active)));
       titleRow.append(tools);
     }
@@ -3258,6 +3299,7 @@
 
     const actions=el("div",{class:"mobile-bubble-actions"},
       el("button",{class:"primary small",title:"Papers",onclick:openPapers},"📚"),
+      el("button",{class:"primary small",title:b.overleaf_url?"Open Overleaf":"Link Overleaf",onclick:()=>b.overleaf_url?window.open(b.overleaf_url,"_blank","noopener"):openOverleafModal(b)},"🍃"),
       el("button",{class:"primary small",title:"Chat",onclick:openChat},"💬"));
     main.append(actions,papersSheet,chatSheet);
   }

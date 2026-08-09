@@ -20,6 +20,7 @@ import secrets
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlparse
 
 import yaml
 from slugify import slugify
@@ -53,13 +54,75 @@ def save_registry(reg: dict) -> None:
                                                      allow_unicode=True))
 
 
+_OVERLEAF_ID_RE = re.compile(r"^[A-Za-z0-9_-]{6,128}$")
+
+
+def normalize_overleaf_project(value: str) -> str:
+    """Accept an Overleaf Cloud project ID, project URL, or Git URL without credentials."""
+    raw = (value or "").strip()
+    if _OVERLEAF_ID_RE.fullmatch(raw):
+        return raw
+    parsed = urlparse(raw)
+    if parsed.scheme != "https" or parsed.password or parsed.query or parsed.fragment:
+        raise ValueError("Enter an Overleaf Cloud project link, Git link, or project ID.")
+    host = (parsed.hostname or "").lower()
+    parts = [part for part in parsed.path.split("/") if part]
+    project_id = ""
+    if host in {"www.overleaf.com", "overleaf.com"} and parsed.username is None and len(parts) == 2 and parts[0] == "project":
+        project_id = parts[1]
+    elif host == "git.overleaf.com" and parsed.username in {None, "git"} and len(parts) == 1:
+        project_id = parts[0]
+    if not _OVERLEAF_ID_RE.fullmatch(project_id):
+        raise ValueError("Enter an Overleaf Cloud project link, Git link, or project ID.")
+    return project_id
+
+
+def overleaf_urls(project_id: str | None) -> dict:
+    if not project_id:
+        return {"overleaf_project_id": None, "overleaf_url": "", "overleaf_git_url": ""}
+    return {"overleaf_project_id": project_id,
+            "overleaf_url": f"https://www.overleaf.com/project/{project_id}",
+            "overleaf_git_url": f"https://git@git.overleaf.com/{project_id}"}
+
+
+def migrate_overleaf_fields() -> int:
+    """Add the optional field without changing existing bubble metadata or timestamps."""
+    reg = load_registry(); changed = 0
+    for entry in reg.values():
+        if "overleaf_project_id" not in entry:
+            entry["overleaf_project_id"] = None; changed += 1
+    if changed:
+        save_registry(reg)
+    return changed
+
+
+def set_overleaf_project(slug: str, value: str | None) -> dict:
+    reg = load_registry(); entry = reg.get(slug)
+    if entry is None:
+        raise KeyError(f"Bubble {slug!r} not found.")
+    entry["overleaf_project_id"] = normalize_overleaf_project(value) if value else None
+    reg[slug] = entry; save_registry(reg)
+    _write_overleaf_config(slug, entry["overleaf_project_id"])
+    return overleaf_urls(entry["overleaf_project_id"])
+
+
+def _write_overleaf_config(slug: str, project_id: str | None) -> None:
+    """Materialize the server-owned Scientist export without exposing it as a report file."""
+    target = paths.bubble_dir(slug) / "_lockedin_overleaf.yaml"
+    if not project_id:
+        target.unlink(missing_ok=True)
+        return
+    # JSON is valid YAML and keeps the dependency-free Scientist client able to read this config.
+    _atomic_write(target, _json.dumps(overleaf_urls(project_id), indent=2, sort_keys=True) + "\n")
+
+
 def touch_bubble(slug: str, *, when: "str | None" = None) -> None:
     """Update a bubble's last-edited timestamp, materializing PDF-derived bubbles if needed."""
     reg = load_registry()
     entry = reg.get(slug)
     if entry is None:
         entry = {"name": slug_to_name(slug), "approved": False, "archived": False, "instructions": "",
-                 "created_at": _now_iso()}
+                 "created_at": _now_iso(), "overleaf_project_id": None}
     entry["last_edited_at"] = when or _now_iso()
     reg[slug] = entry
     save_registry(reg)
@@ -172,7 +235,7 @@ def create_bubble(name: str) -> str:
     entry = reg.get(slug)
     if entry is None:
         now = _now_iso()
-        reg[slug] = {"name": name.strip(), "approved": True, "archived": False, "instructions": "",
+        reg[slug] = {"name": name.strip(), "approved": True, "archived": False, "instructions": "", "overleaf_project_id": None,
                      "created_at": now, "last_edited_at": now}
     else:
         entry["approved"] = True
@@ -188,7 +251,7 @@ def approve_bubble(slug: str, instructions: str = "") -> dict:
     if entry is None:
         # bubble exists only via PDF tags — materialize it in the registry
         now = _now_iso()
-        entry = {"name": slug_to_name(slug), "approved": True, "archived": False, "instructions": instructions,
+        entry = {"name": slug_to_name(slug), "approved": True, "archived": False, "instructions": instructions, "overleaf_project_id": None,
                  "created_at": now, "last_edited_at": now}
     else:
         entry["approved"] = True
@@ -437,6 +500,7 @@ def all_bubbles() -> list[dict]:
             "pdf_count": counts.get(slug, 0),
             "page_count": _page_count(slug),
             "instructions": entry.get("instructions", ""),
+            **overleaf_urls(entry.get("overleaf_project_id")),
             "last_edited_at": last_edited_at,
         })
     out.sort(key=lambda b: b.get("last_edited_at") or "", reverse=True)
@@ -475,6 +539,7 @@ def bubble_detail(slug: str) -> dict:
         "content": content,
         "share_active": bool(entry.get("share_active", False)),
         "share_token": entry.get("share_token", ""),
+        **overleaf_urls(entry.get("overleaf_project_id")),
     }
 
 
@@ -492,7 +557,7 @@ def set_share_active(slug: str, active: bool) -> dict:
     entry = reg.get(slug)
     if entry is None:
         entry = {"name": slug_to_name(slug), "approved": True, "archived": False, "instructions": "",
-                 "created_at": _now_iso()}
+                 "created_at": _now_iso(), "overleaf_project_id": None}
     token = entry.get("share_token") or secrets.token_urlsafe(16)
     entry["share_token"] = token
     entry["share_active"] = bool(active)

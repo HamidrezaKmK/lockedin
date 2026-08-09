@@ -355,23 +355,6 @@ class BubbleRelevance(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     bubbles.set_pdf_bubble_score(slug, pid, 6)
 
-    def test_scientist_context_only_lists_current_bubble_papers(self):
-        with temp_home() as home:
-            slug = make_bubble(home)
-            other = service.create_bubble(home, "Other Topic")
-            p1 = service.save_asset(home, b"%PDF-1", "a.pdf", title="Attached",
-                                    tags=["Diffusion Models"])
-            p2 = service.save_asset(home, b"%PDF-1", "b.pdf", title="Unrelated",
-                                    tags=["Other Topic"])
-            with paths.use_root(home):
-                assets.save_summary(p1, "attached summary")
-                assets.save_summary(p2, "unrelated summary")
-                ctx = reports.scientist_context(slug)
-        self.assertIn("Attached", ctx)
-        self.assertIn("Relevance 5", ctx)
-        self.assertNotIn("Unrelated", ctx)
-        self.assertNotIn("unrelated summary", ctx)
-
     def test_chat_context_uses_relevance_labels(self):
         captured = {}
 

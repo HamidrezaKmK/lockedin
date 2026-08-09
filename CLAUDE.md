@@ -10,16 +10,16 @@ project (contextvar per-user roots, PBKDF2 auth, OpenAI-compatible model layer, 
 no-build SPA).
 
 A plain `claude` session in this repo is for **developing lockedin**. The supported report
-assistant is the synchronized `lockedin-scientist` client, which runs a vendor CLI against an
-authorized local mirror of one user's workspace.
+workflow uses `lockedin-scientist sync <bubble>` from a user's project; it maintains one
+project-local, bubble-bound `.lockedin/` directory and its `SKILL.md` guides normal agent runs.
 
 ## Run / test
 
 ```bash
 uv sync                          # manage deps + .venv (NOT pip)
-ollama serve && ollama pull qwen2.5:7b-instruct   # default model
+ollama serve && ollama pull qwen2.5:7b-instruct   # optional local Qwen provider
 uv run lockedin serve [--port 8080] [--host 0.0.0.0]
-uv run lockedin doctor           # check the active model is reachable
+uv run lockedin doctor           # check the model configuration in the current data root
 ```
 
 Always run `uv run ...` **from the project root** — `cd`-ing elsewhere breaks uv's project
@@ -27,7 +27,7 @@ resolution and the `lockedin` entry point fails to spawn.
 
 Sharing: a Cloudflare quick tunnel (`cloudflared tunnel --url http://localhost:<port>`) gives a
 temporary public HTTPS URL with no domain/account — see README. Use `lockedin-scientist` for
-agent-driven report editing through an authorized, synchronized local mirror.
+agent-driven report editing through authorized, project-local bubble synchronization.
 
 ### Tests
 
@@ -54,10 +54,6 @@ LOCKEDIN_HOME=/tmp/li_test uv run python -m unittest discover -s tests -t . -v
 - `tests/test_live_qwen.py` — runs a realistic chat through qwen and asserts the read-only
   *invariants*: a content question gets a non-empty reply with no raw `<EDIT>`/`<NEWPAGE>` tags,
   and the chat never creates/removes/mutates a page. qwen is non-deterministic, so it retries.
-- `tests/test_news.py` — deterministic guard for the news crawl chat: monkeypatches
-  `news._agent_events` with canned Claude Code NDJSON and pins the stream→`@@ITEM`-parse→
-  live-save→dedup→session→accept/discard flow, the date range/pointer, and premium/kill-switch
-  gating. No network/LLM.
 - `tests/_fixtures.py` — builds throwaway qwen workspaces seeded with the two diffusion papers
   (copies `meta.yaml`/`summary.md`/`text.txt` from a local user, not the 50 MB `paper.pdf`).
 - `tests/setup_unittest_user.py` — (re)creates the persistent `unittest`/`unittest` fixture user
@@ -87,25 +83,27 @@ Layered; the server is thin HTTP/SSE glue over `service.py`.
 
 | Module | Responsibility |
 |--------|----------------|
-| `paths.py` | All filesystem paths. **Per-user isolation via a `contextvars` root** pushed with `paths.use_root(home)`. Per-user paths (`ASSETS_DIR`, `REPORTS_DIR`, bubble/page/asset paths) resolve against the active context root; account-registry paths resolve against the base root. |
-| `auth.py` | PBKDF2-HMAC-SHA256, `accounts.yaml`, in-memory sessions (lost on restart). `set_password`/`rename_user` back the account-settings endpoint. **Account approval:** the first account created is `approved=true`+`admin=true`; later sign-ups are `approved=false` (with `pending_at`) and **cannot log in** until an admin flips them via the `/api/admin/users*` endpoints (surfaced in the Settings → *User access* panel). `is_approved`/`is_admin`/`set_approved`/`delete_user` enforce this; `MIN_PASSWORD_LEN=4`. |
-| `sharing.py` | Global (base-root) `share_index.yaml` mapping an unlisted token → `{user, slug}` for the public `/share/<token>` routes (which run with no session). |
-| `models.py` | **One global active model** (`qwen`/`openai`/`claude`/`gemini`) per user. `stream_chat`/`complete`/`attach_pdf`/`health_check`. Branches: OpenAI-compatible (qwen via Ollama, openai, gemini via its OpenAI-compat endpoint) vs Anthropic SDK (claude). Health check does NOT ping API for cloud providers — only checks credentials are present. |
+| `paths.py` | All filesystem paths. A `contextvars` root pushed with `paths.use_root(home)` selects the active workspace for research content; account-registry paths resolve against the base root. |
+| `auth.py` | PBKDF2-HMAC-SHA256, `accounts.yaml`, in-memory sessions (lost on restart). New accounts are approved immediately; the first is also admin and premium. `set_password`/`rename_user` back the account-settings endpoint; `is_admin`/`set_approved`/`delete_user` enforce administration rules; `MIN_PASSWORD_LEN=4`. |
+| `sharing.py` | Global (base-root) `share_index.yaml` mapping an unlisted token → `{workspace_id, slug}` for the public `/share/<token>` routes (which run with no session). |
+| `models.py` | **One active model per account** (`qwen`/`openai`/`claude`/`gemini`). Credentials remain account-private even in shared workspaces. `stream_chat`/`complete`/`attach_pdf`/`health_check` use OpenAI-compatible providers (qwen via Ollama, OpenAI, Gemini) or Anthropic's SDK (Claude). |
 | `assets.py` | PDF storage: `ASSETS/<pdf_id>/{paper.pdf,text.txt,summary.md,meta.yaml}`. Atomic writes. |
-| `tagger.py` | Background ingest after upload: extract text → summarize (cached) → suggest reuse-first tags. Fail-safe. |
+| `tagger.py` | Background ingest after upload: extract text, model metadata, and a cached summary. Fail-safe. |
 | `bubbles.py` | Bubble registry (`bubbles.yaml`) + the per-bubble **mini-wiki**: pages manifest, page CRUD, image storage, legacy-`report.md` migration, chat-session CRUD (`chats/` dir). |
-| `todos.py` | **Global per-user TODOs** (GitHub-issue style), stored in `todos.yaml` (`next_id` + `todos` map). Pure storage: compact integer `id`, `title`, markdown `note`, `done`. CRUD only — it does **not** import `bubbles`; reference counting, delete guard, and report-reference rewrites after id compaction live in `service.py`. Referenced from report pages as `@<id>`. |
+| `todos.py` | **Workspace-wide TODOs** (GitHub-issue style), stored in `todos.yaml` (`next_id` + `todos` map). Pure storage: compact integer `id`, `title`, markdown `note`, `done`. CRUD only — it does **not** import `bubbles`; reference counting, delete guard, and report-reference rewrites after id compaction live in `service.py`. Referenced from report pages as `@<id>`. |
 | `reports.py` | `chat_stream` — a **read-only** streamed research chat grounded in the bubble's report pages + paper summaries + deep-read PDFs (bounded context, internal compaction). Also `generate_chat_title`. It does NOT edit pages. |
-| `news.py` | **Premium interactive crawl chat** (no daemon — all in `serve`). The user converses with the *operator's* Claude Code agent (headless **streaming** `claude -p --output-format stream-json --verbose --allowedTools WebSearch WebFetch`, web tools only, host login). `chat_stream` spawns the agent via `_agent_events` (the NDJSON Popen seam tests monkeypatch), parses a one-line `@@ITEM {json}` protocol to **save each paper the instant it's found** (`add_item`, dedup vs `seen`), and yields SSE `delta`/`activity`/`item`/`done` (with `stopped:"timeout"\|"max_turns"`, real `cost_usd`). "continue" resumes the same agent session (`--resume <uuid>`). Instructions are **plain text** (no per-instruction date); a single **global pointer** (`last_checked` in `config/news.yaml`) seeds the default crawl range and advances **only on `accept_session`** (typed "I'm happy" or the button) to the range's `until`. Matching is against a **persistent per-bubble scope summary** (not titles): on the first turn of a crawl, `refresh_bubble_summaries` regenerates each approved bubble's 2–4-sentence summary via the user's active model **only if its content changed** (sha256 fingerprint over name + instructions + report pages + paper summaries), caches it in `bubble_summaries.yaml`, and feeds those summaries to the agent. A **hard date-range rule** in the prompt ([since..until], plus a guaranteed closing ```json``` block) keeps old papers out. The whole interaction (tool-use **activities** + item markers + prose) is recorded to the session transcript **live** so history replays it exactly. A crawl turn sets a `running` flag on the session; the SSE worker runs to completion server-side even if the browser disconnects, so leaving the News page mid-crawl is safe — on return the SPA sees `running` and **reconnects by polling** `status`/feed until the turn ends (no live SSE re-attach). `discard_session` drops the batch. An end-of-turn **reconciliation pass** (`_extract_items_from_text`) re-scans the agent's full output + the final `result` payload for any `@@ITEM` line or fenced `{"items":[…]}` block, so every structured result reaches the feed even if streaming missed it (dedup prevents doubles). Ended conversations are **archived** to `news_chats/<uuid>.json` (`list/get/delete_chat_session`, like bubble chats). Stores in `news_items.yaml` (`items`/`seen`/active `session`). Gated by the kill switch (env `LOCKEDIN_NEWS_ENABLED`, default OFF — set on `serve`) + per-account `news_enabled`. Also surfaced in the Slack bot (`slackbot.py`) for entitled users via the `news` (list items + reasons) and `crawl` commands. `crawl` is an interactive wizard — it prompts for the from/to date range (showing defaults to confirm or replace), runs the turn, then enters a **steering** mode where free-text follow-ups (`continue`, refinements, `accept`, `stop`) drive the open session; both call `/api/news` and stream `/api/news/chat`. |
 | `service.py` | Orchestration; wraps non-streaming ops in `use_root`. Streaming generators manage their own root. |
 | `server.py` | FastAPI app + routes + SSE. |
 | `web/index.html` | The entire SPA — vanilla JS IIFE, no build step, CDN deps. |
 
-### Per-user data layout (all git-ignored under `data/`)
+### Runtime data layout (all git-ignored under `data/`)
 
 ```
-data/users/<username>/
-  config/active_model.yaml          # active provider + per-provider keys/models
+data/users/accounts.yaml            # account records, password hashes, Scientist tokens (chmod 600)
+data/users/share_index.yaml         # {token: {workspace_id, slug}} — global public-share lookup
+data/users/<username>/config/active_model.yaml  # account-private provider keys/models
+data/workspaces/workspaces.yaml     # workspace records, membership, roles
+data/workspaces/<workspace-id>/
   ASSETS/<pdf_id>/{paper.pdf,text.txt,summary.md,meta.yaml}
   REPORTS/<bubble_slug>/            # a mini-wiki per bubble
     pages.yaml                      # { home: <page_slug>, pages: [{page_slug,title}] }
@@ -113,9 +111,7 @@ data/users/<username>/
     assets/<figure>.png
     chats/<session_id>.json         # persisted chat sessions
   bubbles.yaml                      # {slug: {name, approved, instructions, created_at, share_active, share_token}}
-  todos.yaml                        # {next_id, todos:{<id>:{id,title,note,done,created_at}}} — global per-user TODOs
-data/users/accounts.yaml            # password hashes (chmod 600)
-data/users/share_index.yaml         # {token: {user, slug}} — global lookup for public /share links
+  todos.yaml                        # {next_id, todos:{<id>:{id,title,note,done,created_at}}} — workspace-wide TODOs
 ```
 
 ## Key design decisions (don't regress these)
@@ -135,8 +131,9 @@ data/users/share_index.yaml         # {token: {user, slug}} — global lookup fo
   each `[[X]]` has any invented `prefix/` stripped, then resolves by slug, else by page **title**
   (case-insensitive), to the real slug. This is why the model is told to link by plain title —
   it can't guess server-assigned slugs, so it writes `[[Exact Title]]` and the save fixes it.
-- **Bubble approval gates the report workspace.** Auto-suggested bubbles start `approved=false`
-  and show an approval pane; approving materializes the pages (`ensure_pages`) so the editor opens.
+- **Bubbles are created explicitly.** New bubbles are approved immediately and materialize their
+  report pages on first use. The approval flag remains a compatibility and write-safety boundary
+  for legacy or externally created records.
 - **A bubble's identity is its immutable `slug`; its `name` is display-only.** Membership is
   `idea_bubbles` = `[slug_of(tag) for tag in tags]`, so a PDF belongs to a bubble iff one of its
   tags slugifies to that slug. Renaming only changes the registry `name`; it must NOT change any
@@ -154,8 +151,8 @@ data/users/share_index.yaml         # {token: {user, slug}} — global lookup fo
   `/api/bubbles/<slug>/assets/` → `/share/<token>/assets/` so figures load without a session).
   Headings get slug ids + a click-to-copy 🔗 anchor for section deep-links.
 - **Account changes go through `service.update_account`.** Requires the current password; a
-  username change moves the whole workspace dir and repoints the account record, in-memory
-  sessions (so the cookie stays valid), and `share_index` entries.
+  username change updates the account record and active sessions. Research content is
+  workspace-owned, while provider configuration remains under the account's private directory.
 - **Summarize-once.** Every uploaded PDF is summarized once into `summary.md`; the chat reuses
   summaries to stay cheap. "Deep-read" attaches the real PDF (Claude) or `text.txt`
   (qwen/openai), now clipped to a char budget, for the conversation.
@@ -179,7 +176,7 @@ data/users/share_index.yaml         # {token: {user, slug}} — global lookup fo
   treat request bodies as query params (→ 422). Other modules use the future import freely.
 - **SSE runs in a worker thread, not Starlette's threadpool.** `_stream()` in `server.py` runs
   the chat generator in a dedicated `threading.Thread` feeding a `queue.Queue`. This keeps the
-  per-user `contextvars` root consistent for the generator's whole life — Starlette could
+  workspace `contextvars` root consistent for the generator's whole life — Starlette could
   otherwise resume a sync generator on a different pool thread and lose the context. `chat_stream`
   therefore wraps its whole body in `with paths.use_root(home):` so the context survives `yield`s.
 - **SSE event shape:** `{"type":"delta","text":...}`, `{"type":"done", ...}`, `{"type":"error","detail":...}`.
@@ -190,9 +187,8 @@ data/users/share_index.yaml         # {token: {user, slug}} — global lookup fo
   `bubbles.{list,get,save,delete}_chat_session` manage them. Auto-saved client-side after each
   assistant reply. The session dropdown above the chat lets you switch between or delete sessions.
   Session ID format: `YYYYMMDDHHMMSS-<4hex>` (sorts by creation time).
-- **Claude auth:** the global Claude model uses an Anthropic API key stored in the user's model
-  settings. Browser-pasted Claude OAuth/subscription tokens are no longer supported. The News
-  crawler is separate: it runs through the host Claude CLI when the backend feature is enabled.
+- **Claude auth:** the Claude model uses an Anthropic API key stored in the account's model
+  settings. Browser-pasted Claude OAuth/subscription tokens are not supported.
 - **Gemini** uses Google's OpenAI-compatible endpoint (`generativelanguage.googleapis.com/v1beta/openai/`).
   No new SDK needed — same code path as qwen/openai. API key from AI Studio (aistudio.google.com/apikey).
 - **Math + WYSIWYG:** math renders via KaTeX auto-render on the markdown **preview** pane. Toast

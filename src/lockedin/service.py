@@ -21,6 +21,22 @@ def ensure_workspace(home: Path) -> None:
         (home / sub).mkdir(parents=True, exist_ok=True)
 
 
+def migrate_overleaf_fields() -> int:
+    """Backfill the optional Overleaf field in all workspace and remaining legacy registries."""
+    roots = list(workspaces.all_homes())
+    if paths.USERS_DIR.exists():
+        roots.extend(path for path in paths.USERS_DIR.iterdir() if path.is_dir())
+    seen, changed = set(), 0
+    for root in roots:
+        root = root.resolve()
+        if root in seen or not (root / "bubbles.yaml").exists():
+            continue
+        seen.add(root)
+        with paths.use_root(root):
+            changed += bubbles.migrate_overleaf_fields()
+    return changed
+
+
 # ---- assets ----
 def save_asset(home: Path, pdf_bytes: bytes, filename: str, title: str = "",
                tags: list[str] | None = None, url_source: str = "",
@@ -165,6 +181,12 @@ def register_user_tags(home: Path, tags: list[str]) -> None:
 def rename_bubble(home: Path, slug: str, new_name: str) -> dict:
     with paths.use_root(home):
         return bubbles.rename_bubble(slug, new_name)
+
+
+def set_bubble_overleaf(home: Path, slug: str, value: str | None) -> dict:
+    with paths.use_root(home):
+        bubbles.set_overleaf_project(slug, value)
+        return bubbles.bubble_detail(slug)
 
 
 def set_bubble_archived(home: Path, slug: str, archived: bool) -> dict:
