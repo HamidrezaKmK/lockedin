@@ -8,7 +8,23 @@ permissions:
   contents: write
 
 jobs:
+  verify-main:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify that the release tag is on main
+        run: |
+          git fetch origin main
+          release_commit="$(git rev-list -n 1 "${{ github.event.release.tag_name }}")"
+          git merge-base --is-ancestor "$release_commit" origin/main || {
+            echo "Refusing to publish Scientist: release tag is not reachable from main." >&2
+            exit 1
+          }
+
   build:
+    needs: verify-main
     strategy:
       fail-fast: false
       matrix:

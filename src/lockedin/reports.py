@@ -397,10 +397,11 @@ ignores this directory through the project-local exclude file, leaving tracked p
 
 The initial sync populates one project-local bubble. Within `.lockedin/`, `assets/<pdf-id>/` and
 `config/` are server-authoritative and read-only: they are restored from the server and detached
-papers are removed locally. Within that directory, only `reports/pages/` and `reports/assets/` are
-writable. The rest of the repository remains available to your coding agent under its normal
-permissions. A concurrent website edit restores the server copy and leaves the rejected local copy
-and a patch in `config/conflicts/`.
+papers are removed locally. The synchronized report writeback paths are `reports/pages/` and
+`reports/assets/`; an optional `.lockedin/overleaf/` checkout is separately editable as the local
+publication manuscript. The rest of the repository remains available to your coding agent under
+its normal permissions. A concurrent website edit restores the server copy and leaves the rejected
+local copy and a patch in `config/conflicts/`.
 
 Only pages and report assets inside the selected **approved** bubble can be written back.
 Credentials, sessions, chat history, TODOs, bubble settings, PDFs, and paper summaries are never

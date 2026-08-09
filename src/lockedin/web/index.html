@@ -301,7 +301,7 @@
   .command{display:block;min-width:0;margin:0;padding:11px 12px;border-radius:7px;background:#101218;
     border:1px solid color-mix(in srgb,var(--accent2) 35%,var(--line));color:#e8e5ff;font-family:var(--font-mono);
     font-size:12px;line-height:1.55;white-space:nowrap;overflow-x:auto;overflow-y:hidden;word-break:normal;user-select:all}
-  .scientist-steps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:0;padding:0;list-style:none;counter-reset:scientist-step}
+  .scientist-steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin:0;padding:0;list-style:none;counter-reset:scientist-step}
   .scientist-steps li{min-width:0;counter-increment:scientist-step;position:relative;padding:13px 13px 13px 43px;
     background:color-mix(in srgb,var(--panel) 86%,transparent);border:1px solid var(--line);border-radius:9px;
     color:var(--muted);font-size:12px;line-height:1.5}
@@ -944,7 +944,8 @@
         </div>
         <ol class="scientist-steps">
           <li><b>Authorize</b>Sign in to your lockedin account in the browser.<code class="command">lockedin-scientist login --server https://lockedin.codes</code></li>
-          <li><b>Pick a bubble</b>List the active workspace names and slugs available to you.<code class="command">lockedin-scientist bubbles</code></li>
+          <li><b>Choose a workspace</b>List your workspaces and select the one used across projects.<code class="command">lockedin-scientist workspaces switch &lt;workspace-id-or-name&gt;</code></li>
+          <li><b>Pick a bubble</b>List the approved bubbles in the selected workspace.<code class="command">lockedin-scientist bubbles</code></li>
           <li><b>Stay in sync</b>Create a project-local bubble workspace that keeps reports synchronized in the background.<code class="command">lockedin-scientist sync &lt;bubble-slug&gt;</code></li>
           <li><b>Install a native skill</b>Set up the lockedin-scientist skill once for the agent you use.<code class="command">lockedin-scientist &lt;codex|claude|agy&gt; setup</code></li>
         </ol>

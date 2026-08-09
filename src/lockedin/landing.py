@@ -73,7 +73,9 @@ DEFAULT_LANDING: dict[str, Any] = {
         "steps": [
             {"title": "Authorize", "text": "Sign in to your lockedin account in the browser.",
              "command": "lockedin-scientist login --server https://lockedin.codes"},
-            {"title": "Pick a bubble", "text": "List the active workspace names and slugs available to you.",
+            {"title": "Choose a workspace", "text": "List your workspaces and select the one used across projects.",
+             "command": "lockedin-scientist workspaces switch <workspace-id-or-name>"},
+            {"title": "Pick a bubble", "text": "List the approved bubbles in the selected workspace.",
              "command": "lockedin-scientist bubbles"},
             {"title": "Stay in sync", "text": "Create a project-local bubble workspace that keeps reports synchronized in the background.",
              "command": "lockedin-scientist sync <bubble-slug>"},
