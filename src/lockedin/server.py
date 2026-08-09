@@ -951,15 +951,17 @@ def build_app():
             auth.save_accounts(accounts)
         return personal["id"]
 
-    def scientist_user(authorization: Optional[str] = Header(default=None),
-                       x_lockedin_workspace: Optional[str] = Header(default=None),
-                       x_lockedin_scientist_version: Optional[str] = Header(default=None),
-                       workspace: Optional[str] = None) -> str:
+    def scientist_client_version(x_lockedin_scientist_version: Optional[str] = Header(default=None)) -> None:
         if x_lockedin_scientist_version != SCIENTIST_CLIENT_VERSION:
             raise HTTPException(
                 status_code=426,
                 detail=scientist_reinstall_detail(),
             )
+
+    def scientist_user(authorization: Optional[str] = Header(default=None),
+                       x_lockedin_workspace: Optional[str] = Header(default=None),
+                       workspace: Optional[str] = None,
+                       _version: None = Depends(scientist_client_version)) -> str:
         token = (authorization or "").removeprefix("Bearer ").strip()
         user = auth.scientist_token_user(token)
         if not user:
@@ -1498,7 +1500,7 @@ def build_app():
 
     # ---- installed Scientist client -------------------------------------------------
     @app.post("/api/scientist/v2/device")
-    def scientist_device_start(body: ScientistDeviceIn):
+    def scientist_device_start(body: ScientistDeviceIn, _version: None = Depends(scientist_client_version)):
         code = secrets.token_urlsafe(18)
         _SCIENTIST_DEVICES[code] = {"expires": time.time() + 600,
                                     "client_name": body.client_name[:120], "user": "", "token": ""}
@@ -1527,7 +1529,7 @@ def build_app():
         return HTMLResponse("<p>LockedIn Scientist authorized. You may return to your terminal.</p>")
 
     @app.get("/api/scientist/v2/device/{code}/token")
-    def scientist_device_token(code: str):
+    def scientist_device_token(code: str, _version: None = Depends(scientist_client_version)):
         rec = _SCIENTIST_DEVICES.get(code)
         if not rec or rec["expires"] < time.time():
             raise HTTPException(status_code=404, detail="This device authorization expired.")

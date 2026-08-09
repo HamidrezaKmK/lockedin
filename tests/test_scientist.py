@@ -100,6 +100,14 @@ class ScientistServerBoundaryTest(unittest.TestCase):
         self.assertIn("Reinstall the newest version", response.json()["detail"])
         self.assertIn("/lockedin/main/install.sh", response.json()["detail"])
 
+    def test_v2_login_and_sync_both_reject_an_outdated_client(self):
+        with TestClient(server.build_app()) as client:
+            login = client.post("/api/scientist/v2/device", json={"client_name": "old"})
+            sync = client.get("/api/scientist/v2/bubbles")
+        for response in (login, sync):
+            self.assertEqual(response.status_code, 426)
+            self.assertIn("/lockedin/main/install.sh", response.json()["detail"])
+
     def test_overleaf_field_normalizes_and_is_exported_only_when_assigned(self):
         with workspace() as (home, slug):
             with paths.use_root(home):
