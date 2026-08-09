@@ -61,6 +61,25 @@ scientist:
         self.assertEqual(cfg["scientist"]["platforms"], [{"title": "Unix", "text": "A shell", "command": "install-me"}])
         self.assertEqual(cfg["scientist"]["steps"], [{"title": "Go", "text": "Do it", "command": "run-me"}])
 
+    def test_retired_scientist_landing_commands_self_heal_to_v2(self):
+        self.write_landing("""
+scientist:
+  title: "Custom CLI"
+  platforms:
+    - title: "Unix"
+      text: "A shell"
+      command: "curl -fsSL https://raw.githubusercontent.com/HamidrezaKmK/lockedin/scientist/install.sh | bash"
+  steps:
+    - title: "Start working"
+      text: "Old workflow"
+      command: "lockedin-scientist <codex|claude|agy> <bubble-name>"
+""")
+        cfg = landing.load_landing()
+        self.assertEqual(cfg["scientist"]["title"], "Custom CLI")
+        self.assertIn("/lockedin/main/install.sh", cfg["scientist"]["platforms"][0]["command"])
+        self.assertIn("<bubble-slug>", cfg["scientist"]["steps"][3]["command"])
+        self.assertIn("setup", cfg["scientist"]["steps"][4]["command"])
+
     def test_invalid_yaml_falls_back_to_defaults(self):
         self.write_landing("hero: [")
         cfg = landing.load_landing()

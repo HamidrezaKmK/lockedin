@@ -103,6 +103,33 @@ def _list(value: Any) -> list[Any]:
     return value if isinstance(value, list) else []
 
 
+def _migrate_retired_scientist_landing(value: Any) -> Any:
+    """Render the known v1 Scientist landing section as its safe v2 replacement.
+
+    `data/landing.yaml` is intentionally user-editable and may outlive a server update.  Preserve
+    genuine custom copy, but do not keep serving the exact retired installer/agent workflow.
+    """
+    if not isinstance(value, dict):
+        return value
+    platforms = _list(value.get("platforms"))
+    steps = _list(value.get("steps"))
+    commands = {str(item.get("command", "")) for item in [*platforms, *steps] if isinstance(item, dict)}
+    retired = {
+        "curl -fsSL https://raw.githubusercontent.com/HamidrezaKmK/lockedin/scientist/install.sh | bash",
+        "irm https://raw.githubusercontent.com/HamidrezaKmK/lockedin/scientist/install.ps1 | iex",
+        "lockedin-scientist sync",
+        "lockedin-scientist <codex|claude|agy> <bubble-name>",
+    }
+    if not commands.intersection(retired):
+        return value
+    # Retired commands describe one coherent workflow; retain only its harmless prose overrides.
+    migrated = copy.deepcopy(DEFAULT_LANDING["scientist"])
+    for key in ("title", "intro"):
+        if key in value:
+            migrated[key] = value[key]
+    return migrated
+
+
 def _section(src: Any, default: dict[str, Any], list_shapes: dict[str, dict[str, str]] | None = None) -> dict[str, Any]:
     if not isinstance(src, dict):
         src = {}
@@ -142,7 +169,7 @@ def normalize_landing(data: Any) -> dict[str, Any]:
             "features": {"icon": "", "title": "", "text": ""},
         }),
         "privacy": _section(data.get("privacy"), d["privacy"]),
-        "scientist": _section(data.get("scientist"), d["scientist"], {
+        "scientist": _section(_migrate_retired_scientist_landing(data.get("scientist")), d["scientist"], {
             "platforms": {"title": "", "text": "", "command": ""},
             "steps": {"title": "", "text": "", "command": ""},
         }),
