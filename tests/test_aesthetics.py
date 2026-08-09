@@ -72,6 +72,8 @@ class AestheticsConfigTests(unittest.TestCase):
 
     def test_live_editor_preview_preserves_all_resources_between_typing_updates(self):
         source = (Path(server.WEB_DIR) / "index.html").read_text()
+        self.assertIn('if(S.bubble){\n      s=s.replace(/(!\\[[^\\]\\n]*\\]\\()assets\\/', source)
+        self.assertNotIn('if(S.workspaceId){\n      s=s.replace(/\\/api\\/bubbles', source)
         self.assertIn("const savedResources=restartGifs?null:collectPreviewResources(S.previewEl);", source)
         self.assertIn("else restorePreviewResources(S.previewEl,savedResources);", source)
         self.assertIn('el.closest("picture,video,audio,iframe,object,embed")', source)
