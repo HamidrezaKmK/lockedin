@@ -715,6 +715,20 @@ def build_app():
         app.add_middleware(CORSMiddleware, allow_origins=["*"],
                            allow_methods=["*"], allow_headers=["*"])
 
+    def scientist_reinstall_detail() -> str:
+        return ("LockedIn Scientist is out of date. Reinstall the newest version, then retry. "
+                "macOS/Linux: curl -fsSL "
+                "https://raw.githubusercontent.com/HamidrezaKmK/lockedin/main/install.sh | bash; "
+                "Windows PowerShell: irm "
+                "https://raw.githubusercontent.com/HamidrezaKmK/lockedin/main/install.ps1 | iex")
+
+    @app.middleware("http")
+    async def retired_scientist_v1(request, call_next):
+        """Retire v1 safely while giving installed v1 clients an actionable upgrade response."""
+        if request.url.path.startswith("/api/scientist/v1/"):
+            return JSONResponse({"detail": scientist_reinstall_detail()}, status_code=426)
+        return await call_next(request)
+
     @app.middleware("http")
     async def workspace_request_context(request, call_next):
         """Make the selected workspace available to the entire request.
@@ -944,11 +958,7 @@ def build_app():
         if x_lockedin_scientist_version != SCIENTIST_CLIENT_VERSION:
             raise HTTPException(
                 status_code=426,
-                detail=("LockedIn Scientist is out of date. Reinstall the newest version, then retry. "
-                        "macOS/Linux: curl -fsSL "
-                        "https://raw.githubusercontent.com/HamidrezaKmK/lockedin/main/install.sh | bash; "
-                        "Windows PowerShell: irm "
-                        "https://raw.githubusercontent.com/HamidrezaKmK/lockedin/main/install.ps1 | iex"),
+                detail=scientist_reinstall_detail(),
             )
         token = (authorization or "").removeprefix("Bearer ").strip()
         user = auth.scientist_token_user(token)

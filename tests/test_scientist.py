@@ -11,7 +11,9 @@ from contextlib import contextmanager, redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
+from fastapi.testclient import TestClient
 from lockedin import assets, bubbles, paths, scientist_cli, scientist_sync, service
+from lockedin import server
 
 
 @contextmanager
@@ -91,6 +93,13 @@ ACCOUNT = {"server": "https://example.test", "user": "alice", "token": "token", 
 
 
 class ScientistServerBoundaryTest(unittest.TestCase):
+    def test_retired_v1_paths_return_an_actionable_upgrade(self):
+        with TestClient(server.build_app()) as client:
+            response = client.get("/api/scientist/v1/manifest")
+        self.assertEqual(response.status_code, 426)
+        self.assertIn("Reinstall the newest version", response.json()["detail"])
+        self.assertIn("/lockedin/main/install.sh", response.json()["detail"])
+
     def test_overleaf_field_normalizes_and_is_exported_only_when_assigned(self):
         with workspace() as (home, slug):
             with paths.use_root(home):
