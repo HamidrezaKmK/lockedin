@@ -1,0 +1,53 @@
+name: Scientist client release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: lockedin-scientist-linux-x64
+            asset: lockedin-scientist-linux-x64
+          - os: macos-13
+            name: lockedin-scientist-macos-x64
+            asset: lockedin-scientist-macos-x64
+          - os: macos-14
+            name: lockedin-scientist-macos-arm64
+            asset: lockedin-scientist-macos-arm64
+          - os: windows-latest
+            name: lockedin-scientist-windows-x64
+            asset: lockedin-scientist-windows-x64.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: |
+          uv run --with pyinstaller pyinstaller --onefile --name ${{ matrix.name }} src/lockedin/scientist_cli.py
+          if [ "$RUNNER_OS" = "Windows" ]; then mv "dist/${{ matrix.name }}.exe" "dist/${{ matrix.asset }}"; fi
+          sha256sum dist/${{ matrix.asset }} > dist/${{ matrix.asset }}.sha256
+        shell: bash
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: dist/${{ matrix.asset }}*
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*

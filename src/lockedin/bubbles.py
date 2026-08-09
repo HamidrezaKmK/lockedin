@@ -6,7 +6,8 @@ A bubble has a slug (filesystem key) and a display name. Bubbles are tracked in 
 applied directly to a PDF still produce a bubble.
 
 Report generation is gated: a bubble must be ``approved`` before a report can be generated.
-Auto-suggested bubbles (from the tagger) start ``approved=False`` and wait in the UI.
+New bubbles created in LockedIn are approved immediately. The ``approved`` flag remains as a
+write-safety boundary for older or externally-created registry entries.
 
 All paths resolve against the active per-user context root.
 """
@@ -16,8 +17,10 @@ import json as _json
 import os
 import re
 import secrets
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlparse
 
 import yaml
 from slugify import slugify
@@ -51,13 +54,75 @@ def save_registry(reg: dict) -> None:
                                                      allow_unicode=True))
 
 
+_OVERLEAF_ID_RE = re.compile(r"^[A-Za-z0-9_-]{6,128}$")
+
+
+def normalize_overleaf_project(value: str) -> str:
+    """Accept an Overleaf Cloud project ID, project URL, or Git URL without credentials."""
+    raw = (value or "").strip()
+    if _OVERLEAF_ID_RE.fullmatch(raw):
+        return raw
+    parsed = urlparse(raw)
+    if parsed.scheme != "https" or parsed.password or parsed.query or parsed.fragment:
+        raise ValueError("Enter an Overleaf Cloud project link, Git link, or project ID.")
+    host = (parsed.hostname or "").lower()
+    parts = [part for part in parsed.path.split("/") if part]
+    project_id = ""
+    if host in {"www.overleaf.com", "overleaf.com"} and parsed.username is None and len(parts) == 2 and parts[0] == "project":
+        project_id = parts[1]
+    elif host == "git.overleaf.com" and parsed.username in {None, "git"} and len(parts) == 1:
+        project_id = parts[0]
+    if not _OVERLEAF_ID_RE.fullmatch(project_id):
+        raise ValueError("Enter an Overleaf Cloud project link, Git link, or project ID.")
+    return project_id
+
+
+def overleaf_urls(project_id: str | None) -> dict:
+    if not project_id:
+        return {"overleaf_project_id": None, "overleaf_url": "", "overleaf_git_url": ""}
+    return {"overleaf_project_id": project_id,
+            "overleaf_url": f"https://www.overleaf.com/project/{project_id}",
+            "overleaf_git_url": f"https://git@git.overleaf.com/{project_id}"}
+
+
+def migrate_overleaf_fields() -> int:
+    """Add the optional field without changing existing bubble metadata or timestamps."""
+    reg = load_registry(); changed = 0
+    for entry in reg.values():
+        if "overleaf_project_id" not in entry:
+            entry["overleaf_project_id"] = None; changed += 1
+    if changed:
+        save_registry(reg)
+    return changed
+
+
+def set_overleaf_project(slug: str, value: str | None) -> dict:
+    reg = load_registry(); entry = reg.get(slug)
+    if entry is None:
+        raise KeyError(f"Bubble {slug!r} not found.")
+    entry["overleaf_project_id"] = normalize_overleaf_project(value) if value else None
+    reg[slug] = entry; save_registry(reg)
+    _write_overleaf_config(slug, entry["overleaf_project_id"])
+    return overleaf_urls(entry["overleaf_project_id"])
+
+
+def _write_overleaf_config(slug: str, project_id: str | None) -> None:
+    """Materialize the server-owned Scientist export without exposing it as a report file."""
+    target = paths.bubble_dir(slug) / "_lockedin_overleaf.yaml"
+    if not project_id:
+        target.unlink(missing_ok=True)
+        return
+    # JSON is valid YAML and keeps the dependency-free Scientist client able to read this config.
+    _atomic_write(target, _json.dumps(overleaf_urls(project_id), indent=2, sort_keys=True) + "\n")
+
+
 def touch_bubble(slug: str, *, when: "str | None" = None) -> None:
     """Update a bubble's last-edited timestamp, materializing PDF-derived bubbles if needed."""
     reg = load_registry()
     entry = reg.get(slug)
     if entry is None:
-        entry = {"name": slug_to_name(slug), "approved": False, "instructions": "",
-                 "created_at": _now_iso()}
+        entry = {"name": slug_to_name(slug), "approved": False, "archived": False, "instructions": "",
+                 "created_at": _now_iso(), "overleaf_project_id": None}
     entry["last_edited_at"] = when or _now_iso()
     reg[slug] = entry
     save_registry(reg)
@@ -129,10 +194,31 @@ def propose_bubble(name: str) -> str:
     reg = load_registry()
     if slug not in reg:
         now = _now_iso()
-        reg[slug] = {"name": name.strip(), "approved": False, "instructions": "",
+        reg[slug] = {"name": name.strip(), "approved": False, "archived": False, "instructions": "",
                      "created_at": now, "last_edited_at": now}
         save_registry(reg)
     return slug
+
+
+def purge_legacy_auto_suggestions() -> list[str]:
+    """Remove obsolete, unapproved auto-suggestion records from this workspace.
+
+    LockedIn no longer proposes bubbles automatically. Those old records have no user-facing
+    purpose, but a direct link to one could still expose the obsolete approval screen. They
+    never represent a user-created bubble (normal creation approves immediately), so remove
+    their registry entries and any report folders they may have materialized.
+    """
+    reg = load_registry()
+    stale = sorted(slug for slug, entry in reg.items() if not entry.get("approved"))
+    if not stale:
+        return []
+    for slug in stale:
+        reg.pop(slug, None)
+        bubble_root = paths.bubble_dir(slug)
+        if bubble_root.exists():
+            shutil.rmtree(bubble_root)
+    save_registry(reg)
+    return stale
 
 
 def create_bubble(name: str) -> str:
@@ -149,10 +235,11 @@ def create_bubble(name: str) -> str:
     entry = reg.get(slug)
     if entry is None:
         now = _now_iso()
-        reg[slug] = {"name": name.strip(), "approved": True, "instructions": "",
+        reg[slug] = {"name": name.strip(), "approved": True, "archived": False, "instructions": "", "overleaf_project_id": None,
                      "created_at": now, "last_edited_at": now}
     else:
         entry["approved"] = True
+        entry["archived"] = False
         entry["last_edited_at"] = _now_iso()
     save_registry(reg)
     return slug
@@ -164,10 +251,11 @@ def approve_bubble(slug: str, instructions: str = "") -> dict:
     if entry is None:
         # bubble exists only via PDF tags — materialize it in the registry
         now = _now_iso()
-        entry = {"name": slug_to_name(slug), "approved": True, "instructions": instructions,
+        entry = {"name": slug_to_name(slug), "approved": True, "archived": False, "instructions": instructions, "overleaf_project_id": None,
                  "created_at": now, "last_edited_at": now}
     else:
         entry["approved"] = True
+        entry["archived"] = False
         if instructions:
             entry["instructions"] = instructions
         entry["last_edited_at"] = _now_iso()
@@ -186,6 +274,16 @@ def rename_bubble(slug: str, new_name: str) -> dict:
         raise KeyError(f"Bubble {slug!r} not found.")
     reg[slug]["name"] = new_name
     reg[slug]["last_edited_at"] = _now_iso()
+    save_registry(reg)
+    return reg[slug]
+
+
+def set_bubble_archived(slug: str, archived: bool) -> dict:
+    """Reversibly hide a bubble without changing its reports, assets, or memberships."""
+    reg = load_registry()
+    if slug not in reg:
+        raise KeyError(f"Bubble {slug!r} not found.")
+    reg[slug]["archived"] = bool(archived)
     save_registry(reg)
     return reg[slug]
 
@@ -232,10 +330,14 @@ def get_instructions(slug: str) -> str:
 # --------------------------------------------------------------------------- #
 # Derivation / listing
 # --------------------------------------------------------------------------- #
-def _pdf_slug_names() -> dict[str, str]:
-    """Map slug -> a display name, derived from PDF tags."""
+def _pdf_slug_names(asset_metas: list[dict] | None = None) -> dict[str, str]:
+    """Map slug -> a display name, derived from PDF tags.
+
+    Callers that are already building a bubble view pass their one asset-metadata scan here.
+    This avoids repeatedly parsing every ``meta.yaml`` for each bubble in the same response.
+    """
     out: dict[str, str] = {}
-    for m in assets.list_assets():
+    for m in asset_metas if asset_metas is not None else assets.list_assets():
         tags = m.get("tags", [])
         bubbles = m.get("idea_bubbles", [])
         for i, slug in enumerate(bubbles):
@@ -244,14 +346,16 @@ def _pdf_slug_names() -> dict[str, str]:
     return out
 
 
-def slug_to_name(slug: str) -> str:
-    reg = load_registry()
+def slug_to_name(slug: str, *, reg: dict | None = None,
+                 pdf_names: dict[str, str] | None = None) -> str:
+    reg = load_registry() if reg is None else reg
     if slug in reg and reg[slug].get("name"):
         return reg[slug]["name"]
-    return _pdf_slug_names().get(slug, slug)
+    return (pdf_names if pdf_names is not None else _pdf_slug_names()).get(slug, slug)
 
 
-def tag_for_slug(slug: str) -> str:
+def tag_for_slug(slug: str, *, reg: dict | None = None,
+                 pdf_names: dict[str, str] | None = None) -> str:
     """A display tag string guaranteed to slugify back to ``slug`` (the bubble's membership key).
 
     A bubble's display ``name`` is cosmetic and may be renamed freely, but membership is keyed by
@@ -261,10 +365,10 @@ def tag_for_slug(slug: str) -> str:
     member's tag (keeps a bubble's tag display consistent), then the registry name if it still maps
     to this slug, else a readable de-slugified form of the slug.
     """
-    existing = _pdf_slug_names().get(slug)
+    existing = (pdf_names if pdf_names is not None else _pdf_slug_names()).get(slug)
     if existing and assets.slug_of(existing) == slug:
         return existing
-    name = (load_registry().get(slug) or {}).get("name", "")
+    name = ((load_registry() if reg is None else reg).get(slug) or {}).get("name", "")
     if name and assets.slug_of(name) == slug:
         return name
     readable = slug.replace("-", " ")
@@ -284,8 +388,8 @@ def _paper_sort_key(meta: dict) -> tuple[int, str, str]:
     return (-int(meta.get("bubble_score", 5)), title, meta.get("pdf_id", ""))
 
 
-def pdfs_for_bubble(slug: str) -> list[dict]:
-    pdfs = [_with_bubble_score(m, slug) for m in assets.list_assets()
+def pdfs_for_bubble(slug: str, *, asset_metas: list[dict] | None = None) -> list[dict]:
+    pdfs = [_with_bubble_score(m, slug) for m in (asset_metas if asset_metas is not None else assets.list_assets())
             if slug in m.get("idea_bubbles", [])]
     pdfs.sort(key=_paper_sort_key)
     return pdfs
@@ -355,14 +459,16 @@ def memberships_for_asset(pdf_id: str) -> list[dict]:
     """Return approved bubble memberships for one asset, including relevance."""
     meta = assets.load_meta(pdf_id)
     scores = assets.bubble_scores(meta)
+    reg = load_registry()
+    pdf_names = _pdf_slug_names()
     out = []
     for slug in meta.get("idea_bubbles", []) or []:
         out.append({
             "slug": slug,
-            "name": slug_to_name(slug),
-            "tag": tag_for_slug(slug),
+            "name": slug_to_name(slug, reg=reg, pdf_names=pdf_names),
+            "tag": tag_for_slug(slug, reg=reg, pdf_names=pdf_names),
             "score": scores.get(slug, 5),
-            "approved": is_approved(slug),
+            "approved": bool(reg.get(slug, {}).get("approved")),
         })
     out.sort(key=lambda x: (-int(x.get("score", 5)), x.get("name", "").lower(), x.get("slug", "")))
     return out
@@ -371,9 +477,10 @@ def memberships_for_asset(pdf_id: str) -> list[dict]:
 def all_bubbles() -> list[dict]:
     """Union of registry bubbles and PDF-derived bubbles."""
     reg = load_registry()
-    pdf_names = _pdf_slug_names()
+    asset_metas = assets.list_assets()
+    pdf_names = _pdf_slug_names(asset_metas)
     counts: dict[str, int] = {}
-    for m in assets.list_assets():
+    for m in asset_metas:
         for slug in m.get("idea_bubbles", []):
             counts[slug] = counts.get(slug, 0) + 1
 
@@ -386,12 +493,14 @@ def all_bubbles() -> list[dict]:
         out.append({
             "slug": slug,
             "name": name,
-            "tag": tag_for_slug(slug),
+            "tag": tag_for_slug(slug, reg=reg, pdf_names=pdf_names),
             "approved": bool(entry.get("approved", False)),
+            "archived": bool(entry.get("archived", False)),
             "in_registry": slug in reg,
             "pdf_count": counts.get(slug, 0),
             "page_count": _page_count(slug),
             "instructions": entry.get("instructions", ""),
+            **overleaf_urls(entry.get("overleaf_project_id")),
             "last_edited_at": last_edited_at,
         })
     out.sort(key=lambda b: b.get("last_edited_at") or "", reverse=True)
@@ -401,7 +510,9 @@ def all_bubbles() -> list[dict]:
 def bubble_detail(slug: str) -> dict:
     reg = load_registry()
     entry = reg.get(slug, {})
-    pdfs = pdfs_for_bubble(slug)
+    asset_metas = assets.list_assets()
+    pdf_names = _pdf_slug_names(asset_metas)
+    pdfs = pdfs_for_bubble(slug, asset_metas=asset_metas)
     approved = bool(entry.get("approved", False))
     pages, home, content = [], "", ""
     if approved:
@@ -411,9 +522,10 @@ def bubble_detail(slug: str) -> dict:
         content = get_page(slug, home) if home else ""
     return {
         "slug": slug,
-        "name": entry.get("name") or slug_to_name(slug),
-        "tag": tag_for_slug(slug),
+        "name": entry.get("name") or slug_to_name(slug, reg=reg, pdf_names=pdf_names),
+        "tag": tag_for_slug(slug, reg=reg, pdf_names=pdf_names),
         "approved": approved,
+        "archived": bool(entry.get("archived", False)),
         "in_registry": slug in reg,
         "instructions": entry.get("instructions", ""),
         "last_edited_at": entry.get("last_edited_at") or entry.get("created_at") or "",
@@ -427,6 +539,7 @@ def bubble_detail(slug: str) -> dict:
         "content": content,
         "share_active": bool(entry.get("share_active", False)),
         "share_token": entry.get("share_token", ""),
+        **overleaf_urls(entry.get("overleaf_project_id")),
     }
 
 
@@ -443,8 +556,8 @@ def set_share_active(slug: str, active: bool) -> dict:
     reg = load_registry()
     entry = reg.get(slug)
     if entry is None:
-        entry = {"name": slug_to_name(slug), "approved": True, "instructions": "",
-                 "created_at": _now_iso()}
+        entry = {"name": slug_to_name(slug), "approved": True, "archived": False, "instructions": "",
+                 "created_at": _now_iso(), "overleaf_project_id": None}
     token = entry.get("share_token") or secrets.token_urlsafe(16)
     entry["share_token"] = token
     entry["share_active"] = bool(active)
@@ -516,6 +629,106 @@ def get_page(slug: str, page_slug: str) -> str:
     return p.read_text() if p.exists() else ""
 
 
+# --------------------------------------------------------------------------- #
+# Private review comments — deliberately separate from Markdown/source previews
+# --------------------------------------------------------------------------- #
+def _comments(slug: str, page_slug: str) -> dict:
+    path = paths.bubble_page_comments_path(slug, page_slug)
+    if not path.exists():
+        return {"version": 1, "threads": []}
+    try:
+        data = _json.loads(path.read_text())
+        if isinstance(data, dict) and isinstance(data.get("threads"), list):
+            data.setdefault("version", 1)
+            return data
+    except Exception:  # noqa: BLE001 - a damaged sidecar must not break the report
+        pass
+    return {"version": 1, "threads": []}
+
+
+def _save_comments(slug: str, page_slug: str, data: dict) -> float:
+    path = paths.bubble_page_comments_path(slug, page_slug)
+    _atomic_write(path, _json.dumps(data, ensure_ascii=False, indent=2) + "\n")
+    touch_bubble(slug)
+    return path.stat().st_mtime
+
+
+def list_comments(slug: str, page_slug: str) -> dict:
+    """Return private threads for one page; callers must already enforce membership."""
+    return _comments(slug, page_slug)
+
+
+def comments_mtime(slug: str, page_slug: str) -> float:
+    path = paths.bubble_page_comments_path(slug, page_slug)
+    return path.stat().st_mtime if path.exists() else 0
+
+
+def create_comment(slug: str, page_slug: str, author: str, body: str, anchor: dict) -> dict:
+    body = str(body or "").strip()
+    quote = str((anchor or {}).get("quote") or "")
+    if not body:
+        raise ValueError("Comment text required.")
+    if not quote:
+        raise ValueError("Select text to comment on.")
+    now = _now_iso()
+    item = {"id": secrets.token_urlsafe(12), "page_slug": page_slug, "status": "open",
+            "created_at": now, "updated_at": now, "resolved_at": "", "resolved_by": "",
+            "anchor": {"quote": quote, "start": max(0, int((anchor or {}).get("start") or 0)),
+                       "prefix": str((anchor or {}).get("prefix") or "")[-96:],
+                       "suffix": str((anchor or {}).get("suffix") or "")[:96]},
+            "messages": [{"id": secrets.token_urlsafe(12), "author": author, "body": body,
+                          "created_at": now, "edited_at": ""}]}
+    data = _comments(slug, page_slug); data["threads"].append(item)
+    _save_comments(slug, page_slug, data)
+    return item
+
+
+def _thread(data: dict, thread_id: str) -> dict:
+    for item in data.get("threads", []):
+        if item.get("id") == thread_id:
+            return item
+    raise KeyError(thread_id)
+
+
+def reply_comment(slug: str, page_slug: str, thread_id: str, author: str, body: str) -> dict:
+    body = str(body or "").strip()
+    if not body: raise ValueError("Reply text required.")
+    data = _comments(slug, page_slug); item = _thread(data, thread_id); now = _now_iso()
+    msg = {"id": secrets.token_urlsafe(12), "author": author, "body": body,
+           "created_at": now, "edited_at": ""}
+    item.setdefault("messages", []).append(msg); item["updated_at"] = now
+    _save_comments(slug, page_slug, data); return msg
+
+
+def edit_comment_message(slug: str, page_slug: str, thread_id: str, message_id: str,
+                         author: str, body: str) -> dict:
+    body = str(body or "").strip()
+    if not body: raise ValueError("Comment text required.")
+    data = _comments(slug, page_slug); item = _thread(data, thread_id)
+    for msg in item.get("messages", []):
+        if msg.get("id") == message_id:
+            if msg.get("author") != author: raise PermissionError("You can only edit your own comments.")
+            now = _now_iso(); msg["body"] = body; msg["edited_at"] = now; item["updated_at"] = now
+            _save_comments(slug, page_slug, data); return msg
+    raise KeyError(message_id)
+
+
+def set_comment_status(slug: str, page_slug: str, thread_id: str, status: str, actor: str) -> dict:
+    if status not in {"open", "resolved"}: raise ValueError("Invalid comment status.")
+    data = _comments(slug, page_slug); item = _thread(data, thread_id); now = _now_iso()
+    item["status"] = status; item["updated_at"] = now
+    item["resolved_at"] = now if status == "resolved" else ""
+    item["resolved_by"] = actor if status == "resolved" else ""
+    _save_comments(slug, page_slug, data); return item
+
+
+def delete_comment(slug: str, page_slug: str, thread_id: str) -> bool:
+    data = _comments(slug, page_slug); before = len(data["threads"])
+    data["threads"] = [t for t in data["threads"] if t.get("id") != thread_id]
+    if len(data["threads"]) == before: return False
+    _save_comments(slug, page_slug, data); return True
+
+
 _WIKILINK_RE = re.compile(r"\[\[([^\]]+)\]\]")
 
 
@@ -557,6 +770,42 @@ def normalize_wikilinks(slug: str, content: str) -> str:
     return _WIKILINK_RE.sub(repl, content)
 
 
+_FENCED_RE = re.compile(r"(^[ \t]*(?:```|~~~).*?(?:^[ \t]*(?:```|~~~)[ \t]*$|\Z))", re.S | re.M)
+_DISPLAY_MATH_BLOCK_RE = re.compile(r"\$\$(?!\$)(.+?)\$\$", re.S)
+
+
+def normalize_display_math(content: str) -> str:
+    """Move a multi-line display-math opener onto its own line.
+
+    Toast UI's markdown parser claims ``$$`` for its own custom-block widgets, which has nothing
+    to do with math. A line matching ``$$`` followed by a letter *opens* a widget block, and only a
+    line that is exactly ``$$`` closes it. So ``$$K_\\theta = ...`` spread over several lines opens
+    a block whose closing ``,$$`` (at the end of the last line, not alone) never matches — and the
+    editor paints every remaining line of the page with the custom-block background.
+
+    A bare ``$$`` opener matches nothing, so moving the math down one line keeps the editor's
+    highlighting intact. Only blocks that actually trip the parser are touched: single-line math is
+    already safe (the widget rule ignores a ``$$…$$`` pair closed on its own line), and so is math
+    whose first character is not a letter, such as ``$$\\operatorname{Cay}(K)``. KaTeX ignores the
+    extra newline, so nothing about the rendered output changes. Idempotent.
+    """
+
+    def fix(text: str) -> str:
+        def repl(m: "re.Match") -> str:
+            inner = m.group(1)
+            if "\n" not in inner or inner.startswith("\n"):
+                return m.group(0)          # single-line, or already normalized
+            if not re.match(r"[ \t]*[a-zA-Z]", inner):
+                return m.group(0)          # never opens a Toast UI widget block
+            return "$$\n" + inner + "$$"
+
+        return _DISPLAY_MATH_BLOCK_RE.sub(repl, text)
+
+    # Fenced code shows math source verbatim; rewriting inside it would corrupt an example.
+    return "".join(part if i % 2 else fix(part)
+                   for i, part in enumerate(_FENCED_RE.split(content)))
+
+
 class PageConflict(Exception):
     """Page changed on disk since the editor loaded it.
 
@@ -574,7 +823,7 @@ class PageConflict(Exception):
 
 def save_page(slug: str, page_slug: str, content: str,
               base_mtime: "float | None" = None) -> float:
-    """Write a page atomically (after wikilink normalization); return its new mtime.
+    """Write a page atomically (after wikilink + display-math normalization); return its new mtime.
 
     If ``base_mtime`` is given, it's an optimistic-concurrency guard: when the file's
     current mtime differs (an external edit happened since it was loaded), raise
@@ -586,7 +835,7 @@ def save_page(slug: str, page_slug: str, content: str,
         disk_mtime = path.stat().st_mtime
         if abs(disk_mtime - base_mtime) > 1e-6:
             raise PageConflict(disk_mtime)
-    _atomic_write(path, normalize_wikilinks(slug, content))
+    _atomic_write(path, normalize_display_math(normalize_wikilinks(slug, content)))
     touch_bubble(slug)
     return path.stat().st_mtime
 
@@ -600,6 +849,27 @@ def create_page(slug: str, title: str) -> str:
     _save_manifest(slug, data)
     touch_bubble(slug)
     return page_slug
+
+
+def register_page(slug: str, page_slug: str, content: str) -> None:
+    """Register a Scientist-created page whose filename is already its stable slug.
+
+    Browser-created pages choose their slug from a human title.  Scientist instead starts with
+    ``pages/<page_slug>.md``, so this keeps that filename stable while using the same manifest
+    and link-normalization invariants as every other page creation path.
+    """
+    if not page_slug or slugify(page_slug) != page_slug:
+        raise ValueError("Invalid page slug.")
+    ensure_pages(slug)
+    data = manifest(slug)
+    if any(p["page_slug"] == page_slug for p in data.get("pages", [])):
+        raise ValueError("Page already exists.")
+    _atomic_write(paths.bubble_page_path(slug, page_slug),
+                  normalize_display_math(normalize_wikilinks(slug, content)))
+    data.setdefault("pages", []).append({"page_slug": page_slug,
+                                          "title": page_slug.replace("-", " ")})
+    _save_manifest(slug, data)
+    touch_bubble(slug)
 
 
 def rename_page(slug: str, page_slug: str, title: str) -> None:
@@ -678,6 +948,10 @@ def delete_page(slug: str, page_slug: str) -> bool:
         paths.bubble_page_path(slug, page_slug).unlink()
     except OSError:
         pass
+    try:
+        paths.bubble_page_comments_path(slug, page_slug).unlink()
+    except OSError:
+        pass
     touch_bubble(slug)
     return True
 
@@ -685,6 +959,28 @@ def delete_page(slug: str, page_slug: str) -> bool:
 # --------------------------------------------------------------------------- #
 # Figures / images
 # --------------------------------------------------------------------------- #
+_GIF_LOOP_EXTENSION = b"!\xff\x0bNETSCAPE2.0\x03\x01\x00\x00\x00"
+
+
+def ensure_looping_gif(data: bytes) -> bytes:
+    """Add GIF's standard infinite-loop extension when an animation lacks one.
+
+    Browsers honour an animated GIF's loop metadata; replacing an ``img`` source can restart
+    it, but cannot turn a single-play GIF into a repeating animation.  This lossless byte-level
+    insertion happens before the GIF's first block, after its optional global colour table.
+    """
+    if not (data.startswith((b"GIF87a", b"GIF89a")) and len(data) >= 13):
+        return data
+    if b"NETSCAPE2.0" in data or b"ANIMEXTS1.0" in data:
+        return data
+    packed = data[10]
+    global_table_size = 3 * (1 << ((packed & 0x07) + 1)) if packed & 0x80 else 0
+    offset = 13 + global_table_size
+    if offset > len(data):
+        return data
+    return data[:offset] + _GIF_LOOP_EXTENSION + data[offset:]
+
+
 def save_bubble_image(slug: str, filename: str, data: bytes) -> str:
     """Save an uploaded image under assets/ with a safe unique name; return its URL."""
     adir = paths.bubble_assets_dir(slug)
@@ -696,6 +992,8 @@ def save_bubble_image(slug: str, filename: str, data: bytes) -> str:
     while (adir / name).exists():
         name = f"{stem}-{i}{ext}"
         i += 1
+    if ext == ".gif":
+        data = ensure_looping_gif(data)
     (adir / name).write_bytes(data)
     return f"/api/bubbles/{slug}/assets/{name}"
 
@@ -705,6 +1003,48 @@ def list_bubble_images(slug: str) -> list[str]:
     if not adir.exists():
         return []
     return sorted(f"/api/bubbles/{slug}/assets/{p.name}" for p in adir.iterdir() if p.is_file())
+
+
+def list_bubble_assets(slug: str) -> list[dict]:
+    """Return file metadata for the bubble's private assets directory."""
+    adir = paths.bubble_assets_dir(slug)
+    if not adir.exists():
+        return []
+    out = []
+    for path in adir.iterdir():
+        if not path.is_file():
+            continue
+        out.append({"name": path.name, "size": path.stat().st_size,
+                    "url": f"/api/bubbles/{slug}/assets/{path.name}"})
+    return sorted(out, key=lambda item: item["name"].lower())
+
+
+def delete_bubble_asset(slug: str, filename: str) -> bool:
+    """Remove one file from a bubble's assets directory, never a directory/path traversal."""
+    safe = Path(filename).name
+    if safe != filename or not safe:
+        return False
+    path = paths.bubble_assets_dir(slug) / safe
+    if not path.is_file():
+        return False
+    path.unlink()
+    return True
+
+
+def read_bubble_text_asset(slug: str, filename: str, *, max_bytes: int = 1_000_000) -> str:
+    """Read a small UTF-8 text asset for the in-app file viewer."""
+    safe = Path(filename).name
+    if safe != filename or not safe:
+        raise ValueError("Bad filename.")
+    path = paths.bubble_assets_dir(slug) / safe
+    if not path.is_file():
+        raise FileNotFoundError(path)
+    if path.stat().st_size > max_bytes:
+        raise ValueError("This file is too large to view here. Download it instead.")
+    try:
+        return path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as e:
+        raise ValueError("This is not a UTF-8 text file. Open or download it instead.") from e
 
 
 # --------------------------------------------------------------------------- #

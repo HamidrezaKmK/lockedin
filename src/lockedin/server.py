@@ -10,6 +10,7 @@ would otherwise be at risk if Starlette resumed the generator on a different thr
 
 Launch with ``lockedin serve``.
 """
+import contextvars
 import json
 import logging
 import os
@@ -17,10 +18,13 @@ import queue
 import re
 import secrets
 import threading
+import time
 from pathlib import Path
 from typing import Optional
+from urllib.parse import quote
 
-from . import assets, auth, bubbles, landing, news, paths, service, tagger
+from . import assets, auth, bubbles, landing, models, paths, service, tagger, workspaces
+from . import scientist_sync
 
 
 # Display-math environments (numbered) vs theorem-like environments (boxed). Shared by the
@@ -31,6 +35,12 @@ _LABEL_RE = re.compile(r'\\label\{([^}]+)\}')
 
 
 _CITE_RE = re.compile(r'\\cite\{([^}]+)\}')
+_REQUEST_WORKSPACE: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "lockedin_request_workspace", default=None)
+# Keep this equal to ``scientist_cli.SCIENTIST_CLIENT_VERSION``. Bump both when a Scientist
+# release needs an installed client refresh; the dependency-free installed client cannot import
+# package metadata from this server.
+SCIENTIST_CLIENT_VERSION = "2026.08.09.6"
 
 
 def _build_refs(pages: "list[dict]", bibliography: "dict | None" = None) -> dict:
@@ -51,6 +61,9 @@ def _build_refs(pages: "list[dict]", bibliography: "dict | None" = None) -> dict
     thm: dict[str, dict] = {}
     thm_counts: dict[str, int] = {}
     thm_start: dict[str, dict] = {}
+    fig: dict[str, dict] = {}
+    fig_idx = 0
+    fig_start: dict[str, int] = {}
     bibliography = bibliography or {}
     cite_order: list[str] = []
     cite_map: dict[str, int] = {}
@@ -59,10 +72,17 @@ def _build_refs(pages: "list[dict]", bibliography: "dict | None" = None) -> dict
     theo_re = re.compile(
         r'\\begin\{(' + _THEO_ENVS + r')\}(?:\[([^\]]*)\])?([\s\S]*?)\\end\{(?:' + _THEO_ENVS + r')\}',
         re.IGNORECASE)
+    figure_re = re.compile(r'!\[([^\]\n]*)\]\([^)]+\)')
     for pg in pages:
         slug = pg["page_slug"]
         content = pg.get("content", "") or ""
         thm_start[slug] = dict(thm_counts)
+        fig_start[slug] = fig_idx
+        for fm in figure_re.finditer(content):
+            fig_idx += 1
+            label = _LABEL_RE.search(fm.group(1))
+            if label and label.group(1) not in fig:
+                fig[label.group(1)] = {"number": fig_idx, "page_slug": slug}
         # Equations: collect $$ blocks and display environments, count labels in document order.
         cands: list[tuple[int, str]] = []
         for m in dd_re.finditer(content):
@@ -91,8 +111,18 @@ def _build_refs(pages: "list[dict]", bibliography: "dict | None" = None) -> dict
                 if key in bibliography and key not in cite_map:
                     cite_map[key] = len(cite_order) + 1
                     cite_order.append(key)
-    return {"eq": eq, "thm": thm, "thmStart": thm_start,
+    return {"eq": eq, "thm": thm, "thmStart": thm_start, "fig": fig, "figStart": fig_start,
             "citeMap": cite_map, "citeOrder": cite_order, "bibliography": bibliography}
+
+
+def _preprocess_figure_refs(md: str, figure_labels: dict) -> str:
+    """Render a figure reference as a styled, non-navigating number."""
+    def replace(match: "re.Match") -> str:
+        figure = figure_labels.get(match.group(1))
+        if not figure:
+            return '<span class="fig-ref">Figure ?</span>'
+        return f'<span class="fig-ref">Figure {figure["number"]}</span>'
+    return re.sub(r'\\figref\{([^}]+)\}', replace, md)
 
 
 def _bubble_bibliography(home, slug: str) -> dict:
@@ -265,6 +295,7 @@ def _references_markdown(refs: dict) -> str:
 
 def _render_preview_html(*, name: str, page: str, all_pages: list, content: str, slug: str,
                          link_base: str, asset_base: str, show_back: bool,
+                         workspace_id: "str | None" = None,
                          todos: "dict | None" = None,
                          todo_link_base: "str | None" = None,
                          macros: "dict | None" = None,
@@ -281,8 +312,15 @@ def _render_preview_html(*, name: str, page: str, all_pages: list, content: str,
                      page slug, used to look up its theorem-counter offset. If omitted, refs are
                      built from this page alone (single-page fallback for tests/standalone use).
     """
+    # Private preview pages receive their workspace through a URL query parameter because a
+    # new browser tab cannot carry the SPA's request header. Keep it on every page/wikilink;
+    # otherwise the first preview page is right but navigation falls back to Personal workspace.
+    def page_url(page_slug: str) -> str:
+        url = f"{link_base}/{page_slug}"
+        return f"{url}?workspace={quote(workspace_id, safe='')}" if workspace_id else url
+
     nav_links = " &nbsp;|&nbsp; ".join(
-        f'<a href="{link_base}/{p["page_slug"]}">{p["title"]}</a>' for p in all_pages)
+        f'<a href="{page_url(p["page_slug"])}">{p["title"]}</a>' for p in all_pages)
 
     def resolve_wikilink(m):
         raw = m.group(1).strip()
@@ -297,7 +335,7 @@ def _render_preview_html(*, name: str, page: str, all_pages: list, content: str,
                       if p["page_slug"] == target or p["title"].lower() == target.lower()), None)
         if match:
             label = display if display else match["title"]
-            return f'[{label}]({link_base}/{match["page_slug"]})'
+            return f'[{label}]({page_url(match["page_slug"])})'
         return m.group(0)
 
     # Resolve @<id> TODO references to a label "@<id> <title>" (strikethrough if done). With a
@@ -328,12 +366,16 @@ def _render_preview_html(*, name: str, page: str, all_pages: list, content: str,
         refs = _build_refs([{"page_slug": page, "content": content}])
     eq_map = refs.get("eq", {})
     thm_map = refs.get("thm", {})
+    fig_map = refs.get("fig", {})
     thm_start = refs.get("thmStart", {}).get(page, {})
+    fig_start = refs.get("figStart", {}).get(page, 0)
     content = _preprocess_equations(content, eq_map, thm_map)
     content, theo_store = _preprocess_theorems(content, thm_map, thm_start)
+    content = _preprocess_figure_refs(content, fig_map)
     content = _preprocess_citations(content, refs)
     for entry in theo_store:
         entry["inner"] = _preprocess_citations(entry["inner"], refs)
+        entry["inner"] = _preprocess_figure_refs(entry["inner"], fig_map)
     content += _references_markdown(refs)
     md = content
     # point figure URLs at the right (possibly public) asset route
@@ -421,6 +463,9 @@ pre{{background:var(--panel);padding:14px;border-radius:10px;overflow:auto;
      box-shadow:0 2px 12px var(--shadow)}}
 pre code{{font-family:var(--font-mono);font-size:13px}}
 a{{color:var(--accent)}} img{{max-width:100%;border-radius:8px;box-shadow:0 2px 12px var(--shadow)}}
+figure{{margin:1.1em 0;text-align:center}} figure img{{display:block;margin:0 auto}}
+figcaption{{margin:.55em auto 0;max-width:92%;font-style:italic;line-height:1.45;color:var(--muted)}}
+.figure-number{{font-style:normal;font-weight:600;color:var(--ink)}}
 table{{display:block;width:max-content;max-width:100%;overflow-x:auto;border-collapse:collapse;margin:14px 0;font-size:15px}}
 th,td{{border:1px solid var(--line);padding:7px 11px;text-align:left}}
 thead th{{background:var(--panel);font-family:var(--font-ui);font-size:13px;font-weight:600}}
@@ -434,11 +479,12 @@ blockquote p{{margin:5px 0}}
 /* An equation's own number shares the accent + tabular figures with its cross-references. */
 .katex .tag,.katex-display .tag{{color:var(--accent);font-feature-settings:"tnum" 1;font-variant-numeric:tabular-nums}}
 /* Cross-references: colored inline labels that go quiet on hover. */
-.eq-ref,.thm-ref,.cite-ref{{font-family:var(--font-ui);font-weight:600;color:var(--accent);
+.eq-ref,.thm-ref,.fig-ref,.cite-ref{{font-family:var(--font-ui);font-weight:600;color:var(--accent);
   font-feature-settings:"tnum" 1;font-variant-numeric:tabular-nums;white-space:nowrap;
   padding:0 .14em;border-radius:4px;transition:color .14s ease}}
-.eq-ref:hover,.thm-ref:hover,.cite-ref:hover{{color:var(--ink)}}
+.eq-ref:hover,.thm-ref:hover,.fig-ref:hover,.cite-ref:hover{{color:var(--ink)}}
 .text-color{{color:var(--tc)}}
+.centered-text{{text-align:center}}
 .bibitem{{display:grid;grid-template-columns:auto 1fr;gap:.65em;margin:.5em 0;line-height:1.55}}
 .bibnum{{font-family:var(--font-ui);font-weight:700;color:var(--accent);
   font-feature-settings:"tnum" 1;font-variant-numeric:tabular-nums}}
@@ -497,11 +543,13 @@ blockquote p{{margin:5px 0}}
 <button id="theme-cycle" onclick="cycleTheme()" title="Cycle theme">🌙</button>
 <nav><b>{name}</b> &nbsp;|&nbsp; {nav_links}</nav>
 <div id="content"></div>
-<footer class="page-credit">Made with 💜 + 🤖 by <a href="https://github.com/HamidrezaKmK" target="_blank" rel="noopener">HamidrezaKmK</a></footer>
+<footer class="page-credit">Made with 💜 + 🤖 by a PhD student</footer>
 <div id="copied">🔗 Link copied</div>
 <script>
 (function(){{
-  const THEMES={json.dumps(themes or list(service.THEMES))};
+  // Standalone owner previews and public shares intentionally stay restrained: they only
+  // offer the universal Dark/Light pair, independent of the workspace's editor theme choices.
+  const THEMES={json.dumps(["dark", "light"])};
   const LABELS={{dark:"🌙",light:"☀️",pink:"🦄",techno:"🤖",pearl:"⚪"}};
   window.applyPreviewTheme=function(name){{
     const theme=THEMES.includes(name)?name:THEMES[0];
@@ -523,15 +571,21 @@ blockquote p{{margin:5px 0}}
 // Test marker: marked.parse(s) is the intended ordering; options are passed explicitly below.
 // Mirrors renderMarkdown() in index.html so preview and split-view are always identical.
 (function(){{
-  const store=[]; let s={repr(md)};
+  const store=[], captionStore=[]; let s={repr(md)};
   const _macros={json.dumps(macros or {})};
   const _theoStore={json.dumps(theo_store)};
+  const _figRefs={json.dumps(fig_map)};
+  let _nextFigure={int(fig_start)};
   const escHtml=t=>String(t||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  const escAttr=t=>escHtml(t).replace(/"/g,"&quot;");
   const renderTextColor=src=>src.replace(/\\\\textcolor\\{{(#[0-9a-fA-F]{{3}}(?:[0-9a-fA-F]{{3}})?)\\}}\\{{([^{{}}\\n]*)\\}}/g,
     (_,color,text)=>'<span class="text-color" style="--tc:'+color+'">'+escHtml(text)+'</span>');
   const renderMath=it=>{{ try{{ return katex.renderToString(it.src,{{displayMode:it.display,macros:_macros,throwOnError:false}}); }}
     catch(e){{ return '<span style="color:#ff7a7a">'+it.src+'</span>'; }} }};
   const stash=(re,display)=>{{ s=s.replace(re,(m,p1)=>{{ store.push({{src:p1,display}}); return "@@M"+(store.length-1)+"@@"; }}); }};
+  // marked places image alt text in an HTML attribute. Preserve it while math is stashed so an
+  // inline `$...$` caption is restored as text and rendered below the figure, not inside HTML.
+  s=s.replace(/!\[([^\]\\n]*)\](?=\()/g,(_,caption)=>{{ captionStore.push(caption); return "![@@LI_CAP"+(captionStore.length-1)+"@@]"; }});
   s=s.replace(/(\\\\begin\\{{(?:align\\*?|alignat\\*?|gather\\*?|multline\\*?|equation\\*?)\\}}[\\s\\S]*?\\\\end\\{{(?:align\\*?|alignat\\*?|gather\\*?|multline\\*?|equation\\*?)\\}})/g,(m,p1)=>{{ store.push({{src:p1,display:true}}); return "@@M"+(store.length-1)+"@@"; }});
   stash(/\\$\\$([\\s\\S]+?)\\$\\$/g,true);
   stash(/\\\\\\[([\\s\\S]+?)\\\\\\]/g,true);
@@ -540,6 +594,7 @@ blockquote p{{margin:5px 0}}
   s=renderTextColor(s);
   let html=marked.parse(s,{{breaks:false}});
   html=html.replace(/@@M(\\d+)@@/g,(m,i)=>renderMath(store[+i]));
+  html=html.replace(/@@LI_CAP(\\d+)@@/g,(_,i)=>escAttr(captionStore[+i]||""));
   // Restore theorem/lemma/proof blocks: render inner content with math
   html=html.replace(/<p>@@TH(\\d+)@@<\\/p>/g,(m,i)=>{{
     const t=_theoStore[+i];
@@ -556,7 +611,43 @@ blockquote p{{margin:5px 0}}
     const qed=t.proof?'<div class="math-env-qed">∎</div>':'';
     return '<div class="math-env '+t.env+'"><div class="math-env-title">'+t.title+'</div>'+ih+qed+'</div>';
   }});
-  document.getElementById("content").innerHTML=html;
+  const content=document.getElementById("content");
+  content.innerHTML=html;
+  // A Markdown image's alt text is its figure caption in previews and public shares.
+  content.querySelectorAll("p > img:only-child[alt]").forEach(img=>{{
+    _nextFigure++;
+    const rawCaption=img.getAttribute("alt")||"";
+    const labelMatch=/\\\\label\\{{([^}}]+)\\}}/.exec(rawCaption);
+    const label=labelMatch&&labelMatch[1];
+    const caption=rawCaption.replace(/\\\\label\\{{[^}}]+\\}}/g,"").trim();
+    const number=label&&_figRefs[label]?_figRefs[label].number:_nextFigure;
+    const paragraph=img.parentElement, figure=document.createElement("figure");
+    if(label)figure.id="fig-"+encodeURIComponent(label);
+    paragraph.replaceWith(figure); figure.append(img);
+    const figcaption=document.createElement("figcaption");
+    const marker=document.createElement("span"); marker.className="figure-number";
+    marker.textContent="Figure "+number+": "; figcaption.append(marker);
+    let last=0, match; const math=/[$]([^$\\n]+?)[$]/g;
+    while((match=math.exec(caption))!==null){{
+      if(match.index>last)figcaption.append(document.createTextNode(caption.slice(last,match.index)));
+      try{{
+        const node=document.createElement("span");
+        node.innerHTML=katex.renderToString(match[1],{{displayMode:false,macros:_macros,throwOnError:false}});
+        figcaption.append(node);
+      }}catch(e){{ figcaption.append(document.createTextNode(match[0])); }}
+      last=math.lastIndex;
+    }}
+    if(last<caption.length)figcaption.append(document.createTextNode(caption.slice(last)));
+    figure.append(figcaption);
+  }});
+  // Every rendered bubble preview starts GIF figures at their first frame. The GIF's embedded
+  // loop setting still controls repeated playback after that.
+  content.querySelectorAll("img[src]").forEach(img=>{{
+    const src=img.getAttribute("src")||"";
+    if(!/\\.gif(?:[?#]|$)/i.test(src))return;
+    img.src="";
+    img.src=src+(src.includes("?")?"&":"?")+"lockedin_gif="+Date.now();
+  }});
 }})();
 // Give every heading a stable id + a click-to-copy section anchor; deep-link via #id.
 (function(){{
@@ -593,6 +684,7 @@ COOKIE = "lockedin_session"
 
 PUBLIC_ORIGINS = [o.strip() for o in os.environ.get("LOCKEDIN_CORS_ORIGINS", "").split(",") if o.strip()]
 CROSS_SITE = bool(PUBLIC_ORIGINS)
+_SCIENTIST_DEVICES: dict[str, dict] = {}
 
 # Mark the session cookie Secure (HTTPS-only) by default — correct behind Cloudflare and on
 # localhost/127.0.0.1 (treated as secure contexts by modern browsers). Set
@@ -612,13 +704,37 @@ def build_app():
     from pydantic import BaseModel
 
     app = FastAPI(title="lockedin — research assistant")
-    landing_content = landing.load_landing()
+    # One-time-compatible, idempotent repair for share links created before content became
+    # workspace-owned. Existing links retain their tokens and now target Personal workspaces.
+    service.migrate_share_index_to_workspaces()
+    service.migrate_overleaf_fields()
     if CROSS_SITE:
         app.add_middleware(CORSMiddleware, allow_origins=PUBLIC_ORIGINS,
                            allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
     else:
         app.add_middleware(CORSMiddleware, allow_origins=["*"],
                            allow_methods=["*"], allow_headers=["*"])
+
+    @app.middleware("http")
+    async def workspace_request_context(request, call_next):
+        """Make the selected workspace available to the entire request.
+
+        Setting a ContextVar in a synchronous FastAPI dependency does not reliably propagate to
+        the synchronous endpoint handler. The ASGI request context does.
+        """
+        workspace_id = ((request.headers.get("X-LockedIn-Workspace")
+                         or request.query_params.get("workspace") or "").strip() or None)
+        token = _REQUEST_WORKSPACE.set(workspace_id)
+        user = auth.session_user(request.cookies.get("lockedin_session"))
+        if not user:
+            bearer = request.headers.get("authorization", "").removeprefix("Bearer ").strip()
+            user = auth.scientist_token_user(bearer) if bearer else None
+        account_home = paths.user_home(user) if user else None
+        try:
+            with models.use_account_home(account_home):
+                return await call_next(request)
+        finally:
+            _REQUEST_WORKSPACE.reset(token)
 
     # ---- request models ----
     class Credentials(BaseModel):
@@ -652,7 +768,6 @@ def build_app():
         notes: Optional[str] = None
         url_source: Optional[str] = None
         attention_flag: Optional[bool] = None
-        suggested_tags: Optional[list[str]] = None
 
     class AssetBibtexIn(BaseModel):
         bibliography: str = ""
@@ -664,6 +779,7 @@ def build_app():
         url: str
         title: str = ""
         tags: str = ""
+        bibliography: str = ""
 
     class BubbleIn(BaseModel):
         name: str
@@ -674,11 +790,21 @@ def build_app():
     class BubbleRenameIn(BaseModel):
         name: str
 
+    class BubbleArchiveIn(BaseModel):
+        archived: bool
+
+    class OverleafIn(BaseModel):
+        project: str = ""
+
     class AddPdfIn(BaseModel):
         pdf_id: str
 
     class PaperScoreIn(BaseModel):
         score: int
+
+    class MigratePapersIn(BaseModel):
+        source: str
+        items: list[dict] = []
 
     class PageContentIn(BaseModel):
         content: str
@@ -698,6 +824,19 @@ def build_app():
 
     class PageOrderIn(BaseModel):
         page_slugs: list[str]
+
+    class CommentCreateIn(BaseModel):
+        body: str
+        anchor: dict
+
+    class CommentReplyIn(BaseModel):
+        body: str
+
+    class CommentEditIn(BaseModel):
+        body: str
+
+    class CommentStatusIn(BaseModel):
+        status: str
 
     class ChatIn(BaseModel):
         messages: list[dict]
@@ -722,15 +861,6 @@ def build_app():
     class AestheticsConfigIn(BaseModel):
         themes: list[str] = []
 
-    class NewsInstructionsIn(BaseModel):
-        instructions: list[dict]
-
-    class NewsChatIn(BaseModel):
-        message: str = ""
-        model: Optional[str] = None
-        since: Optional[str] = None
-        until: Optional[str] = None
-
     class TodoIn(BaseModel):
         title: str
         note: str = ""
@@ -740,24 +870,99 @@ def build_app():
         note: Optional[str] = None
         done: Optional[bool] = None
 
+    class ScientistDeviceIn(BaseModel):
+        client_name: str = "lockedin-scientist"
+
+    class ScientistPushIn(BaseModel):
+        writes: list[dict] = []
+
+    class ScientistDeleteIn(BaseModel):
+        deletes: list[dict] = []
+
+    class ScientistPageCreateIn(BaseModel):
+        bubble: str
+        page_slug: str
+        content_b64: str
+        base_revision: str
+
+    class ScientistFilesIn(BaseModel):
+        paths: list[str] = []
+
+    class WorkspaceIn(BaseModel):
+        name: str
+
+    class WorkspaceMemberIn(BaseModel):
+        username: str
+
+    class WorkspaceRoleIn(BaseModel):
+        role: str
+
     # ---- auth plumbing ----
-    def current_user(lockedin_session: Optional[str] = Cookie(default=None)) -> str:
+    def current_user(lockedin_session: Optional[str] = Cookie(default=None),
+                     x_lockedin_workspace: Optional[str] = Header(default=None),
+                     workspace: Optional[str] = None) -> str:
         user = auth.session_user(lockedin_session)
         if not user:
             raise HTTPException(status_code=401, detail="Please log in.")
         if not auth.is_approved(user):
             auth.end_session(lockedin_session)
             raise HTTPException(status_code=403, detail="Account is waiting for approval.")
+        accounts = auth.load_accounts()
+        account = accounts.get(user, {})
+        personal = workspaces.migrate_legacy(user, account)
+        if account.get("personal_workspace_id") != personal["id"]:
+            accounts[user]["personal_workspace_id"] = personal["id"]
+            auth.save_accounts(accounts)
+        workspace_id = (x_lockedin_workspace or workspace or personal["id"]).strip()
+        try:
+            workspaces.resolve(user, workspace_id)
+        except PermissionError as e:
+            raise HTTPException(status_code=403, detail=str(e))
+        except workspaces.WorkspaceError as e:
+            raise HTTPException(status_code=404, detail=str(e))
         return user
 
     def home_of(user: str) -> Path:
-        return paths.user_home(user)
+        return workspaces.workspace_home(active_workspace_id(user))
 
-    def require_news(user: str = Depends(current_user)) -> str:
-        """Gate the premium news feature; viewing is allowed, crawling additionally needs the switch."""
-        if not auth.is_news_enabled(user):
-            raise HTTPException(status_code=403,
-                                detail="News is a premium feature not enabled for this account.")
+    def active_workspace_id(user: str) -> str:
+        """The request selection, or the user's mandatory Personal workspace."""
+        selected = _REQUEST_WORKSPACE.get()
+        if selected:
+            return selected
+        accounts = auth.load_accounts()
+        personal = workspaces.migrate_legacy(user, accounts.get(user, {}))
+        if accounts.get(user, {}).get("personal_workspace_id") != personal["id"]:
+            accounts[user]["personal_workspace_id"] = personal["id"]
+            auth.save_accounts(accounts)
+        return personal["id"]
+
+    def scientist_user(authorization: Optional[str] = Header(default=None),
+                       x_lockedin_workspace: Optional[str] = Header(default=None),
+                       x_lockedin_scientist_version: Optional[str] = Header(default=None),
+                       workspace: Optional[str] = None) -> str:
+        if x_lockedin_scientist_version != SCIENTIST_CLIENT_VERSION:
+            raise HTTPException(
+                status_code=426,
+                detail=("LockedIn Scientist is out of date. Reinstall the newest version, then retry. "
+                        "macOS/Linux: curl -fsSL "
+                        "https://raw.githubusercontent.com/HamidrezaKmK/lockedin/main/install.sh | bash; "
+                        "Windows PowerShell: irm "
+                        "https://raw.githubusercontent.com/HamidrezaKmK/lockedin/main/install.ps1 | iex"),
+            )
+        token = (authorization or "").removeprefix("Bearer ").strip()
+        user = auth.scientist_token_user(token)
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid Scientist token.")
+        accounts = auth.load_accounts(); rec = accounts.get(user, {})
+        personal = workspaces.migrate_legacy(user, rec)
+        workspace_id = (x_lockedin_workspace or workspace or personal["id"]).strip()
+        try:
+            workspaces.resolve(user, workspace_id)
+        except PermissionError as e:
+            raise HTTPException(status_code=403, detail=str(e))
+        except workspaces.WorkspaceError as e:
+            raise HTTPException(status_code=404, detail=str(e))
         return user
 
     def _auth_response(user: str):
@@ -812,7 +1017,9 @@ def build_app():
 
     @app.get("/api/landing")
     def get_landing():
-        return JSONResponse(landing_content, headers={"Cache-Control": "no-cache"})
+        # This is deliberately read at request time: landing.yaml is the site's editable public
+        # copy, so changing it should be visible after a browser refresh without a deploy/restart.
+        return JSONResponse(landing.load_landing(), headers={"Cache-Control": "no-cache"})
 
     @app.get("/api/help")
     def get_help():
@@ -881,7 +1088,10 @@ def build_app():
         p = service.bubble_asset_path(home, slug, safe)
         if not p.exists():
             raise HTTPException(status_code=404, detail="No such image.")
-        return FileResponse(p, headers={"Content-Disposition": "inline"})
+        # Share URLs are explicitly public capabilities and may be cached independently of the
+        # authenticated owner route below.
+        return FileResponse(p, headers={"Content-Disposition": "inline",
+                                        "Cache-Control": "public, max-age=3600"})
 
     # ---- auth ----
     @app.post("/api/signup")
@@ -890,7 +1100,9 @@ def build_app():
             user = auth.create_user(creds.username, creds.password)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
-        service.ensure_workspace(home_of(user))
+        rec = auth.load_accounts().get(user, {})
+        personal = workspaces.ensure_personal(user, rec)
+        service.ensure_workspace(workspaces.workspace_home(personal["id"]))
         return _auth_response(user)
 
     @app.post("/api/login")
@@ -939,10 +1151,79 @@ def build_app():
     def me(user: str = Depends(current_user)):
         rec = auth.load_accounts().get(user, {})
         return {"user": user, "model": service.get_model_config(home_of(user)),
-                "news_enabled": auth.is_news_enabled(user), "premium": auth.is_premium(user),
+                "premium": auth.is_premium(user),
                 "premium_requested_at": rec.get("premium_requested_at", ""),
                 "admin": auth.is_admin(user),
-                "themes": service.load_aesthetics_config(home_of(user))["themes"]}
+                "themes": service.load_aesthetics_config(home_of(user))["themes"],
+                "workspace_id": active_workspace_id(user),
+                "personal_workspace_id": rec.get("personal_workspace_id", "")}
+
+    # ---- workspaces ----------------------------------------------------------
+    @app.get("/api/workspaces")
+    def list_workspaces(user: str = Depends(current_user)):
+        rec = auth.load_accounts().get(user, {})
+        return {"workspaces": workspaces.list_for_user(user),
+                "personal_workspace_id": rec.get("personal_workspace_id", ""),
+                "active_workspace_id": active_workspace_id(user)}
+
+    @app.post("/api/workspaces")
+    def create_workspace(body: WorkspaceIn, user: str = Depends(current_user)):
+        try:
+            item = workspaces.create(user, body.name, kind="shared")
+        except workspaces.WorkspaceError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        service.ensure_workspace(workspaces.workspace_home(item["id"]))
+        return {"workspace": item}
+
+    @app.get("/api/workspaces/users")
+    def workspace_invitable_users(user: str = Depends(current_user)):
+        """Approved accounts an admin may add to the active workspace."""
+        try:
+            workspaces.resolve(user, active_workspace_id(user), admin=True)
+        except PermissionError as e:
+            raise HTTPException(status_code=403, detail=str(e))
+        return {"users": [row["username"] for row in auth.list_users()
+                          if row.get("approved") and row["username"] != user]}
+
+    @app.get("/api/workspaces/{workspace_id}/members")
+    def workspace_members(workspace_id: str, user: str = Depends(current_user)):
+        try:
+            return {"members": workspaces.members(user, workspace_id)}
+        except PermissionError as e:
+            raise HTTPException(status_code=403, detail=str(e))
+        except workspaces.WorkspaceError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    @app.post("/api/workspaces/{workspace_id}/members")
+    def add_workspace_member(workspace_id: str, body: WorkspaceMemberIn,
+                             user: str = Depends(current_user)):
+        if not auth.is_approved(body.username.strip().lower()):
+            raise HTTPException(status_code=400, detail="No approved LockedIn account has that username.")
+        try:
+            return {"workspace": workspaces.invite(user, workspace_id, body.username)}
+        except PermissionError as e:
+            raise HTTPException(status_code=403, detail=str(e))
+        except workspaces.WorkspaceError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    @app.put("/api/workspaces/{workspace_id}/members/{username}")
+    def set_workspace_member_role(workspace_id: str, username: str, body: WorkspaceRoleIn,
+                                  user: str = Depends(current_user)):
+        try:
+            return {"workspace": workspaces.set_role(user, workspace_id, username, body.role)}
+        except PermissionError as e:
+            raise HTTPException(status_code=403, detail=str(e))
+        except workspaces.WorkspaceError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    @app.delete("/api/workspaces/{workspace_id}/members/{username}")
+    def delete_workspace_member(workspace_id: str, username: str, user: str = Depends(current_user)):
+        try:
+            return {"workspace": workspaces.remove_member(user, workspace_id, username)}
+        except PermissionError as e:
+            raise HTTPException(status_code=403, detail=str(e))
+        except workspaces.WorkspaceError as e:
+            raise HTTPException(status_code=400, detail=str(e))
 
     @app.post("/api/account")
     def update_account(body: AccountIn, user: str = Depends(current_user)):
@@ -1054,60 +1335,6 @@ def build_app():
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
-    # ---- news (premium background crawler) ----
-    @app.get("/api/news")
-    def get_news(user: str = Depends(require_news)):
-        return service.list_news(home_of(user))
-
-    @app.get("/api/news/status")
-    def news_status(user: str = Depends(require_news)):
-        return service.news_status(home_of(user))
-
-    @app.get("/api/news/models")
-    def news_models(user: str = Depends(require_news)):
-        return {"models": service.news_models()}
-
-    @app.get("/api/news/instructions")
-    def get_news_instructions(user: str = Depends(require_news)):
-        return {"instructions": service.get_news_instructions(home_of(user))}
-
-    @app.put("/api/news/instructions")
-    def put_news_instructions(body: NewsInstructionsIn, user: str = Depends(require_news)):
-        return {"instructions": service.save_news_instructions(home_of(user), body.instructions)}
-
-    @app.get("/api/news/session")
-    def news_session(user: str = Depends(require_news)):
-        return {"session": service.news_session(home_of(user))}
-
-    @app.get("/api/news/chats")
-    def news_chats_list(user: str = Depends(require_news)):
-        return {"chats": service.list_news_chats(home_of(user))}
-
-    @app.get("/api/news/chats/{sid}")
-    def news_chat_get(sid: str, user: str = Depends(require_news)):
-        rec = service.get_news_chat(home_of(user), sid)
-        if not rec:
-            raise HTTPException(status_code=404, detail="No such crawl chat.")
-        return {"chat": rec}
-
-    @app.delete("/api/news/chats/{sid}")
-    def news_chat_delete(sid: str, user: str = Depends(require_news)):
-        service.delete_news_chat(home_of(user), sid)
-        return {"ok": True}
-
-    @app.post("/api/news/chat")
-    def news_chat(body: NewsChatIn, user: str = Depends(require_news)):
-        if not news.news_globally_enabled():
-            raise HTTPException(status_code=503,
-                                detail="News is off. Start the server with LOCKEDIN_NEWS_ENABLED=1.")
-        home = home_of(user)
-        return _stream(lambda: service.news_chat(home, body.message, body.model,
-                                                 body.since, body.until))
-
-    @app.post("/api/news/accept")
-    def news_accept(user: str = Depends(require_news)):
-        return service.accept_news(home_of(user))
-
     @app.post("/api/slack/ask")
     def slack_ask(body: SlackAskIn, user: str = Depends(current_user)):
         """Plain-text Slack Q&A using the logged-in user's configured model and entitlements."""
@@ -1124,16 +1351,6 @@ def build_app():
                 answer = ev.get("chat_text") or ev.get("full_response") or answer
         return {"answer": answer.strip()}
 
-    @app.post("/api/news/discard")
-    def news_discard(user: str = Depends(require_news)):
-        return service.discard_news(home_of(user))
-
-    @app.post("/api/news/{item_id}/dismiss")
-    def dismiss_news(item_id: str, user: str = Depends(require_news)):
-        if not service.dismiss_news(home_of(user), item_id):
-            raise HTTPException(status_code=404, detail="No such news item.")
-        return {"ok": True}
-
     # ---- assets ----
     @app.get("/api/assets")
     def list_assets(user: str = Depends(current_user)):
@@ -1147,18 +1364,29 @@ def build_app():
         title: str = Form(""),
         tags: str = Form(""),
         url_source: str = Form(""),
+        bibliography: str = Form(""),
     ):
         if not file.filename:
             raise HTTPException(status_code=400, detail="No file provided.")
+        if not title.strip():
+            raise HTTPException(status_code=400, detail="A title is required.")
         pdf_bytes = await file.read()
         tag_list = [t.strip() for t in tags.split(",") if t.strip()]
         home = home_of(user)
-        pdf_id = service.save_asset(home, pdf_bytes, file.filename, title=title,
-                                    tags=tag_list, url_source=url_source)
+        try:
+            pdf_id = service.save_asset(home, pdf_bytes, file.filename, title=title,
+                                        tags=tag_list, url_source=url_source,
+                                        bibliography=bibliography)
+        except assets.DuplicateBibKeyError as e:
+            raise HTTPException(status_code=409, detail=str(e))
+        except assets.BibtexError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
         # any user-supplied tag becomes an approved bubble immediately
         if tag_list:
             service.register_user_tags(home, tag_list)
-        background_tasks.add_task(tagger.run_ingest, home, pdf_id, bool(tag_list))
+        background_tasks.add_task(tagger.run_ingest, home, pdf_id)
         return {"pdf_id": pdf_id, "attention_flag": service.get_asset(home, pdf_id).get("attention_flag")}
 
     @app.post("/api/assets/upload-url")
@@ -1170,10 +1398,17 @@ def build_app():
         url = body.url.strip()
         if not url:
             raise HTTPException(status_code=400, detail="No URL provided.")
+        if not body.title.strip():
+            raise HTTPException(status_code=400, detail="A title is required.")
         tag_list = [t.strip() for t in body.tags.split(",") if t.strip()]
         home = home_of(user)
         try:
-            pdf_id = service.fetch_and_save_asset(home, url, title=body.title, tags=tag_list)
+            pdf_id = service.fetch_and_save_asset(home, url, title=body.title, tags=tag_list,
+                                                   bibliography=body.bibliography)
+        except assets.DuplicateBibKeyError as e:
+            raise HTTPException(status_code=409, detail=str(e))
+        except assets.BibtexError as e:
+            raise HTTPException(status_code=400, detail=str(e))
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
         except Exception as e:
@@ -1181,7 +1416,7 @@ def build_app():
         # any user-supplied tag becomes an approved bubble immediately
         if tag_list:
             service.register_user_tags(home, tag_list)
-        background_tasks.add_task(tagger.run_ingest, home, pdf_id, bool(tag_list))
+        background_tasks.add_task(tagger.run_ingest, home, pdf_id)
         return {"pdf_id": pdf_id, "attention_flag": service.get_asset(home, pdf_id).get("attention_flag")}
 
     @app.get("/api/assets/{pdf_id}")
@@ -1230,6 +1465,19 @@ def build_app():
     def get_summary(pdf_id: str, user: str = Depends(current_user)):
         return {"summary": service.asset_summary(home_of(user), pdf_id)}
 
+    @app.post("/api/assets/{pdf_id}/resummarize")
+    def resummarize_asset(pdf_id: str, user: str = Depends(current_user)):
+        try:
+            return {"summary": service.resummarize_asset(home_of(user), pdf_id)}
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail="No such asset.")
+        except service.ModelUnavailableError as e:
+            raise HTTPException(status_code=503, detail=str(e))
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"Could not re-summarize this paper: {e}")
+
     @app.get("/api/assets/{pdf_id}/pdf")
     def get_pdf(pdf_id: str, user: str = Depends(current_user)):
         p = service.asset_pdf_path(home_of(user), pdf_id)
@@ -1238,14 +1486,104 @@ def build_app():
         return FileResponse(p, media_type="application/pdf",
                             headers={"Content-Disposition": "inline"})
 
-    @app.get("/api/attention")
-    def attention(user: str = Depends(current_user)):
-        return {"assets": service.attention_queue(home_of(user))}
+    # ---- installed Scientist client -------------------------------------------------
+    @app.post("/api/scientist/v2/device")
+    def scientist_device_start(body: ScientistDeviceIn):
+        code = secrets.token_urlsafe(18)
+        _SCIENTIST_DEVICES[code] = {"expires": time.time() + 600,
+                                    "client_name": body.client_name[:120], "user": "", "token": ""}
+        return {"device_code": code,
+                "verification_uri": f"/api/scientist/v2/device/{code}",
+                "expires_in": 600, "interval": 2}
+
+    @app.get("/api/scientist/v2/device/{code}")
+    def scientist_device_page(code: str):
+        rec = _SCIENTIST_DEVICES.get(code)
+        if not rec or rec["expires"] < time.time():
+            raise HTTPException(status_code=404, detail="This device authorization expired.")
+        # Device authorization may be opened in a browser with no session yet.  Route through
+        # the normal SPA sign-in screen, retaining the code so boot() can approve it after login.
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse(url=f"/?scientist_device={code}", status_code=303)
+
+    @app.post("/api/scientist/v2/device/{code}/approve")
+    def scientist_device_approve(code: str, user: str = Depends(current_user)):
+        rec = _SCIENTIST_DEVICES.get(code)
+        if not rec or rec["expires"] < time.time():
+            raise HTTPException(status_code=404, detail="This device authorization expired.")
+        rec["user"] = user
+        rec["token"] = auth.new_scientist_token(user, rec["client_name"])
+        from fastapi.responses import HTMLResponse
+        return HTMLResponse("<p>LockedIn Scientist authorized. You may return to your terminal.</p>")
+
+    @app.get("/api/scientist/v2/device/{code}/token")
+    def scientist_device_token(code: str):
+        rec = _SCIENTIST_DEVICES.get(code)
+        if not rec or rec["expires"] < time.time():
+            raise HTTPException(status_code=404, detail="This device authorization expired.")
+        if not rec["token"]:
+            return {"status": "pending"}
+        token, user = rec["token"], rec["user"]
+        _SCIENTIST_DEVICES.pop(code, None)
+        return {"status": "authorized", "token": token, "user": user}
+
+    @app.get("/api/scientist/v2/bubbles/{slug}/manifest")
+    def scientist_manifest(slug: str, user: str = Depends(scientist_user)):
+        try:
+            return scientist_sync.manifest(home_of(user), slug)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="No such approved bubble.")
+
+    @app.post("/api/scientist/v2/bubbles/{slug}/files")
+    def scientist_files(slug: str, body: ScientistFilesIn, user: str = Depends(scientist_user)):
+        # Bound a request so a malformed client cannot turn this into an unbounded payload.
+        if len(body.paths) > 500:
+            raise HTTPException(status_code=400, detail="Request at most 500 files at once.")
+        try:
+            return scientist_sync.read_files(home_of(user), slug, body.paths)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="No such approved bubble.")
+
+    @app.get("/api/scientist/v2/bubbles")
+    def scientist_bubbles(user: str = Depends(scientist_user)):
+        """Small preflight inventory for the installed project-local client."""
+        return {"bubbles": [{"slug": b["slug"], "name": b.get("name") or b["slug"],
+                             "last_edited_at": b.get("last_edited_at") or ""}
+                            for b in service.list_bubbles(home_of(user))]}
+
+    @app.get("/api/scientist/v2/workspaces")
+    def scientist_workspaces(user: str = Depends(scientist_user)):
+        rec = auth.load_accounts().get(user, {})
+        return {"workspaces": workspaces.list_for_user(user),
+                "personal_workspace_id": rec.get("personal_workspace_id", "")}
+
+    @app.get("/api/scientist/v2/guide")
+    def scientist_guide(user: str = Depends(scientist_user)):
+        """Canonical report-editing conventions for the generated project-local skill."""
+        from . import reports
+        return {"guide": reports.guide_section("Editing Guide"),
+                "math_macros": service.load_math_config(home_of(user)).get("macros", {})}
+
+    @app.post("/api/scientist/v2/bubbles/{slug}/push")
+    def scientist_push(slug: str, body: ScientistPushIn, user: str = Depends(scientist_user)):
+        return scientist_sync.apply_writes(home_of(user), slug, body.writes)
+
+    @app.post("/api/scientist/v2/bubbles/{slug}/deletes")
+    def scientist_delete(slug: str, body: ScientistDeleteIn, user: str = Depends(scientist_user)):
+        """Remove report pages/figures a Scientist session deleted, manifest entry included."""
+        return scientist_sync.apply_deletes(home_of(user), slug, body.deletes)
+
+    @app.post("/api/scientist/v2/bubbles/{slug}/pages")
+    def scientist_create_page(slug: str, body: ScientistPageCreateIn, user: str = Depends(scientist_user)):
+        if body.bubble and body.bubble != slug:
+            raise HTTPException(status_code=400, detail="Bubble path and body disagree.")
+        return scientist_sync.register_page(home_of(user), slug, body.page_slug,
+                                            body.content_b64, body.base_revision)
 
     # ---- bubbles ----
     @app.get("/api/bubbles")
-    def list_bubbles(user: str = Depends(current_user)):
-        return {"bubbles": service.list_bubbles(home_of(user))}
+    def list_bubbles(archived: bool = False, user: str = Depends(current_user)):
+        return {"bubbles": service.list_bubbles(home_of(user), archived=archived)}
 
     @app.post("/api/bubbles")
     def create_bubble(body: BubbleIn, user: str = Depends(current_user)):
@@ -1265,6 +1603,13 @@ def build_app():
             return {"bubble": service.rename_bubble(home_of(user), slug, body.name)}
         except (KeyError, ValueError) as e:
             raise HTTPException(status_code=400, detail=str(e))
+
+    @app.patch("/api/bubbles/{slug}/archive")
+    def archive_bubble(slug: str, body: BubbleArchiveIn, user: str = Depends(current_user)):
+        try:
+            return {"bubble": service.set_bubble_archived(home_of(user), slug, body.archived)}
+        except KeyError as e:
+            raise HTTPException(status_code=404, detail=str(e))
 
     @app.post("/api/bubbles/{slug}/approve")
     def approve_bubble(slug: str, body: ApproveIn, user: str = Depends(current_user)):
@@ -1296,6 +1641,18 @@ def build_app():
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
+    @app.post("/api/bubbles/{slug}/migrate-papers")
+    def migrate_papers(slug: str, body: MigratePapersIn, user: str = Depends(current_user)):
+        """Copy papers from ``body.source`` into ``slug`` (the destination) in one request."""
+        try:
+            return service.migrate_papers(home_of(user), body.source, slug, body.items)
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail="No such asset.")
+        except KeyError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
     @app.delete("/api/bubbles/{slug}")
     def delete_bubble(slug: str, user: str = Depends(current_user)):
         service.delete_bubble(home_of(user), slug)
@@ -1305,6 +1662,22 @@ def build_app():
     def set_share(slug: str, body: ShareIn, user: str = Depends(current_user)):
         """Toggle the bubble's unlisted public share link (stable token)."""
         return service.set_bubble_share(home_of(user), slug, body.active)
+
+    @app.put("/api/bubbles/{slug}/overleaf")
+    def set_bubble_overleaf(slug: str, body: OverleafIn, user: str = Depends(current_user)):
+        try:
+            return {"bubble": service.set_bubble_overleaf(home_of(user), slug, body.project)}
+        except KeyError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    @app.delete("/api/bubbles/{slug}/overleaf")
+    def clear_bubble_overleaf(slug: str, user: str = Depends(current_user)):
+        try:
+            return {"bubble": service.set_bubble_overleaf(home_of(user), slug, None)}
+        except KeyError as e:
+            raise HTTPException(status_code=404, detail=str(e))
 
     # ---- todos (global per-user; referenced from report pages as @<id>) ----
     @app.get("/api/todos")
@@ -1369,6 +1742,7 @@ def build_app():
             all_pages=visible_pages, content=service.get_page(home, slug, page),
             slug=slug, link_base=f"/api/bubbles/{slug}/preview",
             asset_base=f"/api/bubbles/{slug}/assets", show_back=True,
+            workspace_id=active_workspace_id(user),
             todos={t["id"]: t for t in service.list_todos(home)},
             todo_link_base="/#todos",  # owner is logged in → link opens the SPA TODO manager
             macros=service.load_math_config(home).get("macros", {}),
@@ -1390,13 +1764,61 @@ def build_app():
             # 409: the editor's base mtime is stale — an external edit landed first.
             raise HTTPException(status_code=409, detail="Page changed on disk",
                                 headers={"X-Disk-Mtime": repr(e.disk_mtime)})
-        except service.CitationValidationError as e:
-            raise HTTPException(status_code=400, detail=str(e))
         return {"ok": True, "page_mtime": mtime}
 
     @app.get("/api/bubbles/{slug}/poll")
     def bubble_poll(slug: str, page: str, user: str = Depends(current_user)):
         return service.page_poll(home_of(user), slug, page)
+
+    # ---- private review comments (never used by public preview/share routes) ----
+    @app.get("/api/bubbles/{slug}/pages/{page}/comments")
+    def get_comments(slug: str, page: str, user: str = Depends(current_user)):
+        return service.list_comments(home_of(user), slug, page)
+
+    @app.post("/api/bubbles/{slug}/pages/{page}/comments")
+    def post_comment(slug: str, page: str, body: CommentCreateIn, user: str = Depends(current_user)):
+        try:
+            return {"thread": service.create_comment(home_of(user), slug, page, user, body.body, body.anchor)}
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    @app.post("/api/bubbles/{slug}/pages/{page}/comments/{thread_id}/replies")
+    def post_comment_reply(slug: str, page: str, thread_id: str, body: CommentReplyIn,
+                           user: str = Depends(current_user)):
+        try:
+            return {"message": service.reply_comment(home_of(user), slug, page, thread_id, user, body.body)}
+        except KeyError:
+            raise HTTPException(status_code=404, detail="No such review thread.")
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    @app.patch("/api/bubbles/{slug}/pages/{page}/comments/{thread_id}/messages/{message_id}")
+    def patch_comment_message(slug: str, page: str, thread_id: str, message_id: str,
+                              body: CommentEditIn, user: str = Depends(current_user)):
+        try:
+            return {"message": service.edit_comment_message(home_of(user), slug, page, thread_id, message_id, user, body.body)}
+        except KeyError:
+            raise HTTPException(status_code=404, detail="No such review message.")
+        except PermissionError as e:
+            raise HTTPException(status_code=403, detail=str(e))
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    @app.patch("/api/bubbles/{slug}/pages/{page}/comments/{thread_id}")
+    def patch_comment_status(slug: str, page: str, thread_id: str, body: CommentStatusIn,
+                             user: str = Depends(current_user)):
+        try:
+            return {"thread": service.set_comment_status(home_of(user), slug, page, thread_id, body.status, user)}
+        except KeyError:
+            raise HTTPException(status_code=404, detail="No such review thread.")
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    @app.delete("/api/bubbles/{slug}/pages/{page}/comments/{thread_id}")
+    def del_comment(slug: str, page: str, thread_id: str, user: str = Depends(current_user)):
+        if not service.delete_comment(home_of(user), slug, page, thread_id):
+            raise HTTPException(status_code=404, detail="No such review thread.")
+        return {"ok": True}
 
     @app.patch("/api/bubbles/{slug}/pages/{page}")
     def patch_page(slug: str, page: str, body: PageRenameIn, user: str = Depends(current_user)):
@@ -1439,6 +1861,25 @@ def build_app():
         url = service.save_bubble_image(home_of(user), slug, file.filename, await file.read())
         return {"url": url}
 
+    @app.get("/api/bubbles/{slug}/assets")
+    def list_bubble_assets(slug: str, user: str = Depends(current_user)):
+        return {"assets": service.list_bubble_assets(home_of(user), slug)}
+
+    @app.get("/api/bubbles/{slug}/assets/{filename}/text")
+    def get_bubble_text_asset(slug: str, filename: str, user: str = Depends(current_user)):
+        try:
+            return {"filename": filename, "text": service.bubble_text_asset(home_of(user), slug, filename)}
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail="No such asset.")
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    @app.delete("/api/bubbles/{slug}/assets/{filename}")
+    def delete_bubble_asset(slug: str, filename: str, user: str = Depends(current_user)):
+        if not service.delete_bubble_asset(home_of(user), slug, filename):
+            raise HTTPException(status_code=404, detail="No such asset.")
+        return {"ok": True}
+
     @app.get("/api/bubbles/{slug}/assets/{filename}")
     def get_bubble_image(slug: str, filename: str, user: str = Depends(current_user)):
         safe = Path(filename).name
@@ -1447,7 +1888,10 @@ def build_app():
         p = service.bubble_asset_path(home_of(user), slug, safe)
         if not p.exists():
             raise HTTPException(status_code=404, detail="No such image.")
-        return FileResponse(p, headers={"Content-Disposition": "inline"})
+        # These assets belong to an authenticated user's private workspace.  Never let a CDN
+        # cache a response keyed only by URL: it can be stale and can bypass the auth boundary.
+        return FileResponse(p, headers={"Content-Disposition": "inline",
+                                        "Cache-Control": "private, no-store"})
 
     # ---- chat sessions ----
     @app.get("/api/bubbles/{slug}/chats")

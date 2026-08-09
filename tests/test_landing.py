@@ -29,6 +29,7 @@ class LandingConfigTest(unittest.TestCase):
         cfg = landing.load_landing()
         self.assertEqual(cfg["hero"]["title_accent"], "locked")
         self.assertGreaterEqual(len(cfg["components"]["features"]), 1)
+        self.assertIn("curl -fsSL", cfg["scientist"]["platforms"][0]["command"])
 
     def test_partial_yaml_merges_with_defaults(self):
         self.write_landing("""
@@ -41,6 +42,24 @@ footer: "Custom footer"
         self.assertEqual(cfg["footer"], "Custom footer")
         self.assertEqual(cfg["hero"]["title_rest"], "in")
         self.assertGreaterEqual(len(cfg["workflow"]["steps"]), 1)
+
+    def test_scientist_install_section_is_configurable(self):
+        self.write_landing("""
+scientist:
+  title: "Custom CLI"
+  platforms:
+    - title: "Unix"
+      text: "A shell"
+      command: "install-me"
+  steps:
+    - title: "Go"
+      text: "Do it"
+      command: "run-me"
+""")
+        cfg = landing.load_landing()
+        self.assertEqual(cfg["scientist"]["title"], "Custom CLI")
+        self.assertEqual(cfg["scientist"]["platforms"], [{"title": "Unix", "text": "A shell", "command": "install-me"}])
+        self.assertEqual(cfg["scientist"]["steps"], [{"title": "Go", "text": "Do it", "command": "run-me"}])
 
     def test_invalid_yaml_falls_back_to_defaults(self):
         self.write_landing("hero: [")
@@ -71,15 +90,13 @@ privacy:
         self.assertEqual(cfg["components"]["features"][0]["text"], "")
         self.assertEqual(cfg["privacy"]["bullets"], ["one", "2"])
 
-    def test_server_uses_startup_snapshot(self):
+    def test_server_reloads_landing_yaml_on_each_request(self):
         self.write_landing("footer: First\n")
         app = server.build_app()
         endpoint = next(r.endpoint for r in app.routes if getattr(r, "path", "") == "/api/landing")
         self.assertIn(b'"footer":"First"', endpoint().body)
         self.write_landing("footer: Second\n")
-        self.assertIn(b'"footer":"First"', endpoint().body)
-        endpoint2 = next(r.endpoint for r in server.build_app().routes if getattr(r, "path", "") == "/api/landing")
-        self.assertIn(b'"footer":"Second"', endpoint2().body)
+        self.assertIn(b'"footer":"Second"', endpoint().body)
 
 
 if __name__ == "__main__":

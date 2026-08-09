@@ -15,7 +15,6 @@ cp ops/lockedin.env.example ops/lockedin.env
 - `LOCKEDIN_PORT=8080` sets the local server port used by the generated unit.
 - `LOCKEDIN_LOCAL_URL=http://127.0.0.1:8080/` is always checked by the monitor.
 - `LOCKEDIN_PUBLIC_URL=` controls public tunnel monitoring. Leave it empty to skip public checks.
-- `LOCKEDIN_NEWS_ENABLED=0` keeps the Claude-powered news crawler off by default.
 - `LOCKEDIN_SLACKBOT_ENABLED=1` enables Slack bot monitoring when you also enable the service.
 - `LOCKEDIN_OLLAMA_ENABLED=0` skips Ollama monitoring if you are not using local Qwen.
 

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>lockedin — research assistant</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔒</text></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -37,36 +37,123 @@
     --shadow-sm:0 1px 6px rgba(0,0,0,.4); --shadow:0 6px 24px rgba(0,0,0,.55);
   }
   body.theme-light{
-    --bg:#f8fafc; --panel:#e7edf5; --panel2:#cfd8e6; --line:#9eacbe;
-    --ink:#171b24; --muted:#526073; --accent:#5b3ee8; --accent2:#087f69;
-    --warn:#b45309; --bad:#dc2626; --good:#16a34a; --assistant-bg:#e7edff;
-    --ref-accent:#6d4aff;
-    --text-color-1:#5b3ee8; --text-color-2:#087f69; --text-color-3:#b45309; --text-color-4:#be185d; --text-color-5:#0369a1;
-    --shadow-sm:0 1px 8px rgba(17,24,39,.16); --shadow:0 8px 28px rgba(17,24,39,.24);
+    --bg:#eaf0f7; --panel:#fbfdff; --panel2:#d8e2ef; --line:#9eafc3;
+    --ink:#111b2d; --muted:#3f5067; --accent:#4338ca; --accent2:#0b6b63;
+    --warn:#92400e; --bad:#b91c36; --good:#166534; --assistant-bg:#e2e9ff;
+    --ref-accent:#4338ca;
+    --text-color-1:#4338ca; --text-color-2:#0b6b63; --text-color-3:#92400e; --text-color-4:#86198f; --text-color-5:#075985;
+    --shadow-sm:0 1px 5px rgba(17,27,45,.14); --shadow:0 10px 30px rgba(17,27,45,.2);
   }
+  body.theme-light #topbar,body.theme-light #side{
+    --ink:#f5f3ff; --muted:#c7c3e8; --panel:#29234f; --panel2:#393166; --line:#50477f;
+    --accent:#c4b5fd; --accent2:#67e8d2;
+    background:linear-gradient(135deg,#272148 0%,#322a60 58%,#3a3170 100%);
+    box-shadow:0 1px 0 rgba(43,34,83,.28)
+  }
+  body.theme-light #topbar .brand{color:#fff}
+  body.theme-light #accountMenu{
+    --bg:#eaf0f7; --panel:#fff; --panel2:#e8eef7; --line:#bdc8d8;
+    --ink:#111b2d; --muted:#3f5067; --accent:#4338ca; --accent2:#0b6b63;
+    background:#fff;color:#111b2d;box-shadow:0 14px 34px rgba(17,27,45,.22)
+  }
+  body.theme-light #side{
+    --panel:#4a3f82; --panel2:#5a4c99; --line:#786bb6; --accent:#ddd6fe; --accent2:#99f6e4;
+    background:linear-gradient(160deg,#51458d 0%,#5f50a3 48%,#6c5bb3 100%)
+  }
+  body.theme-light #side .navbtn.active{background:rgba(196,181,253,.2);border-color:rgba(196,181,253,.68)}
+  body.theme-light .editor-pane>.ptabs{
+    --bg:#372f66; --panel:#493d80; --panel2:#5a4c98; --line:#786bb6;
+    --ink:#f6f4ff; --muted:#d0caec; --accent:#ddd6fe; --accent2:#99f6e4;
+    background:linear-gradient(105deg,#40366f,#514586);border-bottom-color:#786bb6
+  }
+  body.theme-light .editor-pane>.ptabs .ptab{color:#fff}
+  body.theme-light .card,body.theme-light .pane,body.theme-light .acard{box-shadow:0 1px 2px rgba(22,32,51,.04)}
   body.theme-pink{
-    --bg:#fff0fa; --panel:#ffe0f3; --panel2:#ffc7e8; --line:#ff94d2;
-    --ink:#57113e; --muted:#9b4b7d; --accent:#ff1493; --accent2:#00b8a9;
-    --warn:#c06b00; --bad:#e11d75; --good:#00a86b; --assistant-bg:#ffd6ee;
+    --bg:#f6e9f2; --panel:#fff8fc; --panel2:#efd5e6; --line:#cc9dbb;
+    --ink:#42102f; --muted:#81506d; --accent:#b51f70; --accent2:#087f78;
+    --warn:#9a5b08; --bad:#bd185d; --good:#08765e; --assistant-bg:#f2dcec;
     --ref-accent:var(--accent2);
-    --text-color-1:#ff1493; --text-color-2:#b5179e; --text-color-3:#00a6a6; --text-color-4:#ff6f59; --text-color-5:#7b2cbf;
-    --shadow-sm:0 1px 8px rgba(255,20,147,.18); --shadow:0 8px 28px rgba(255,20,147,.24);
+    --text-color-1:#b51f70; --text-color-2:#8f287f; --text-color-3:#087f78; --text-color-4:#b64c38; --text-color-5:#643b9d;
+    --shadow-sm:0 1px 6px rgba(66,16,47,.14); --shadow:0 10px 30px rgba(66,16,47,.2);
   }
   body.theme-techno{
-    --bg:#020704; --panel:#07110a; --panel2:#0b1b10; --line:#174f25;
-    --ink:#d7f4dc; --muted:#82b58a; --accent:#35c85a; --accent2:#8bd68f;
-    --warn:#c6d65a; --bad:#ff4d6d; --good:#35c85a; --assistant-bg:#06180c;
+    --bg:#07100b; --panel:#0e1b13; --panel2:#162b1c; --line:#315d3d;
+    --ink:#e0f4e3; --muted:#9cc5a4; --accent:#4bd16e; --accent2:#8ce6a1;
+    --warn:#d4d96c; --bad:#ff6680; --good:#4bd16e; --assistant-bg:#10261a;
     --ref-accent:var(--accent2);
-    --text-color-1:#35c85a; --text-color-2:#8bd68f; --text-color-3:#b7d36b; --text-color-4:#5ed0a0; --text-color-5:#7aa88a;
-    --shadow-sm:0 1px 8px rgba(53,200,90,.14); --shadow:0 8px 30px rgba(53,200,90,.2);
+    --text-color-1:#4bd16e; --text-color-2:#8ce6a1; --text-color-3:#d4d96c; --text-color-4:#67d5aa; --text-color-5:#9ecfa9;
+    --shadow-sm:0 1px 6px rgba(0,0,0,.36); --shadow:0 10px 30px rgba(0,0,0,.5);
   }
   body.theme-pearl{
-    --bg:#fffdf7; --panel:#fffaf0; --panel2:#f3f0e8; --line:#d8d2c4;
-    --ink:#3f3f3b; --muted:#7c7168; --accent:#d9480f; --accent2:#f06d3a;
-    --warn:#c05621; --bad:#b42318; --good:#6f8f3f; --assistant-bg:#fff1e8;
+    --bg:#f1eee8; --panel:#fffaf2; --panel2:#e4ddd1; --line:#c9bbab;
+    --ink:#36312d; --muted:#70645b; --accent:#a84216; --accent2:#bf592a;
+    --warn:#9c501d; --bad:#a92d25; --good:#55743a; --assistant-bg:#f5e6d9;
     --ref-accent:var(--accent2);
-    --text-color-1:#d9480f; --text-color-2:#f06d3a; --text-color-3:#b7791f; --text-color-4:#7c7168; --text-color-5:#9a3412;
-    --shadow-sm:0 1px 8px rgba(217,72,15,.12); --shadow:0 8px 28px rgba(217,72,15,.18);
+    --text-color-1:#a84216; --text-color-2:#bf592a; --text-color-3:#95651e; --text-color-4:#756052; --text-color-5:#833416;
+    --shadow-sm:0 1px 6px rgba(54,49,45,.12); --shadow:0 10px 30px rgba(54,49,45,.17);
+  }
+  body.theme-pink #topbar,body.theme-pink #side{
+    --ink:#fff7fc; --muted:#e4bfd4; --panel:#531838; --panel2:#6e2450; --line:#8e3d67;
+    --accent:#f4a7cd; --accent2:#7de0d2;
+    background:linear-gradient(135deg,#49142f 0%,#642047 58%,#742957 100%);
+    box-shadow:0 1px 0 rgba(66,16,47,.3)
+  }
+  body.theme-pink #topbar .brand{color:#fff}
+  body.theme-pink #side{
+    --panel:#76305a; --panel2:#8c416c; --line:#aa6286; --accent:#ffd1e5; --accent2:#9bf0e3;
+    background:linear-gradient(160deg,#73305b 0%,#873d6b 48%,#99507a 100%)
+  }
+  body.theme-pink #side .navbtn.active{background:rgba(255,209,229,.18);border-color:rgba(255,209,229,.66)}
+  body.theme-pink .editor-pane>.ptabs{
+    --bg:#642047; --panel:#793058; --panel2:#8d416c; --line:#aa6286;
+    --ink:#fff8fc; --muted:#e5c3d6; --accent:#ffd1e5; --accent2:#9bf0e3;
+    background:linear-gradient(105deg,#68264d,#7d3861);border-bottom-color:#aa6286
+  }
+  body.theme-pink .editor-pane>.ptabs .ptab{color:#fff}
+  body.theme-pink #accountMenu{
+    --bg:#f6e9f2; --panel:#fff8fc; --panel2:#f0dce9; --line:#d5adc4;
+    --ink:#42102f; --muted:#81506d; --accent:#b51f70; --accent2:#087f78;
+    background:#fff8fc;color:#42102f;box-shadow:0 14px 34px rgba(66,16,47,.22)
+  }
+  body.theme-techno #topbar,body.theme-techno #side{
+    --ink:#ebfff0; --muted:#b4d8bb; --panel:#102b18; --panel2:#1a4025; --line:#39704a;
+    --accent:#8af0a0; --accent2:#b5f5be;
+    background:linear-gradient(135deg,#0b2413 0%,#12351b 58%,#194322 100%);
+    box-shadow:0 1px 0 rgba(0,0,0,.4)
+  }
+  body.theme-techno #side{
+    --panel:#1a4827; --panel2:#285d35; --line:#4a8158; --accent:#b3f8c1; --accent2:#d0ffd4;
+    background:linear-gradient(160deg,#194726 0%,#245833 48%,#306a3e 100%)
+  }
+  body.theme-techno #side .navbtn.active{background:rgba(179,248,193,.14);border-color:rgba(179,248,193,.6)}
+  body.theme-techno .editor-pane>.ptabs{
+    --bg:#14381e; --panel:#20502b; --panel2:#2d6338; --line:#4a8158;
+    --ink:#edfff0; --muted:#bfdfc4; --accent:#b3f8c1; --accent2:#d0ffd4;
+    background:linear-gradient(105deg,#174322,#235430);border-bottom-color:#4a8158
+  }
+  body.theme-techno .editor-pane>.ptabs .ptab{color:#edfff0}
+  body.theme-pearl #topbar,body.theme-pearl #side{
+    --ink:#fffaf1; --muted:#e7cbb8; --panel:#61351f; --panel2:#7a482c; --line:#9a6544;
+    --accent:#ffd0af; --accent2:#ffc29d;
+    background:linear-gradient(135deg,#57301e 0%,#704027 58%,#804b2e 100%);
+    box-shadow:0 1px 0 rgba(54,49,45,.26)
+  }
+  body.theme-pearl #topbar .brand{color:#fff}
+  body.theme-pearl #side{
+    --panel:#824c2f; --panel2:#995e3d; --line:#b47a56; --accent:#ffe0c8; --accent2:#ffd0af;
+    background:linear-gradient(160deg,#854f31 0%,#985d3c 48%,#a96c47 100%)
+  }
+  body.theme-pearl #side .navbtn.active{background:rgba(255,224,200,.18);border-color:rgba(255,224,200,.64)}
+  body.theme-pearl .editor-pane>.ptabs{
+    --bg:#704027; --panel:#854e30; --panel2:#995e3d; --line:#b47a56;
+    --ink:#fffaf2; --muted:#ecd0bb; --accent:#ffe0c8; --accent2:#ffd0af;
+    background:linear-gradient(105deg,#77452b,#8b5334);border-bottom-color:#b47a56
+  }
+  body.theme-pearl .editor-pane>.ptabs .ptab{color:#fff}
+  body.theme-pearl #accountMenu{
+    --bg:#f1eee8; --panel:#fffaf2; --panel2:#eee5d9; --line:#d2c3b2;
+    --ink:#36312d; --muted:#70645b; --accent:#a84216; --accent2:#bf592a;
+    background:#fffaf2;color:#36312d;box-shadow:0 14px 34px rgba(54,49,45,.2)
   }
   body.theme-light .toastui-editor-defaultUI{filter:invert(1) hue-rotate(180deg)}
   body.theme-light .toastui-editor-defaultUI img{filter:invert(1) hue-rotate(180deg)}
@@ -164,6 +251,7 @@
   .landing-auth-panel .row{flex-wrap:wrap}
   .landing-auth-panel button{flex:1 1 120px}
   .landing-section{padding:54px 0;border-top:1px solid color-mix(in srgb,var(--line) 72%,transparent)}
+  .home-landing .landing-section:first-of-type{border-top:0}
   .landing-section-head{display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1fr);gap:30px;align-items:end;margin-bottom:24px}
   .landing-section h2{font-size:28px;line-height:1.15;margin:0;letter-spacing:0}
   .landing-section-head p{margin:0;color:var(--muted)}
@@ -179,12 +267,48 @@
   .feature-icon{width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;
     background:color-mix(in srgb,var(--accent) 13%,var(--panel2));border:1px solid color-mix(in srgb,var(--accent) 30%,var(--line));
     margin-bottom:12px}
-  .privacy-panel{display:grid;grid-template-columns:minmax(0,.72fr) minmax(0,1fr);gap:28px;align-items:start}
-  .privacy-panel h2{margin:0 0 10px}
-  .privacy-list{display:grid;gap:10px;margin:0;padding:0;list-style:none}
-  .privacy-list li{padding-left:18px;position:relative;color:var(--muted);font-size:13px;line-height:1.55}
-  .privacy-list li::before{content:"";position:absolute;left:0;top:.72em;width:7px;height:7px;border-radius:50%;background:var(--accent2)}
+  .open-source-panel{position:relative;overflow:hidden;display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,.8fr);gap:26px;align-items:center;
+    background:linear-gradient(135deg,color-mix(in srgb,var(--accent2) 13%,var(--panel)),var(--panel));border:1px solid color-mix(in srgb,var(--accent2) 35%,var(--line));
+    border-radius:14px;padding:clamp(20px,3vw,30px);box-shadow:var(--shadow)}
+  .open-source-panel::after{content:"";position:absolute;width:260px;height:260px;right:-100px;top:-150px;border-radius:50%;pointer-events:none;
+    background:radial-gradient(circle,color-mix(in srgb,var(--accent) 18%,transparent),transparent 68%)}
+  .open-source-panel>*{position:relative}
+  .open-source-panel h2{margin:0 0 9px}
+  .open-source-panel p{margin:0;color:var(--muted);font-size:14px;line-height:1.6;max-width:650px}
+  .clone-box{display:grid;gap:10px;padding:15px;background:color-mix(in srgb,var(--panel) 88%,transparent);border:1px solid var(--line);border-radius:10px}
+  .clone-box small{font-family:var(--font-ui);font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--accent2)}
+  .clone-command{display:block;overflow:auto;white-space:nowrap;padding:9px 10px;border-radius:7px;background:var(--bg);border:1px solid var(--line);font-family:var(--font-mono);font-size:11px;color:var(--ink)}
+  .clone-link{display:inline-flex;align-items:center;justify-content:center;gap:7px;text-decoration:none;font-family:var(--font-ui);font-size:13px;font-weight:700;
+    color:#fff;background:var(--accent2);padding:10px 13px;border-radius:8px;transition:transform .15s ease,filter .15s ease}
+  .clone-link:hover{color:#fff;transform:translateY(-1px);filter:brightness(1.08)}
   .landing-footer{padding:24px 0 38px;color:var(--muted);font-size:12px}
+  /* Installed Scientist client — commands stay copyable as a single shell line.
+     Narrow screens scroll the command itself instead of wrapping it. */
+  .scientist-install{position:relative;background:linear-gradient(135deg,color-mix(in srgb,var(--accent) 13%,var(--panel)),var(--panel));
+    border:1px solid color-mix(in srgb,var(--accent) 35%,var(--line));border-radius:14px;padding:clamp(18px,3vw,30px);
+    box-shadow:var(--shadow);overflow:hidden}
+  .scientist-install::before{content:"";position:absolute;inset:auto -12% -80% 45%;height:260px;pointer-events:none;
+    background:radial-gradient(ellipse,color-mix(in srgb,var(--accent2) 19%,transparent),transparent 67%)}
+  .scientist-install>*{position:relative}
+  .scientist-install .landing-section-head{margin-bottom:22px}
+  .scientist-install .landing-section-head p{max-width:620px;line-height:1.55}
+  .scientist-platforms{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:18px}
+  .scientist-platform{min-width:0;background:color-mix(in srgb,var(--panel) 90%,transparent);border:1px solid var(--line);
+    border-radius:10px;padding:15px;transition:transform .16s ease,border-color .16s ease,box-shadow .16s ease}
+  .scientist-platform:hover{transform:translateY(-2px);border-color:color-mix(in srgb,var(--accent2) 56%,var(--line));box-shadow:var(--shadow-sm)}
+  .scientist-platform h3{margin:0 0 5px;font-size:15px}
+  .scientist-platform p{margin:0 0 12px;color:var(--muted);font-size:12px;line-height:1.45}
+  .command{display:block;min-width:0;margin:0;padding:11px 12px;border-radius:7px;background:#101218;
+    border:1px solid color-mix(in srgb,var(--accent2) 35%,var(--line));color:#e8e5ff;font-family:var(--font-mono);
+    font-size:12px;line-height:1.55;white-space:nowrap;overflow-x:auto;overflow-y:hidden;word-break:normal;user-select:all}
+  .scientist-steps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:0;padding:0;list-style:none;counter-reset:scientist-step}
+  .scientist-steps li{min-width:0;counter-increment:scientist-step;position:relative;padding:13px 13px 13px 43px;
+    background:color-mix(in srgb,var(--panel) 86%,transparent);border:1px solid var(--line);border-radius:9px;
+    color:var(--muted);font-size:12px;line-height:1.5}
+  .scientist-steps li::before{content:counter(scientist-step);position:absolute;left:13px;top:13px;width:20px;height:20px;
+    display:grid;place-items:center;border-radius:50%;background:var(--accent);color:white;font-family:var(--font-mono);font-size:11px;font-weight:700}
+  .scientist-steps b{display:block;color:var(--ink);font-size:13px;margin-bottom:4px}
+  .scientist-steps .command{margin-top:8px;font-size:11px;padding:7px 8px}
   .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:22px;
     box-shadow:var(--shadow-sm)}
   .brand{font-size:22px;font-weight:700;font-family:var(--font-ui);letter-spacing:-.02em}
@@ -204,6 +328,7 @@
   /* minimal authorship credit, pinned to the bottom of the side pane */
   .side-credit{margin-top:auto;padding:12px 8px 4px;font-family:var(--font-ui);font-size:11px;
         color:var(--muted);line-height:1.4}
+  .side-credit .heart{color:var(--accent);font-size:14px;vertical-align:-1px}
   .side-credit a{color:var(--muted);text-decoration:none}
   .side-credit a:hover{color:var(--accent)}
   /* min-height/min-width:0 let the grid track govern size (no hardcoded topbar height,
@@ -249,6 +374,10 @@
   #accountMenu .acct-name{font-weight:700;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   #accountMenu .acct-row{font-size:12px;color:var(--muted);line-height:1.45}
   #accountMenu .acct-actions{display:flex;gap:8px;flex-wrap:wrap}
+  #accountMenu .workspace-manage{background:color-mix(in srgb,var(--accent2) 28%,var(--panel2));
+    border-color:color-mix(in srgb,var(--accent2) 72%,var(--line));color:var(--ink);font-weight:700}
+  #accountMenu .workspace-manage:hover{background:color-mix(in srgb,var(--accent2) 42%,var(--panel));
+    border-color:var(--accent2);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent2) 18%,transparent)}
 
   /* grids */
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px}
@@ -287,6 +416,21 @@
          color:var(--warn);flex-shrink:0;white-space:nowrap}
   .badge.bib{border-color:var(--accent2);color:var(--accent2)}
 
+  /* View loading states. Skeletons keep an asset-heavy screen feeling responsive while its
+     metadata arrives, and respect the user's reduced-motion preference. */
+  .view-loading{padding:12px 0;color:var(--muted)}
+  .view-loading-status{display:flex;align-items:center;gap:9px;margin:0 0 14px;font-size:13px}
+  .loading-spinner{width:16px;height:16px;border:2px solid color-mix(in srgb,var(--accent) 24%,transparent);
+    border-top-color:var(--accent);border-radius:50%;animation:loading-spin .75s linear infinite;flex:0 0 auto}
+  .skeleton-card{height:164px;border:1px solid var(--line);border-radius:var(--radius);padding:16px;
+    background:linear-gradient(100deg,var(--panel) 32%,color-mix(in srgb,var(--panel2) 72%,var(--panel)) 48%,var(--panel) 64%);
+    background-size:220% 100%;animation:skeleton-shimmer 1.25s ease-in-out infinite}
+  .skeleton-line{height:11px;border-radius:999px;background:color-mix(in srgb,var(--line) 72%,transparent);margin-bottom:12px}
+  .skeleton-line.short{width:48%}.skeleton-line.medium{width:70%}.skeleton-line:last-child{margin-top:35px;margin-bottom:0}
+  @keyframes loading-spin{to{transform:rotate(360deg)}}
+  @keyframes skeleton-shimmer{to{background-position:-220% 0}}
+  @media (prefers-reduced-motion:reduce){.loading-spinner,.skeleton-card{animation:none}}
+
   /* bubble detail */
   #detail{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(0,1fr);gap:16px;flex:1;
           min-height:0;min-width:0}
@@ -310,6 +454,10 @@
     box-shadow:var(--shadow-sm)}
   .preview pre code{overflow-wrap:normal;word-break:normal;font-family:var(--font-mono);font-size:13px}
   .preview img{max-width:100%;height:auto;border-radius:8px;box-shadow:var(--shadow-sm)}
+  .preview figure{margin:1.1em 0;text-align:center}
+  .preview figure img{display:block;margin:0 auto}
+  .preview figcaption{margin:.55em auto 0;max-width:92%;font-family:var(--font-reading);font-size:.9em;
+    font-style:italic;line-height:1.45;color:var(--muted)}
   /* tables + blockquotes — shared by the preview pane and chat messages */
   .preview table,.msg table{display:block;width:max-content;max-width:100%;overflow-x:auto;
         border-collapse:collapse;margin:8px 0;font-size:13px}
@@ -329,10 +477,11 @@
      so a \tag and the \eqref pointing at it read as one typographic system. */
   .katex .tag,.katex-display .tag{color:var(--accent);font-feature-settings:"tnum" 1;font-variant-numeric:tabular-nums}
   /* Cross-references: colored inline labels that go quiet on hover. */
-  .eq-ref,.thm-ref,.cite-ref{font-family:var(--font-ui);font-weight:600;color:var(--accent);
+  .eq-ref,.thm-ref,.fig-ref,.cite-ref{font-family:var(--font-ui);font-weight:600;color:var(--accent);
     font-feature-settings:"tnum" 1;font-variant-numeric:tabular-nums;white-space:nowrap;
     padding:0 .14em;border-radius:4px;transition:color .14s ease;cursor:default}
-  .eq-ref:hover,.thm-ref:hover,.cite-ref:hover{color:var(--ink)}
+  .eq-ref:hover,.thm-ref:hover,.fig-ref:hover,.cite-ref:hover{color:var(--ink)}
+  .figure-number{font-style:normal;font-weight:600;color:var(--ink)}
   a.cite-ref,.cite-ref a{color:var(--accent);text-decoration:none}
   a.cite-ref:hover,.cite-ref a:hover{color:var(--ink)}
   a.cite-ref,.cite-ref a{cursor:pointer}
@@ -406,6 +555,7 @@
   .sync-toolbar.stale,.sync-toolbar.saving{color:var(--warn)!important}
   .sync-toolbar.conflict{color:var(--bad)!important}
   .sync-toolbar.saving{opacity:.8}
+  #reviewToolbarButton.active{color:var(--accent)!important;box-shadow:inset 0 -2px 0 var(--accent)}
   .toolbar{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
   .color-tool{position:relative;display:inline-flex;align-items:center;height:24px}
   .color-tool-btn{position:relative;display:inline-flex;align-items:center;justify-content:center;
@@ -422,6 +572,16 @@
     cursor:pointer;padding:0;background:var(--swatch)}
   .color-swatch:hover{border-color:var(--ink);transform:translateY(-1px)}
   .small{font-size:12px;padding:5px 9px}
+  /* Bubble-header actions are presented as paired controls: one visual boundary per related
+     action, with a subtle divider for the secondary action. */
+  .bubble-tool-group{display:inline-flex;align-items:stretch;overflow:hidden;border:1px solid var(--line);
+    border-radius:9px;background:var(--panel2);box-shadow:0 1px 0 color-mix(in srgb,var(--panel) 70%,transparent)}
+  .bubble-tool-group button{border:0!important;border-radius:0;background:transparent!important;min-height:34px}
+  .bubble-tool-group button:hover{background:color-mix(in srgb,var(--accent) 10%,var(--panel))!important}
+  .bubble-tool-group .bubble-tool-secondary{padding-left:8px;padding-right:8px;border-left:1px solid var(--line)!important;color:var(--muted)}
+  .bubble-tool-group .bubble-tool-secondary:hover{color:var(--ink)}
+  .overleaf-mark{display:block;width:16px;height:16px;object-fit:contain;flex:0 0 auto}
+  .overleaf-label{display:inline-flex;align-items:center;gap:6px;font-weight:650}
   .deepitem{display:flex;align-items:center;gap:8px;padding:5px 0;border-top:1px solid var(--line)}
   h2.section-title{margin:0 0 18px;font-family:var(--font-ui);font-weight:700;
     letter-spacing:-.02em;font-size:20px}
@@ -441,6 +601,18 @@
   .diffbox{background:var(--panel);border:1px solid var(--line);border-radius:12px;
            width:min(840px,93vw);max-height:85vh;display:flex;flex-direction:column}
   .diffbody{overflow:auto;padding:10px 12px;line-height:1.5}
+  .asset-modal-header{padding:12px 16px;display:flex;align-items:center;gap:8px;flex-shrink:0;
+    border-bottom:1px solid var(--line)}
+  .asset-modal-header b{font-family:var(--font-ui);font-size:15px}
+  .asset-modal-body{padding:14px 16px;min-height:180px;gap:8px}
+  .asset-file-row{display:grid;grid-template-columns:minmax(160px,1fr) auto auto auto auto;
+    gap:7px;align-items:center;padding:9px 0;border-bottom:1px solid var(--line)}
+  .asset-file-row:last-child{border-bottom:0}
+  .asset-file-name{font-family:var(--font-mono);font-size:12px;min-width:0}
+  .asset-modal-footer{padding:12px 16px;border-top:1px solid var(--line);display:flex;
+    align-items:center;gap:10px;flex-wrap:wrap;flex-shrink:0;background:var(--panel2)}
+  @media(max-width:700px){.asset-file-row{grid-template-columns:minmax(130px,1fr) auto auto;gap:6px}
+    .asset-file-row .asset-file-size{grid-column:1}.asset-file-row a,.asset-file-row button{justify-self:end}}
   /* Compact creation dialogs mirror the Help panel's clean header/body/footer rhythm. */
   .create-dialog{width:min(420px,calc(100vw - 28px));overflow:hidden;box-shadow:var(--shadow)}
   .create-dialog-header,.create-dialog-footer{padding:12px 16px;display:flex;align-items:center;gap:8px;flex-shrink:0}
@@ -481,6 +653,33 @@
   #editorHost{flex:1;min-height:0;min-width:0;display:flex;overflow:hidden;overflow:clip}
   #editorWrap{flex:1;min-height:0;min-width:0;overflow:hidden;overflow:clip}
   #editorWrap .toastui-editor-defaultUI{height:100%}
+  #reviewWrap{flex:0 0 300px;min-width:240px;overflow:auto;border-left:1px solid var(--line);
+    background:var(--panel2);font-family:var(--font-ui)}
+  #editorHost.review-closed #reviewWrap,#editorHost.mode-view #reviewWrap{display:none}
+  #editorHost.mode-split #reviewWrap{order:1}
+  #editorHost.mode-split #previewWrap{order:2}
+  .review-hd{position:sticky;top:0;z-index:2;display:flex;gap:5px;align-items:center;padding:9px 10px;
+    background:var(--panel2);border-bottom:1px solid var(--line)}
+  .review-tab{font-size:12px;padding:4px 7px;border-radius:6px;background:transparent;border:1px solid transparent;color:var(--muted)}
+  .review-tab.active{color:var(--ink);border-color:var(--accent);background:var(--panel)}
+  .review-add{min-width:25px;padding:3px 7px!important;background:color-mix(in srgb,var(--accent) 24%,var(--panel))!important;
+    border-color:color-mix(in srgb,var(--accent) 55%,var(--line))!important;color:var(--accent)!important;font-weight:700}
+  .review-add:hover{background:color-mix(in srgb,var(--accent) 38%,var(--panel))!important}
+  .review-thread{margin:9px;border:1px solid var(--line);border-radius:8px;background:var(--panel);overflow:hidden}
+  .review-thread.selected{border-color:var(--accent);box-shadow:0 0 0 1px color-mix(in srgb,var(--accent) 35%,transparent)}
+  .review-thread summary{cursor:pointer;padding:8px 9px;font-size:12px;list-style:none}
+  .review-thread summary::-webkit-details-marker{display:none}
+  .review-thread summary::before{content:"▸ ";color:var(--muted)}
+  .review-thread[open] summary::before{content:"▾ "}
+  .review-meta{color:var(--muted);font-size:11px;margin-top:3px}
+  .review-body{padding:0 9px 9px;font-size:13px;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere}
+  .review-msg{border-top:1px solid var(--line);padding:8px 9px;font-size:13px;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere}
+  .review-thread summary>b,.review-msg b{font-size:11px;color:var(--accent);font-weight:700}
+  .review-actions{display:flex;gap:5px;flex-wrap:wrap;padding:8px 9px;border-top:1px solid var(--line)}
+  .review-actions button{font-size:11px;padding:3px 6px}.review-compose{display:flex;flex-direction:column;gap:6px;padding:8px 9px;border-top:1px solid var(--line)}
+  .review-compose textarea{min-height:58px;resize:vertical;font:inherit;font-size:12px}.review-orphan{color:var(--warn);font-size:11px;font-weight:700}
+  .review-inline-edit{display:block;width:100%;box-sizing:border-box;min-height:66px;resize:vertical;font:inherit;font-size:13px}
+  ::highlight(lockedin-review){background-color:rgba(245,204,62,.24)}
   #previewWrap{flex:1;overflow:auto;padding:12px 16px;min-width:0;min-height:0;line-height:1.6;
     overflow-anchor:none}
   /* The editor pane has three view modes, chosen from the toolbar dropdown:
@@ -493,7 +692,16 @@
   /* Hide Toast UI's built-in preview controls — we use our own custom renderer */
   .toastui-editor-mode-switch{display:none!important}
   .toastui-editor-tabs{display:none!important}
+  /* Toast UI claims $$ for its own custom-block widgets, which we never use: a line like
+     "$$K = ..." opens a widget block that only a line of exactly "$$" can close, so multi-line
+     display math used to paint the rest of the page with the widget's brown background. Saving
+     a page now moves such an opener onto its own line (bubbles.normalize_display_math), but
+     pages saved before that fix still parse this way — so neutralize the widget styling and
+     keep the math looking like the text it is. */
+  .toastui-editor-md-custom-block-line-background{background-color:transparent!important}
+  .toastui-editor-md-custom-block{color:inherit!important}
   .wikilink{color:var(--accent2);border-bottom:1px dashed var(--accent2);cursor:pointer}
+  .centered-text{text-align:center}
   .todoref{color:var(--accent);font-weight:500;cursor:pointer;text-decoration:none;
     background:rgba(124,156,255,.12);padding:0 4px;border-radius:4px}
   .scopebar{display:flex;gap:6px;align-items:center;padding:6px 10px;border-top:1px solid var(--line)}
@@ -540,6 +748,18 @@
   .quick-add-paper input,.quick-add-paper textarea{padding:7px 9px;font-size:12px}
   .quick-add-paper textarea{min-height:68px;resize:vertical;font-family:var(--font-mono);line-height:1.35}
   .quick-add-paper .row{justify-content:flex-end}
+  /* Migrate-resources picker. The base rule above sets width:100% on every input, which stretches
+     a bare checkbox across the whole row — its glyph then draws centred in that box, so each row's
+     tick lands at a different x. Size the controls explicitly and use a grid so columns line up. */
+  .migrate-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto auto;gap:10px;
+    align-items:center;padding:6px 0;border-top:1px solid var(--line)}
+  .migrate-row:first-of-type{border-top:none}
+  .migrate-row input[type=checkbox]{width:16px;height:16px;min-width:0;margin:0;padding:0;flex:none}
+  .migrate-row select{width:auto;min-width:64px}
+  .migrate-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .migrate-open{font-size:11px;padding:2px 8px;text-decoration:none;white-space:nowrap;
+    border:1px solid var(--line);border-radius:6px;color:var(--muted)}
+  .migrate-open:hover{color:var(--ink);border-color:var(--accent)}
   .membership-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto auto;gap:6px;
     align-items:center;border:1px solid var(--line);border-radius:8px;padding:7px 8px;background:var(--panel2)}
   .membership-row .score{font-variant-numeric:tabular-nums;color:var(--muted);white-space:nowrap}
@@ -547,6 +767,10 @@
 
   /* ── Mobile ── */
   @media (max-width:700px){
+    #reviewWrap{display:none!important}
+    /* Safari zooms the viewport when focusing a form field below 16px. Keep every editable
+       control at the platform threshold; the viewport declaration above also disables pinch zoom. */
+    input,textarea,select{font-size:16px!important}
     /* On phones the whole page scrolls naturally instead of a locked app shell.
        overflow-x:clip is a safety net: it kills any horizontal page scroll (which would
        otherwise let a too-wide child shift content left and clip the left edge) without
@@ -571,14 +795,39 @@
     /* main scrolls with the page */
     #main{height:auto;overflow:visible;padding:14px 12px}
     #main.detailmode{height:auto;overflow:visible;min-height:0;padding:12px 10px 84px}
+    /* A bubble is an editor workspace, not a document page: keep the app frame fixed and let
+       the editor/preview own scrolling. This removes Safari's extra page-level scroll handle. */
+    #app.detail-open{height:var(--vvh);min-height:var(--vvh);overflow:hidden}
+    /* The Papers/Chat controls are intentionally floating controls. Do not reserve page space
+       for them: that would shrink the bubble field and make the controls look detached. */
+    #app.detail-open #main.detailmode{height:100%;overflow:hidden;padding:12px 10px 0}
+    #app.detail-open #detail{display:flex;flex:1;min-height:0}
+    #app.detail-open #detail>.editor-pane{height:auto;min-height:0;flex:1}
+    /* Safari can still expose the document scroller even when the app itself is clipped. Lock
+       both document roots while a bubble is open; preview/editor panes remain the only scrollers. */
+    html:has(body.detail-open),body.detail-open{height:var(--vvh);overflow:hidden!important;overscroll-behavior:none}
+    body.detail-open #app{height:var(--vvh);min-height:var(--vvh);overflow:hidden}
     #app.bubble-focus{height:var(--vvh);min-height:var(--vvh);overflow:hidden}
-    #app.bubble-focus #main.detailmode{height:var(--vvh);min-height:var(--vvh);padding:0;overflow:hidden}
-    #app.bubble-focus #detail>.editor-pane{height:calc(var(--vvh) - 50px);min-height:0}
+    #app.bubble-focus #main.detailmode{position:fixed;inset:0;height:auto;min-height:0;padding:0;overflow:hidden}
+    /* Mobile focus is deliberately a reader, not a compressed version of the editor. Keeping
+       Toast UI mounted but hiding it avoids its hidden-pane sizing bug and leaves the rendered
+       preview as the sole scroll container. Desktop focus keeps its existing workspace layout. */
+    #app.bubble-focus #detail{position:absolute;inset:0;height:auto;display:block}
+    #app.bubble-focus #detail>.editor-pane{position:absolute;inset:0;height:auto;min-height:0;border:0;border-radius:0}
+    #app.bubble-focus .ptabs,#app.bubble-focus #editorWrap{display:none!important}
+    #app.bubble-focus #editorHost{display:block;position:absolute;inset:0;height:auto;overflow:hidden}
+    #app.bubble-focus #previewWrap{display:block!important;position:absolute;inset:0;height:auto;box-sizing:border-box;overflow:auto;padding:22px 18px calc(76px + env(safe-area-inset-bottom))}
     #app.bubble-focus .mobile-bubble-actions{display:none}
+    .mobile-focus-exit{display:block;position:fixed;right:14px;bottom:calc(env(safe-area-inset-bottom) + 14px);z-index:46;
+      min-height:38px;padding:7px 12px;border-radius:999px;background:color-mix(in srgb,var(--panel) 88%,transparent);
+      box-shadow:0 5px 20px rgba(0,0,0,.35);font-size:12px}
     #detail{display:block;min-height:0}
     .pane{height:auto;min-height:0}
     #detail>.editor-pane{height:calc(var(--vvh) - 154px - env(safe-area-inset-top));min-height:min(380px, calc(var(--vvh) - 154px))}
     #detail>.chat-pane,.desktop-only-tool{display:none!important}
+    /* On phones, page creation and editor-mode switching belong in the full workspace, not the
+       compact reader header. Keep page tabs and the Focus control only. */
+    .mobile-workspace-control{display:none!important}
     #previewArrow{display:none!important}
     .mobile-only{display:inline-flex;align-items:center}
     /* Mobile respects the chosen view mode (the Split/Edit/Read selector is visible here now).
@@ -635,10 +884,12 @@
     .landing-section{padding:36px 0}
     .landing-section-head{display:block;margin-bottom:18px}
     .landing-section h2{font-size:23px;margin-bottom:8px}
-    .workflow-grid,.feature-grid{grid-template-columns:minmax(0,1fr)}
+    .workflow-grid,.feature-grid,.scientist-platforms,.scientist-steps{grid-template-columns:minmax(0,1fr)}
     .workflow-step,.feature-card{min-height:0}
-    .privacy-panel{display:block}
-    .privacy-panel h2{font-size:23px}
+    .open-source-panel{display:block}
+    .open-source-panel h2{font-size:23px}
+    .clone-box{margin-top:18px}
+    .scientist-install{padding:18px 14px}
   }
 </style>
 </head>
@@ -650,14 +901,14 @@
     <div class="landing-inner">
       <section class="landing-hero" aria-labelledby="landing-title">
         <div>
-          <div class="landing-kicker"><span class="landing-lock">🔒</span> private research workspace</div>
+          <div class="landing-kicker"><span class="landing-lock">🔒</span> Research command center for grad students</div>
           <h1 id="landing-title"><span class="lock">locked</span>in</h1>
-          <p class="landing-lede">A calm command center for papers, math notes, topic wikis, research chat, and the small TODOs that keep a project moving.</p>
-          <p class="landing-copy">Upload PDFs, organize them into bubbles, write math-aware reports, cite your own library, and keep model-powered research help close to the work without moving your notes into a public platform.</p>
+          <p class="landing-lede">Turn a pile of papers and ideas into a rigorous research</p>
+          <p class="landing-copy">Collect PDFs, shape ideas into bubbles, write technical reports, and keep your notes, references, TODOs, and AI-assisted research close to the work.</p>
           <div class="landing-points">
-            <div class="landing-point"><b>Paper-first</b><span>Assets keep source PDFs, tags, notes, summaries, and BibTeX together.</span></div>
-            <div class="landing-point"><b>Math-aware</b><span>Reports render equations, theorem boxes, citations, wikilinks, and TODO references.</span></div>
-            <div class="landing-point"><b>Private by default</b><span>Run locally or expose it only through your own HTTPS tunnel when needed.</span></div>
+            <div class="landing-point"><b>Organize Research</b><span>Keep PDFs, notes, tags, summaries, and BibTeX in a fully indexed library.</span></div>
+            <div class="landing-point"><b>Math Help with AI</b><span>Build bubbles and math-aware reports that evolve with your project.</span></div>
+            <div class="landing-point"><b>Keep Connected</b><span>Use Slack and your preferred models without losing the context of your work.</span></div>
           </div>
         </div>
         <form class="landing-auth-panel col" onsubmit="return false" aria-label="Account access">
@@ -673,52 +924,76 @@
         </form>
       </section>
 
+      <section class="landing-section" aria-labelledby="scientist-install-title">
+        <div class="scientist-install">
+        <div class="landing-section-head">
+          <h2 id="scientist-install-title">Bring your own AI subscription</h2>
+          <p>Install the lightweight Scientist companion, authorize, and work synchronized on the website with Codex, Claude, or Antigravity.</p>
+        </div>
+        <div class="scientist-platforms">
+          <article class="scientist-platform">
+            <h3>macOS or Linux</h3>
+            <p>Python 3.11+ required. Installs only the Scientist client in your user PATH.</p>
+            <code class="command">curl -fsSL https://raw.githubusercontent.com/HamidrezaKmK/lockedin/main/install.sh | bash</code>
+          </article>
+          <article class="scientist-platform">
+            <h3>Windows PowerShell</h3>
+            <p>Python 3.11+ required. Installs the client in local app data.</p>
+            <code class="command">irm https://raw.githubusercontent.com/HamidrezaKmK/lockedin/main/install.ps1 | iex</code>
+          </article>
+        </div>
+        <ol class="scientist-steps">
+          <li><b>Authorize</b>Sign in to your lockedin account in the browser.<code class="command">lockedin-scientist login --server https://lockedin.codes</code></li>
+          <li><b>Pick a bubble</b>List the active workspace names and slugs available to you.<code class="command">lockedin-scientist bubbles</code></li>
+          <li><b>Stay in sync</b>Create a project-local bubble workspace that keeps reports synchronized in the background.<code class="command">lockedin-scientist sync &lt;bubble-slug&gt;</code></li>
+          <li><b>Install a native skill</b>Set up the lockedin-scientist skill once for the agent you use.<code class="command">lockedin-scientist &lt;codex|claude|agy&gt; setup</code></li>
+        </ol>
+        </div>
+      </section>
+
       <section class="landing-section" aria-labelledby="workflow-title">
         <div class="landing-section-head">
-          <h2 id="workflow-title">From paper pile to working theory</h2>
-          <p>lockedin follows the everyday research loop: collect sources, shape topic clusters, write technical notes, then use chat, sharing, and tasks to keep context alive.</p>
+          <h2 id="workflow-title">Paper pile to working theory</h2>
+          <p>Collect sources, shape topic clusters, write technical notes, then chat/share/track.</p>
         </div>
         <div class="workflow-grid">
-          <div class="workflow-step"><span class="workflow-num">01</span><b>Upload papers</b><span>Add PDFs or PDF links, then capture titles, tags, source URLs, summaries, notes, and BibTeX.</span></div>
-          <div class="workflow-step"><span class="workflow-num">02</span><b>Organize into bubbles</b><span>Group assets into approved topic spaces with their own multi-page wiki and attached papers.</span></div>
-          <div class="workflow-step"><span class="workflow-num">03</span><b>Write reports</b><span>Use Markdown with KaTeX equations, labels, theorem environments, citations, TODO refs, and wikilinks.</span></div>
-          <div class="workflow-step"><span class="workflow-num">04</span><b>Chat, share, track</b><span>Discuss a bubble with grounded research chat, publish read-only links, and keep TODOs connected to notes.</span></div>
+          <div class="workflow-step"><span class="workflow-num">01</span><b>Bubble</b><span>Create a theme or idea you would like to research on</span></div>
+          <div class="workflow-step"><span class="workflow-num">02</span><b>Library</b><span>Enrich the context of that research bubble with papers and use AI-assisted summaries</span></div>
+          <div class="workflow-step"><span class="workflow-num">03</span><b>Editing + AI-Assist</b><span>Start editing the bubble, add pages, equations, figures, like an Overleaf environment. Open up the CLI and start editing with AI, ask for relevant literature, validate theorems, and keep up-to-date.</span></div>
+          <div class="workflow-step"><span class="workflow-num">04</span><b>Share</b><span>Share ideas with team-members or compose blogposts to share with the public.</span></div>
         </div>
       </section>
 
       <section class="landing-section" aria-labelledby="components-title">
         <div class="landing-section-head">
-          <h2 id="components-title">The pieces that stay connected</h2>
-          <p>Every view is built around repeated research work rather than a separate marketing funnel.</p>
+          <h2 id="components-title">Library</h2>
+          <p>Every view is built around repeated research work.</p>
         </div>
         <div class="feature-grid">
-          <div class="feature-card"><div class="feature-icon">📚</div><b>Assets</b><br><span>Your complete paper inventory with upload, URL fetch, filters, notes, tags, summaries, and BibTeX validation.</span></div>
-          <div class="feature-card"><div class="feature-icon">🫧</div><b>Bubbles</b><br><span>Topic workspaces that bind papers, pages, chat sessions, citations, and share settings.</span></div>
-          <div class="feature-card"><div class="feature-icon">∑</div><b>Reports</b><br><span>Markdown pages with rendered math, numbered equations, theorem boxes, references, images, and tables.</span></div>
-          <div class="feature-card"><div class="feature-icon">✅</div><b>TODOs</b><br><span>Issue-style tasks with report references, open/done filters, notes, and automatic reference cleanup.</span></div>
-          <div class="feature-card"><div class="feature-icon">💬</div><b>Research Chat</b><br><span>A read-only assistant grounded in the current bubble, paper summaries, and selected deep-read PDFs.</span></div>
-          <div class="feature-card"><div class="feature-icon">📰</div><b>News</b><br><span>Premium crawling for recent papers, with steerable review sessions and accept or discard controls.</span></div>
-          <div class="feature-card"><div class="feature-icon">#</div><b>Slackbot</b><br><span>Use Slack to select bubbles, ask questions, upload papers, manage TODOs, and trigger news crawls.</span></div>
-          <div class="feature-card"><div class="feature-icon">⚙️</div><b>Model Settings</b><br><span>Switch between Qwen, OpenAI, Claude, and Gemini, configure keys, and manage math macros.</span></div>
-          <div class="feature-card"><div class="feature-icon">🔗</div><b>Sharing</b><br><span>Publish unlisted read-only bubble links, copy them, and revoke access without changing the private workspace.</span></div>
+          <div class="feature-card"><div class="feature-icon">📚</div><b>Library</b><br><span>Keep track of your papers, books, and other research materials with appropriate notes and links to idea bubbles and bibtex entries.</span></div>
+          <div class="feature-card"><div class="feature-icon">🫧</div><b>Idea Bubbles</b><br><span>Create idea bubbles to organize your research ideas and connect them to your papers and other research materials.</span></div>
+          <div class="feature-card"><div class="feature-icon">🔗</div><b>Share Latex</b><br><span>Share your latex code with your collaborators and get feedback on your writing.</span></div>
+          <div class="feature-card"><div class="feature-icon">🤖</div><b>AI-powered help</b><br><span>Use your favourite LLM models to help with your research from your CLI and power it with a better context.</span></div>
+          <div class="feature-card"><div class="feature-icon">💬</div><b>Slack Sync</b><br><span>Sync papers and research notes across devices using Slack.</span></div>
+          <div class="feature-card"><div class="feature-icon">📋</div><b>TODOs</b><br><span>Track open research tasks and link them from your report pages with Github issue style referencing.</span></div>
         </div>
       </section>
 
       <section class="landing-section" aria-labelledby="privacy-title">
-        <div class="privacy-panel">
+        <div class="open-source-panel">
           <div>
-            <h2 id="privacy-title">Local and private-first by default</h2>
-            <p>lockedin is designed for research notes that should stay close to the machine, account, and model configuration you control.</p>
+            <h2 id="privacy-title">Open source, yours to shape</h2>
+            <p>Run lockedin on your own machine, adapt it to your research group, and keep ownership of the workbench where your ideas take shape.</p>
           </div>
-          <ul class="privacy-list">
-            <li>User data stays behind login; public share pages are unlisted and read-only.</li>
-            <li>Standard accounts can bring their own OpenAI, Claude, or Gemini API key. Server-side Qwen and News can be limited to premium users.</li>
-            <li>For remote access, run the app behind your own HTTPS tunnel or domain setup instead of exposing the local server directly.</li>
-          </ul>
+          <div class="clone-box">
+            <small>Make it your own</small>
+            <code class="clone-command">git clone https://github.com/HamidrezaKmK/lockedin.git</code>
+            <a class="clone-link" href="https://github.com/HamidrezaKmK/lockedin" target="_blank" rel="noopener noreferrer">⌘ Clone the repository <span aria-hidden="true">↗</span></a>
+          </div>
         </div>
       </section>
 
-      <div class="landing-footer">Made for focused research sessions by HamidrezaKmK.</div>
+      <div class="landing-footer">Made with 💜 by a PhD student</div>
     </div>
   </main>
 </div>
@@ -741,13 +1016,13 @@
   </div>
 
   <div id="side">
-    <button class="navbtn active" data-view="assets">📚 Assets</button>
+    <button class="navbtn" data-view="home">🏠 Home</button>
+    <button class="navbtn active" data-view="assets">📚 Library</button>
     <button class="navbtn" data-view="bubbles">🫧 Bubbles</button>
-    <button class="navbtn" data-view="attention">🔔 Attention <span id="attnCount" class="muted"></span></button>
     <button class="navbtn" data-view="todos">✅ TODOs</button>
-    <button class="navbtn" data-view="news" id="newsNav" style="display:none">📰 News <span id="newsCount" class="muted"></span></button>
+    <button class="navbtn" data-view="workspace">🗂️ Workspace</button>
     <button class="navbtn" data-view="settings">⚙️ Settings</button>
-    <div class="side-credit">Made with 💜 + 🤖 by <a href="https://github.com/HamidrezaKmK" target="_blank" rel="noopener">HamidrezaKmK</a></div>
+    <div class="side-credit">Made with <span class="heart" aria-label="love">♥</span> + 🤖 by a PhD student</div>
   </div>
 
   <div id="main"></div>
@@ -837,6 +1112,10 @@
       app.style.gridTemplateRows="";
       applySideCollapsed(localStorage.getItem("li_side")==="1");
     }
+    syncMobileFocusExit();
+    // Focus is a temporary reading surface on a phone. Do not alter the user's saved desktop
+    // view preference; the mobile focus CSS selects the rendered pane independently.
+    if(enabled&&window.matchMedia("(max-width:700px)").matches) updatePreview();
     const focusBtn=document.getElementById("bubbleFocusToggle");
     if(focusBtn){
       focusBtn.textContent=enabled?"⤢":"⛶";
@@ -846,18 +1125,38 @@
     window.dispatchEvent(new Event("resize"));
   }
 
+  function syncMobileFocusExit(){
+    const existing=document.getElementById("mobileFocusExit");
+    const show=S.bubbleFocus&&window.matchMedia("(max-width:700px)").matches;
+    if(!show){ if(existing)existing.remove(); return; }
+    if(existing)return;
+    const exit=el("button",{type:"button",id:"mobileFocusExit",class:"mobile-focus-exit",
+      title:"Exit focused reading", "aria-label":"Exit focused reading",
+      onclick:()=>setBubbleFocus(false)},"Exit reading");
+    document.getElementById("main").append(exit);
+  }
+  window.addEventListener("resize",syncMobileFocusExit);
+
   // ---------- hash routing ----------
   function pushRoute(hash){history.pushState(null,"",hash?"#"+hash:"#");}
   function applyHash(){
     const h=location.hash.replace(/^#/,"");
     if(!h||h==="assets"){switchView("assets",{noRoute:true});return;}
+    if(h==="home"){switchView("home",{noRoute:true});return;}
     if(h==="bubbles"){switchView("bubbles",{noRoute:true});return;}
-    if(h==="attention"){switchView("attention",{noRoute:true});return;}
-    if(h==="news"){switchView("news",{noRoute:true});return;}
+    if(h==="workspace"){switchView("workspace",{noRoute:true});return;}
     if(h==="settings"){switchView("settings",{noRoute:true});return;}
     if(h==="todos"){switchView("todos",{noRoute:true});return;}
+    if(h==="migrate"){viewMigratePapers({noRoute:true});return;}
     const tm=h.match(/^todos\/(\d+)$/);
     if(tm){viewTodo(+tm[1]);return;}
+    const wam=h.match(/^w\/([^/]+)\/asset\/([^/]+)$/);
+    if(wam){
+      S.workspaceId=decodeURIComponent(wam[1]);
+      refreshAccountButton();
+      openAssetById(decodeURIComponent(wam[2]),{noRoute:true});
+      return;
+    }
     const am=h.match(/^asset\/([^/]+)$/);
     if(am){openAssetById(decodeURIComponent(am[1]),{noRoute:true});return;}
     const m=h.match(/^bubble\/([^/]+)(?:\/([^/]+))?$/);
@@ -881,7 +1180,9 @@
 
   // ---------- api ----------
   async function api(path, opts={}){
-    const r = await fetch(path, {credentials:"include", headers:{"Content-Type":"application/json"}, ...opts});
+    const headers={"Content-Type":"application/json",...(opts.headers||{})};
+    if(S.workspaceId) headers["X-LockedIn-Workspace"]=S.workspaceId;
+    const r = await fetch(path, {credentials:"include", headers, ...opts});
     if(!r.ok){ let d; try{d=(await r.json()).detail;}catch(e){d=r.statusText;} const err=new Error(d||"Error"); err.status=r.status; throw err; }
     const ct=r.headers.get("content-type")||""; return ct.includes("json")?r.json():r.text();
   }
@@ -939,11 +1240,15 @@
     setText("#privacy-title",privacy.title);
     const privacyText=$("#privacy-title")&&$("#privacy-title").parentElement.querySelector("p");
     if(privacyText&&privacy.text!=null) privacyText.textContent=privacy.text;
-    const list=$(".privacy-list");
-    if(list&&Array.isArray(privacy.bullets)){
-      list.innerHTML="";
-      privacy.bullets.forEach(b=>list.append(el("li",{},b||"")));
-    }
+
+    const scientist=c.scientist||{};
+    setText("#scientist-install-title",scientist.title);
+    const scientistIntro=$("#scientist-install-title")&&$("#scientist-install-title").parentElement.querySelector("p");
+    if(scientistIntro&&scientist.intro!=null)scientistIntro.textContent=scientist.intro;
+    cards(".scientist-platforms",scientist.platforms,(p)=>el("article",{class:"scientist-platform"},
+      el("h3",{},p.title||""),el("p",{},p.text||""),el("code",{class:"command"},p.command||"")));
+    cards(".scientist-steps",scientist.steps,(s)=>el("li",{},
+      el("b",{},s.title||""),document.createTextNode(s.text||""),el("code",{class:"command"},s.command||"")));
     setText(".landing-footer",c.footer);
   }
 
@@ -957,7 +1262,7 @@
     const ac = new AbortController();
     (async()=>{
       const r = await fetch(path,{method:"POST",credentials:"include",signal:ac.signal,
-        headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+        headers:{"Content-Type":"application/json","X-LockedIn-Workspace":S.workspaceId||""},body:JSON.stringify(body)});
       const reader=r.body.getReader(); const dec=new TextDecoder(); let buf="";
       while(true){
         const {value,done}=await reader.read(); if(done)break;
@@ -978,7 +1283,19 @@
   // server's _build_refs/_preprocess_* so the live editor preview matches the standalone pages.
   function renderMarkdown(md,opts){
     opts=opts||{}; const refs=opts.refs;
-    const store=[]; let s=md||"";
+    const store=[], captionStore=[]; let s=md||"";
+    if(opts.sourceMarkers) s=withSourceMarkers(s);
+    // Stored report Markdown predates workspaces. Add the active workspace capability at render
+    // time so existing report figures keep working after a workspace switch or in a new tab.
+    if(S.workspaceId){
+      s=s.replace(/\/api\/bubbles\/([^/?\s)]+)\/assets\/([^?\s)"']+)(?:\?workspace=[^\s)"']*)?/g,
+        (_,slug,file)=>workspaceUrl("/api/bubbles/"+slug+"/assets/"+file));
+    }
+    // Keep image alt text out of general math stashing. Markdown emits it as an HTML attribute,
+    // where replacing `$...$` would corrupt the caption before decorateFigures sees it.
+    s=s.replace(/!\[([^\]\n]*)\](?=\()/g,(_,caption)=>{
+      captionStore.push(caption); return "![@@LI_CAP"+(captionStore.length-1)+"@@]";
+    });
     // Pre-stash fenced code blocks so Pass 0 and math stashing never touch their content.
     const cbStore=[];
     s=s.replace(/^(`{3,})[^\n]*\n[\s\S]*?\n\1/gm,m=>{ cbStore.push(m); return '\n\n@@CB'+(cbStore.length-1)+'@@\n\n'; });
@@ -1041,6 +1358,7 @@
     });
     // Merge the global theorem labels (other pages) under this page's local ones (which win).
     if(refs&&refs.thm) theoLabels=Object.assign({},refs.thm,theoLabels);
+    const figLabels=(refs&&refs.fig)||{};
     // Stash all math tokens so marked.js can't mangle them. This MUST come before the
     // \thmref/\eqref span substitutions below, so an in-math reference stays raw inside the
     // stashed source (renderMath resolves it for KaTeX) instead of being turned into an HTML span.
@@ -1056,6 +1374,10 @@
       const cap=t.env.charAt(0).toUpperCase()+t.env.slice(1);
       return `<span class="thm-ref">${cap} ${t.number}</span>`;
     });
+    s=s.replace(/\\figref\{([^}]+)\}/g,(_,lb)=>{
+      const f=figLabels[lb];
+      return f?'<span class="fig-ref">Figure '+f.number+'</span>':'<span class="fig-ref">Figure ?</span>';
+    });
     // Pass 3 — replace \eqref{}/\ref{} in remaining (non-math) text
     if(hasEq){
       s=s.replace(/\\eqref\{([^}]+)\}/g,(_,lb)=>`<span class="eq-ref">(${eqN[lb]||"?"})</span>`);
@@ -1070,7 +1392,7 @@
       (_,color,text)=>`<span class="text-color" style="--tc:${color}">${escHtml(text)}</span>`);
     const citationHref=k=>{
       const ent=bib[k], pdfId=ent&&ent.pdf_id;
-      return (opts.citationPdfLinks&&pdfId)?"/api/assets/"+encodeURIComponent(pdfId)+"/pdf":"";
+      return (opts.citationPdfLinks&&pdfId)?workspaceUrl("/api/assets/"+encodeURIComponent(pdfId)+"/pdf"):"";
     };
     const citationHtml=raw=>{
       const keys=raw.split(",").map(k=>k.trim()).filter(Boolean);
@@ -1113,6 +1435,7 @@
       catch(e){ return `<span style="color:#ff7a7a">${src.src}</span>`; } };
     let html=marked.parse(s,{breaks:false});
     html=html.replace(/@@M(\d+)@@/g,(m,i)=>renderMath(store[+i]));
+    html=html.replace(/@@LI_CAP(\d+)@@/g,(_,i)=>escAttr(captionStore[+i]||""));
     // Restore theorem/lemma/proof blocks: render inner content (math + markdown)
     html=html.replace(/<p>@@TH(\d+)@@<\/p>/g,(m,i)=>{
       const t=theoStore[+i];
@@ -1134,6 +1457,10 @@
         const c2=tr.env.charAt(0).toUpperCase()+tr.env.slice(1);
         return `<span class="thm-ref">${c2} ${tr.number}</span>`;
       });
+      is=is.replace(/\\figref\{([^}]+)\}/g,(_,lb)=>{
+        const f=figLabels[lb];
+        return f?'<span class="fig-ref">Figure '+f.number+'</span>':'<span class="fig-ref">Figure ?</span>';
+      });
       is=is.replace(/\\cite\{([^}]+)\}/g,(_,raw)=>citationHtml(raw));
       is=renderTextColor(is);
       let ih=marked.parse(is,{breaks:false});
@@ -1149,22 +1476,125 @@
     return html;
   }
 
+  function withSourceMarkers(md){
+    // Keep a stable offset into the original Markdown at each structural block. Comments survive
+    // marked.js without altering its parsing; bindPreviewSourceOffsets consumes them after render.
+    const lines=String(md||"").match(/.*(?:\n|$)/g)||[];
+    let out="", offset=0, afterBlank=true, inFence=false;
+    for(const line of lines){
+      if(!line)continue;
+      const text=line.replace(/\n$/,""), trimmed=text.trim();
+      const fence=/^\s*(`{3,}|~{3,})/.test(text);
+      // Math delimiters are deliberately not structural triggers: marking both opening and
+      // closing $$ lines would inject a comment into the TeX passed to KaTeX. Display math still
+      // receives a marker through the blank line that starts its block.
+      const structural=/^\s*(#{1,6}\s|[-+*]\s+|\d+[.)]\s+|>\s?)/.test(text);
+      if(!inFence && trimmed && (afterBlank||structural)) out+=`<!--li-src:${offset}-->\n`;
+      out+=line;
+      if(fence)inFence=!inFence;
+      afterBlank=!trimmed || fence;
+      offset+=line.length;
+    }
+    return out;
+  }
+
+  function bindPreviewSourceOffsets(root){
+    const walker=document.createTreeWalker(root,NodeFilter.SHOW_COMMENT);
+    const markers=[]; let node;
+    while(node=walker.nextNode()){
+      const match=/^li-src:(\d+)$/.exec((node.nodeValue||"").trim());
+      if(match)markers.push({node,offset:+match[1]});
+    }
+    const nextElement=node=>{
+      let cur=node;
+      while(cur&&cur!==root){
+        let sibling=cur.nextSibling;
+        while(sibling){ if(sibling.nodeType===Node.ELEMENT_NODE)return sibling; sibling=sibling.nextSibling; }
+        cur=cur.parentNode;
+      }
+      return null;
+    };
+    markers.forEach(({node,offset})=>{
+      const target=nextElement(node);
+      if(target&&!target.dataset.sourceStart)target.dataset.sourceStart=String(offset);
+      node.remove();
+    });
+    const blocks=[...root.querySelectorAll("[data-source-start]")];
+    blocks.forEach((block,index)=>{
+      const next=blocks[index+1];
+      if(next)block.dataset.sourceEnd=next.dataset.sourceStart;
+    });
+  }
+
+  function decorateFigures(root){
+    const refs=S.refs||{}, figLabels=refs.fig||{};
+    let nextFigure=Number((refs.figStart||{})[S.page]||0);
+    root.querySelectorAll("p > img:only-child[alt]").forEach(img=>{
+      nextFigure++;
+      const rawCaption=img.getAttribute("alt")||"";
+      const labelMatch=/\\label\{([^}]+)\}/.exec(rawCaption);
+      const label=labelMatch&&labelMatch[1];
+      const caption=rawCaption.replace(/\\label\{[^}]+\}/g,"").trim();
+      const number=label&&figLabels[label]?figLabels[label].number:nextFigure;
+      const paragraph=img.parentElement, figure=document.createElement("figure");
+      if(label)figure.id="fig-"+encodeURIComponent(label);
+      if(paragraph.dataset.sourceStart)figure.dataset.sourceStart=paragraph.dataset.sourceStart;
+      if(paragraph.dataset.sourceEnd)figure.dataset.sourceEnd=paragraph.dataset.sourceEnd;
+      paragraph.replaceWith(figure);
+      figure.append(img);
+      const figcaption=document.createElement("figcaption");
+      figcaption.append(el("span",{class:"figure-number"},"Figure "+number+": "));
+      renderFigureCaption(figcaption,caption);
+      figure.append(figcaption);
+    });
+  }
+
+  function renderFigureCaption(target,caption){
+    const source=String(caption||""); let last=0, match;
+    const math=/\$([^$\n]+?)\$/g;
+    while((match=math.exec(source))!==null){
+      if(match.index>last)target.append(document.createTextNode(source.slice(last,match.index)));
+      try{
+        const node=document.createElement("span");
+        node.innerHTML=katex.renderToString(match[1],{displayMode:false,macros:S.mathMacros,throwOnError:false});
+        target.append(node);
+      }catch(e){ target.append(document.createTextNode(match[0])); }
+      last=math.lastIndex;
+    }
+    if(last<source.length)target.append(document.createTextNode(source.slice(last)));
+  }
+
   // ---------- state ----------
+  const WORKSPACE_STORAGE_KEY="li_workspace";
   const S = { user:null, model:null, premium:false, premiumRequestedAt:"", admin:false,
-    newsEnabled:false, mathMacros:{}, refs:null, view:"assets", bubble:null, chat:[],
+    workspaceId:null, personalWorkspaceId:null, workspaces:[],
+    mathMacros:{}, refs:null, view:"assets", bubble:null, chat:[],
     editor:null, page:null, pages:[], home:null, bubbleInstr:"", bubbleAssets:[],
     sessionId:null, sessionTitle:null,
-    todos:[], todosById:{}, todoFilter:"open",
+    todos:[], todosById:{}, todoFilter:"open", bubbleFilter:"active",
     chatCollapsed:false,  // persisted in li_chat
     pollTimer:null, lastPageMtime:null, lastManifestMtime:null,
     baseMtime:null, autosaveTimer:null, saving:false, syncState:"synced", applyingRemote:false,
     previewEl:null, remoteChangePending:false, papersMenu:null, chatPane:null,
     detailWrap:null,
+    comments:[], reviewOpen:false, reviewTab:"open", selectedComment:null, lastCommentsMtime:null,
     refAc:null,
     healthTimer:null, healthSeq:0, verifiedActive:null,
     shareActive:false, shareToken:"", bubbleFocus:false, showHiddenPages:false, renderVersion:0,
     availableThemes:["dark","light","pink","techno","pearl"]
   };
+
+  // Browser navigations (new tabs, PDFs, images, and preview pages) cannot carry the API header.
+  // Preserve the workspace explicitly in those URLs; the server validates membership before use.
+  function workspaceUrl(path){
+    if(!S.workspaceId)return path;
+    return path+(path.includes("?")?"&":"?")+"workspace="+encodeURIComponent(S.workspaceId);
+  }
+  function workspaceAssetRoute(pdfId){
+    return S.workspaceId
+      ? "#w/"+encodeURIComponent(S.workspaceId)+"/asset/"+encodeURIComponent(pdfId)
+      : "#asset/"+encodeURIComponent(pdfId);
+  }
 
   // Every main-screen render owns a monotonically increasing version. Async requests from a
   // screen that has since been replaced can finish, but they are no longer allowed to repaint it.
@@ -1173,9 +1603,40 @@
     m.innerHTML="";
     m.dataset.renderVersion=String(version);
     m.classList.toggle("detailmode",detail);
+    $("#app").classList.toggle("detail-open",detail);
+    document.body.classList.toggle("detail-open",detail);
     return {m,version};
   }
   const isCurrentRender=version=>version===S.renderVersion;
+
+  function viewLoading(label="Loading…", cards=0){
+    const status=el("div",{class:"view-loading-status",role:"status","aria-live":"polite"},
+      el("span",{class:"loading-spinner","aria-hidden":"true"}),el("span",{},label));
+    const wrap=el("div",{class:"view-loading"},status);
+    if(cards){
+      const grid=el("div",{class:"grid","aria-hidden":"true"});
+      for(let i=0;i<cards;i++) grid.append(el("div",{class:"skeleton-card"},
+        el("div",{class:"skeleton-line medium"}),el("div",{class:"skeleton-line"}),
+        el("div",{class:"skeleton-line short"}),el("div",{class:"skeleton-line medium"})));
+      wrap.append(grid);
+    }
+    return wrap;
+  }
+
+  // Yield between groups of cards so a large paper library remains scrollable and responsive
+  // while it is being drawn. The render id prevents an old search from appending after a newer one.
+  function appendCardsInFrames(grid, items, makeCard, version, renderId, currentRender){
+    let index=0;
+    const add=()=>{
+      if(!isCurrentRender(version)||renderId!==currentRender())return;
+      const end=Math.min(index+24,items.length);
+      const fragment=document.createDocumentFragment();
+      while(index<end)fragment.append(makeCard(items[index++]));
+      grid.append(fragment);
+      if(index<items.length)requestAnimationFrame(add);
+    };
+    requestAnimationFrame(add);
+  }
 
   function leaveBubbleWorkspace({preserveFocus=false}={}){
     setBubbleFocus(false,{persist:!preserveFocus});
@@ -1185,6 +1646,7 @@
     S.editor=null; S.bubble=null; S.page=null; S.pages=[]; S.previewEl=null;
     S.chatPane=null; S.detailWrap=null; S.papersMenu=null;
     S.remoteChangePending=false; S.sessionId=null; S.sessionTitle=null;
+    try{ if(window.CSS&&CSS.highlights)CSS.highlights.delete("lockedin-review"); }catch(e){}
   }
 
   // ================= AUTH =================
@@ -1204,7 +1666,7 @@
 
   function refreshAccountButton(){
     const btn=$("#accountBtn");
-    if(btn) btn.textContent=S.user?("@"+S.user):"Account";
+    if(btn){ const ws=(S.workspaces||[]).find(w=>w.id===S.workspaceId); btn.textContent=ws?("▣ "+ws.name):"Workspace"; }
   }
 
   function renderAccountMenu(){
@@ -1218,11 +1680,16 @@
         el("span",{class:"pill"},S.premium?"premium":"standard")),
       el("div",{class:"acct-row"},premiumText),
     );
+    const ws=el("div",{class:"col",style:"gap:4px"},el("b",{style:"font-size:12px"},"Workspaces"));
+    (S.workspaces||[]).forEach(w=>ws.append(el("button",{class:"ghost small",disabled:w.id===S.workspaceId,
+      onclick:()=>switchWorkspace(w.id)},(w.id===S.workspaceId?"✓ ":"")+w.name+" · "+w.role)));
+    ws.append(el("button",{class:"workspace-manage small",onclick:()=>{ $("#accountMenu").classList.add("hide"); switchView("workspace"); }},"Manage workspaces →"));
+    menu.append(ws);
     if(!S.premium){
       menu.append(el("div",{class:"acct-row"},
         S.premiumRequestedAt
           ? "Premium requested "+S.premiumRequestedAt.slice(0,10)+"."
-          : "Premium unlocks server-side Qwen and news crawling."));
+          : "Premium unlocks server-side Qwen."));
     }
     const actions=el("div",{class:"acct-actions"});
     if(!S.premium){
@@ -1237,6 +1704,7 @@
     }
     actions.append(el("button",{class:"ghost small",style:"color:var(--bad)",onclick:async()=>{
       await api("/api/logout",{method:"POST"});
+      localStorage.removeItem(WORKSPACE_STORAGE_KEY);
       location.reload();
     }},"Log out"));
     menu.append(actions);
@@ -1247,6 +1715,18 @@
     renderAccountMenu();
     $("#accountMenu").classList.toggle("hide");
   };
+  async function switchWorkspace(id){
+    if(id===S.workspaceId)return;
+    if(S.saving){toast("Finish saving before switching workspaces.");return;}
+    const old=S.workspaceId; S.workspaceId=id;
+    try{
+      const math=await api("/api/settings/math"); S.mathMacros=math.macros||{};
+      S.bubble=null; S.page=null; S.pages=[]; S.chat=[]; S.todos=[]; S.todosById={};
+      localStorage.setItem(WORKSPACE_STORAGE_KEY,id);
+      refreshAccountButton(); $("#accountMenu").classList.add("hide"); switchView("assets");
+      toast("Switched workspace");
+    }catch(e){ S.workspaceId=old; toast(e.message); }
+  }
   document.addEventListener("click",e=>{
     const wrap=document.querySelector(".account-quick");
     if(wrap&&!wrap.contains(e.target)) $("#accountMenu").classList.add("hide");
@@ -1303,21 +1783,41 @@
   applyTheme("dark",{persist:false});
   // Mobile-only ↗ in the topbar → open the current bubble page's read-only preview in a new tab.
   $("#previewArrow").onclick=()=>{ if(S.bubble) window.open(
-    "/api/bubbles/"+S.bubble+"/preview/"+(S.page||S.home||"overview"),"_blank"); };
+    workspaceUrl("/api/bubbles/"+S.bubble+"/preview/"+(S.page||S.home||"overview")),"_blank"); };
 
   async function boot(){
-    let me; try{ me=await api("/api/me"); }catch(e){ return; }
-    S.user=me.user; S.model=me.model; S.newsEnabled=!!me.news_enabled; S.premium=!!me.premium;
+    const savedWorkspace=localStorage.getItem(WORKSPACE_STORAGE_KEY);
+    if(savedWorkspace)S.workspaceId=savedWorkspace;
+    let me;
+    try{ me=await api("/api/me"); }
+    catch(e){
+      // Membership can change while a tab is closed. Fall back to Personal instead of leaving
+      // the app unusable because a browser-local workspace selection became stale.
+      if(!savedWorkspace || (e.status!==403&&e.status!==404))return;
+      localStorage.removeItem(WORKSPACE_STORAGE_KEY);
+      S.workspaceId=null;
+      try{ me=await api("/api/me"); }catch(_){ return; }
+    }
+    S.user=me.user; S.model=me.model; S.premium=!!me.premium;
+    S.workspaceId=me.workspace_id||null; S.personalWorkspaceId=me.personal_workspace_id||null;
+    if(S.workspaceId)localStorage.setItem(WORKSPACE_STORAGE_KEY,S.workspaceId);
     S.premiumRequestedAt=me.premium_requested_at||""; S.admin=!!me.admin;
     S.availableThemes=Array.isArray(me.themes)?me.themes:THEMES.slice();
     $("#auth").style.display="none"; $("#app").style.display="grid";
     applyTheme(localStorage.getItem("li_theme")||"dark");
     refreshAccountButton();
-    if(S.newsEnabled){ $("#newsNav").style.display=""; refreshNewsCount(); }
     applySideCollapsed(localStorage.getItem("li_side")==="1");
     renderModelTabs(); refreshHealth(); applyHash();
-    fetch("/api/settings/math",{credentials:"include"})
-      .then(r=>r.json()).then(d=>{ S.mathMacros=d.macros||{}; }).catch(()=>{});
+    const deviceCode=new URLSearchParams(location.search).get("scientist_device");
+    if(deviceCode){
+      try{
+        await api("/api/scientist/v2/device/"+encodeURIComponent(deviceCode)+"/approve",{method:"POST"});
+        history.replaceState(null,"",location.pathname+location.hash);
+        toast("LockedIn Scientist authorized. You can return to your terminal.");
+      }catch(e){ toast("Scientist authorization failed: "+e.message); }
+    }
+    api("/api/settings/math").then(d=>{ S.mathMacros=d.macros||{}; }).catch(()=>{});
+    api("/api/workspaces").then(d=>{ S.workspaces=d.workspaces||[]; refreshAccountButton(); }).catch(()=>{});
   }
 
   // ================= MODEL SWITCHER =================
@@ -1477,7 +1977,6 @@
       el("pre",{id:"settingsHealthDetails",class:"hide",
         style:"white-space:pre-wrap;overflow:auto;margin-top:8px;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--panel);font-size:12px"}));
     renderAesthetics(m);
-    renderMathMacros(m);
     if(S.admin) renderUserAccess(m);
     renderAccountSection(m);
     if(checkHealth)scheduleLiveHealth(S.model.active);
@@ -1514,6 +2013,70 @@
     main.append(box);
   }
 
+  async function renderWorkspaceSettings(main){
+    const old=$("#workspaceCreate"); if(old)old.remove();
+    const prior=$("#workspaceSettings"); if(prior)prior.remove();
+    const active=(S.workspaces||[]).find(w=>w.id===S.workspaceId);
+    const createBox=el("div",{id:"workspaceCreate",class:"card col",style:"margin-top:20px;gap:10px"});
+    createBox.append(el("b",{},"Create a workspace"),
+      el("div",{class:"muted",style:"font-size:12px"},"Create a shared research space, then invite approved LockedIn users."));
+    const makeName=el("input",{placeholder:"New shared workspace name"});
+    createBox.append(el("div",{class:"row"},makeName,el("button",{class:"primary small",onclick:async()=>{
+      try{const r=await api("/api/workspaces",{method:"POST",body:JSON.stringify({name:makeName.value})});
+        S.workspaces.push({id:r.workspace.id,name:r.workspace.name,kind:r.workspace.kind,role:"admin",owner_user:S.user});
+        makeName.value=""; refreshAccountButton(); refreshWorkspaceSettings(main); toast("Workspace created");
+      }catch(e){toast(e.message);}
+    }},"Create workspace")));
+    main.append(createBox);
+    if(!active)return;
+    const box=el("div",{id:"workspaceSettings",class:"card col",style:"margin-top:20px;gap:10px"});
+    box.append(el("div",{class:"row"},el("b",{},"Active workspace: "+active.name),el("span",{class:"pill"},active.role)),
+      el("div",{class:"muted",style:"font-size:12px"},"These settings and math macros apply to every bubble and member in this workspace."));
+    const roster=el("div",{class:"col",style:"gap:6px"}); box.append(roster); main.append(box);
+    try{
+      const r=await api("/api/workspaces/"+encodeURIComponent(S.workspaceId)+"/members");
+      const members=r.members||[]; roster.append(el("b",{style:"font-size:12px"},"Members"));
+      if(active.role==="admin" && active.kind!=="personal"){
+        const input=el("input",{placeholder:"Search approved users to add",autocomplete:"off"});
+        const choices=el("datalist",{id:"workspaceUserChoices"}); input.setAttribute("list","workspaceUserChoices");
+        const hint=el("div",{class:"muted",style:"font-size:12px"},"Loading approved users…");
+        roster.append(choices,el("div",{class:"row"},input,el("button",{class:"primary small",onclick:async()=>{
+          try{await api("/api/workspaces/"+S.workspaceId+"/members",{method:"POST",body:JSON.stringify({username:input.value})});refreshWorkspaceSettings(main);toast("Member added");}catch(e){toast(e.message);}
+        }},"Add member")),hint);
+        try{
+          const users=(await api("/api/workspaces/users")).users||[];
+          const ranked=q=>users.slice().sort((a,b)=>{
+            q=q.toLowerCase(); const score=x=>x===q?0:x.startsWith(q)?1:x.includes(q)?2:3;
+            return score(a)-score(b)||a.localeCompare(b);
+          });
+          const renderChoices=()=>{choices.innerHTML=""; ranked(input.value.trim()).forEach(username=>choices.append(el("option",{value:username})));};
+          input.oninput=renderChoices; renderChoices(); hint.textContent=users.length?"Start typing to search approved users.":"No other approved users are available.";
+        }catch(e){hint.textContent="Couldn't load eligible users: "+e.message;}
+      }
+      members.forEach(member=>{
+        const row=el("div",{class:"row",style:"border-top:1px solid var(--line);padding-top:7px;flex-wrap:wrap"},
+          el("b",{},"@"+member.username),el("span",{class:"pill"},member.role),member.owner?el("span",{class:"badge"},"owner"):null,el("span",{class:"spacer"}));
+        if(active.role==="admin" && active.kind!=="personal" && member.username!==S.user){
+          row.append(el("button",{class:"ghost small",onclick:async()=>{try{await api("/api/workspaces/"+S.workspaceId+"/members/"+encodeURIComponent(member.username),{method:"PUT",body:JSON.stringify({role:member.role==="admin"?"editor":"admin"})});refreshWorkspaceSettings(main);}catch(e){toast(e.message);}}},member.role==="admin"?"Demote":"Make admin"),
+            el("button",{class:"danger small",onclick:async()=>{try{await api("/api/workspaces/"+S.workspaceId+"/members/"+encodeURIComponent(member.username),{method:"DELETE"});refreshWorkspaceSettings(main);toast("Member removed");}catch(e){toast(e.message);}}},"Remove"));
+        }
+        roster.append(row);
+      });
+    }catch(e){roster.append(el("div",{class:"err"},e.message));}
+  }
+
+  async function viewWorkspace(){
+    const {m}=beginMainRender();
+    m.append(el("h2",{class:"section-title"},"🗂️ Workspace"),
+      el("div",{class:"muted",style:"margin-bottom:12px"},"Manage the active workspace, its members, and shared report macros."));
+    await refreshWorkspaceSettings(m);
+  }
+
+  async function refreshWorkspaceSettings(main){
+    await renderWorkspaceSettings(main);
+    const activeBox=$("#workspaceSettings"); if(activeBox) renderMathMacros(activeBox,{embedded:true});
+  }
+
   function renderAccountSection(main){
     const old=$("#accountSection"); if(old)old.remove();
     const box=el("div",{id:"accountSection",class:"card col",style:"margin-top:20px;gap:10px"});
@@ -1544,10 +2107,10 @@
     main.append(box);
   }
 
-  function renderMathMacros(main){
+  function renderMathMacros(main,{embedded=false}={}){
     const old=$("#mathMacros"); if(old)old.remove();
     const pending=Object.assign({},S.mathMacros); // editable copy
-    const box=el("div",{id:"mathMacros",class:"card col",style:"margin-top:20px"});
+    const box=el("div",{id:"mathMacros",class:(embedded?"col":"card col"),style:embedded?"margin-top:14px;padding-top:14px;border-top:1px solid var(--line)":"margin-top:20px"});
     const body=el("div",{class:"col hide",style:"gap:10px;margin-top:10px"});
     const toggle=el("button",{class:"ghost small",onclick:()=>{
       body.classList.toggle("hide");
@@ -1595,7 +2158,7 @@
         });
         try{
           const r=await fetch("/api/settings/math",{method:"PUT",credentials:"include",
-            headers:{"Content-Type":"application/json"},body:JSON.stringify({macros})});
+            headers:{"Content-Type":"application/json","X-LockedIn-Workspace":S.workspaceId||""},body:JSON.stringify({macros})});
           if(!r.ok) throw new Error(await r.text());
           S.mathMacros=macros;
           if(typeof updatePreview==="function") updatePreview();
@@ -1664,28 +2227,43 @@
   document.querySelectorAll(".navbtn").forEach(b=>b.onclick=()=>switchView(b.dataset.view));
   function switchView(v,{noRoute=false}={}){
     leaveBubbleWorkspace();
-    S.view=v; stopNewsLive();
+    S.view=v;
     $("#previewArrow").classList.add("hide");   // left the bubble → hide the mobile preview link
     document.querySelectorAll(".navbtn").forEach(b=>b.classList.toggle("active",b.dataset.view===v));
     if(!noRoute)pushRoute(v==="assets"?"":v);
-    if(v==="assets")viewAssets();
+    if(v==="home")viewHome();
+    else if(v==="assets")viewAssets();
     else if(v==="bubbles")viewBubbles();
-    else if(v==="attention")viewAttention();
     else if(v==="todos")viewTodos();
-    else if(v==="news")viewNews();
+    else if(v==="workspace")viewWorkspace();
     else if(v==="settings")viewSettings();
-    refreshAttnCount();
-    if(S.newsEnabled)refreshNewsCount();
   }
-  async function refreshAttnCount(){
-    try{ const r=await api("/api/attention"); $("#attnCount").textContent=r.assets.length?`(${r.assets.length})`:""; }
-    catch(e){}
+
+  function viewHome(){
+    const {m}=beginMainRender();
+    // Reuse the public landing copy, but omit account access because this is an authenticated
+    // in-app destination. The source landing remains the single editable content surface.
+    const source=$("#auth .landing"); if(!source)return;
+    const home=source.cloneNode(true);
+    home.classList.add("home-landing");
+    const hero=home.querySelector(".landing-hero"); if(hero)hero.remove();
+    const authPanel=home.querySelector(".landing-auth-panel"); if(authPanel)authPanel.remove();
+    const footer=home.querySelector(".landing-footer"); if(footer)footer.remove();
+    home.removeAttribute("aria-labelledby");
+    home.querySelectorAll("[id]").forEach(node=>node.removeAttribute("id"));
+    m.append(home);
   }
 
   // ================= ASSETS =================
   async function viewAssets(){
     const {m,version}=beginMainRender();
-    m.append(el("h2",{class:"section-title"},"📚 Assets"));
+    m.append(el("h2",{class:"section-title"},"📚 Library"));
+    // Start both reads immediately: the bubble list populates the upload selector, while the
+    // asset request is often the expensive one for a large library.
+    const bubblesRequest=api("/api/bubbles");
+    const assetsRequest=api("/api/assets");
+    const loading=viewLoading("Loading your library…",8);
+    m.append(loading);
 
     // upload form
     const f=el("div",{class:"card col"});
@@ -1694,9 +2272,10 @@
     const linkMode=el("button",{type:"button"},"PDF link");
     const modeSeg=el("div",{class:"seg"},fileMode,linkMode);
     const file=el("input",{type:"file",accept:"application/pdf"});
-    const title=el("input",{placeholder:"Title (optional)"});
+    const title=el("input",{placeholder:"Title",required:"true"});
+    const bibliography=el("textarea",{rows:"3",placeholder:"BibTeX (optional)",spellcheck:"false"});
     let bubbles=[];
-    try{ bubbles=(await api("/api/bubbles")).bubbles||[]; }catch(e){}
+    try{ bubbles=(await bubblesRequest).bubbles||[]; }catch(e){}
     if(!isCurrentRender(version))return;
     const url=el("input",{placeholder:"Paste a PDF link to fetch it automatically"});
     const applyUploadMode=mode=>{
@@ -1715,35 +2294,56 @@
       const hasFile=uploadMode==="file"&&!!file.files[0], link=uploadMode==="link"?url.value.trim():"";
       if(uploadMode==="file"&&!hasFile){toast("Choose a PDF file.");return;}
       if(uploadMode==="link"&&!link){toast("Paste a PDF link.");return;}
+      if(!title.value.trim()){toast("Enter a title.");title.focus();return;}
       btn.disabled=true; btn.textContent=uploadMode==="file"?"Uploading…":"Fetching…";
       try{
         let d;
         if(uploadMode==="file"){
           const fd=new FormData(); fd.append("file",file.files[0]);
           fd.append("title",title.value); fd.append("tags",""); fd.append("url_source","");
-          const r=await fetch("/api/assets/upload",{method:"POST",credentials:"include",body:fd});
+          fd.append("bibliography",bibliography.value);
+          const r=await fetch("/api/assets/upload",{method:"POST",credentials:"include",
+            headers:{"X-LockedIn-Workspace":S.workspaceId||""},body:fd});
           if(!r.ok)throw new Error((await r.json()).detail);
           d=await r.json();
         }else{
-          d=await api("/api/assets/upload-url",{method:"POST",body:JSON.stringify({url:link,title:title.value,tags:""})});
+          d=await api("/api/assets/upload-url",{method:"POST",body:JSON.stringify({url:link,title:title.value,tags:"",bibliography:bibliography.value})});
         }
-        toast(d.attention_flag?"Added — auto-tagging in background…":"Added — summarizing in background…");
-        file.value="";title.value="";url.value="";
+        toast("Added — summarizing in background…");
+        file.value="";title.value="";url.value="";bibliography.value="";
         viewAssets();
       }catch(e){toast(e.message);} finally{btn.disabled=false;btn.textContent="Add paper";}
     };
-    f.append(el("b",{},"Add a PDF"),modeSeg,file,url,title,btn);
-    m.append(f, el("div",{style:"height:16px"}));
+    f.append(el("b",{},"Add a PDF"),modeSeg,file,url,title,bibliography,btn);
+    m.insertBefore(f,loading);
+    m.insertBefore(el("div",{style:"height:16px"}),loading);
 
-    const r=await api("/api/assets");
+    let r;
+    try{ r=await assetsRequest; }
+    catch(e){
+      if(isCurrentRender(version)){
+        loading.replaceWith(el("div",{class:"err"},"Could not load library: "+e.message));
+      }
+      return;
+    }
     if(!isCurrentRender(version))return;
-    if(!r.assets.length){ m.append(el("div",{class:"muted"},"No assets yet. Upload your first PDF above.")); return; }
-    const filterText=el("input",{placeholder:"Search assets by title, author, tag, notes, or BibTeX key…"});
+    loading.remove();
+    if(!r.assets.length){ m.append(el("div",{class:"muted"},"Your library is empty. Add your first PDF above.")); return; }
+    const filterText=el("input",{placeholder:"Search your library by title, author, tag, notes, or BibTeX key…"});
     filterText.value=S.assetSearch||"";
     const filterBubble=el("select");
-    filterBubble.append(el("option",{value:""},"All bubbles"));
+    const REQUIRES_ATTENTION="__requires_attention__";
+    const UNASSIGNED_BUBBLE="__unassigned__";
+    const attentionCount=r.assets.filter(a=>a.attention_flag).length;
+    const unassignedCount=r.assets.filter(a=>!(a.idea_bubbles||[]).length).length;
+    filterBubble.append(el("option",{value:REQUIRES_ATTENTION},`Requires attention (${attentionCount})`));
+    filterBubble.append(el("option",{value:UNASSIGNED_BUBBLE},`Unassigned (${unassignedCount})`));
+    filterBubble.append(el("option",{value:""},"All papers"));
     bubbles.forEach(b=>filterBubble.append(el("option",{value:b.slug},b.name||b.slug)));
-    filterBubble.value=S.assetBubble||"";
+    // A full library can be large. Start with papers that need review, while preserving an
+    // explicit selection during this browser session.
+    if(S.assetBubble==null) S.assetBubble=REQUIRES_ATTENTION;
+    filterBubble.value=S.assetBubble;
     const count=el("div",{class:"asset-count"});
     const filters=el("div",{class:"asset-filter"},
       el("label",{},"Search",filterText),
@@ -1752,22 +2352,35 @@
     const grid=el("div",{class:"grid"});
     const haystack=a=>[
       a.title,a.extracted_title,a.pdf_id,a.url_source,a.notes,...(a.authors||[]),
-      ...(a.tags||[]),...(a.suggested_tags||[]),
+      ...(a.tags||[]),
       ...(a.bibliography||"").match(/@\w+\s*\{\s*([^,\s}]+)/g)||[]
     ].filter(Boolean).join(" ").toLowerCase();
+    let filterRender=0;
     const renderFiltered=()=>{
+      const renderId=++filterRender;
       S.assetSearch=filterText.value;
       S.assetBubble=filterBubble.value;
       const q=filterText.value.trim().toLowerCase();
       const bs=filterBubble.value;
       const shown=r.assets.filter(a=>{
-        if(bs && !(a.idea_bubbles||[]).includes(bs)) return false;
+        if(bs===REQUIRES_ATTENTION){
+          if(!a.attention_flag)return false;
+        } else if(bs===UNASSIGNED_BUBBLE) {
+          if((a.idea_bubbles||[]).length) return false;
+        } else if(bs && !(a.idea_bubbles||[]).includes(bs)) return false;
         return !q || haystack(a).includes(q);
       });
       grid.innerHTML="";
-      shown.forEach(a=>grid.append(assetCard(a)));
-      count.textContent=shown.length===r.assets.length?`${shown.length} assets`:`${shown.length} of ${r.assets.length}`;
-      if(!shown.length) grid.append(el("div",{class:"muted"},"No assets match these filters."));
+      const label=bs===REQUIRES_ATTENTION?"papers requiring attention":bs===UNASSIGNED_BUBBLE?"unassigned papers":"papers";
+      const population=bs===REQUIRES_ATTENTION?attentionCount:bs===UNASSIGNED_BUBBLE?unassignedCount:r.assets.length;
+      count.textContent=shown.length===population?`${shown.length} ${label}`:`${shown.length} of ${population} ${label}`;
+      if(!shown.length){
+        grid.append(el("div",{class:"muted"},bs===REQUIRES_ATTENTION
+          ? "No papers currently require attention."
+          : bs===UNASSIGNED_BUBBLE?"Every paper is assigned to at least one bubble.":"No papers match these filters."));
+        return;
+      }
+      appendCardsInFrames(grid,shown,assetCard,version,renderId,()=>filterRender);
     };
     filterText.addEventListener("input",renderFiltered);
     filterBubble.addEventListener("change",renderFiltered);
@@ -1785,7 +2398,7 @@
     const head=el("div",{class:"acard-head"},titleBox);
     const badges=el("div",{class:"row",style:"gap:5px;flex-wrap:wrap;justify-content:flex-end"});
     if((a.bibliography||"").trim())badges.append(el("span",{class:"badge bib",title:"BibTeX available"},"✓ BibTeX"));
-    if(a.attention_flag)badges.append(el("span",{class:"badge"},"needs review"));
+    if(a.attention_flag)badges.append(el("span",{class:"badge"},"requires attention"));
     if(badges.childNodes.length)head.append(badges);
     c.append(head);
     c.append(renderAssetTags(a));
@@ -1794,27 +2407,25 @@
       el("span",{},"•"),
       el("span",{},(a.date_added||"").slice(0,10)||"undated")));
     c.append(el("div",{class:"acard-actions"},
-      el("a",{href:"/api/assets/"+a.pdf_id+"/pdf",target:"_blank",title:"Open PDF",onclick:e=>e.stopPropagation()},
+      el("a",{href:workspaceUrl("/api/assets/"+a.pdf_id+"/pdf"),target:"_blank",title:"Open PDF",onclick:e=>e.stopPropagation()},
         el("button",{class:"primary small",onclick:e=>e.stopPropagation()},"↗ PDF")),
       el("span",{class:"spacer"}),
-      el("button",{class:"ghost small",onclick:async(e)=>{
+      el("button",{class:"ghost small",title:a.attention_flag?"Clear attention flag":"Mark as requiring attention",onclick:async(e)=>{
         e.stopPropagation();
         const next=!a.attention_flag;
         await api("/api/assets/"+a.pdf_id,{method:"PATCH",body:JSON.stringify({attention_flag:next})});
-        toast(next?"Added to attention queue":"Removed from attention queue");
-        viewAssets(); refreshAttnCount();
-      }},a.attention_flag?"Clear queue":"Queue")));
+        toast(next?"Marked as requiring attention":"Cleared attention flag");
+        viewAssets();
+      }},a.attention_flag?"Clear":"Review"),
+      el("button",{class:"ghost small",onclick:e=>{
+        e.stopPropagation(); openAssetEditor(a);
+      }},"Manage")));
     c.onclick=()=>openAssetEditor(a);
     return c;
   }
-  function renderAssetTags(a,{suggestionsOnly=false,emptyText=""}={}){
+  function renderAssetTags(a,{emptyText=""}={}){
     const wrap=el("div",{class:"acard-tags"});
-    const real=suggestionsOnly?[]:(a.tags||[]).map(t=>({label:t,cls:"pill"}));
-    // Suggestions are only a hint for un-tagged papers in the full asset grid, but the
-    // attention queue is specifically about reviewing suggestions.
-    const showSuggestions=suggestionsOnly||!(a.tags||[]).length;
-    const suggested=showSuggestions?(a.suggested_tags||[]).map(t=>({label:"? "+t,cls:"pill suggest"})):[];
-    const items=real.concat(suggested);
+    const items=(a.tags||[]).map(t=>({label:t,cls:"pill"}));
     if(!items.length){
       if(emptyText)wrap.append(el("div",{class:"tag-summary"},el("span",{class:"tag-summary-main"},emptyText)));
       return wrap;
@@ -1833,7 +2444,7 @@
     try{
       const r=await api("/api/assets/"+encodeURIComponent(pdfId));
       if(!isCurrentRender(version))return;
-      await openAssetEditor(r.meta,{returnTo:"assets",noRoute:true,renderVersion:version});
+      await openAssetEditor(r.meta,{noRoute:true,renderVersion:version});
     }catch(e){
       if(!isCurrentRender(version))return;
       toast(e.message);
@@ -1841,14 +2452,13 @@
     }
   }
   async function openAssetEditor(a, opts={}){
-    const returnTo=opts.returnTo||"assets";
-    const goBack=()=>returnTo==="attention"?viewAttention():viewAssets();
+    const goBack=()=>viewAssets();
     if(!opts.noRoute)pushRoute("asset/"+encodeURIComponent(a.pdf_id));
     if(opts.renderVersion==null)leaveBubbleWorkspace();
     const render=opts.renderVersion==null?beginMainRender():{m:$("#main"),version:opts.renderVersion};
     const {m,version}=render;
     if(!isCurrentRender(version))return;
-    m.append(el("button",{class:"ghost small",onclick:goBack},returnTo==="attention"?"← Attention":"← Assets"));
+    m.append(el("button",{class:"ghost small",onclick:goBack},"← Library"));
     const box=el("div",{class:"card col",style:"margin-top:12px;max-width:720px"});
     const title=el("input",{value:a.title||""});
     const notes=el("textarea",{rows:"4"}); notes.value=a.notes||"";
@@ -1981,45 +2591,45 @@
         el("button",{class:"ghost",onclick:closeBibEdit},"Cancel")));
     bibPanel.append(bibSummary,bibEdit);
     box.append(bibPanel);
-    // suggestions are only a hint while a paper is still unassigned
-    if(!(a.idea_bubbles||[]).length && (a.suggested_tags||[]).length){
-      const sg=el("div",{class:"row"},el("span",{class:"muted"},"Suggested:"));
-      a.suggested_tags.forEach(t=>{ const p=el("span",{class:"pill suggest",style:"cursor:pointer"},"+ "+t);
-        p.onclick=async()=>{ try{
-          const r=await api("/api/bubbles",{method:"POST",body:JSON.stringify({name:t})});
-          await api("/api/bubbles/"+r.slug+"/add-pdf",{method:"POST",body:JSON.stringify({pdf_id:a.pdf_id})});
-          await refreshAssetMemberships(); toast("Added to bubble");
-        }catch(e){ toast(e.message); } }; sg.append(p); });
-      box.append(sg);
-    }
     const saveAsset=async(attentionFlag)=>{
-      const payload={title:title.value,notes:notes.value,url_source:url.value,suggested_tags:[]};
+      const payload={title:title.value,notes:notes.value,url_source:url.value};
       if(attentionFlag!==undefined)payload.attention_flag=attentionFlag;
       await api("/api/assets/"+a.pdf_id,{method:"PATCH",body:JSON.stringify(payload)});
-      toast(attentionFlag===false?"Saved and cleared from attention queue":attentionFlag===true?"Saved and moved to attention queue":"Saved");
-      goBack(); refreshAttnCount();
+      toast(attentionFlag===false?"Saved and cleared attention flag":attentionFlag===true?"Saved as requiring attention":"Saved");
+      goBack();
     };
     const actionRow=el("div",{class:"row"},
       el("button",{class:"primary",onclick:async()=>saveAsset(undefined)},"Save"));
     if(a.attention_flag){
-      actionRow.append(el("button",{class:"ghost",onclick:async()=>saveAsset(false)},"Remove from attention queue"));
+      actionRow.append(el("button",{class:"ghost",onclick:async()=>saveAsset(false)},"Clear attention"));
     }else{
-      actionRow.append(el("button",{class:"ghost",onclick:async()=>saveAsset(true)},"Move to attention queue"));
+      actionRow.append(el("button",{class:"ghost",onclick:async()=>saveAsset(true)},"Requires attention"));
     }
     actionRow.append(
-      el("a",{href:"/api/assets/"+a.pdf_id+"/pdf",target:"_blank"},
+      el("a",{href:workspaceUrl("/api/assets/"+a.pdf_id+"/pdf"),target:"_blank"},
         el("button",{class:"ghost"},"Open PDF")),
       el("span",{class:"spacer"}),
       el("button",{class:"ghost",onclick:async()=>{ if(confirm("Delete this asset?")){
-        await api("/api/assets/"+a.pdf_id,{method:"DELETE"}); toast("Deleted"); goBack(); refreshAttnCount(); }}},"Delete"));
+        await api("/api/assets/"+a.pdf_id,{method:"DELETE"}); toast("Deleted"); goBack(); }}},"Delete"));
     box.append(actionRow);
     m.append(box);
     // show cached summary
     const sumWrap=el("div",{class:"card",style:"margin-top:12px;max-width:720px"});
-    sumWrap.append(el("b",{},"AI summary"));
+    const resummarize=el("button",{class:"ghost small"},"↻ Re-summarize");
+    const summaryHint=el("span",{class:"muted",style:"font-size:12px"},"⤷ Uses your active model");
+    sumWrap.append(el("div",{class:"row"},el("b",{},"AI summary"),el("span",{class:"spacer"}),summaryHint,resummarize));
     const body=el("div",{class:"preview",style:"margin-top:8px"});
     let sum=""; try{ sum=(await api("/api/assets/"+a.pdf_id+"/summary")).summary; }catch(e){}
     body.innerHTML=renderMarkdown(sum||"_Not summarized yet._");
+    resummarize.onclick=async()=>{
+      resummarize.disabled=true; const original=resummarize.textContent; resummarize.textContent="Re-summarizing…";
+      try{
+        const r=await api("/api/assets/"+a.pdf_id+"/resummarize",{method:"POST"});
+        body.innerHTML=renderMarkdown(r.summary||"_No summary was produced._");
+        toast("Summary refreshed");
+      }catch(e){ toast(e.message); }
+      finally{resummarize.disabled=false;resummarize.textContent=original;}
+    };
     sumWrap.append(body); m.append(sumWrap);
   }
 
@@ -2042,19 +2652,33 @@
   }
   async function viewBubbles(){
     const {m,version}=beginMainRender();
+    const filter=S.bubbleFilter||"active";
     const head=el("div",{class:"row"}, el("h2",{class:"section-title",style:"margin:0"},"🫧 Bubbles"),
       el("span",{class:"spacer"}),
+      el("button",{class:"ghost small",title:"Copy papers from one bubble into another",
+        onclick:()=>viewMigratePapers()},"Migrate resources"),
+      el("button",{class:"ghost small",onclick:()=>{ S.bubbleFilter=filter==="active"?"archived":"active"; viewBubbles(); }},
+        filter==="active"?"Show archive":"Show active"),
       el("button",{class:"primary small",onclick:newBubble},"+ New bubble"));
-    m.append(head, el("div",{style:"height:14px"}));
-    const r=await api("/api/bubbles");
+    const loading=viewLoading("Loading bubbles…",4);
+    m.append(head, el("div",{style:"height:14px"}),loading);
+    let r;
+    try{ r=await api("/api/bubbles?archived="+(filter==="archived")); }
+    catch(e){ if(isCurrentRender(version))loading.replaceWith(el("div",{class:"err"},e.message)); return; }
     if(!isCurrentRender(version))return;
-    if(!r.bubbles.length){ m.append(el("div",{class:"muted"},"No bubbles yet. Tag a PDF or create one.")); return; }
+    loading.remove();
+    if(!r.bubbles.length){ m.append(el("div",{class:"muted"},filter==="archived"
+      ? "No archived bubbles." : "No bubbles yet. Tag a PDF or create one.")); return; }
     const grid=el("div",{class:"grid"});
     r.bubbles.forEach(b=>{
       const c=el("div",{class:"acard"});
       const h=el("div",{class:"row"}, el("h4",{style:"margin:0"},b.name));
       // delete button — stopPropagation so it doesn't also open the bubble
       h.append(el("span",{class:"spacer"}));
+      h.append(el("button",{class:"ghost small",style:"padding:3px 7px",
+        title:b.archived?"Restore this bubble":"Archive this bubble",
+        onclick:async(e)=>{ e.stopPropagation(); await setBubbleArchived(b.slug, !b.archived); }
+      },b.archived?"Restore":"Archive"));
       h.append(el("button",{class:"ghost small",style:"opacity:.5;padding:3px 7px",
         title:"Delete this bubble",
         onclick:(e)=>{ e.stopPropagation(); deleteBubble(b.slug, b.name, viewBubbles); }
@@ -2069,6 +2693,121 @@
     });
     m.append(grid);
   }
+
+  // Copy papers between bubbles in one pass. Papers are shared assets and membership is a tag,
+  // so this never duplicates a file — the source bubble is left exactly as it was.
+  async function viewMigratePapers({noRoute=false}={}){
+    leaveBubbleWorkspace();
+    S.view="bubbles";
+    $("#previewArrow").classList.add("hide");
+    document.querySelectorAll(".navbtn").forEach(b=>b.classList.toggle("active",b.dataset.view==="bubbles"));
+    if(!noRoute)pushRoute("migrate");
+    const {m,version}=beginMainRender();
+    m.append(el("a",{class:"wikilink",style:"font-size:13px",onclick:()=>viewBubbles()},"← All bubbles"));
+    m.append(el("h2",{style:"margin:10px 0 2px"},"Migrate resources"));
+    m.append(el("div",{class:"muted",style:"font-size:12px;margin-bottom:14px"},
+      "Copy papers from one bubble into another. The source bubble keeps everything; "
+      +"relevance starts from the paper's score in the source and stays editable."));
+    const loading=viewLoading("Loading bubbles…",2);
+    m.append(loading);
+    let list;
+    try{ list=(await api("/api/bubbles")).bubbles||[]; }
+    catch(e){ if(isCurrentRender(version))loading.replaceWith(el("div",{class:"err"},e.message)); return; }
+    if(!isCurrentRender(version))return;
+    loading.remove();
+    if(list.length<2){
+      m.append(el("div",{class:"muted"},"You need at least two bubbles to migrate papers between them."));
+      return;
+    }
+    const opts=(placeholder)=>[el("option",{value:""},placeholder),
+      ...list.map(b=>el("option",{value:b.slug},b.name+" ("+b.pdf_count+" paper"+(b.pdf_count===1?"":"s")+")"))];
+    const srcSel=el("select",{},...opts("Choose a source…"));
+    const dstSel=el("select",{},...opts("Choose a destination…"));
+    srcSel.value=list[0].slug;
+    const pickers=el("div",{class:"card",style:"display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end"},
+      el("label",{style:"flex:1 1 220px"},el("div",{class:"muted",style:"font-size:12px;margin-bottom:4px"},"Source bubble"),srcSel),
+      el("label",{style:"flex:1 1 220px"},el("div",{class:"muted",style:"font-size:12px;margin-bottom:4px"},"Destination bubble"),dstSel));
+    const body=el("div",{style:"margin-top:14px"});
+    m.append(pickers, body);
+
+    let rows=[];                       // {pdf_id, check, scoreSel}
+    const countLabel=el("span",{class:"muted",style:"font-size:12px"});
+    const migrateBtn=el("button",{class:"primary small"},"Migrate");
+    function refreshCount(){
+      const n=rows.filter(r=>r.check.checked).length;
+      countLabel.textContent=n+" of "+rows.length+" selected";
+      migrateBtn.disabled=!n;
+    }
+    async function rebuild(){
+      const source=srcSel.value, dest=dstSel.value;
+      rows=[]; body.innerHTML="";
+      if(!source||!dest){ body.append(el("div",{class:"muted"},"Pick a source and a destination bubble.")); return; }
+      if(source===dest){ body.append(el("div",{class:"muted"},"Pick two different bubbles.")); return; }
+      const busy=viewLoading("Loading papers…",3); body.append(busy);
+      let src,dst;
+      try{ [src,dst]=await Promise.all([api("/api/bubbles/"+source),api("/api/bubbles/"+dest)]); }
+      catch(e){ body.innerHTML=""; body.append(el("div",{class:"err"},e.message)); return; }
+      if(!isCurrentRender(version))return;
+      body.innerHTML="";
+      const present=new Set((dst.bubble.assets||[]).map(a=>a.pdf_id));
+      const all=src.bubble.assets||[];
+      const movable=all.filter(a=>!present.has(a.pdf_id));
+      if(!all.length){ body.append(el("div",{class:"muted"},"That source bubble has no papers yet.")); return; }
+      if(!movable.length){
+        body.append(el("div",{class:"muted"},
+          "All "+all.length+" paper(s) in that bubble are already in the destination. Nothing to copy."));
+        return;
+      }
+      const table=el("div",{class:"card"});
+      const head=el("div",{class:"row",style:"align-items:center;gap:10px;margin-bottom:8px"},
+        el("b",{},"Papers to copy"), el("span",{class:"spacer"}), countLabel,
+        el("button",{class:"ghost small",onclick:()=>{rows.forEach(r=>r.check.checked=true);refreshCount();}},"Select all"),
+        el("button",{class:"ghost small",onclick:()=>{rows.forEach(r=>r.check.checked=false);refreshCount();}},"Select none"));
+      table.append(head);
+      if(all.length!==movable.length){
+        table.append(el("div",{class:"muted",style:"font-size:12px;margin-bottom:8px"},
+          (all.length-movable.length)+" paper(s) are already in the destination and are not listed."));
+      }
+      const list=el("div",{});
+      movable.forEach(a=>{
+        const label=a.title||a.filename||a.pdf_id;
+        const check=el("input",{type:"checkbox"}); check.checked=true; check.onchange=refreshCount;
+        const scoreSel=el("select",{},...[5,4,3,2,1].map(n=>el("option",{value:String(n)},String(n))));
+        scoreSel.value=String(Number(a.bubble_score||5));
+        // A <label> around the whole row would forward a click on the relevance select to the
+        // checkbox, so toggle from the title explicitly instead.
+        list.append(el("div",{class:"migrate-row",title:label},
+          check,
+          el("span",{class:"migrate-title",style:"cursor:pointer",
+            onclick:()=>{ check.checked=!check.checked; refreshCount(); }},label),
+          // Opens the asset page in a new tab so a vague title can be checked without losing
+          // the selections and relevances already set up on this page.
+          el("a",{class:"migrate-open",href:workspaceAssetRoute(a.pdf_id),target:"_blank",
+            rel:"noopener",title:"Open “"+label+"” in a new tab"},"open"),
+          el("span",{class:"muted",style:"font-size:12px"},"relevance"), scoreSel));
+        rows.push({pdf_id:a.pdf_id,check,scoreSel});
+      });
+      table.append(list);
+      migrateBtn.onclick=async()=>{
+        const items=rows.filter(r=>r.check.checked)
+          .map(r=>({pdf_id:r.pdf_id,score:Number(r.scoreSel.value)}));
+        if(!items.length)return;
+        migrateBtn.disabled=true;
+        try{
+          const r=await api("/api/bubbles/"+dest+"/migrate-papers",
+            {method:"POST",body:JSON.stringify({source,items})});
+          toast("Copied "+r.migrated.length+" paper(s) into "+dst.bubble.name);
+          openBubble(dest);
+        }catch(e){ toast(e.message); migrateBtn.disabled=false; }
+      };
+      table.append(el("div",{class:"row",style:"margin-top:12px;gap:8px"},migrateBtn));
+      body.append(table);
+      refreshCount();
+    }
+    srcSel.onchange=rebuild; dstSel.onchange=rebuild;
+    rebuild();
+  }
+
   function requestTextDialog({title,label,placeholder,submitLabel}){
     return new Promise(resolve=>{
       const overlay=el("div",{class:"overlay",role:"dialog","aria-modal":"true","aria-label":title});
@@ -2105,6 +2844,13 @@
     try{ await api("/api/bubbles/"+slug,{method:"DELETE"}); toast("Bubble deleted"); onDone&&onDone(); }
     catch(e){ toast("Error: "+e.message); }
   }
+  async function setBubbleArchived(slug, archived){
+    try{
+      await api("/api/bubbles/"+slug+"/archive",{method:"PATCH",body:JSON.stringify({archived})});
+      toast(archived?"Bubble archived":"Bubble restored");
+      viewBubbles();
+    }catch(e){ toast("Error: "+e.message); }
+  }
 
   function startBubbleRename(nameSpan, slug){
     const current=nameSpan.textContent.replace(/\s*\(suggested\)$/,"").trim();
@@ -2136,8 +2882,10 @@
   }
   async function viewTodos(){
     const {m,version}=beginMainRender();
+    const loading=viewLoading("Loading TODOs…",3); m.append(loading);
     await loadTodos();
     if(!isCurrentRender(version))return;
+    loading.remove();
     const filter=S.todoFilter||"open";
     const head=el("div",{class:"row"},
       el("h2",{class:"section-title",style:"margin:0"},"✅ TODOs"),
@@ -2170,7 +2918,7 @@
   // Detail view — the shared landing for both an @<id> click and a TODO-list card click.
   async function viewTodo(id){
     leaveBubbleWorkspace();
-    S.view="todos"; if(typeof stopNewsLive==="function")stopNewsLive();
+    S.view="todos";
     $("#previewArrow").classList.add("hide");   // left the bubble → hide the mobile preview link
     document.querySelectorAll(".navbtn").forEach(b=>b.classList.toggle("active",b.dataset.view==="todos"));
     pushRoute("todos/"+id);
@@ -2266,20 +3014,80 @@
   function openReadOnlyPreview(slug){
     const target=visibleSharePage();
     if(currentPageMeta()&&currentPageMeta().hidden)toast("This page is hidden in preview/share; opening a visible page.");
-    window.open("/api/bubbles/"+slug+"/preview/"+target,"_blank");
+    window.open(workspaceUrl("/api/bubbles/"+slug+"/preview/"+target),"_blank");
   }
 
-  function buildShareControls(slug){
-    const wrap=el("span",{class:"row",style:"gap:6px;align-items:center;flex-shrink:0"});
+  function formatFileSize(size){
+    const n=Number(size)||0;
+    if(n<1024)return n+" B";
+    if(n<1024*1024)return (n/1024).toFixed(1)+" KB";
+    return (n/(1024*1024)).toFixed(1)+" MB";
+  }
+
+  function openBubbleAssets(slug){
+    const overlay=el("div",{class:"overlay",role:"dialog","aria-modal":"true","aria-label":"Bubble assets"});
+    const box=el("div",{class:"diffbox col",style:"width:min(760px,94vw);max-height:82vh;padding:0;overflow:hidden;gap:0"});
+    const list=el("div",{class:"diffbody asset-modal-body col"});
+    const file=el("input",{type:"file",multiple:"true"});
+    const upload=el("button",{class:"primary small"},"Upload files");
+    const close=()=>overlay.remove();
+    const render=async()=>{
+      list.innerHTML=""; list.append(el("div",{class:"muted"},"Loading files…"));
+      try{
+        const r=await api("/api/bubbles/"+encodeURIComponent(slug)+"/assets");
+        list.innerHTML="";
+        const entries=r.assets||[];
+        if(!entries.length){ list.append(el("div",{class:"muted"},"No files in this bubble yet.")); return; }
+        entries.forEach(item=>{
+          const url=workspaceUrl(item.url);
+          const row=el("div",{class:"asset-file-row"},
+            el("span",{class:"asset-file-name truncate",title:item.name},item.name),
+            el("span",{class:"muted asset-file-size",style:"font-size:12px"},formatFileSize(item.size)),
+            el("a",{href:url,target:"_blank",rel:"noopener",onclick:e=>e.stopPropagation()},el("button",{class:"ghost small"},"Open")),
+            el("a",{href:url,download:item.name,onclick:e=>e.stopPropagation()},el("button",{class:"ghost small"},"⇩ Download")));
+          row.append(el("button",{class:"danger small",onclick:async()=>{
+            if(!confirm("Delete "+item.name+"? This can break report links that use this file."))return;
+            try{ await api("/api/bubbles/"+encodeURIComponent(slug)+"/assets/"+encodeURIComponent(item.name),{method:"DELETE"}); toast("Deleted "+item.name); render(); }
+            catch(e){ toast(e.message); }
+          }},"Delete"));
+          list.append(row);
+        });
+      }catch(e){ list.innerHTML=""; list.append(el("div",{class:"err"},e.message)); }
+    };
+    upload.onclick=async()=>{
+      const files=[...file.files]; if(!files.length){file.click();return;}
+      upload.disabled=true; upload.textContent="Uploading…";
+      try{
+        for(const picked of files){
+          const fd=new FormData(); fd.append("file",picked);
+          const r=await fetch("/api/bubbles/"+encodeURIComponent(slug)+"/assets",{method:"POST",credentials:"include",
+            headers:{"X-LockedIn-Workspace":S.workspaceId||""},body:fd});
+          if(!r.ok){ const d=await r.json(); throw new Error(d.detail||"Upload failed."); }
+        }
+        file.value=""; toast(files.length===1?"File uploaded":"Files uploaded"); await render();
+      }catch(e){ toast(e.message); }
+      finally{upload.disabled=false;upload.textContent="Upload files";}
+    };
+    file.onchange=()=>{ if(file.files.length)upload.textContent="Upload "+file.files.length+" file"+(file.files.length===1?"":"s"); };
+    box.append(
+      el("div",{class:"asset-modal-header"},el("b",{},"📁 Bubble assets"),el("span",{class:"spacer"}),el("button",{class:"ghost small",title:"Close",onclick:close},"✕")),
+      list,
+      el("div",{class:"asset-modal-footer"},file,el("span",{class:"spacer"}),upload));
+    overlay.append(box); overlay.onclick=e=>{if(e.target===overlay)close();}; document.body.append(overlay); render();
+  }
+
+  function buildShareControls(slug,onShareState){
+    const wrap=el("span",{class:"bubble-tool-group",title:"Public sharing controls"});
     const btn=el("button",{class:"ghost small"});
-    const copy=el("button",{class:"ghost small",title:"Copy link to the current page",
-      style:"opacity:.8"},"📋 Copy link");
+    const copy=el("button",{class:"ghost small",title:"Open the shared page in a new tab",
+      style:"opacity:.8"},"↗ Open link");
     function render(){
       btn.textContent=S.shareActive?"🟢 Sharing":"🔗 Share";
       btn.title=S.shareActive?"Public link is live — click to stop sharing"
                              :"Make this bubble viewable via an unlisted link";
       btn.classList.toggle("primary",false);
       copy.classList.toggle("hide",!S.shareActive);
+      if(onShareState)onShareState(S.shareActive);
     }
     btn.onclick=async()=>{
       btn.disabled=true;
@@ -2290,12 +3098,38 @@
         toast(S.shareActive?"Sharing on — anyone with the link can view":"Sharing off");
       }catch(e){ toast(e.message); } finally{ btn.disabled=false; }
     };
-    copy.onclick=async()=>{
-      const url=shareUrl();
-      try{ await navigator.clipboard.writeText(url); toast("🔗 Link copied"); }
-      catch(e){ prompt("Copy this link:",url); }
-    };
+    copy.onclick=()=>window.open(shareUrl(),"_blank","noopener");
+    copy.classList.add("bubble-tool-secondary");
     wrap.append(btn,copy); render();
+    return wrap;
+  }
+
+  function openOverleafModal(b){
+    const overlay=el("div",{class:"overlay",role:"dialog","aria-modal":"true","aria-label":"Link Overleaf project"});
+    const box=el("div",{class:"diffbox create-dialog"});
+    const input=el("input",{type:"text",placeholder:"Overleaf Cloud project URL, Git URL, or project ID",value:b.overleaf_project_id||"",autocomplete:"off"});
+    const cancel=el("button",{class:"ghost",onclick:()=>overlay.remove()},"Cancel");
+    const remove=el("button",{class:"ghost",style:"color:var(--danger,#d55)"},"Remove link");
+    const save=el("button",{class:"primary"},"Save link");
+    const refresh=async()=>{ overlay.remove(); await openBubble(b.slug,{noRoute:true,page:S.page}); };
+    save.onclick=async()=>{ save.disabled=true; try{ await api("/api/bubbles/"+encodeURIComponent(b.slug)+"/overleaf",{method:"PUT",body:JSON.stringify({project:input.value.trim()})}); await refresh(); }catch(e){save.disabled=false;toast(e.message);} };
+    remove.onclick=async()=>{ remove.disabled=true; try{await api("/api/bubbles/"+encodeURIComponent(b.slug)+"/overleaf",{method:"DELETE"});await refresh();}catch(e){remove.disabled=false;toast(e.message);} };
+    box.append(el("div",{class:"create-dialog-header"},el("b",{},"Overleaf project")),
+      el("div",{class:"diffbody create-dialog-body"},el("p",{class:"muted"},"This bubble can optionally link to one Overleaf Cloud project."),input),
+      el("div",{class:"create-dialog-footer"},remove,cancel,save));
+    if(!b.overleaf_project_id)remove.classList.add("hide");
+    overlay.append(box);overlay.onclick=e=>{if(e.target===overlay)overlay.remove();};document.body.append(overlay);setTimeout(()=>input.focus(),0);
+  }
+
+  function buildOverleafControls(b){
+    const wrap=el("span",{class:"bubble-tool-group",title:"Overleaf project controls"});
+    const open=el("button",{class:"ghost small",title:b.overleaf_url?"Open this bubble’s Overleaf project":"Link an Overleaf project to this bubble"});
+    open.append(el("span",{class:"overleaf-label"},
+      el("img",{class:"overleaf-mark",alt:"",src:"https://images.ctfassets.net/nrgyaltdicpt/451Wbu94Q1X3M5QIk74QLL/08e42061e965fb152a329ded74cdc3ce/overleaf-o-logo-primary.svg"}),
+      document.createTextNode("Overleaf")));
+    open.onclick=()=>b.overleaf_url?window.open(b.overleaf_url,"_blank","noopener"):openOverleafModal(b);
+    wrap.append(open);
+    if(b.overleaf_url)wrap.append(el("button",{class:"ghost small bubble-tool-secondary",title:"Change or remove Overleaf project",onclick:()=>openOverleafModal(b)},"✏️"));
     return wrap;
   }
 
@@ -2308,20 +3142,24 @@
     const token=S.openToken=(S.openToken||0)+1;
     if(!noRoute)pushRoute("bubble/"+slug);
     S.bubble=slug; S.chat=[]; S.page=null; S.pages=[]; S.sessionId=null; S.sessionTitle=null;
+    S.selectedComment=null;
     S.previewEl=null; S.remoteChangePending=false; S.papersMenu=null; S.chatPane=null; S.detailWrap=null;
     S.baseMtime=null; S.saving=false; S.syncState="synced";
     S.shareActive=false; S.shareToken=""; S.editingTitles=false; S.nameInput=null; S.showHiddenPages=false;
     const {m,version}=beginMainRender({detail:true});
-    const b=(await api("/api/bubbles/"+slug)).bubble;
+    const loading=viewLoading("Loading bubble workspace…",3); m.append(loading);
+    let b;
+    try{ b=(await api("/api/bubbles/"+slug)).bubble; }
+    catch(e){ if(S.openToken===token&&isCurrentRender(version))loading.replaceWith(el("div",{class:"err"},"Could not load bubble: "+e.message)); return; }
     if(S.openToken!==token||!isCurrentRender(version)) return;   // a newer navigation started while we awaited — bail
+    loading.remove();
     // Load TODOs so the preview can resolve @<id> refs; re-render once they're in.
     loadTodos().then(()=>{ if(S.bubble===slug && S.editor) updatePreview(); });
     S.bubbleAssets=b.assets||[];
     S.shareActive=!!b.share_active; S.shareToken=b.share_token||"";
-    // Editable bubble title. For approved bubbles the rename lives in the "✏️ Edit titles"
-    // toggle by the sync badge (alongside page-title editing); unapproved bubbles have no
-    // page tabs, so they keep an inline rename pencil here.
-    const nameSpan=el("span",{class:"truncate",style:"max-width:60vw"},b.name+(b.approved?"":" (suggested)"));
+    // Bubble creation is explicit and immediately creates its report workspace. The approval
+    // branch below only protects against an old direct link while its legacy data is cleaned up.
+    const nameSpan=el("span",{class:"truncate",style:"max-width:60vw"},b.name);
     S.nameSpan=nameSpan;
     const titleRow=el("div",{class:"row bubble-title",style:"margin:10px 0 12px;align-items:center;gap:8px;flex-wrap:wrap"},
       el("h2",{class:"section-title",style:"margin:0"},"🫧 "), nameSpan);
@@ -2336,9 +3174,13 @@
       // bubble name (sharing/preview are done from a larger screen) to keep the page minimal.
       // "👁 Preview" opens the server-rendered, read-only page — exactly what a share viewer sees.
       const tools=el("span",{class:"row desktop-only-tool",style:"gap:6px;align-items:center;flex-shrink:0"});
-      tools.append(el("button",{class:"ghost small",title:"Preview the read-only page your share viewers see",
-        onclick:()=>openReadOnlyPreview(slug)},"👁 Preview"));
-      tools.append(buildShareControls(slug));
+      const preview=el("button",{class:"small",title:"Preview the read-only page your share viewers see",
+        onclick:()=>openReadOnlyPreview(slug)},"👁 Preview");
+      tools.append(preview);
+      tools.append(el("button",{class:"small",title:"Browse, upload, or download this bubble's files",
+        onclick:()=>openBubbleAssets(slug)},"📁 Assets"));
+      tools.append(buildOverleafControls(b));
+      tools.append(buildShareControls(slug,active=>preview.classList.toggle("hide",active)));
       titleRow.append(tools);
     }
     m.append(titleRow);
@@ -2369,14 +3211,9 @@
 
   function buildApprovalPane(left,b){
     const bd=el("div",{class:"bd col"});
-    bd.append(el("p",{},"This bubble was auto-suggested. Approve it to start its report pages."));
-    if(b.assets.length)bd.append(el("div",{class:"muted"},"Triggered by: "+b.assets.map(a=>a.title).join(", ")));
-    const instr=el("textarea",{rows:"3",placeholder:"Optional: what should this report focus on?"});
-    bd.append(el("label",{class:"muted"},"Report instructions (optional)"),instr);
-    bd.append(el("button",{class:"primary",onclick:async()=>{
-      await api("/api/bubbles/"+b.slug+"/approve",{method:"POST",body:JSON.stringify({instructions:instr.value})});
-      toast("Approved"); openBubble(b.slug);
-    }},"Approve this bubble"));
+    bd.append(el("p",{},"This bubble is no longer available."));
+    bd.append(el("div",{class:"muted"},"Automatic bubble suggestions have been removed. Create a bubble explicitly from the Bubbles list instead."));
+    bd.append(el("button",{class:"primary",onclick:()=>showList("bubbles")},"Back to bubbles"));
     left.append(el("div",{class:"hd"},el("b",{},"Report")), bd);
   }
 
@@ -2386,17 +3223,20 @@
     fetchRefs().then(()=>updatePreview());   // bubble-wide eqn/thm numbering for the preview
     const tabs=el("div",{class:"ptabs",id:"ptabs"});
     const editorWrap=el("div",{id:"editorWrap"});
+    const reviewWrap=el("aside",{id:"reviewWrap","aria-label":"Review comments"});
     S.previewEl=el("div",{id:"previewWrap",class:"preview"});
     // Open in the user's last-used view mode for this bubble (persisted across refreshes),
     // defaulting to reading view. The toolbar dropdown switches to editor / side-by-side.
     S.viewMode=loadViewMode(b.slug);
-    const host=el("div",{id:"editorHost",class:"mode-"+S.viewMode});
-    host.append(editorWrap, S.previewEl);
+    S.reviewOpen=localStorage.getItem("lockedin:review:"+b.slug)==="1";
+    const host=el("div",{id:"editorHost",class:"mode-"+S.viewMode+(S.reviewOpen?"":" review-closed")});
+    host.append(editorWrap, reviewWrap, S.previewEl);
     left.append(tabs,host);
 
     // init editor with the home page content
     initEditor(editorWrap, b.content||"");
     S.page=b.home; S.syncState="synced";
+    loadComments();
     refreshTabs();
     startPolling();
     primeSync();          // capture the home page's base mtime for conflict detection
@@ -2459,12 +3299,13 @@
 
     const actions=el("div",{class:"mobile-bubble-actions"},
       el("button",{class:"primary small",title:"Papers",onclick:openPapers},"📚"),
+      el("button",{class:"primary small",title:b.overleaf_url?"Open Overleaf":"Link Overleaf",onclick:()=>b.overleaf_url?window.open(b.overleaf_url,"_blank","noopener"):openOverleafModal(b)},"🍃"),
       el("button",{class:"primary small",title:"Chat",onclick:openChat},"💬"));
     main.append(actions,papersSheet,chatSheet);
   }
 
-  // Render the "Papers in this bubble" strip. Paper chips open the full asset editor in a new tab;
-  // membership and relevance edits live there so this pane stays compact and read-only.
+  // Render the "Papers in this bubble" strip. The route carries the selected workspace, so the
+  // full editor can safely open in a new tab without falling back to Personal.
   function renderBubblePdfs(container, b){
     if(!Array.isArray(b.assets)) b.assets=[];
     container.innerHTML="";
@@ -2478,8 +3319,8 @@
       const sec=el("div",{class:"score-group"},el("div",{class:"score-heading"},"Relevance "+score));
       group.forEach(a=>{
         const paperTitle=a.extracted_title||a.title||a.pdf_id;
-        const chip=el("a",{class:"paperchip",href:"#asset/"+encodeURIComponent(a.pdf_id),
-          target:"_blank",title:"Edit asset: "+paperTitle},
+        const chip=el("a",{class:"paperchip",href:workspaceAssetRoute(a.pdf_id),target:"_blank",rel:"noopener",
+          title:"Edit asset: "+paperTitle},
           el("span",{class:"lbl"},paperTitle));
         const adjust=async next=>{
           try{
@@ -2542,40 +3383,37 @@
   }
 
   function initEditor(host, initialValue){
+    // Toast UI's built-in toolbar accepts custom DOM controls alongside standard items. Keeping
+    // the complete sequence here avoids fragile post-construction index insertion.
+    const histBtn=(label,title,redo)=>{
+      const b=document.createElement("button");
+      b.type="button"; b.textContent=label; b.title=title;
+      b.style.cssText="font:inherit;font-size:16px;line-height:1;background:none;border:none;color:inherit;cursor:pointer;margin:0;padding:0 2px";
+      b.addEventListener("mousedown",e=>e.preventDefault());
+      b.addEventListener("click",e=>{ e.preventDefault(); editorHistoryCmd(redo); });
+      return b;
+    };
     S.editor=new toastui.Editor({
       el:host, height:"100%", theme:"dark", initialEditType:"markdown",
       previewStyle:"tab", initialValue, usageStatistics:false,
       autofocus:false,   // don't grab focus on load: it scrolls a long page's editor into
                          // view, which can scroll the whole document and hide the app
-      toolbarItems:[['table','image','link']],   // undo/redo added below; everything else removed
+      toolbarItems:[[
+        {name:"page-sync",tooltip:"Page sync status",el:buildSyncTool()},
+        {name:"review-toggle",tooltip:"Toggle review comments",el:buildReviewTool()},
+        'image','table',
+        {name:"text-color",tooltip:"Color selected text",el:buildColorTool()},
+        {name:"center-text",tooltip:"Center selected text",el:buildCenterTextTool()},
+        'link',
+        {name:"page-visibility",tooltip:"Toggle page visibility",el:buildPageVisibilityTool()},
+        {name:"hidden-pages",tooltip:"Show hidden pages",el:buildHiddenPagesTool()},
+        {name:"undo",tooltip:"Undo (Ctrl+Z)",el:histBtn("↶","Undo",false)},
+        {name:"redo",tooltip:"Redo (Ctrl+Shift+Z)",el:histBtn("↷","Redo",true)}
+      ]],
       hooks:{ addImageBlobHook:(blob,cb)=>uploadImage(S.bubble,blob,cb) },
     });
-    // Undo/redo toolbar buttons (the editor only ships keyboard shortcuts for these).
-    const histBtn=(label,title,redo)=>{
-      const b=document.createElement("button");
-      b.type="button"; b.textContent=label; b.title=title;
-      b.style.cssText="font:inherit;font-size:16px;line-height:1;background:none;border:none;color:inherit;cursor:pointer;margin:0;padding:0 2px";
-      b.addEventListener("mousedown",e=>e.preventDefault());   // keep editor selection
-      b.addEventListener("click",e=>{ e.preventDefault(); editorHistoryCmd(redo); });
-      return b;
-    };
-    try{
-      S.editor.insertToolbarItem({groupIndex:0,itemIndex:0},
-        {name:"redo",tooltip:"Redo (Ctrl+Shift+Z)",el:histBtn("↷","Redo",true)});
-      S.editor.insertToolbarItem({groupIndex:0,itemIndex:0},
-        {name:"undo",tooltip:"Undo (Ctrl+Z)",el:histBtn("↶","Undo",false)});
-      S.editor.insertToolbarItem({groupIndex:0,itemIndex:2},
-        {name:"text-color",tooltip:"Color selected text",el:buildColorTool()});
-      // Keep page-specific status controls alongside the built-in Insert link button.
-      // Their handlers prevent focus loss, so they do not disturb the editor selection.
-      S.editor.insertToolbarItem({groupIndex:0,itemIndex:6},
-        {name:"page-visibility",tooltip:"Toggle page visibility",el:buildPageVisibilityTool()});
-      S.editor.insertToolbarItem({groupIndex:0,itemIndex:7},
-        {name:"hidden-pages",tooltip:"Show hidden pages",el:buildHiddenPagesTool()});
-      S.editor.insertToolbarItem({groupIndex:0,itemIndex:0},
-        {name:"page-sync",tooltip:"Page sync status",el:buildSyncTool()});
-    }catch(e){}
     installReferenceAutocomplete(host);
+    installEditorCommentHighlights(host);
     // Ctrl/Cmd+S should save the page. The editor maps Mod-s to strikethrough, so we
     // catch the key in the capture phase (before it reaches the editor's keymap) and
     // save instead. Bound once on document; acts only while a report page is open.
@@ -2592,8 +3430,11 @@
       if(S.applyingRemote)return;            // programmatic setMarkdown — not a user edit
       markStale(); scheduleAutosave();
       refreshReferenceAutocomplete();
+      resolveCommentAnchors(); renderEditorCommentHighlights(); renderReview();
       clearTimeout(deb); deb=setTimeout(updatePreview,300); });
-    setTimeout(updatePreview,200);
+    // A newly opened report should start its animations from the beginning. Ordinary
+    // typing updates below deliberately keep the existing GIF elements in place.
+    setTimeout(()=>updatePreview({restartGifs:true}),200);
     // The editor records the initial content load as an undoable step, so a stray
     // Ctrl+Z would wipe the whole page (and then autosave the wipe). Drop that step
     // once the content settles so undo can only reach back to the loaded baseline.
@@ -2635,6 +3476,13 @@
     refresh(); wrap.append(btn,menu); return wrap;
   }
 
+  function buildCenterTextTool(){
+    const btn=el("button",{type:"button",class:"color-tool-btn",title:"Center selected text","aria-label":"Center selected text"},"≡");
+    btn.addEventListener("mousedown",e=>e.preventDefault());
+    btn.addEventListener("click",e=>{ e.preventDefault(); applyCenterText(); });
+    return btn;
+  }
+
   function applyTextColor(hex){
     hex=normalizeHex(hex);
     if(!hex)return;
@@ -2651,6 +3499,20 @@
     restoreScroll();
     setTimeout(restoreScroll,0);
     S.colorSelection=null;
+    markStale(); scheduleAutosave(); refreshReferenceAutocomplete(); updatePreview();
+  }
+
+  function applyCenterText(){
+    const md=S.editor&&S.editor.getMarkdown?S.editor.getMarkdown():"";
+    const sel=currentEditorSelectionOffsets();
+    if(!sel||sel.from===sel.to){ toast("Select the text or block to center first"); const v=editorView(); if(v)v.focus(); return; }
+    const from=Math.max(0,Math.min(sel.from,md.length));
+    const to=Math.max(from,Math.min(sel.to,md.length));
+    const selected=md.slice(from,to);
+    const replacement='<div class="centered-text">\n'+selected+'\n</div>';
+    const restoreScroll=preserveEditorScroll();
+    replaceEditorRange(from,to,replacement);
+    restoreScroll(); setTimeout(restoreScroll,0);
     markStale(); scheduleAutosave(); refreshReferenceAutocomplete(); updatePreview();
   }
 
@@ -2765,7 +3627,7 @@
     if(!sel||!sel.empty)return null;
     const from=sel.from;
     const before=st.doc.textBetween(Math.max(0,from-260),from,"\n","\n");
-    const m=before.match(/\\(cite|eqref|thmref)\{([^{}\n]*)$/);
+    const m=before.match(/\\(cite|eqref|thmref|figref)\{([^{}\n]*)$/);
     if(!m){
       const tm=before.match(/(^|[^\w])@(\d*)$/);
       if(!tm)return null;
@@ -2800,9 +3662,15 @@
         const env=String(t.env||"Theorem");
         return {key,detail:env.charAt(0).toUpperCase()+env.slice(1)+" "+(t.number||"?")};
       });
+    }else if(token.kind==="figref"){
+      const fig=refs.fig||{};
+      rows=Object.keys(fig).sort((a,b)=>Number(fig[a].number||0)-Number(fig[b].number||0))
+        .map(key=>({key,detail:"Figure "+(fig[key].number||"?")}));
     }else{
-      rows=(S.todos||[]).slice().sort((a,b)=>(a.done===b.done?Number(a.id)-Number(b.id):(a.done?1:-1)))
-        .map(t=>({key:String(t.id),detail:(t.done?"Done · ":"")+t.title}));
+      // @ references are for active work. Completed TODOs remain available in the
+      // TODO view and still resolve in existing report links, but are not suggested.
+      rows=(S.todos||[]).filter(t=>!t.done).sort((a,b)=>Number(a.id)-Number(b.id))
+        .map(t=>({key:String(t.id),detail:t.title}));
     }
     if(q) rows=rows.filter(r=>r.key.toLowerCase().includes(q)||String(r.detail||"").toLowerCase().includes(q));
     return rows.slice(0,12);
@@ -2822,7 +3690,8 @@
     const ac=S.refAc; if(!ac)return;
     const title=ac.token&&ac.token.kind==="cite"?"Citations in this bubble":
       ac.token&&ac.token.kind==="todo"?"TODOs":
-      ac.token&&ac.token.kind==="thmref"?"Theorem and definition labels":"Equation labels";
+      ac.token&&ac.token.kind==="thmref"?"Theorem and definition labels":
+      ac.token&&ac.token.kind==="figref"?"Figure labels":"Equation labels";
     ac.box.innerHTML="";
     ac.box.append(el("div",{class:"ref-ac-title"},title));
     ac.items.forEach((it,i)=>{
@@ -2882,12 +3751,112 @@
     }catch(e){}
   }
 
-  function updatePreview(){
+  function updatePreview({restartGifs=false}={}){
     if(!S.previewEl||!S.editor)return;
     const sTop=S.previewEl.scrollTop, sLeft=S.previewEl.scrollLeft;
-    S.previewEl.innerHTML=renderMarkdown(S.editor.getMarkdown(),{refs:S.refs,pageSlug:S.page,citationPdfLinks:true});
+    const savedResources=restartGifs?null:collectPreviewResources(S.previewEl);
+    S.previewEl.innerHTML=renderMarkdown(S.editor.getMarkdown(),{refs:S.refs,pageSlug:S.page,citationPdfLinks:true,sourceMarkers:true});
+    bindPreviewSourceOffsets(S.previewEl);
+    decorateFigures(S.previewEl);
     linkifyWikilinks(S.previewEl);
-    S.previewEl.scrollTop=sTop; S.previewEl.scrollLeft=sLeft;
+    if(restartGifs) restartGifPlayback(S.previewEl);
+    else restorePreviewResources(S.previewEl,savedResources);
+    const restoreScroll=()=>{ S.previewEl.scrollTop=sTop; S.previewEl.scrollLeft=sLeft; };
+    restoreScroll(); requestAnimationFrame(restoreScroll);
+  }
+
+  function installEditorCommentHighlights(host){
+    const view=editorView();
+    // CSS Highlights are bound to real DOM Ranges, so CodeMirror scrolls and reflows them with
+    // its text. Unlike an absolute overlay, there is no independent geometry to drift.
+    const openCommentAtPointer=e=>{
+      try{
+        let pos=null, caret=null;
+        if(document.caretPositionFromPoint)caret=document.caretPositionFromPoint(e.clientX,e.clientY);
+        else if(document.caretRangeFromPoint)caret=document.caretRangeFromPoint(e.clientX,e.clientY);
+        if(caret&&caret.offsetNode)pos=view.posAtDOM(caret.offsetNode,caret.offset);
+        else if(caret&&caret.startContainer)pos=view.posAtDOM(caret.startContainer,caret.startOffset);
+        if(pos==null)pos=view.posAtCoords({x:e.clientX,y:e.clientY});
+        const thread=(S.comments||[]).find(t=>t.status!=="resolved"&&t._start>=0&&pos>=t._start&&pos<=t._end);
+        if(!thread)return;
+        S.selectedComment=thread.id; if(!S.reviewOpen)toggleReview(); renderReview();
+      }catch(err){}
+    };
+    if(view&&view.dom){view.dom.addEventListener("click",openCommentAtPointer);view.dom.addEventListener("dblclick",openCommentAtPointer);}
+    window.addEventListener("resize",renderEditorCommentHighlights,{passive:true});
+  }
+  function renderEditorCommentHighlights(){
+    const view=editorView();
+    if(!(window.CSS&&CSS.highlights&&window.Highlight)){return;}
+    CSS.highlights.delete("lockedin-review");
+    if(!view||S.viewMode==="view")return;
+    const ranges=[];
+    (S.comments||[]).filter(t=>t._start>=0&&t.status!=="resolved").forEach(t=>{
+      try{
+        const from=view.domAtPos(t._start), to=view.domAtPos(t._end), range=document.createRange();
+        range.setStart(from.node,from.offset); range.setEnd(to.node,to.offset);
+        ranges.push(range);
+      }catch(e){}
+    });
+    if(ranges.length)CSS.highlights.set("lockedin-review",new Highlight(...ranges));
+  }
+
+  // Rendering Markdown replaces the preview DOM. Keep every unchanged external resource through
+  // ordinary typing updates so figures, media, embeds, and custom resource elements retain their
+  // loaded dimensions/state instead of asynchronously reflowing the reader's scroll position.
+  function canonicalResourceUrl(value){
+    try{
+      const url=new URL(value,window.location.href);
+      url.searchParams.delete("lockedin_gif");
+      return url.href;
+    }catch(e){ return String(value||""); }
+  }
+  function previewResourceRoot(el){
+    return el.closest("picture,video,audio,iframe,object,embed")||el;
+  }
+  function previewResourceKey(el){
+    const values=[];
+    const nodes=[el,...el.querySelectorAll("[src],[data],[srcset],[poster]")];
+    nodes.forEach(node=>["src","data","srcset","poster"].forEach(attr=>{
+      const value=node.getAttribute(attr); if(value) values.push(attr+":"+canonicalResourceUrl(value));
+    }));
+    return values.length ? el.tagName+"|"+values.join("|") : "";
+  }
+  function previewResources(root){
+    const seen=new Set(), resources=[];
+    root.querySelectorAll("[src],[data],[srcset],picture").forEach(el=>{
+      const resource=previewResourceRoot(el);
+      if(!seen.has(resource)){ seen.add(resource); resources.push(resource); }
+    });
+    return resources;
+  }
+  function collectPreviewResources(root){
+    const saved=new Map();
+    previewResources(root).forEach(resource=>{
+      const key=previewResourceKey(resource); if(!key)return;
+      const resources=saved.get(key)||[]; resources.push(resource); saved.set(key,resources);
+    });
+    return saved;
+  }
+  function restorePreviewResources(root,saved){
+    if(!saved)return;
+    previewResources(root).forEach(resource=>{
+      const resources=saved.get(previewResourceKey(resource));
+      if(resources&&resources.length) resource.replaceWith(resources.shift());
+    });
+  }
+
+  // Recreating the source starts a GIF from frame one whenever a bubble preview is rendered.
+  // The GIF's own loop metadata remains authoritative for its repeated playback.
+  function restartGifPlayback(root){
+    if(!root)return;
+    root.querySelectorAll("img[src]").forEach(img=>{
+      const src=img.getAttribute("src")||"";
+      if(!/\.gif(?:[?#]|$)/i.test(src))return;
+      const join=src.includes("?")?"&":"?";
+      img.src="";
+      img.src=src+join+"lockedin_gif="+Date.now();
+    });
   }
   // Bubble-wide equation/theorem reference registry: numbers + labels are global, so \eqref and
   // \thmref resolve across pages. Re-fetched on bubble open, after every save, and after page
@@ -2900,8 +3869,9 @@
 
   function uploadImage(slug,blob,cb){
     const fd=new FormData(); fd.append("file",blob,(blob.name||"figure.png"));
-    fetch("/api/bubbles/"+slug+"/assets",{method:"POST",credentials:"include",body:fd})
-      .then(r=>r.json()).then(d=>cb(d.url,"figure")).catch(()=>toast("Image upload failed"));
+    fetch("/api/bubbles/"+slug+"/assets",{method:"POST",credentials:"include",
+      headers:{"X-LockedIn-Workspace":S.workspaceId||""},body:fd})
+      .then(r=>r.json()).then(d=>cb(workspaceUrl(d.url),"figure")).catch(()=>toast("Image upload failed"));
   }
   // Linkify both [[wikilinks]] (page nav) and @<id> TODO references (digits only, so @50 never
   // matches @5). A known @id renders as "@id title" linking to the TODO detail view; an unknown
@@ -2944,72 +3914,24 @@
   }
 
   // ---- reverse sync (Overleaf-style): double-click rendered preview → jump editor cursor ----
-  // Heuristic text match: the rendered HTML keeps no source positions, so we search the live
-  // markdown for the double-clicked word (or, inside a rendered equation, its LaTeX) and move
-  // the Toast UI cursor there. Good enough — lands on the right spot almost always.
   function _srcPosFromOffset(md,off){            // → 1-indexed [line, ch] for setSelection
     let line=1; for(let i=0;i<off;i++) if(md.charCodeAt(i)===10) line++;
     const ls=md.lastIndexOf("\n",off-1)+1;
     return [line, off-ls+1];
   }
-  function _normTex(s){                            // compare TeX ignoring numbering + whitespace
-    return (s||"").replace(/\\(?:tag|label)\{[^}]*\}/g,"").replace(/\s+/g,"").trim();
-  }
-  // Find where a rendered equation's LaTeX lives in the source. The KaTeX annotation carries the
-  // retagged TeX (\tag{n}); the source still has \label{} — so we match on the normalized form.
-  function _findMathOffset(md,tex){
-    const needle=_normTex(tex); if(!needle) return -1;
-    const res=[/\$\$([\s\S]+?)\$\$/g,
-               /\\begin\{(?:align\*?|alignat\*?|gather\*?|multline\*?|equation\*?)\}([\s\S]*?)\\end\{(?:align\*?|alignat\*?|gather\*?|multline\*?|equation\*?)\}/g,
-               /\\\[([\s\S]+?)\\\]/g, /\\\(([\s\S]+?)\\\)/g, /\$([^\$\n]+?)\$/g];
-    for(const re of res){ let m; re.lastIndex=0;
-      while((m=re.exec(md))!==null){ const n=_normTex(m[1]);
-        if(n && (n===needle || n.includes(needle) || needle.includes(n))) return m.index; }
-    }
-    return -1;
-  }
-  // Find the double-clicked word in the source. When it occurs several times, disambiguate by how
-  // many neighbouring words (from the clicked block) sit near each candidate in the source.
-  function _stripMd(t){ return (t||"").replace(/[*_#>\[\]|`~]/g," "); }
-  function _findWordOffset(md,word,context){
-    const esc=word.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
-    const re=new RegExp("\\b"+esc+"\\b","gi"); const hits=[]; let m;
-    while((m=re.exec(md))!==null){ hits.push(m.index); if(hits.length>500) break; }
-    if(!hits.length){ const i=md.toLowerCase().indexOf(word.toLowerCase()); return i; }
-    if(hits.length===1 || !context) return hits[0];
-    const neigh=_stripMd(context).toLowerCase().split(/\s+/)
-      .filter(w=>w.length>2 && w.toLowerCase()!==word.toLowerCase()).slice(0,8);
-    let best=hits[0],bestScore=-1;
-    for(const off of hits){
-      const around=_stripMd(md.slice(Math.max(0,off-60),off+60)).toLowerCase();
-      let score=0; for(const w of neigh) if(around.includes(w)) score++;
-      if(score>bestScore){ bestScore=score; best=off; }
-    }
-    return best;
-  }
   function syncPreviewToSource(e){
     if(S.viewMode!=="split" || !S.editor || !S.editor.setSelection) return;
-    let off=-1, matchLen=0;
-    const mathEl=e.target.closest && e.target.closest(".katex");
+    const sourceEl=e.target.closest&&e.target.closest("[data-source-start]");
+    if(!sourceEl)return;
     const md=S.editor.getMarkdown();
-    if(mathEl){
-      const ann=mathEl.querySelector('annotation[encoding="application/x-tex"]');
-      off=_findMathOffset(md, ann?ann.textContent:"");
-    } else {
-      const word=(window.getSelection&&window.getSelection().toString().trim())||"";
-      if(!word) return;
-      const block=e.target.closest("p,li,h1,h2,h3,h4,h5,h6,td,th,blockquote,.math-env,div");
-      off=_findWordOffset(md, word, block?block.textContent:"");
-      if(off>=0) matchLen=word.length;
-    }
-    if(off<0) return;
+    const off=Math.max(0,Math.min(md.length,Number(sourceEl.dataset.sourceStart)||0));
     const [line,ch]=_srcPosFromOffset(md,off);
     // Moving the editor selection + focus can make the browser scroll the preview pane (its own
     // overflow:auto container) to a weird spot. The right pane must NOT move on a dblclick — so
     // snapshot its scroll and restore it, including after Toast UI's deferred focus scrollIntoView.
     const pv=S.previewEl, sTop=pv.scrollTop, sLeft=pv.scrollLeft;
     const keepPreview=()=>{ pv.scrollTop=sTop; pv.scrollLeft=sLeft; };
-    try{ S.editor.setSelection([line,ch],[line,ch+matchLen]); S.editor.focus(); }
+    try{ S.editor.setSelection([line,ch],[line,ch]); S.editor.focus(); }
     catch(err){ console.warn("reverse-sync setSelection failed",err); }
     keepPreview(); requestAnimationFrame(keepPreview); setTimeout(keepPreview,30);
   }
@@ -3075,7 +3997,7 @@
     if(S.showHiddenPages&&hiddenTabs.childElementCount)tabScroll.append(hiddenTabs);
     // Keep page creation outside the horizontally scrolling tab list.  Once a bubble has
     // enough tabs, a button in that list can be clipped/off-screen and become unreachable.
-    if(!S.editingTitles) controls.append(el("button",{type:"button",class:"small ghost",onclick:newPage},"+ Page"));
+    if(!S.editingTitles) controls.append(el("button",{type:"button",class:"small ghost mobile-workspace-control",onclick:newPage},"+ Page"));
     const papersBtn=el("button",{class:"small ghost desktop-only-tool","data-papers-toggle":"1",title:"Papers in this bubble",
       onclick:(e)=>{ e.stopPropagation(); togglePapersMenu(controls); }},"📚 Papers");
     controls.append(papersBtn);
@@ -3083,7 +4005,7 @@
     // mobile too, so phones can switch between Read and Edit. Selecting "Edit titles" enters
     // rename mode (page titles + bubble name); picking any real view mode while renaming saves
     // those edits first, then switches. Enter inside a title input also saves (see toggleEditTitles).
-    const vm=el("select",{class:"small ghost",title:"Page view mode",
+    const vm=el("select",{class:"small ghost mobile-workspace-control",title:"Page view mode",
       style:"width:auto;padding:4px 8px"+(S.editingTitles?";color:var(--accent);border-color:var(--accent)":"")});
     [["split","◧ Split"],["edit","✏️ Edit"],["view","👁 Read"],["edittitles","🏷️ Edit titles"]].forEach(([v,lbl])=>{
       const o=el("option",{value:v},lbl);
@@ -3290,6 +4212,7 @@
       const r=await api("/api/bubbles/"+bubble+"/poll?page="+page);
       if(S.bubble!==bubble||S.page!==page)return;
       S.baseMtime=r.page_mtime; S.lastPageMtime=r.page_mtime; S.lastManifestMtime=r.manifest_mtime;
+      S.lastCommentsMtime=r.comments_mtime;
     }catch(e){}
   }
   // Scroll the editor and preview panes back to the top. Called on page navigation so a
@@ -3315,7 +4238,9 @@
     S.applyingRemote=true;
     try{ S.editor.setMarkdown(md||"",false); }
     finally{ setTimeout(()=>{ S.applyingRemote=false; },0); }
-    setTimeout(updatePreview,150);
+    // A remote/page load is intentional navigation, so start any report GIFs afresh.
+    setTimeout(()=>updatePreview({restartGifs:true}),150);
+    setTimeout(renderEditorCommentHighlights,180);
     setTimeout(resetEditorHistory,200);   // loaded content is the undo baseline (see initEditor)
   }
   async function switchPage(target,{noRoute=false}={}){
@@ -3330,7 +4255,7 @@
     const c=(await api("/api/bubbles/"+S.bubble+"/pages/"+match.page_slug)).content;
     S.page=match.page_slug; S.remoteChangePending=false;
     if(!noRoute)pushRoute("bubble/"+S.bubble+"/"+S.page);   // keep the page across refresh
-    applyRemote(c||""); markSynced(); refreshTabs();
+    applyRemote(c||""); markSynced(); refreshTabs(); S.selectedComment=null; S.comments=[]; renderEditorCommentHighlights(); S.lastCommentsMtime=null; loadComments();
     scrollContentTop();                                     // start the new page at the top
     primeSync();
   }
@@ -3401,6 +4326,134 @@
     b.addEventListener("click",e=>{ e.preventDefault(); onClick(); });
     return b;
   }
+  function buildReviewTool(){
+    const b=editorToolButton("reviewToolbarButton","Toggle review comments",toggleReview);
+    b.classList.toggle("active",!!S.reviewOpen);
+    b.textContent="💬"; return b;
+  }
+  function toggleReview(){
+    if(S.viewMode==="view")return;
+    S.reviewOpen=!S.reviewOpen;
+    try{localStorage.setItem("lockedin:review:"+S.bubble,S.reviewOpen?"1":"0");}catch(e){}
+    const host=$("#editorHost"); if(host)host.classList.toggle("review-closed",!S.reviewOpen);
+    const b=$("#reviewToolbarButton"); if(b)b.classList.toggle("active",S.reviewOpen);
+    if(S.reviewOpen)renderReview();
+  }
+  function commentAnchorFromSelection(){
+    const md=S.editor&&S.editor.getMarkdown?S.editor.getMarkdown():"", view=editorView(); let sel=null;
+    // Review anchors use the DOM range → CodeMirror mapping so their overlay agrees exactly
+    // with the visible selection. Keep the generic selection helper untouched for Center/Color.
+    try{
+      const nativeSel=window.getSelection&&window.getSelection();
+      if(nativeSel&&nativeSel.rangeCount&&view&&view.dom&&view.dom.contains(nativeSel.anchorNode)
+        &&view.dom.contains(nativeSel.focusNode)){
+        const from=view.posAtDOM(nativeSel.anchorNode,nativeSel.anchorOffset);
+        const to=view.posAtDOM(nativeSel.focusNode,nativeSel.focusOffset);
+        if(from!==to)sel={from:Math.min(from,to),to:Math.max(from,to)};
+      }
+    }catch(e){}
+    if(!sel)sel=currentEditorSelectionOffsets();
+    if(!sel||sel.from===sel.to)return null;
+    return {start:sel.from,quote:md.slice(sel.from,sel.to),prefix:md.slice(Math.max(0,sel.from-96),sel.from),suffix:md.slice(sel.to,sel.to+96)};
+  }
+  function startComment(){
+    const anchor=commentAnchorFromSelection();
+    if(!anchor){toast("Select text first");return;}
+    if(!S.reviewOpen)toggleReview();
+    S.commentDraftAnchor=anchor; S.selectedComment=null; renderReview();
+  }
+  function resolveCommentAnchors(){
+    const md=S.editor&&S.editor.getMarkdown?S.editor.getMarkdown():"";
+    (S.comments||[]).forEach(t=>{
+      const a=t.anchor||{}, q=String(a.quote||""); let best=-1, score=-1, pos=md.indexOf(q);
+      while(pos>=0){
+        const prefixOK=!a.prefix||md.slice(Math.max(0,pos-a.prefix.length),pos)===a.prefix;
+        const suffixOK=!a.suffix||md.slice(pos+q.length,pos+q.length+a.suffix.length)===a.suffix;
+        // A comment may move when text is inserted before it, but it must retain at least one
+        // original neighbour (or still be at its original offset). Never jump to a later copy of
+        // a deleted selection merely because it happens to contain the same next word.
+        if(pos===Number(a.start||0) || prefixOK || suffixOK){
+          const n=(prefixOK?4:0)+(suffixOK?4:0)-Math.abs(pos-Number(a.start||0))/Math.max(1,md.length);
+          if(n>score){score=n;best=pos;}
+        }
+        pos=md.indexOf(q,pos+1);
+      }
+      t._start=best; t._end=best<0?-1:best+q.length;
+    });
+  }
+  async function loadComments(){
+    if(!S.bubble||!S.page)return;
+    const bubble=S.bubble,page=S.page;
+    try{const r=await api("/api/bubbles/"+bubble+"/pages/"+page+"/comments");
+      if(S.bubble===bubble&&S.page===page){S.comments=r.threads||[];resolveCommentAnchors();renderEditorCommentHighlights();renderReview();updatePreview();}}
+    catch(e){}
+  }
+  function reviewThreads(){
+    const status=S.reviewTab||"open";
+    return (S.comments||[]).filter(t=>(t.status||"open")===status).sort((a,b)=>{
+      // A detached thread stays where its original source selection was, rather than falling
+      // to the end of review. This preserves the reviewer’s spatial reading order.
+      const aa=a._start<0?Number((a.anchor||{}).start||0):a._start;
+      const bb=b._start<0?Number((b.anchor||{}).start||0):b._start; return aa-bb;
+    });
+  }
+  function renderReview(){
+    const wrap=$("#reviewWrap"); if(!wrap)return; wrap.innerHTML="";
+    const hd=el("div",{class:"review-hd"});
+    ["open","resolved"].forEach(tab=>hd.append(el("button",{class:"review-tab "+(S.reviewTab===tab?"active":""),onclick:()=>{S.reviewTab=tab;renderReview();}},tab[0].toUpperCase()+tab.slice(1))));
+    hd.append(el("span",{class:"spacer"}),el("button",{class:"ghost small review-add",title:"Add comment to selected text","aria-label":"Add comment to selected text",onmousedown:e=>e.preventDefault(),onclick:startComment},"+"));
+    wrap.append(hd);
+    if(S.commentDraftAnchor){
+      const ta=el("textarea",{placeholder:"Add a review comment…"}), save=el("button",{class:"primary small"},"Comment");
+      save.onclick=async()=>{try{await api("/api/bubbles/"+S.bubble+"/pages/"+S.page+"/comments",{method:"POST",body:JSON.stringify({body:ta.value,anchor:S.commentDraftAnchor})});S.commentDraftAnchor=null;await loadComments();}catch(e){toast(e.message);}};
+      wrap.append(el("div",{class:"review-compose"},el("b",{},"New review"),ta,save)); setTimeout(()=>ta.focus(),0);
+    }
+    const rows=reviewThreads(); if(!rows.length&&!S.commentDraftAnchor)wrap.append(el("div",{class:"muted",style:"padding:12px;font-size:12px"},"No "+S.reviewTab+" reviews."));
+    rows.forEach(t=>wrap.append(reviewThreadNode(t)));
+  }
+  function reviewThreadNode(t){
+    const messages=t.messages||[], first=messages[0]||{}, details=el("details",{class:"review-thread"+(S.selectedComment===t.id?" selected":"")});
+    details.open=S.selectedComment===t.id;
+    const replyCount=Math.max(0,messages.length-1);
+    const summary=el("summary",{},el("b",{},first.author||"Unknown"),
+      el("div",{class:"review-meta"},replyCount?(replyCount+" "+(replyCount===1?"reply":"replies")):"No replies"));
+    if(t._start<0)summary.append(el("span",{class:"review-orphan"}," Unanchored"));
+    summary.onclick=e=>{e.preventDefault();S.selectedComment=t.id;if(t._start>=0)scrollToCommentAnchor(t);renderReview();}; details.append(summary);
+    (t.messages||[]).forEach(msg=>{
+      const row=el("div",{class:"review-msg"},el("b",{},msg.author||"Unknown")," "+msg.body);
+      if(msg.author===S.user){
+        row.title="Double-click to edit";
+        row.ondblclick=e=>{ e.preventDefault(); e.stopPropagation(); inlineEditReviewMessage(t,msg,row); };
+      }
+      details.append(row);
+    });
+    const reply=el("textarea",{placeholder:"Reply…"}), actions=el("div",{class:"review-actions"});
+    actions.append(el("button",{class:"ghost",onclick:()=>replyReview(t,reply)},"Reply"));
+    actions.append(el("button",{class:"ghost",onclick:()=>setReviewStatus(t,t.status==="resolved"?"open":"resolved")},t.status==="resolved"?"Reopen":"Resolve"));
+    actions.append(el("button",{class:"ghost",onclick:()=>deleteReview(t)},"Delete"));
+    details.append(el("div",{class:"review-compose"},reply,actions)); return details;
+  }
+  async function replyReview(t,ta){try{await api("/api/bubbles/"+S.bubble+"/pages/"+S.page+"/comments/"+t.id+"/replies",{method:"POST",body:JSON.stringify({body:ta.value})});await loadComments();}catch(e){toast(e.message);}}
+  function inlineEditReviewMessage(t,msg,row){
+    if(row.dataset.editing)return; row.dataset.editing="1"; row.replaceChildren();
+    const ta=el("textarea",{class:"review-inline-edit"}); ta.value=msg.body;
+    const save=el("button",{class:"primary small"},"Save"), cancel=el("button",{class:"ghost small"},"Cancel");
+    const finish=async()=>{const body=ta.value.trim();if(!body){toast("Comment text required");return;}save.disabled=true;try{
+      await api("/api/bubbles/"+S.bubble+"/pages/"+S.page+"/comments/"+t.id+"/messages/"+msg.id,{method:"PATCH",body:JSON.stringify({body})});await loadComments();
+    }catch(e){save.disabled=false;toast(e.message);}};
+    save.onclick=finish; cancel.onclick=()=>renderReview();
+    ta.onkeydown=e=>{if((e.ctrlKey||e.metaKey)&&e.key==="Enter"){e.preventDefault();finish();}if(e.key==="Escape"){e.preventDefault();renderReview();}};
+    row.append(ta,el("div",{class:"review-actions"},save,cancel)); ta.focus(); ta.setSelectionRange(ta.value.length,ta.value.length);
+  }
+  async function setReviewStatus(t,status){try{await api("/api/bubbles/"+S.bubble+"/pages/"+S.page+"/comments/"+t.id,{method:"PATCH",body:JSON.stringify({status})});await loadComments();}catch(e){toast(e.message);}}
+  async function deleteReview(t){if(!confirm("Delete this review and all replies?"))return;try{await api("/api/bubbles/"+S.bubble+"/pages/"+S.page+"/comments/"+t.id,{method:"DELETE"});await loadComments();}catch(e){toast(e.message);}}
+  function scrollToCommentAnchor(t){
+    const view=editorView(), scroller=view&&view.scrollDOM; if(!view||!scroller||t._start<0)return;
+    try{
+      const rect=view.coordsAtPos(t._start), box=scroller.getBoundingClientRect();
+      if(rect)scroller.scrollTop+=rect.top-box.top-(box.height*.32);
+    }catch(e){}
+  }
   function buildSyncTool(){
     const b=editorToolButton("syncToolbarButton","Saved automatically; click to save now",clickSave);
     b.className="sync-toolbar "+(S.syncState||"synced");
@@ -3454,7 +4507,7 @@
   function stopPolling(){
     if(S.pollTimer){ clearInterval(S.pollTimer); S.pollTimer=null; }
     clearTimeout(S.autosaveTimer); S.autosaveTimer=null;
-    S.lastPageMtime=null; S.lastManifestMtime=null; S.remoteChangePending=false;
+    S.lastPageMtime=null; S.lastCommentsMtime=null; S.lastManifestMtime=null; S.remoteChangePending=false;
     S.baseMtime=null; S.saving=false; S.syncState="synced";
   }
   async function pollSync(){
@@ -3482,6 +4535,8 @@
           toast("File changed on disk — click ⟳ to save (you'll be asked about the remote version).");
         }
       }
+      if(S.lastCommentsMtime!==null&&r.comments_mtime!==S.lastCommentsMtime) loadComments();
+      S.lastCommentsMtime=r.comments_mtime;
       S.lastPageMtime=r.page_mtime;
     }catch(e){}
   }
@@ -3514,6 +4569,7 @@
     saveViewMode(S.bubble,mode);
     host.classList.remove("mode-view","mode-edit","mode-split");
     host.classList.add("mode-"+mode);
+    renderEditorCommentHighlights();
     updatePreview();                       // keep the rendered side current (view + split)
     if(mode!=="view"){
       // the editor may have been laid out while hidden; nudge CodeMirror to recompute, then focus
@@ -3687,26 +4743,6 @@
       });
   }
 
-  // ================= ATTENTION =================
-  async function viewAttention(){
-    const {m,version}=beginMainRender(); m.append(el("h2",{class:"section-title"},"🔔 Attention Queue"));
-    const r=await api("/api/attention");
-    if(!isCurrentRender(version))return;
-    if(!r.assets.length){ m.append(el("div",{class:"muted"},"Nothing needs your attention. 🎉")); return; }
-    const grid=el("div",{class:"grid"});
-    r.assets.forEach(a=>{
-      const c=el("div",{class:"acard"});
-      c.append(el("h4",{},a.title||a.filename||a.pdf_id));
-      c.append(renderAssetTags(a,{suggestionsOnly:true,emptyText:"No suggestions — tag manually."}));
-      c.append(el("div",{class:"row",style:"margin-top:10px"},
-        el("a",{href:"/api/assets/"+a.pdf_id+"/pdf",target:"_blank",onclick:e=>e.stopPropagation()},
-          el("button",{class:"primary small"},"Open PDF")),
-        el("button",{class:"small",onclick:(e)=>{e.stopPropagation();openAssetEditor(a,{returnTo:"attention"});}},"Manage")));
-      grid.append(c);
-    });
-    m.append(grid);
-  }
-
   // ================= NEWS (premium) =================
   async function refreshNewsCount(){
     try{ const s=await api("/api/news/status"); $("#newsCount").textContent=s.new_count?`(${s.new_count})`:""; }
@@ -3731,7 +4767,7 @@
   function updateNewsTitle(){
     if(!S.newsTitle)return;
     const n=S.newsFeed?S.newsFeed.querySelectorAll(".acard").length:0;
-    S.newsTitle.textContent="📰 News ("+n+")";
+    S.newsTitle.textContent="Archive ("+n+")";
   }
   // drop a bubble's heading + grid once its last paper is gone (zero ≠ shown)
   function pruneEmptyNewsGroups(){
@@ -3783,12 +4819,14 @@
       "border-radius:10px;padding:10px 12px;margin-top:10px"});
     const chatWrap=el("div",{class:"col",style:"margin-top:12px;border:1px solid var(--line);"+
       "border-radius:10px;padding:10px 12px;gap:8px"});
-    m.append(feed, chatWrap);
+    const loading=viewLoading("Loading news…",3);
+    m.append(feed, chatWrap, loading);
     let r={items:[],bubbles:[]}, st={};
     try{ r=await api("/api/news"); }catch(e){}
     if(!isCurrentRender(version))return;
     try{ st=await api("/api/news/status"); }catch(e){}
     if(!isCurrentRender(version))return;
+    loading.remove();
     renderNewsFeed(feed, r);
     updateNewsTitle();
     buildNewsChat(chatWrap, st);

@@ -1,0 +1,1077 @@
+"""Project-local, bubble-scoped synchronization client for LockedIn.
+
+The client keeps authorization and the active workspace in the OS-local profile.  Research
+material lives only in ``.lockedin`` below the project from which ``sync`` is started.
+"""
+from __future__ import annotations
+
+import argparse
+import base64
+import difflib
+import json
+import os
+import secrets
+import shutil
+import signal
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+import webbrowser
+from pathlib import Path
+
+APP = "lockedin-scientist"
+SCIENTIST_CLIENT_VERSION = "2026.08.09.6"
+POLL_SECONDS = 5
+WORKER_HISTORY_LIMIT = 10
+TERMINAL_WORKER_STATUSES = {"stopped"}
+ATTENTION_WORKER_STATUSES = {"degraded", "failed"}
+VENDORS = ("codex", "claude", "agy")
+MANAGED_VENDOR_SKILL_MARKER = "<!-- Managed by lockedin-scientist -->"
+
+# This is deliberately a short bootstrap, not a copy of the report-editing guide.  The guide is
+# bubble- and workspace-specific, so it belongs in the generated project-local skill that the
+# bootstrap reads on every invocation.
+VENDOR_SKILL_BOOTSTRAP = f"""---
+name: lockedin-scientist
+description: Work safely with a project-local LockedIn Scientist bubble. Read its generated .lockedin/SKILL.md before editing reports or its optional local Overleaf checkout.
+---
+
+{MANAGED_VENDOR_SKILL_MARKER}
+
+# LockedIn Scientist
+
+Find `.lockedin/SKILL.md` in the current project and read it in full before making any change.
+It contains the current bubble's editing guide, paper context, math conventions, permitted write
+paths, conflict recovery rules, and—when present—rules for the local Overleaf checkout. Follow it
+as the source of truth.
+
+If `.lockedin/SKILL.md` does not exist, do not create a replacement. Tell the user to run
+`lockedin-scientist sync <bubble-slug>` from the project first.
+"""
+
+AGY_PLUGIN_MANAGED_BY = "lockedin-scientist"
+
+
+def _colour(text: object, code: str) -> str:
+    enabled = not os.environ.get("NO_COLOR") and (bool(os.environ.get("FORCE_COLOR")) or sys.stdout.isatty())
+    return f"\033[{code}m{text}\033[0m" if enabled else str(text)
+
+
+def bold(text: object) -> str: return _colour(text, "1")
+def dim(text: object) -> str: return _colour(text, "2")
+def cyan(text: object) -> str: return _colour(text, "36")
+def violet(text: object) -> str: return _colour(text, "38;5;141")
+def orange(text: object) -> str: return _colour(text, "38;5;214")
+def green(text: object) -> str: return _colour(text, "32")
+def red(text: object) -> str: return _colour(text, "31")
+
+
+def heading(title: str, subtitle: str = "") -> None:
+    print()
+    print(violet("◆") + " " + bold(title))
+    if subtitle:
+        print("  " + dim(subtitle))
+
+
+def welcome() -> None:
+    """A human-first overview that matches the v2 project-local workflow."""
+    print()
+    print(violet("╭────────────────────────────────────╮"))
+    print(violet("│") + "         " + bold("LockedIn Scientist") + "         " + violet("│"))
+    print(violet("│") + "   " + dim("one bubble, in your project") + "   " + violet("│"))
+    print(violet("╰────────────────────────────────────╯"))
+    print()
+    print(bold("Get started"))
+    print(f"  {cyan('1.')} {dim('Authorize this computer')}\n     {cyan('lockedin-scientist login --server https://lockedin.codes')}")
+    print(f"  {cyan('2.')} {dim('Choose a workspace')}\n     {cyan('lockedin-scientist workspaces')}\n     {cyan('lockedin-scientist workspaces switch <workspace-id-or-name>')}")
+    print(f"  {cyan('3.')} {dim('See approved bubbles')}\n     {cyan('lockedin-scientist bubbles')}")
+    print(f"  {cyan('4.')} {dim('Synchronize one bubble into this project')}\n     {cyan('lockedin-scientist sync <bubble-slug>')}")
+    print()
+    print(bold("Manage synchronization"))
+    print(f"  {cyan('•')} {dim('List workers')}\n     {cyan('lockedin-scientist ps')}")
+    print(f"  {cyan('•')} {dim('Stop a worker without removing local files')}\n     {cyan('lockedin-scientist stop <worker-id>')}")
+    print(f"  {cyan('•')} {dim('Replace this project’s .lockedin from the server')}\n     {cyan('lockedin-scientist hard-reset <bubble-slug>')}")
+    print()
+    print(bold("Native agent skills"))
+    print(f"  {cyan('•')} {dim('Install the LockedIn Scientist skill once for your agent')}\n     {cyan('lockedin-scientist <codex|claude|agy> setup')}")
+    print()
+    print(bold("Manual Overleaf publishing"))
+    print(f"  {cyan('•')} {dim('Link an Overleaf project from the bubble page, then connect its local checkout')}\n     {cyan('lockedin-scientist overleaf connect')}")
+    print(f"  {cyan('•')} {dim('See status or explicitly publish local LaTex changes')}\n     {cyan('lockedin-scientist overleaf status')}\n     {cyan('lockedin-scientist overleaf sync')}")
+    print(f"  {cyan('•')} {dim('Read setup, credential-helper, and recovery guidance')}\n     {cyan('lockedin-scientist overleaf help')}")
+    print()
+    print(dim("Then launch your coding agent normally and invoke the lockedin-scientist skill."))
+
+
+def data_root() -> Path:
+    if os.name == "nt":
+        return Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData/Local")) / APP
+    return Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share")) / APP
+
+
+def config_path() -> Path: return data_root() / "accounts.json"
+def workers_path() -> Path: return data_root() / "runtime" / "workers.json"
+
+
+def _atomic_json(path: Path, value: dict, *, private: bool = False) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
+    tmp.replace(path)
+    if private:
+        try: os.chmod(path, 0o600)
+        except OSError: pass
+
+
+def _remove_tree(path: Path) -> None:
+    """Remove a managed tree even after pull-only files made it read-only."""
+    if not path.exists():
+        return
+    for item in sorted(path.rglob("*"), key=lambda p: len(p.parts), reverse=True):
+        try: os.chmod(item, 0o755 if item.is_dir() else 0o644)
+        except OSError: pass
+    try: os.chmod(path, 0o755)
+    except OSError: pass
+    shutil.rmtree(path)
+
+
+def load_config() -> dict:
+    path = config_path()
+    if not path.exists(): return {"accounts": []}
+    try: return json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError): return {"accounts": []}
+
+
+def save_config(cfg: dict) -> None: _atomic_json(config_path(), cfg, private=True)
+
+
+def load_workers() -> dict:
+    path = workers_path()
+    if not path.exists(): return {"workers": {}}
+    try: return json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError): return {"workers": {}}
+
+
+def _prune_worker_history(data: dict) -> None:
+    """Retain every live worker and a bounded, useful terminal history."""
+    workers = data.setdefault("workers", {})
+    terminal = [(worker_id, rec) for worker_id, rec in workers.items()
+                if rec.get("status") in TERMINAL_WORKER_STATUSES]
+    terminal.sort(key=lambda item: item[1].get("stopped_at", item[1].get("started_at", 0)), reverse=True)
+    keep = {worker_id for worker_id, _ in terminal[:WORKER_HISTORY_LIMIT]}
+    for worker_id, _ in terminal[WORKER_HISTORY_LIMIT:]:
+        workers.pop(worker_id, None)
+
+
+def save_workers(data: dict) -> None:
+    _prune_worker_history(data)
+    _atomic_json(workers_path(), data, private=True)
+
+
+def request(server: str, method: str, path: str, body: dict | None = None, token: str = "", workspace: str = "") -> dict:
+    data = json.dumps(body).encode() if body is not None else None
+    headers = {"Content-Type": "application/json", "Accept": "application/json",
+               "User-Agent": f"{APP}/{SCIENTIST_CLIENT_VERSION}",
+               "X-LockedIn-Scientist-Version": SCIENTIST_CLIENT_VERSION}
+    if token: headers["Authorization"] = "Bearer " + token
+    if workspace: headers["X-LockedIn-Workspace"] = workspace
+    req = urllib.request.Request(server.rstrip("/") + path, data=data, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=90) as response:
+            return json.loads(response.read())
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode(errors="replace")
+        if exc.code == 426:
+            raise RuntimeError("LockedIn Scientist is out of date. Reinstall it, then retry.") from exc
+        raise RuntimeError(f"server returned {exc.code}: {detail}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"cannot reach LockedIn server: {exc.reason}") from exc
+
+
+def account_request(account: dict, method: str, path: str, body: dict | None = None, *, workspace: str = "") -> dict:
+    return request(account["server"], method, path, body, account["token"], workspace or account.get("workspace_id", ""))
+
+
+def choose_account() -> dict:
+    accounts = load_config().get("accounts", [])
+    if not accounts:
+        raise RuntimeError("No account authorized. Run `lockedin-scientist login --server <URL>` first.")
+    return accounts[-1]
+
+
+def login(server: str) -> None:
+    server = server.rstrip("/")
+    start = request(server, "POST", "/api/scientist/v2/device", {"client_name": APP})
+    url = server + start["verification_uri"]
+    heading("Authorize this computer", "Open the link below, sign in, then return here.")
+    print("\n  " + cyan(url) + "\n")
+    webbrowser.open(url)
+    until = time.time() + int(start["expires_in"])
+    while time.time() < until:
+        time.sleep(int(start["interval"]))
+        result = request(server, "GET", f"/api/scientist/v2/device/{start['device_code']}/token")
+        if result.get("status") != "authorized": continue
+        workspaces = request(server, "GET", "/api/scientist/v2/workspaces", token=result["token"])
+        cfg = load_config(); accounts = cfg.setdefault("accounts", [])
+        accounts[:] = [a for a in accounts if not (a.get("server") == server and a.get("user") == result["user"])]
+        accounts.append({"server": server, "user": result["user"], "token": result["token"],
+                         "workspace_id": workspaces.get("personal_workspace_id", "")})
+        save_config(cfg)
+        print(green("✓") + f" Authorized {bold(result['user'])} on {dim(server)}")
+        print(dim("  Your active workspace is saved for every project on this device."))
+        return
+    raise RuntimeError("Device authorization timed out.")
+
+
+def _print_workspaces(rows: list[dict], active_workspace_id: str) -> None:
+    heading("Your workspaces", "The selected workspace is used across all projects.")
+    if not rows:
+        print(dim("  No workspaces are available."))
+        return
+    for index, row in enumerate(rows, 1):
+        active = "  " + green("✓ active") if row.get("id") == active_workspace_id else ""
+        print(f"  {cyan(str(index) + '.'):<11}{bold(row['name'])}{active}")
+        print(f"             {dim(row['id'] + ' · ' + row.get('role', 'editor'))}")
+    print()
+    print(dim("  Switch with: lockedin-scientist workspaces switch <workspace-id-or-name>"))
+
+
+def workspaces_command(account: dict) -> list[dict]:
+    rows = account_request(account, "GET", "/api/scientist/v2/workspaces").get("workspaces", [])
+    _print_workspaces(rows, account.get("workspace_id", ""))
+    return rows
+
+
+def switch_workspace(account: dict, query: str) -> None:
+    rows = account_request(account, "GET", "/api/scientist/v2/workspaces").get("workspaces", [])
+    hits = [r for r in rows if r.get("id") == query or r.get("name", "").lower() == query.lower()]
+    if len(hits) != 1: raise RuntimeError("Use a workspace id or an unambiguous exact workspace name.")
+    cfg = load_config()
+    for item in cfg.get("accounts", []):
+        if item.get("server") == account["server"] and item.get("user") == account["user"]:
+            item["workspace_id"] = hits[0]["id"]
+    save_config(cfg)
+    account["workspace_id"] = hits[0]["id"]
+    _print_workspaces(rows, account["workspace_id"])
+    print()
+    print(green("✓") + f" Active workspace: {bold(hits[0]['name'])}")
+    print(dim("  New project synchronizations will use this workspace."))
+
+
+def bubbles_command(account: dict) -> list[dict]:
+    rows = account_request(account, "GET", "/api/scientist/v2/bubbles").get("bubbles", [])
+    print()
+    print(violet("◆") + " " + bold("LockedIn Scientist"))
+    print("  " + dim("approved bubbles in the active workspace"))
+    print()
+    if not rows:
+        print(dim("  No approved bubbles yet."))
+        return rows
+    for index, row in enumerate(rows, 1):
+        print(f"  {cyan(str(index) + '.'):<11}{bold(row['name'])}")
+        print(f"             {dim(row['slug'])}")
+    print()
+    print(dim("  Sync one with: lockedin-scientist sync <bubble-slug>"))
+    return rows
+
+
+SKILL_VERSION = 6
+
+SKILL_RULES = """<!-- lockedin-scientist-skill: 6 -->
+# LockedIn Scientist research and publication skill
+
+This project is synchronized with one LockedIn bubble. Read this file before editing.
+
+## Project work and LockedIn boundaries
+
+Outside `.lockedin/`, work on this repository normally. The user's request and your usual agent
+permissions determine whether you may create or edit project files such as source code, scripts,
+tests, build artifacts, and `outputs/`. LockedIn does not restrict those paths.
+
+The rules below apply **only inside `.lockedin/`**:
+
+- Edit or create Markdown pages only under `.lockedin/reports/pages/`.
+- Add or edit figures only under `.lockedin/reports/assets/`.
+- `pages.yaml` is a server-generated manifest: never edit it. To add a page, create a new
+  lowercase, hyphenated `pages/<slug>.md` file; the sync worker registers it automatically.
+- To delete a page, delete its `pages/<slug>.md` file; the sync worker removes it from the
+  server manifest automatically. The overview/home page cannot be deleted.
+
+## Read-only content inside `.lockedin`
+
+`.lockedin/assets/` and `.lockedin/config/` are synchronized from LockedIn and must never be
+edited, moved, deleted, or permission-changed. This does not restrict similarly named directories
+elsewhere in the repository. Read paper information only from
+`.lockedin/reports/_lockedin_papers.md` and the listed asset directories. Prefer higher relevance
+papers first.
+
+## Workspace math macros
+
+The active workspace's math macros are generated directly below. Use that table as the source of
+truth when editing mathematics; do not guess or redefine an existing abbreviation. The underlying
+`.lockedin/config/math.yaml` remains read-only and is for synchronization only. Change macros
+only through LockedIn workspace settings.
+
+## Reports: the live research record
+
+`.lockedin/reports/` is the working research record: use it for fast-moving explanations,
+experiments, figures, intermediate conclusions, and material that should be shared through the
+LockedIn bubble. Its changes are synchronized continuously. It is normal for a report page to be
+exploratory or to evolve quickly, but keep claims and citations accurate.
+
+## Sync and conflicts
+
+The sync worker publishes report changes periodically. If it restores a server copy, inspect
+`.lockedin/config/conflicts/` and reapply the intended change to the current report instead of
+restoring stale content. Use Markdown with `$...$` and `$$...$$` math delimiters only.
+
+## Optional Overleaf checkout: the publication manuscript
+
+If `.lockedin/overleaf/` exists, it is a local LaTeX checkout for this bubble's website-linked
+Overleaf project. It is the curated publication source, not a continuously published mirror of
+the reports. You may work there normally: create or edit `.tex`, `.bib`, `.sty`, `.cls`, figure,
+and other ordinary project files, and use the repository's usual LaTeX tooling.
+
+- Before manuscript-level edits, inspect the document entry point, included files, bibliography,
+  and existing project conventions. Preserve the manuscript's structure and compile it when the
+  project's tooling is available.
+- Transfer ideas from reports deliberately: adapt, verify, and integrate them into the manuscript
+  rather than blindly copying an exploratory page. Keep references, labels, cross-references,
+  notation, and claims publication-ready.
+- The active workspace math macro table below applies to both reports and manuscript work unless
+  the LaTeX project already defines an intentional equivalent.
+- Do not edit `.lockedin/overleaf/.git/`, change its configured remote, or run
+  `lockedin-scientist overleaf sync` unless the user explicitly asks to publish to Overleaf.
+  The Scientist worker does not synchronize this checkout automatically: it never pulls, pushes,
+  changes, or deletes it; manuscript changes stay local until that explicit sync.
+"""
+
+
+def skill_document(editing_guide: str, math_macros: dict | None = None) -> str:
+    """Keep the project-local agent instructions aligned with the website's canonical guide."""
+    macros = math_macros if isinstance(math_macros, dict) else {}
+    lines = [SKILL_RULES.rstrip(), "", "### Active macro table", ""]
+    if not macros:
+        lines.append("No custom workspace math macros are currently configured.")
+    else:
+        lines.extend(["| Command | Expansion |", "|---|---|"])
+        for command, expansion in sorted(macros.items(), key=lambda item: str(item[0])):
+            safe_command = str(command).replace("|", "\\|")
+            safe_expansion = str(expansion).replace("|", "\\|").replace("\n", "<br>")
+            lines.append(f"| `{safe_command}` | `{safe_expansion}` |")
+    lines.extend(["", "## Complete LockedIn editing guide", "", editing_guide.rstrip(), ""])
+    return "\n".join(lines)
+
+
+# Kept as a small inspectable baseline for code/tests; projects receive the complete guide below.
+SKILL = SKILL_RULES
+
+OVERLEAF_HELP = """Overleaf uses the project linked to this bubble in LockedIn's website. Open the
+bubble, click Overleaf, and add its Cloud project URL, Git URL, or project ID first.
+
+When Git asks, enter username `git` and your Overleaf authentication token. If no OS credential
+helper is configured, Scientist enables one private credential store for this user outside every
+repository; after that first prompt, all of the user's Overleaf projects reuse the token. The
+file is owner-only but stores the token as Git credential data, so prefer an OS keychain helper
+when one is available. Its Git configuration is global but applies only to `git.overleaf.com`,
+not other Git hosts. Changes remain local until you run `lockedin-scientist overleaf sync`.
+
+If synchronization fails, work manually in `.lockedin/overleaf/`: inspect `git status`, fetch
+from `lockedin-overleaf`, merge/rebase its default branch and resolve conflicts, then push to
+that branch. `lockedin-scientist overleaf abort` aborts a rebase started by Scientist.
+"""
+
+LEGACY_OVERLEAF_README_PREFIX = """# LockedIn Overleaf integration
+
+Overleaf synchronization is reserved for a later release."""
+
+
+def _write_managed_vendor_file(path: Path, content: str) -> None:
+    """Update only a file that this command created previously."""
+    if path.exists():
+        try:
+            existing = path.read_text()
+        except OSError as exc:
+            raise RuntimeError(f"Could not inspect existing skill at {path}: {exc}") from exc
+        if MANAGED_VENDOR_SKILL_MARKER not in existing:
+            raise RuntimeError(
+                f"Refusing to overwrite the existing skill at {path}. "
+                "Move or remove that user-owned skill, then run setup again."
+            )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content)
+
+
+def _vendor_skill_paths(vendor: str, home: Path) -> tuple[Path, ...]:
+    """Return the globally discovered native skill location for a supported agent."""
+    if vendor == "codex":
+        return (home / ".codex" / "skills" / APP / "SKILL.md",)
+    if vendor == "claude":
+        return (home / ".claude" / "skills" / APP / "SKILL.md",)
+    if vendor == "agy":
+        plugin = home / ".gemini" / "antigravity-cli" / "plugins" / APP
+        return (plugin / "plugin.json", plugin / "skills" / APP / "SKILL.md")
+    raise RuntimeError(f"Unknown agent {vendor!r}. Choose one of: {', '.join(VENDORS)}.")
+
+
+def setup_vendor_skill(vendor: str, *, home: Path | None = None) -> tuple[Path, ...]:
+    """Install the named bootstrap in the vendor's native global skill discovery path."""
+    vendor = vendor.lower()
+    home = Path.home() if home is None else Path(home)
+    targets = _vendor_skill_paths(vendor, home)
+    if vendor == "agy":
+        plugin_json, skill_path = targets
+        if plugin_json.exists():
+            try:
+                plugin = json.loads(plugin_json.read_text())
+            except (OSError, json.JSONDecodeError) as exc:
+                raise RuntimeError(f"Could not inspect existing agy plugin at {plugin_json}: {exc}") from exc
+            if plugin.get("managed_by") != AGY_PLUGIN_MANAGED_BY:
+                raise RuntimeError(
+                    f"Refusing to overwrite the existing agy plugin at {plugin_json.parent}. "
+                    "Move or remove that user-owned plugin, then run setup again."
+                )
+        plugin_json.parent.mkdir(parents=True, exist_ok=True)
+        plugin_json.write_text(json.dumps({
+            "name": APP,
+            "version": "1.0.0",
+            "description": "Project-local LockedIn Scientist bootstrap skill.",
+            "managed_by": AGY_PLUGIN_MANAGED_BY,
+        }, indent=2) + "\n")
+        _write_managed_vendor_file(skill_path, VENDOR_SKILL_BOOTSTRAP)
+        agy = shutil.which("agy")
+        if not agy:
+            raise RuntimeError("agy is not installed or is not on PATH, so its native skill could not be imported.")
+        try:
+            installed = subprocess.run(
+                [agy, "plugin", "install", str(plugin_json.parent)],
+                stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60,
+            )
+        except OSError as exc:
+            raise RuntimeError(f"Could not ask agy to import its native skill: {exc}") from exc
+        if installed.returncode:
+            detail = (installed.stderr or installed.stdout).strip()
+            raise RuntimeError(f"agy could not import the native {APP} skill" + (f": {detail}" if detail else "."))
+    else:
+        _write_managed_vendor_file(targets[0], VENDOR_SKILL_BOOTSTRAP)
+    return targets
+
+
+def setup_vendor_command(vendor: str) -> None:
+    targets = setup_vendor_skill(vendor)
+    heading(f"{vendor.title()} skill installed", "The bootstrap is global; its report guide remains project-local.")
+    for target in targets:
+        print(green("✓") + " " + dim(str(target)))
+    if vendor == "codex":
+        print(dim("  Start Codex in a synchronized project, then invoke $lockedin-scientist."))
+    elif vendor == "claude":
+        print(dim("  Restart Claude Code if it is open, then invoke /lockedin-scientist in a synchronized project."))
+    else:
+        print(dim("  Restart agy if it is open, then use /skills to select lockedin-scientist in a synchronized project."))
+
+
+def _git(args: list[str], cwd: Path, *, capture: bool = False) -> subprocess.CompletedProcess:
+    git = shutil.which("git")
+    if not git:
+        raise RuntimeError("Git is required for Overleaf synchronization. Install Git, then retry.")
+    result = subprocess.run([git, *args], cwd=cwd, stdin=None,
+                            capture_output=capture, text=True)
+    if result.returncode:
+        detail = (result.stderr or result.stdout or "").strip()
+        raise RuntimeError((detail + "\n\n" if detail else "") + "Overleaf sync did not complete.\n\n" + OVERLEAF_HELP)
+    return result
+
+
+def _overleaf_remote_branch(checkout: Path) -> str:
+    """Discover the remote's real default branch instead of assuming `master`."""
+    symbolic = _git(["ls-remote", "--symref", "lockedin-overleaf", "HEAD"], checkout, capture=True)
+    for line in (symbolic.stdout or "").splitlines():
+        if line.startswith("ref: refs/heads/") and line.endswith("\tHEAD"):
+            return line.removeprefix("ref: refs/heads/").removesuffix("\tHEAD")
+    heads = _git(["ls-remote", "--heads", "lockedin-overleaf"], checkout, capture=True)
+    branches = [line.rsplit("refs/heads/", 1)[1] for line in (heads.stdout or "").splitlines()
+                if "refs/heads/" in line]
+    if "main" in branches: return "main"
+    if "master" in branches: return "master"
+    if len(branches) == 1: return branches[0]
+    if branches:
+        raise RuntimeError("Could not determine Overleaf's default branch. Use `git branch -r` in `.lockedin/overleaf` and sync manually.")
+    raise RuntimeError("The linked Overleaf Git project has no branch yet. Create or commit its first file in Overleaf, then retry.")
+
+
+def _overleaf_credential_path() -> Path:
+    """Keep the user's single Git credential store private and outside every repository."""
+    return data_root() / "overleaf-credentials" / "credentials"
+
+
+def _legacy_overleaf_credential_path(project: Path) -> Path:
+    """Locate the brief per-project v2 credential layout for a one-time safe migration."""
+    import hashlib
+    key = hashlib.sha256(str(project.resolve()).encode()).hexdigest()[:24]
+    return data_root() / "overleaf-credentials" / f"{key}.credentials"
+
+
+def _is_managed_overleaf_helper(value: str) -> bool:
+    return value.startswith("store --file=") and str(data_root() / "overleaf-credentials") in value
+
+
+def _configure_overleaf_credential_store(project: Path, checkout: Path) -> Path | None:
+    """Configure one user-level, Overleaf-only Git store when no external helper exists."""
+    git = shutil.which("git")
+    if not git:
+        raise RuntimeError("Git is required for Overleaf synchronization. Install Git, then retry.")
+    configured = subprocess.run([git, "config", "--get-all", "credential.helper"], cwd=checkout,
+                               capture_output=True, text=True)
+    if configured.returncode not in {0, 1}:
+        raise RuntimeError("Could not inspect Git credential-helper configuration.\n\n" + OVERLEAF_HELP)
+    helpers = [line.strip() for line in configured.stdout.splitlines() if line.strip()]
+    host_configured = subprocess.run(
+        [git, "config", "--get-all", "credential.https://git.overleaf.com.helper"], cwd=checkout,
+        capture_output=True, text=True,
+    )
+    if host_configured.returncode not in {0, 1}:
+        raise RuntimeError("Could not inspect Git credential-helper configuration.\n\n" + OVERLEAF_HELP)
+    host_helpers = [line.strip() for line in host_configured.stdout.splitlines() if line.strip()]
+    if ((helpers and not all(_is_managed_overleaf_helper(value) for value in helpers)) or
+            (host_helpers and not all(_is_managed_overleaf_helper(value) for value in host_helpers))):
+        return None
+    path = _overleaf_credential_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        os.chmod(path.parent, 0o700)
+    except OSError:
+        pass
+    legacy = _legacy_overleaf_credential_path(project)
+    if not path.exists() and legacy.exists():
+        shutil.copyfile(legacy, path)
+        legacy.unlink()
+    if not path.exists(): path.touch()
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+    # Previous v2 builds configured this helper in each checkout. Remove that managed local
+    # override so the new host-specific global configuration covers every project.
+    local_configured = subprocess.run([git, "config", "--local", "--get-all", "credential.helper"], cwd=checkout,
+                                     capture_output=True, text=True)
+    if local_configured.returncode not in {0, 1}:
+        raise RuntimeError("Could not inspect this project's Git configuration.\n\n" + OVERLEAF_HELP)
+    local_helpers = [line.strip() for line in local_configured.stdout.splitlines() if line.strip()]
+    if local_helpers and all(_is_managed_overleaf_helper(value) for value in local_helpers):
+        _git(["config", "--local", "--unset-all", "credential.helper"], checkout)
+    _git(["config", "--global", "--replace-all", "credential.https://git.overleaf.com.helper", f"store --file={path}"], checkout)
+    _git(["config", "--global", "credential.https://git.overleaf.com.useHttpPath", "true"], checkout)
+    return path
+
+
+def _overleaf_config(project: Path) -> dict:
+    path = project / ".lockedin" / "config" / "overleaf.yaml"
+    try:
+        value = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def overleaf_help_command() -> None:
+    heading("Overleaf Git Bridge", "Manual publishing for a bubble-linked Overleaf project.")
+    print("\n" + OVERLEAF_HELP)
+
+
+def overleaf_connect(project: Path) -> None:
+    config = _overleaf_config(project)
+    url = str(config.get("overleaf_git_url") or "")
+    if not url:
+        raise RuntimeError("This bubble has no Overleaf project yet. Link one from its LockedIn website page, wait for sync, then retry.")
+    root = project / ".lockedin" / "overleaf"
+    if root.exists() and any(root.iterdir()):
+        entries = list(root.iterdir())
+        legacy = root / "README.md"
+        if len(entries) == 1 and entries[0] == legacy and legacy.read_text(errors="replace").startswith(LEGACY_OVERLEAF_README_PREFIX):
+            legacy.unlink(); root.rmdir()
+        else:
+            raise RuntimeError(".lockedin/overleaf already exists. Use `lockedin-scientist overleaf status` or disconnect it first.")
+    root.parent.mkdir(parents=True, exist_ok=True)
+    _git(["clone", url, str(root)], project)
+    _git(["remote", "rename", "origin", "lockedin-overleaf"], root)
+    _git(["config", "core.fileMode", "false"], root)
+    credential_path = _configure_overleaf_credential_store(project, root)
+    heading("Overleaf connected", f"{config.get('overleaf_url', '')} → {root}")
+    if credential_path:
+        print(dim("  Git will securely reuse the token you enter next for this project."))
+    print(green("✓") + " Local changes stay local until you run `lockedin-scientist overleaf sync`.")
+
+
+def overleaf_status(project: Path) -> None:
+    root = project / ".lockedin" / "overleaf"
+    if not (root / ".git").is_dir():
+        config = _overleaf_config(project)
+        if config: print(dim("Overleaf is linked on the website but not cloned locally. Run `lockedin-scientist overleaf connect`."))
+        else: print(dim("This bubble has no linked Overleaf project."))
+        return
+    heading("Overleaf status", str(root))
+    result = _git(["status", "--short", "--branch"], root, capture=True)
+    print(result.stdout.strip() or green("✓ Clean and ready to sync."))
+    config = _overleaf_config(project)
+    remote = _git(["remote", "get-url", "lockedin-overleaf"], root, capture=True).stdout.strip()
+    if config and remote != config.get("overleaf_git_url"):
+        print(orange("! The website association changed; disconnect and connect again before syncing."))
+    elif not config:
+        print(orange("! The website association was removed; this local clone was retained safely."))
+
+
+def overleaf_sync(project: Path, message: str | None = None) -> None:
+    root = project / ".lockedin" / "overleaf"
+    if not (root / ".git").is_dir():
+        raise RuntimeError("No local Overleaf checkout. Run `lockedin-scientist overleaf connect` first.")
+    config = _overleaf_config(project)
+    remote = _git(["remote", "get-url", "lockedin-overleaf"], root, capture=True).stdout.strip()
+    if not config or remote != config.get("overleaf_git_url"):
+        raise RuntimeError("The local checkout does not match the website's Overleaf association. Disconnect and connect again before syncing.")
+    _configure_overleaf_credential_store(project, root)
+    branch = _overleaf_remote_branch(root)
+    dirty = _git(["status", "--porcelain"], root, capture=True).stdout.strip()
+    if dirty:
+        _git(["add", "-A"], root)
+        _git(["commit", "-m", message or f"LockedIn Scientist sync {time.strftime('%Y-%m-%d %H:%M')}"], root)
+    _git(["fetch", "lockedin-overleaf", branch], root)
+    _git(["rebase", f"lockedin-overleaf/{branch}"], root)
+    _git(["push", "lockedin-overleaf", f"HEAD:{branch}"], root)
+    heading("Overleaf synchronized")
+    print(green("✓") + " Pulled remote work and published the local checkout.")
+
+
+def overleaf_abort(project: Path) -> None:
+    _git(["rebase", "--abort"], project / ".lockedin" / "overleaf")
+    print(green("✓") + " Aborted the Overleaf rebase.")
+
+
+def overleaf_disconnect(project: Path, discard_local: bool) -> None:
+    root = project / ".lockedin" / "overleaf"
+    if not root.exists(): return
+    if not discard_local and (root / ".git").is_dir():
+        dirty = _git(["status", "--porcelain"], root, capture=True).stdout.strip()
+        branch = _overleaf_remote_branch(root)
+        ahead = _git(["log", "--oneline", f"lockedin-overleaf/{branch}..HEAD"], root, capture=True).stdout.strip()
+        if dirty or ahead:
+            raise RuntimeError("Overleaf has unsynced local work. Sync or copy it first, then use `overleaf disconnect --discard-local`.")
+    _remove_tree(root)
+    print(green("✓") + " Removed the local Overleaf checkout. The website association was unchanged.")
+
+
+class ProjectSync:
+    def __init__(self, account: dict, project: Path, bubble: str):
+        self.account, self.project, self.bubble = account, project.resolve(), bubble
+        self.root = self.project / ".lockedin"
+        self.config = self.root / "config"
+        self.binding_path = self.config / "binding.json"
+        self.state_path = self.config / "sync-state.json"
+
+    @staticmethod
+    def _rev(data: bytes) -> str:
+        import hashlib
+        return hashlib.sha256(data).hexdigest()
+
+    def _binding(self) -> dict | None:
+        try: return json.loads(self.binding_path.read_text())
+        except (OSError, json.JSONDecodeError): return None
+
+    def _state(self) -> dict:
+        try: return json.loads(self.state_path.read_text())
+        except (OSError, json.JSONDecodeError): return {"files": {}}
+
+    def _write_state(self, state: dict) -> None: _atomic_json(self.state_path, state, private=True)
+
+    def _refresh_skill(self) -> None:
+        response = account_request(self.account, "GET", "/api/scientist/v2/guide")
+        guide = response.get("guide", "")
+        if not guide.strip():
+            raise RuntimeError("The server did not provide the LockedIn Editing Guide. Reinstall or update the server.")
+        (self.root / "SKILL.md").write_text(skill_document(guide, response.get("math_macros")))
+
+    def validate_or_initialize(self, *, reset: bool = False) -> None:
+        current = self._binding()
+        wanted = {"server": self.account["server"], "user": self.account["user"],
+                  "workspace_id": self.account.get("workspace_id", ""), "bubble": self.bubble}
+        if current and not reset and current != wanted:
+            raise RuntimeError(".lockedin belongs to another server, workspace, or bubble. Run `lockedin-scientist hard-reset <bubble>`.")
+        if self.root.exists() and current is None and not reset:
+            raise RuntimeError(
+                ".lockedin/config/binding.json is missing, so Scientist cannot safely identify its bubble. "
+                "No worker was started. Copy any unsynchronized report work elsewhere, then run "
+                "`lockedin-scientist hard-reset <bubble>` to rebuild .lockedin from the server."
+            )
+        if reset and self.root.exists(): _remove_tree(self.root)
+        created = not self.root.exists()
+        if created:
+            (self.root / "assets").mkdir(parents=True)
+            (self.root / "reports" / "pages").mkdir(parents=True)
+            (self.root / "reports" / "assets").mkdir(parents=True)
+            self.config.mkdir(parents=True)
+            _atomic_json(self.binding_path, wanted)
+            self._write_state({"files": {}})
+            self._exclude_from_git()
+        skill = self.root / "SKILL.md"
+        if created or f"lockedin-scientist-skill: {SKILL_VERSION}" not in (skill.read_text() if skill.exists() else ""):
+            self._refresh_skill()
+
+    def _exclude_from_git(self) -> None:
+        git = self.project / ".git"
+        if not git.is_dir(): return
+        exclude = git / "info" / "exclude"; exclude.parent.mkdir(parents=True, exist_ok=True)
+        text = exclude.read_text() if exclude.exists() else ""
+        if ".lockedin/" not in text.splitlines():
+            exclude.write_text(text.rstrip("\n") + "\n.lockedin/\n")
+
+    def _request(self, method: str, suffix: str, body: dict | None = None) -> dict:
+        return account_request(self.account, method, f"/api/scientist/v2/bubbles/{self.bubble}/{suffix}", body)
+
+    def _read_remote(self, paths: list[str]) -> dict[str, dict]:
+        result: dict[str, dict] = {}
+        for start in range(0, len(paths), 200):
+            for item in self._request("POST", "files", {"paths": paths[start:start + 200]}).get("files", []):
+                result[item["path"]] = item
+        return result
+
+    def _local(self, rel: str) -> Path: return self.root / rel
+
+    def _write_remote(self, item: dict) -> None:
+        target = self._local(item["path"])
+        # A prior pull protects asset trees; make just enough of that local protection writable
+        # before replacing the server-authoritative file, then restore protection below.
+        for parent in (target.parent.parent, target.parent):
+            try: os.chmod(parent, 0o755)
+            except OSError: pass
+        try: os.chmod(target, 0o644)
+        except OSError: pass
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(base64.b64decode(item["content_b64"]))
+        self._protect(item["path"], target)
+
+    def _protect(self, rel: str, path: Path) -> None:
+        if rel.startswith("assets/") or rel in {"config/math.yaml", "config/aesthetics.yaml",
+                                                 "config/overleaf.yaml", "reports/pages.yaml", "reports/_lockedin_papers.md"}:
+            try: os.chmod(path, 0o444)
+            except OSError: pass
+        if rel.startswith("assets/"):
+            for parent in (path.parent, path.parent.parent):
+                try: os.chmod(parent, 0o555)
+                except OSError: pass
+
+    def _conflict(self, rel: str, base: bytes, local: bytes, remote: bytes) -> None:
+        folder = self.config / "conflicts" / str(int(time.time() * 1000)); folder.mkdir(parents=True, exist_ok=True)
+        stem = Path(rel).name
+        (folder / (stem + ".base")).write_bytes(base)
+        (folder / (stem + ".local")).write_bytes(local)
+        (folder / (stem + ".remote")).write_bytes(remote)
+        patch = "".join(difflib.unified_diff(base.decode(errors="replace").splitlines(True), local.decode(errors="replace").splitlines(True), fromfile="base", tofile="local"))
+        (folder / (stem + ".patch")).write_text(patch)
+
+    def _report_paths(self) -> list[str]:
+        out = []
+        for base in (self.root / "reports" / "pages", self.root / "reports" / "assets"):
+            if base.exists():
+                out.extend(p.relative_to(self.root).as_posix() for p in base.iterdir() if p.is_file() and not p.is_symlink())
+        return sorted(out)
+
+    def sync_once(self) -> None:
+        self.validate_or_initialize()
+        remote = {f["path"]: f["revision"] for f in self._request("GET", "manifest").get("files", [])}
+        state = self._state(); tracked: dict = state.setdefault("files", {})
+        prior_math_revision = state.get("skill_math_revision")
+        remote_data: dict[str, dict] = {}
+
+        def fetch(rel: str) -> dict | None:
+            if rel not in remote: return None
+            if rel not in remote_data: remote_data.update(self._read_remote([rel]))
+            return remote_data.get(rel)
+
+        report_remote = {r for r in remote if r.startswith("reports/pages/") or r.startswith("reports/assets/")}
+        report_local = set(self._report_paths())
+        deletes, writes, creates = [], [], []
+        for rel, old in list(tracked.items()):
+            if not rel.startswith("reports/"): continue
+            path = self._local(rel); local = path.read_bytes() if path.exists() else b""
+            if rel not in remote:
+                if path.exists() and self._rev(local) != old.get("revision", ""):
+                    self._conflict(rel, b"", local, b"")
+                if path.exists(): path.unlink()
+                # ``report_local`` was captured before this reconciliation pass. Remove the
+                # server-deleted path from that snapshot too, so it cannot be mistaken for a new
+                # local page/asset below and read after unlinking it.
+                report_local.discard(rel)
+                tracked.pop(rel, None); continue
+            if not path.exists():
+                deletes.append({"path": rel, "base_revision": old["revision"]}); continue
+            local_changed = self._rev(local) != old["revision"]
+            remote_changed = remote[rel] != old["revision"]
+            if local_changed and remote_changed:
+                item = fetch(rel); raw = base64.b64decode(item["content_b64"])
+                self._conflict(rel, b"", local, raw); self._write_remote(item); tracked[rel] = {"revision": item["revision"]}
+            elif local_changed:
+                writes.append({"path": rel, "base_revision": old["revision"], "content_b64": base64.b64encode(local).decode("ascii")})
+            elif remote_changed:
+                item = fetch(rel); self._write_remote(item); tracked[rel] = {"revision": item["revision"]}
+        for rel in sorted(report_local - set(tracked) - report_remote):
+            raw = self._local(rel).read_bytes()
+            if rel.startswith("reports/pages/"):
+                creates.append((rel, raw))
+            else:
+                writes.append({"path": rel, "base_revision": self._rev(b""), "content_b64": base64.b64encode(raw).decode("ascii")})
+        for rel in sorted(report_remote - set(tracked)):
+            item = fetch(rel); self._write_remote(item); tracked[rel] = {"revision": item["revision"]}
+        if deletes:
+            result = self._request("POST", "deletes", {"deletes": deletes})
+            for item in result.get("applied", []): tracked.pop(item["path"], None)
+            for item in result.get("conflicts", []):
+                if item.get("content_b64"):
+                    self._write_remote(item); tracked[item["path"]] = {"revision": item["revision"]}
+        for rel, raw in creates:
+            result = self._request("POST", "pages", {"bubble": self.bubble, "page_slug": Path(rel).stem,
+                                                         "content_b64": base64.b64encode(raw).decode("ascii"), "base_revision": self._rev(b"")})
+            for item in result.get("applied", []): tracked[item["path"]] = {"revision": item["revision"]}
+            for item in result.get("conflicts", []):
+                if item.get("content_b64"):
+                    self._conflict(rel, b"", raw, base64.b64decode(item["content_b64"])); self._write_remote(item)
+        if writes:
+            result = self._request("POST", "push", {"writes": writes})
+            for item in result.get("applied", []): tracked[item["path"]] = {"revision": item["revision"]}
+            for item in result.get("conflicts", []):
+                rel = item["path"]; local = self._local(rel).read_bytes() if self._local(rel).exists() else b""
+                if item.get("content_b64"):
+                    raw = base64.b64decode(item["content_b64"]); self._conflict(rel, b"", local, raw); self._write_remote(item); tracked[rel] = {"revision": item["revision"]}
+        # Everything except report pages and report assets is server-authoritative. This includes
+        # the report manifest and paper inventory that agents read but never edit.
+        for rel in sorted(r for r in remote if r not in report_remote):
+            path = self._local(rel)
+            if (not path.exists() or self._rev(path.read_bytes()) != remote[rel]
+                    or tracked.get(rel, {}).get("revision") != remote[rel]):
+                item = fetch(rel); self._write_remote(item)
+            tracked[rel] = {"revision": remote[rel]}
+        math_revision = remote.get("config/math.yaml", "")
+        if prior_math_revision != math_revision:
+            self._refresh_skill()
+            state["skill_math_revision"] = math_revision
+        for root_name in ("assets",):
+            root = self.root / root_name
+            if root.exists():
+                for path in sorted(root.rglob("*"), reverse=True):
+                    if path.is_file() and path.relative_to(self.root).as_posix() not in remote:
+                        try: os.chmod(path, 0o644); path.unlink()
+                        except OSError: pass
+                    elif path.is_dir() and not any(path.iterdir()):
+                        try: os.chmod(path, 0o755); path.rmdir()
+                        except OSError: pass
+        for rel in list(tracked):
+            if rel not in remote and not (rel.startswith("reports/pages/") or rel.startswith("reports/assets/")):
+                path = self._local(rel)
+                try: os.chmod(path, 0o644); path.unlink(missing_ok=True)
+                except OSError: pass
+                tracked.pop(rel, None)
+        self._write_state(state)
+
+
+def _alive(pid: int) -> bool:
+    if pid <= 0: return False
+    try: os.kill(pid, 0); return True
+    except OSError: return False
+
+
+def _worker_record(worker_id: str) -> dict | None: return load_workers().get("workers", {}).get(worker_id)
+
+
+def _update_worker(worker_id: str, **changes) -> None:
+    data = load_workers(); rec = data.setdefault("workers", {}).get(worker_id)
+    if rec is None: return
+    rec.update(changes); save_workers(data)
+
+
+def _run_worker(worker_id: str, project: str) -> None:
+    rec = _worker_record(worker_id)
+    if not rec: return
+    binding = ProjectSync({"server": rec.get("server", ""), "user": rec.get("user", "")}, Path(project), rec["bubble"])._binding()
+    if not binding: _update_worker(worker_id, status="failed", error="missing .lockedin binding"); return
+    account = next((item for item in load_config().get("accounts", [])
+                    if item.get("server") == binding.get("server") and item.get("user") == binding.get("user")), None)
+    if not account:
+        _update_worker(worker_id, status="failed", error="the account for this project is no longer authorized")
+        return
+    account = dict(account); account["workspace_id"] = binding["workspace_id"]
+    sync = ProjectSync(account, Path(project), binding["bubble"])
+    stop = False
+    def end(*_):
+        nonlocal stop; stop = True
+    signal.signal(signal.SIGTERM, end); signal.signal(signal.SIGINT, end)
+    _update_worker(worker_id, status="running", pid=os.getpid(), last_error="")
+    while not stop:
+        try:
+            sync.sync_once(); _update_worker(worker_id, status="running", last_sync=time.time(), last_error="")
+        except Exception as exc:
+            _update_worker(worker_id, status="degraded", last_error=str(exc))
+        for _ in range(POLL_SECONDS * 10):
+            if stop: break
+            time.sleep(.1)
+    try: sync.sync_once()
+    except Exception: pass
+    _update_worker(worker_id, status="stopped", stopped_at=time.time())
+
+
+def start_sync(account: dict, bubble: str, project: Path) -> None:
+    heading("Synchronizing a bubble", f"{bubble} → {project / '.lockedin'}")
+    sync = ProjectSync(account, project, bubble); sync.validate_or_initialize(); sync.sync_once()
+    data = load_workers()
+    for wid, rec in data.get("workers", {}).items():
+        if Path(rec.get("project", "")).resolve() == project.resolve() and _alive(int(rec.get("pid", 0))):
+            if rec.get("bubble") == bubble:
+                print(green("✓") + f" Already synchronized by worker {bold(wid)}")
+                print(dim("  Use lockedin-scientist ps to inspect it."))
+                return
+            raise RuntimeError("Another bubble worker already manages this project. Use hard-reset first.")
+    wid = secrets.token_hex(6); log = data_root() / "runtime" / "workers" / f"{wid}.log"; log.parent.mkdir(parents=True, exist_ok=True)
+    rec = {"id": wid, "pid": 0, "project": str(project.resolve()), "server": account["server"], "user": account["user"], "workspace_id": account.get("workspace_id", ""),
+           "bubble": bubble, "started_at": time.time(), "last_sync": time.time(), "last_error": "", "status": "starting"}
+    data.setdefault("workers", {})[wid] = rec; save_workers(data)
+    with log.open("ab") as stream:
+        proc = subprocess.Popen([sys.executable, str(Path(__file__).resolve()), "_worker", wid, str(project.resolve())],
+                                stdin=subprocess.DEVNULL, stdout=stream, stderr=stream,
+                                start_new_session=os.name != "nt")
+    _update_worker(wid, pid=proc.pid)
+    print(green("✓") + f" Synced {bold(bubble)}; worker {bold(wid)} is running.")
+    print(dim("  Reports sync every five seconds. Run your agent normally from this project."))
+
+
+def ps_command() -> None:
+    data = load_workers()
+    heading("Scientist sync workers", "Workers keep their project-local .lockedin directory synchronized.")
+    records = list(data.get("workers", {}).values())
+    if not records:
+        print(dim("  No managed workers on this device."))
+    for rec in records:
+        if rec.get("status") in {"running", "starting", "degraded"} and not _alive(int(rec.get("pid", 0))):
+            rec["status"] = "stopped"; rec["stopped_at"] = time.time()
+    records.sort(key=lambda rec: (0 if rec.get("status") in ATTENTION_WORKER_STATUSES else
+                                  1 if rec.get("status") not in TERMINAL_WORKER_STATUSES else 2,
+                                  -rec.get("started_at", 0)))
+    for rec in records:
+        status = rec.get("status", "?")
+        marker = (green("●") if status == "running" else orange("●") if status == "degraded"
+                  else red("●") if status == "failed" else dim("●"))
+        print(f"  {marker} {bold(rec['id'])}  {status}  {dim('bubble:')} {rec.get('bubble', '')}")
+        print(f"    {dim(rec.get('project', ''))}")
+        if rec.get("last_error"): print("    " + red("error: ") + rec["last_error"])
+        if status == "failed" and rec.get("error") == "missing .lockedin binding":
+            print("    " + orange("recovery: ") +
+                  f"copy any unsynced report work, then run `lockedin-scientist hard-reset {rec.get('bubble', '<bubble>')}` from this project")
+    # Persist stale-record cleanup and bounded-history pruning even when no live status changed.
+    save_workers(data)
+
+
+def stop_command(worker_id: str) -> None:
+    data = load_workers(); rec = data.get("workers", {}).get(worker_id)
+    if not rec: raise RuntimeError("No such Scientist worker.")
+    pid = int(rec.get("pid", 0))
+    alive = _alive(pid)
+    if alive:
+        try: os.kill(pid, signal.SIGTERM)
+        except OSError as exc: raise RuntimeError(f"Could not stop worker: {exc}") from exc
+    rec["status"] = "stopping" if alive else "stopped"
+    rec["stopped_at"] = time.time(); save_workers(data)
+    heading("Stopping sync worker")
+    print(green("✓") + f" Stop requested for worker {bold(worker_id)}.")
+    print(dim("  .lockedin was left unchanged."))
+
+
+def _stop_and_wait(worker_id: str) -> None:
+    """Stop a worker before hard-reset removes its project-local files."""
+    stop_command(worker_id)
+    for _ in range(30):
+        rec = _worker_record(worker_id)
+        if not rec or not _alive(int(rec.get("pid", 0))):
+            return
+        time.sleep(0.1)
+    raise RuntimeError("Scientist worker did not stop in time; retry hard-reset after stopping it.")
+
+
+def hard_reset(account: dict, bubble: str, project: Path, *, discard_overleaf: bool = False) -> None:
+    heading("Hard reset", f"Replacing {project / '.lockedin'} from bubble {bubble}.")
+    overleaf = project / ".lockedin" / "overleaf"
+    if (overleaf / ".git").is_dir() and not discard_overleaf:
+        raise RuntimeError("Hard reset would remove the local Overleaf checkout. Sync or copy its work first, then retry with `--discard-overleaf`.")
+    for wid, rec in load_workers().get("workers", {}).items():
+        if Path(rec.get("project", "")).resolve() == project.resolve() and _alive(int(rec.get("pid", 0))): _stop_and_wait(wid)
+    sync = ProjectSync(account, project, bubble); sync.validate_or_initialize(reset=True)
+    start_sync(account, bubble, project)
+
+
+def _main() -> None:
+    parser = argparse.ArgumentParser(
+        prog=APP,
+        description="Synchronize one LockedIn bubble into .lockedin in the current project.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="Run without a command for a guided overview.",
+    )
+    parser.add_argument("--version", action="version", version=f"%(prog)s {SCIENTIST_CLIENT_VERSION}")
+    sub = parser.add_subparsers(dest="command", required=True)
+    login_p = sub.add_parser("login"); login_p.add_argument("--server", required=True)
+    workspaces_p = sub.add_parser("workspaces")
+    ws_sub = workspaces_p.add_subparsers(dest="workspace_command")
+    ws_switch = ws_sub.add_parser("switch"); ws_switch.add_argument("workspace")
+    sub.add_parser("bubbles")
+    sync_p = sub.add_parser("sync"); sync_p.add_argument("bubble")
+    sub.add_parser("ps")
+    stop_p = sub.add_parser("stop"); stop_p.add_argument("worker_id")
+    reset_p = sub.add_parser("hard-reset"); reset_p.add_argument("bubble"); reset_p.add_argument("--discard-overleaf", action="store_true")
+    for vendor in VENDORS:
+        vendor_parser = sub.add_parser(vendor, help=f"Install the {APP} native skill for {vendor}.")
+        vendor_sub = vendor_parser.add_subparsers(dest="vendor_command", required=True)
+        vendor_sub.add_parser("setup", help="Install or update the managed native skill.")
+    overleaf = sub.add_parser("overleaf").add_subparsers(dest="overleaf_command", required=True)
+    overleaf.add_parser("help")
+    overleaf.add_parser("connect")
+    overleaf.add_parser("status")
+    ol_sync = overleaf.add_parser("sync"); ol_sync.add_argument("--message")
+    overleaf.add_parser("abort")
+    ol_disconnect = overleaf.add_parser("disconnect"); ol_disconnect.add_argument("--discard-local", action="store_true")
+    worker_p = sub.add_parser("_worker"); worker_p.add_argument("worker_id"); worker_p.add_argument("project")
+    if len(sys.argv) == 1:
+        welcome()
+        return
+    args = parser.parse_args()
+    if args.command == "_worker": _run_worker(args.worker_id, args.project); return
+    if args.command == "login": login(args.server); return
+    if args.command == "ps": ps_command(); return
+    if args.command == "stop": stop_command(args.worker_id); return
+    if args.command in VENDORS:
+        if args.vendor_command == "setup": setup_vendor_command(args.command)
+        return
+    if args.command == "overleaf":
+        project = Path.cwd()
+        if args.overleaf_command == "help": overleaf_help_command()
+        elif args.overleaf_command == "connect": overleaf_connect(project)
+        elif args.overleaf_command == "status": overleaf_status(project)
+        elif args.overleaf_command == "sync": overleaf_sync(project, args.message)
+        elif args.overleaf_command == "abort": overleaf_abort(project)
+        elif args.overleaf_command == "disconnect": overleaf_disconnect(project, args.discard_local)
+        return
+    account = choose_account()
+    if args.command == "workspaces":
+        if args.workspace_command == "switch": switch_workspace(account, args.workspace)
+        else: workspaces_command(account)
+        return
+    if args.command == "bubbles": bubbles_command(account); return
+    project = Path.cwd()
+    if args.command == "sync": start_sync(account, args.bubble, project); return
+    if args.command == "hard-reset": hard_reset(account, args.bubble, project, discard_overleaf=args.discard_overleaf); return
+
+
+def main() -> None:
+    try: _main()
+    except RuntimeError as exc:
+        print(red("✗") + " " + bold("Scientist could not complete that command"), file=sys.stderr)
+        print("  " + str(exc), file=sys.stderr)
+        raise SystemExit(1) from exc
+
+
+if __name__ == "__main__": main()

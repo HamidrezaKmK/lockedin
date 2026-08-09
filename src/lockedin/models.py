@@ -25,6 +25,8 @@ from __future__ import annotations
 
 import base64
 import copy
+import contextlib
+import contextvars
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterator, Optional
@@ -50,6 +52,39 @@ DEFAULT_CONFIG: dict[str, Any] = {
 DEFAULT_MAX_TOKENS = 4096
 
 
+# Research content is workspace-owned, but provider credentials and the active model are private
+# to an account. The server establishes this context for every authenticated request.
+_account_home: contextvars.ContextVar[Path | None] = contextvars.ContextVar(
+    "lockedin_model_account_home", default=None)
+
+
+@contextlib.contextmanager
+def use_account_home(home: Path | None):
+    token = _account_home.set(Path(home).resolve() if home else None)
+    try:
+        yield
+    finally:
+        _account_home.reset(token)
+
+
+def _config_home(home: Path) -> Path:
+    """Return the account-private configuration home for an active workspace request."""
+    contextual = _account_home.get()
+    if contextual is not None:
+        return contextual
+    # Public share pages and background work have no signed-in request context. For those, use
+    # the workspace owner's account config rather than the workspace's shared files.
+    try:
+        from . import workspaces
+
+        workspace = workspaces.get(Path(home).name)
+        if workspace and workspaces.workspace_home(workspace["id"]).resolve() == Path(home).resolve():
+            return paths.user_home(workspace.get("owner_user", ""))
+    except Exception:  # noqa: BLE001 - direct/local model use can have no workspace registry.
+        pass
+    return Path(home)
+
+
 @dataclass
 class ActiveModelConfig:
     active: str = "openai"
@@ -63,7 +98,8 @@ class ActiveModelConfig:
 # Config I/O
 # --------------------------------------------------------------------------- #
 def load_config(home: Path) -> dict:
-    """Read active_model.yaml for ``home`` (a user workspace), merged over defaults."""
+    """Read the active account's model config, merged over defaults."""
+    home = _config_home(home)
     cfg = copy.deepcopy(DEFAULT_CONFIG)
     path = home / "config" / "active_model.yaml"
     if path.exists():
@@ -81,6 +117,7 @@ def load_config(home: Path) -> dict:
 
 
 def save_config(home: Path, cfg: dict) -> dict:
+    home = _config_home(home)
     merged = load_config(home)
     for k, v in cfg.items():
         if isinstance(v, dict) and isinstance(merged.get(k), dict):
@@ -98,6 +135,7 @@ def save_config(home: Path, cfg: dict) -> dict:
 
 def qwen_allowed(home: Path) -> bool:
     """True when this user's account may use server-side Qwen compute."""
+    home = _config_home(home)
     try:
         from . import auth
 

@@ -17,10 +17,12 @@ Run: ``uv run python -m unittest discover -s tests -t .``
 from __future__ import annotations
 
 import os
+import re
 import tempfile
 import unittest
 from contextlib import contextmanager
 from pathlib import Path
+from unittest.mock import patch
 
 from lockedin import assets, bubbles, models, paths, reports, server, service, tagger
 
@@ -143,6 +145,21 @@ class WikilinkNormalization(unittest.TestCase):
 # NOT clobber a rename or its share state, and membership must follow the slug.
 # --------------------------------------------------------------------------- #
 class BubbleIdentity(unittest.TestCase):
+    def test_legacy_auto_suggestions_are_purged_without_touching_real_bubbles(self):
+        with temp_home() as home:
+            with paths.use_root(home):
+                stale = bubbles.propose_bubble("Old model suggestion")
+                stale_dir = paths.bubble_dir(stale)
+                stale_dir.mkdir(parents=True)
+                (stale_dir / "old.md").write_text("obsolete")
+                real = bubbles.create_bubble("My actual research")
+
+                self.assertEqual(bubbles.purge_legacy_auto_suggestions(), [stale])
+                self.assertNotIn(stale, bubbles.load_registry())
+                self.assertFalse(stale_dir.exists())
+                self.assertTrue(bubbles.load_registry()[real]["approved"])
+                self.assertEqual(bubbles.purge_legacy_auto_suggestions(), [])
+
     def test_retagging_preserves_rename_and_share(self):
         with temp_home() as home:
             with paths.use_root(home):
@@ -165,6 +182,139 @@ class BubbleIdentity(unittest.TestCase):
         # The membership tag must still slugify back to the original slug, never the new name.
         from lockedin import assets
         self.assertEqual(assets.slug_of(tag), slug)
+
+    def test_all_bubbles_scans_asset_metadata_once(self):
+        with temp_home() as home:
+            with paths.use_root(home):
+                bubbles.create_bubble("first topic")
+                bubbles.create_bubble("second topic")
+                assets.save_asset(b"%PDF-1", "one.pdf", tags=["first topic"])
+                assets.save_asset(b"%PDF-1", "two.pdf", tags=["second topic"])
+                original = assets.list_assets
+                calls = 0
+
+                def counted_list_assets():
+                    nonlocal calls
+                    calls += 1
+                    return original()
+
+                assets.list_assets = counted_list_assets
+                try:
+                    rows = bubbles.all_bubbles()
+                finally:
+                    assets.list_assets = original
+        self.assertEqual(calls, 1)
+        self.assertEqual({row["slug"] for row in rows}, {"first-topic", "second-topic"})
+
+    def test_archived_bubbles_are_reversible_and_hidden_from_active_inventory(self):
+        with temp_home() as home:
+            active = service.create_bubble(home, "Active topic")
+            archived = service.create_bubble(home, "Archived topic")
+            with paths.use_root(home):
+                bubbles.ensure_pages(archived)
+                bubbles.save_page(archived, "overview", "# Preserved\n")
+            result = service.set_bubble_archived(home, archived, True)
+            self.assertTrue(result["archived"])
+            self.assertEqual([b["slug"] for b in service.list_bubbles(home)], [active])
+            self.assertEqual([b["slug"] for b in service.list_bubbles(home, archived=True)], [archived])
+            self.assertEqual(service.bubble_detail(home, archived)["content"], "# Preserved\n")
+            result = service.set_bubble_archived(home, archived, False)
+            self.assertFalse(result["archived"])
+            self.assertEqual({b["slug"] for b in service.list_bubbles(home)}, {active, archived})
+
+
+# --------------------------------------------------------------------------- #
+# Copying papers between bubbles (service.migrate_papers). Membership is a tag on a shared
+# asset, so a migration must add to the destination and never disturb the source.
+# --------------------------------------------------------------------------- #
+class PaperMigration(unittest.TestCase):
+    def _workspace(self, home):
+        """Two bubbles; one paper in the source at a non-default relevance."""
+        with paths.use_root(home):
+            source = bubbles.create_bubble("Source topic")
+            dest = bubbles.create_bubble("Dest topic")
+            pdf_id = assets.save_asset(b"%PDF-1", "paper.pdf", tags=[bubbles.tag_for_slug(source)])
+            bubbles.set_pdf_bubble_score(source, pdf_id, 2)
+        return source, dest, pdf_id
+
+    def _score(self, home, slug, pdf_id):
+        with paths.use_root(home):
+            for m in bubbles.pdfs_for_bubble(slug):
+                if m["pdf_id"] == pdf_id:
+                    return int(m["bubble_score"])
+        return None
+
+    def test_copy_adds_to_destination_and_leaves_the_source_untouched(self):
+        with temp_home() as home:
+            source, dest, pdf_id = self._workspace(home)
+            out = service.migrate_papers(home, source, dest, [{"pdf_id": pdf_id, "score": 4}])
+            self.assertEqual(out["migrated"], [pdf_id])
+            self.assertEqual(self._score(home, dest, pdf_id), 4)
+            # The source keeps both the paper and its own relevance.
+            self.assertEqual(self._score(home, source, pdf_id), 2)
+
+    def test_a_paper_already_in_the_destination_keeps_its_relevance(self):
+        with temp_home() as home:
+            source, dest, pdf_id = self._workspace(home)
+            service.migrate_papers(home, source, dest, [{"pdf_id": pdf_id, "score": 3}])
+            out = service.migrate_papers(home, source, dest, [{"pdf_id": pdf_id, "score": 1}])
+            self.assertEqual(out["migrated"], [])
+            self.assertEqual(out["skipped"], [pdf_id])
+            # Not re-scored behind the user's back: the picker never showed this row.
+            self.assertEqual(self._score(home, dest, pdf_id), 3)
+
+    def test_an_asset_outside_the_source_bubble_is_never_tagged(self):
+        with temp_home() as home:
+            source, dest, _ = self._workspace(home)
+            with paths.use_root(home):
+                other = assets.save_asset(b"%PDF-1", "unrelated.pdf", tags=["something else"])
+            out = service.migrate_papers(home, source, dest, [{"pdf_id": other}])
+            self.assertEqual(out["migrated"], [])
+            self.assertEqual(out["skipped"], [other])
+            with paths.use_root(home):
+                self.assertNotIn(dest, assets.load_meta(other).get("idea_bubbles", []))
+
+    def test_same_bubble_and_unknown_bubble_are_rejected(self):
+        with temp_home() as home:
+            source, dest, pdf_id = self._workspace(home)
+            with self.assertRaises(ValueError):
+                service.migrate_papers(home, source, source, [])
+            with self.assertRaises(KeyError):
+                service.migrate_papers(home, source, "no-such-bubble", [])
+
+    def test_a_rejected_score_tags_nothing_at_all(self):
+        # Tagging happens before scoring, so an out-of-range score must be caught up front or the
+        # paper lands in the destination unscored — a half-applied migration.
+        with temp_home() as home:
+            source, dest, pdf_id = self._workspace(home)
+            with self.assertRaises(ValueError):
+                service.migrate_papers(home, source, dest, [{"pdf_id": pdf_id, "score": 9}])
+            with paths.use_root(home):
+                self.assertNotIn(dest, assets.load_meta(pdf_id).get("idea_bubbles", []))
+                self.assertEqual(bubbles.pdfs_for_bubble(dest), [])
+
+    def test_a_renamed_destination_still_receives_the_paper_under_its_own_slug(self):
+        # The phantom-slug regression: tagging by display name would split the bubble.
+        with temp_home() as home:
+            source, dest, pdf_id = self._workspace(home)
+            with paths.use_root(home):
+                bubbles.rename_bubble(dest, "Completely Different Name")
+            service.migrate_papers(home, source, dest, [{"pdf_id": pdf_id, "score": 5}])
+            with paths.use_root(home):
+                slugs = assets.load_meta(pdf_id).get("idea_bubbles", [])
+        self.assertIn(dest, slugs)
+        self.assertNotIn("completely-different-name", slugs)
+
+    def test_destination_inventory_reflects_the_new_relevance(self):
+        # _lockedin_papers.md is what a Scientist session reads; set_pdf_bubble_score alone does
+        # not refresh it, so the batch must rewrite it at the end.
+        with temp_home() as home:
+            source, dest, pdf_id = self._workspace(home)
+            service.migrate_papers(home, source, dest, [{"pdf_id": pdf_id, "score": 4}])
+            with paths.use_root(home):
+                inventory = (paths.bubble_dir(dest) / "_lockedin_papers.md").read_text()
+        self.assertIn("[Relevance 4]", inventory)
+        self.assertIn(pdf_id, inventory)
 
 
 class BubbleRelevance(unittest.TestCase):
@@ -205,23 +355,6 @@ class BubbleRelevance(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     bubbles.set_pdf_bubble_score(slug, pid, 6)
 
-    def test_scientist_context_only_lists_current_bubble_papers(self):
-        with temp_home() as home:
-            slug = make_bubble(home)
-            other = service.create_bubble(home, "Other Topic")
-            p1 = service.save_asset(home, b"%PDF-1", "a.pdf", title="Attached",
-                                    tags=["Diffusion Models"])
-            p2 = service.save_asset(home, b"%PDF-1", "b.pdf", title="Unrelated",
-                                    tags=["Other Topic"])
-            with paths.use_root(home):
-                assets.save_summary(p1, "attached summary")
-                assets.save_summary(p2, "unrelated summary")
-                ctx = reports.scientist_context(slug)
-        self.assertIn("Attached", ctx)
-        self.assertIn("Relevance 5", ctx)
-        self.assertNotIn("Unrelated", ctx)
-        self.assertNotIn("unrelated summary", ctx)
-
     def test_chat_context_uses_relevance_labels(self):
         captured = {}
 
@@ -245,16 +378,39 @@ class BubbleRelevance(unittest.TestCase):
         self.assertIn("### [Relevance 5] Attached", captured["system"])
 
 
-class AssetAttentionDefaults(unittest.TestCase):
-    def test_new_assets_start_in_attention_queue_until_explicitly_cleared(self):
+class PublisherPdfFallback(unittest.TestCase):
+    def test_hal_inria_repository_record_becomes_direct_pdf_url(self):
+        class Response:
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {
+                    "best_oa_location": {
+                        "landing_page_url": "https://inria.hal.science/inria-00274768",
+                        "pdf_url": None,
+                    },
+                    "locations": [],
+                }
+
+        with patch("lockedin.assets.httpx.get", return_value=Response()):
+            fallback = assets._open_access_pdf_fallback(
+                "https://dl.acm.org/doi/pdf/10.1145/1399504.1360691?download=true")
+        self.assertEqual(fallback, "https://inria.hal.science/inria-00274768/document")
+
+
+class AssetRequiresAttentionDefaults(unittest.TestCase):
+    def test_new_assets_require_attention_until_explicitly_cleared(self):
         with temp_home() as home:
             pid = service.save_asset(home, b"%PDF-1", "a.pdf", title="A",
                                      tags=["Diffusion Models"])
             meta = service.get_asset(home, pid)
             self.assertTrue(meta["attention_flag"])
-            self.assertEqual([a["pdf_id"] for a in service.attention_queue(home)], [pid])
+            with paths.use_root(home):
+                self.assertEqual([a["pdf_id"] for a in assets.requires_attention()], [pid])
             service.update_asset(home, pid, attention_flag=False)
-            self.assertEqual(service.attention_queue(home), [])
+            with paths.use_root(home):
+                self.assertEqual(assets.requires_attention(), [])
 
 
 # --------------------------------------------------------------------------- #
@@ -343,6 +499,75 @@ class MathNormalization(unittest.TestCase):
         self.assertNotIn(r"\(", done["chat_text"])
 
 
+class DisplayMathOpenerNormalization(unittest.TestCase):
+    """Guard: Toast UI treats ``$$`` + a letter as its own custom-block widget opener.
+
+    Its parser opens a widget on a line matching ``/^(\\$\\$)(\\s*[a-zA-Z])+/`` that has no second
+    ``$$`` on the same line, and closes it *only* on a line equal to ``$$``. Multi-line display math
+    like ``$$K_\\theta=...,`` therefore opened a block that never closed, and the editor painted the
+    rest of the page with the widget background. Saving moves such an opener onto its own line.
+    """
+
+    # The real rules, lifted verbatim from toastui-editor-all.min.js.
+    OPENS = re.compile(r"^(\$\$)(\s*[a-zA-Z])+")
+    SAME_LINE = re.compile(r"^(\$\$)(\s*[a-zA-Z])+.*(\$\$)")
+    CLOSES = re.compile(r"^\$\$$")
+
+    def unclosed_widget_line(self, text: str):
+        """Return the line number that opens a never-closed widget block, else None."""
+        opened = None
+        for number, line in enumerate(text.split("\n"), start=1):
+            if opened is None:
+                if self.OPENS.match(line) and not self.SAME_LINE.match(line):
+                    opened = number
+            elif self.CLOSES.match(line):
+                opened = None
+        return opened
+
+    def test_multiline_display_math_no_longer_runs_away(self):
+        src = ("Fix one generator\n\n"
+               "$$K_\\theta=U_\\theta^\\ast S_\\theta U_\\theta,\n"
+               "\\qquad\n"
+               "S_\\theta=M_\\theta-M_\\theta^\\top,$$\n\n"
+               "## A heading that used to be swallowed\n")
+        self.assertEqual(self.unclosed_widget_line(src), 3)      # the bug, before normalization
+        fixed = bubbles.normalize_display_math(src)
+        self.assertIsNone(self.unclosed_widget_line(fixed))
+        self.assertEqual(fixed.count("$$"), src.count("$$"))     # no delimiter invented or lost
+        self.assertIn("$$\nK_\\theta=", fixed)
+
+    def test_safe_math_is_left_exactly_as_written(self):
+        # Single-line display math closes on its own line; a non-letter opener never starts a
+        # widget. Neither should be reformatted, so ordinary pages keep their diffs clean.
+        for src in ("text $$E = mc^2$$ tail\n",
+                    "$$\\operatorname{Cay}(K_\\theta)\n=(I-K)^{-1}(I+K).$$\n",
+                    "$$\n\\alpha\n+\\beta\n$$\n",
+                    "inline $a+b$ only\n"):
+            with self.subTest(src=src):
+                self.assertEqual(bubbles.normalize_display_math(src), src)
+                self.assertIsNone(self.unclosed_widget_line(src))
+
+    def test_normalization_is_idempotent(self):
+        src = "$$A_{ki}:=\\langle u_k,\\varphi_i\\rangle,\n\\qquad i>N.$$\n"
+        once = bubbles.normalize_display_math(src)
+        self.assertEqual(bubbles.normalize_display_math(once), once)
+
+    def test_math_inside_fenced_code_is_never_rewritten(self):
+        src = ("```\n$$K_\\theta=U,\n\\qquad x\n$$\n```\n")
+        self.assertEqual(bubbles.normalize_display_math(src), src)
+
+    def test_saving_a_page_normalizes_the_opener_on_disk(self):
+        with temp_home() as home:
+            slug = make_bubble(home)
+            body = "$$K_\\theta=U_\\theta,\n\\qquad R>0,$$\n\n## Later section\n"
+            with paths.use_root(home):
+                bubbles.save_page(slug, "overview", body)
+                stored = bubbles.get_page(slug, "overview")
+        self.assertIn("$$\nK_\\theta=U_\\theta,", stored)
+        self.assertIsNone(self.unclosed_widget_line(stored))
+        self.assertIn("## Later section", stored)
+
+
 class PreviewMathRendering(unittest.TestCase):
     """Guard: preview/share pages stash math BEFORE marked.js, mirroring the editor side
     pane. Running marked.parse first lets markdown mangle LaTeX (e.g. the two `_` in a line
@@ -376,6 +601,11 @@ class PreviewMathRendering(unittest.TestCase):
 # @<id> resolution baked into the shared preview/share renderer.
 # --------------------------------------------------------------------------- #
 class TodosCrud(unittest.TestCase):
+    def test_todo_autocomplete_only_suggests_open_items(self):
+        source = (Path(server.WEB_DIR) / "index.html").read_text()
+        self.assertIn(".filter(t=>!t.done).sort((a,b)=>Number(a.id)-Number(b.id))", source)
+        self.assertNotIn('detail:(t.done?"Done · ":"")+t.title', source)
+
     def test_ids_autoincrement_and_crud_round_trips(self):
         with temp_home() as home:
             t1 = service.add_todo(home, "First", "n1")
@@ -483,6 +713,50 @@ class AssetModelMetadata(unittest.TestCase):
         self.assertEqual(meta["authors"], ["Ada Lovelace", "Grace Hopper"])
         self.assertTrue(meta["metadata_extracted"])
 
+    def test_background_metadata_update_preserves_bibtex_saved_during_ingest(self):
+        bib = "@article{quickadd, title={Quick Add}, author={Ada}, year={2026}}"
+        with temp_home() as home:
+            with paths.use_root(home):
+                pid = assets.save_asset(b"%PDF-1", "paper.pdf", title="Uploaded name")
+                assets.save_text(pid, "Canonical Paper Title")
+            original = models.complete
+
+            def complete_during_bibtex_save(*args, **kwargs):
+                service.update_asset_bibliography(home, pid, bib)
+                return '{"title":"Canonical Paper Title","authors":["Ada"]}'
+
+            models.complete = complete_during_bibtex_save
+            try:
+                meta = tagger.extract_paper_metadata(home, pid)
+            finally:
+                models.complete = original
+        self.assertEqual(meta["bibliography"], bib)
+        self.assertEqual(meta["extracted_title"], "Canonical Paper Title")
+
+    def test_asset_can_be_created_with_bibtex(self):
+        bib = "@article{libraryadd, title={Library Add}, author={Ada}, year={2026}}"
+        with temp_home() as home:
+            pid = service.save_asset(home, b"%PDF-1", "paper.pdf", bibliography=bib)
+            self.assertEqual(service.get_asset(home, pid)["bibliography"], bib)
+
+    def test_resummarize_requires_a_working_active_model(self):
+        with temp_home() as home:
+            pid = service.save_asset(home, b"%PDF-1", "paper.pdf")
+            with self.assertRaises(service.ModelUnavailableError):
+                service.resummarize_asset(home, pid)
+
+    def test_resummarize_refreshes_the_cached_summary(self):
+        with temp_home() as home:
+            pid = service.save_asset(home, b"%PDF-1", "paper.pdf")
+            original_health, original_summarize = models.health_check, tagger.summarize_pdf
+            models.health_check = lambda *args, **kwargs: {"ok": True}
+            tagger.summarize_pdf = lambda *args, **kwargs: "Fresh summary"
+            try:
+                self.assertEqual(service.resummarize_asset(home, pid), "Fresh summary")
+            finally:
+                models.health_check, tagger.summarize_pdf = original_health, original_summarize
+            self.assertTrue(service.get_asset(home, pid)["summarized"])
+
 
 class AssetBibtex(unittest.TestCase):
     BIB1 = "@article{bases4spaces, title={Bases for Spaces}, author={Ada Lovelace}, year={1843}, journal={Notes}}"
@@ -569,20 +843,44 @@ class AssetBibtex(unittest.TestCase):
             refs = server._bubble_refs(home, slug, service.list_pages(home, slug))
             self.assertEqual(refs["bibliography"]["bases4spaces"]["pdf_id"], pid)
 
-    def test_page_cannot_cite_key_from_unattached_asset(self):
+    def test_page_can_save_unattached_citation_as_unresolved(self):
         with temp_home() as home:
             slug = make_bubble(home)
             with paths.use_root(home):
                 pid = assets.save_asset(b"%PDF-1", "a.pdf", title="A")
             service.update_asset_bibliography(home, pid, self.BIB1)
-            with self.assertRaises(service.CitationValidationError):
-                service.save_page(home, slug, "overview", "# T\n\nUse \\cite{bases4spaces}.\n")
+            service.save_page(home, slug, "overview", "# T\n\nUse \\cite{bases4spaces}.\n")
+            with paths.use_root(home):
+                self.assertIn("\\cite{bases4spaces}", bubbles.get_page(slug, "overview"))
 
-    def test_page_cannot_cite_unknown_key(self):
+    def test_page_can_save_unknown_citation_as_unresolved(self):
         with temp_home() as home:
             slug = make_bubble(home)
-            with self.assertRaises(service.CitationValidationError):
-                service.save_page(home, slug, "overview", "# T\n\nUse \\cite{missing}.\n")
+            service.save_page(home, slug, "overview", "# T\n\nUse \\cite{missing}.\n")
+            with paths.use_root(home):
+                self.assertIn("\\cite{missing}", bubbles.get_page(slug, "overview"))
+
+
+class BubbleAssetExplorer(unittest.TestCase):
+    def test_lists_reads_and_deletes_bubble_assets(self):
+        with temp_home() as home:
+            slug = make_bubble(home)
+            with paths.use_root(home):
+                bubbles.save_bubble_image(slug, "notes.py", b"print('hello')\n")
+            entries = service.list_bubble_assets(home, slug)
+            self.assertEqual(entries[0]["name"], "notes.py")
+            self.assertEqual(service.bubble_text_asset(home, slug, "notes.py"), "print('hello')\n")
+            self.assertTrue(service.delete_bubble_asset(home, slug, "notes.py"))
+            self.assertEqual(service.list_bubble_assets(home, slug), [])
+
+    def test_rejects_binary_text_view_and_path_traversal(self):
+        with temp_home() as home:
+            slug = make_bubble(home)
+            with paths.use_root(home):
+                bubbles.save_bubble_image(slug, "data.bin", b"\xff\x00")
+            with self.assertRaises(ValueError):
+                service.bubble_text_asset(home, slug, "data.bin")
+            self.assertFalse(service.delete_bubble_asset(home, slug, "../data.bin"))
 
 
 class CitationRendering(unittest.TestCase):
@@ -730,6 +1028,62 @@ class CrossPageReferences(unittest.TestCase):
             show_back=False, refs=refs)
         self.assertIn("Assumption 1 (Regularity)", html)
         self.assertIn('<span class="thm-ref">Assumption 1</span>', html)
+
+
+class FigureReferences(unittest.TestCase):
+    P1 = r"![First figure \label{fig:first}](/first.png)"
+    P2 = r"See \figref{fig:first}. ![Second figure \label{fig:second}](/second.png)"
+
+    def _refs(self):
+        return server._build_refs([{"page_slug": "p1", "content": self.P1},
+                                   {"page_slug": "p2", "content": self.P2}])
+
+    def test_figures_are_numbered_and_labeled_across_pages(self):
+        refs = self._refs()
+        self.assertEqual(refs["figStart"], {"p1": 0, "p2": 1})
+        self.assertEqual(refs["fig"]["fig:first"], {"number": 1, "page_slug": "p1"})
+        self.assertEqual(refs["fig"]["fig:second"], {"number": 2, "page_slug": "p2"})
+
+    def test_figure_reference_and_caption_are_rendered(self):
+        html = server._render_preview_html(
+            name="B", page="p2", all_pages=[{"page_slug": "p1", "title": "One"},
+                                             {"page_slug": "p2", "title": "Two"}],
+            content=self.P2, slug="s", link_base="/x", asset_base="/x/assets",
+            show_back=False, refs=self._refs())
+        self.assertIn('class="fig-ref">Figure 1</span>', html)
+        self.assertIn('marker.textContent="Figure "+number+": "', html)
+        self.assertIn('figure.id="fig-"+encodeURIComponent(label)', html)
+
+
+class PrivateReviewComments(unittest.TestCase):
+    def test_thread_lifecycle_and_author_only_message_editing(self):
+        with temp_home() as home:
+            slug = make_bubble(home)
+            anchor = {"start": 3, "quote": "important text", "prefix": "An ", "suffix": " follows"}
+            thread = service.create_comment(home, slug, "overview", "alice", "Needs a citation", anchor)
+            self.assertEqual(thread["status"], "open")
+            reply = service.reply_comment(home, slug, "overview", thread["id"], "bob", "I will add one")
+            with self.assertRaises(PermissionError):
+                service.edit_comment_message(home, slug, "overview", thread["id"], reply["id"], "alice", "Changed")
+            edited = service.edit_comment_message(home, slug, "overview", thread["id"], reply["id"], "bob", "Citation added")
+            self.assertEqual(edited["body"], "Citation added")
+            service.set_comment_status(home, slug, "overview", thread["id"], "resolved", "alice")
+            data = service.list_comments(home, slug, "overview")
+            self.assertEqual(data["threads"][0]["status"], "resolved")
+            self.assertTrue(service.delete_comment(home, slug, "overview", thread["id"]))
+            self.assertEqual(service.list_comments(home, slug, "overview")["threads"], [])
+
+    def test_deleting_a_page_removes_its_review_sidecar(self):
+        with temp_home() as home:
+            slug = make_bubble(home)
+            page = service.create_page(home, slug, "Draft")
+            service.create_comment(home, slug, page, "alice", "Review this", {"start": 0, "quote": "# Draft"})
+            with paths.use_root(home):
+                comment_path = paths.bubble_page_comments_path(slug, page)
+                self.assertTrue(comment_path.exists())
+            self.assertTrue(service.delete_page(home, slug, page))
+            with paths.use_root(home):
+                self.assertFalse(comment_path.exists())
 
 
 if __name__ == "__main__":

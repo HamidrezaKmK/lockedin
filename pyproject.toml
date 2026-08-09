@@ -1,6 +1,6 @@
 [project]
 name = "lockedin"
-version = "0.1.0"
+version = "0.1.8"
 description = "The ultimate research assistant for grad students"
 requires-python = ">=3.11"
 dependencies = [
@@ -22,6 +22,8 @@ dependencies = [
 
 [project.scripts]
 lockedin = "lockedin.cli:app"
+lockedin-scientist = "lockedin.scientist_cli:main"
+lockedin_scientist = "lockedin.scientist_cli:main"
 
 [build-system]
 requires = ["hatchling"]

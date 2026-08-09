@@ -55,9 +55,8 @@ def doctor():
 def editguide():
     """Print the canonical report Editing Guide (markdown) to stdout.
 
-    Single source of truth for report-formatting conventions — the scientist launcher scripts
-    capture this and inject it into the assistant's role so it consults the guide before editing.
-    Needs no auth or .env: it just emits static text."""
+    Single source of truth for report-formatting conventions. Needs no auth or .env: it just
+    emits static text."""
     from . import reports
 
     typer.echo(reports.guide_section("Editing Guide"))
@@ -86,8 +85,7 @@ def devmode():
     """Verify DEV_USERNAME/DEV_PASSWORD (from .env) and print that user's workspace.
 
     Lets an agent (or you) edit a user's reports directly on disk without running the server,
-    gated on the account password. Reads a project-root ``.env``. Exits non-zero on mismatch.
-    See DEV_MODE.md.
+    gated on the account password. Reads a project-root ``.env`` and exits non-zero on mismatch.
     """
     from . import assets, bubbles, models, paths
 
@@ -114,94 +112,6 @@ def devmode():
         typer.echo("    (none approved yet — approve a bubble in the app first)")
     typer.echo("  paper metadata is not embedded here; read only the selected bubble's "
                "REPORTS/<slug>/_lockedin_papers.md when paper details or citations are needed.")
-
-
-def _approved_bubble_rows(home):
-    from . import bubbles, paths
-
-    with paths.use_root(home):
-        rows = []
-        for b in bubbles.all_bubbles():
-            if not b.get("approved"):
-                continue
-            rows.append({
-                "slug": b["slug"],
-                "name": b.get("name") or b["slug"],
-                "pages": len(bubbles.list_pages(b["slug"])),
-                "papers": b.get("pdf_count", 0),
-            })
-        return rows
-
-
-@app.command(name="scientist-list")
-def scientist_list(json_out: bool = typer.Option(False, "--json", help="Print JSON.")):
-    """Authenticate and list approved bubbles for scientist sessions."""
-    user, home = _dev_auth()
-    rows = _approved_bubble_rows(home)
-    if json_out:
-        typer.echo(json.dumps({"user": user, "home": str(home), "bubbles": rows}))
-        return
-    typer.secho(f"✓ Authenticated as '{user}'.", fg="green")
-    typer.echo("Approved bubbles:")
-    if not rows:
-        typer.echo("  (none approved yet)")
-    for b in rows:
-        typer.echo(f"  - {b['name']} — {b['slug']} ({b['pages']} pages; {b['papers']} papers)")
-
-
-def _resolve_bubble(home, raw: str) -> str:
-    from slugify import slugify
-
-    rows = _approved_bubble_rows(home)
-    raw = raw.strip()
-    if not raw:
-        raise ValueError("Bubble slug/name cannot be empty.")
-    exact = [b for b in rows if b["slug"] == raw]
-    if len(exact) == 1:
-        return exact[0]["slug"]
-    wanted = slugify(raw)
-    hits = [b for b in rows if b["slug"] == wanted or slugify(b["name"]) == wanted]
-    if len(hits) == 1:
-        return hits[0]["slug"]
-    if len(hits) > 1:
-        raise ValueError(f"Bubble name {raw!r} is ambiguous; use the exact slug.")
-    raise ValueError(f"No approved bubble matches {raw!r}.")
-
-
-@app.command(name="scientist-context")
-def scientist_context_cmd(bubble: str = typer.Argument(..., help="Bubble slug or exact name.")):
-    """Print generated bubble-scoped context for scientist sessions."""
-    from . import bubbles, reports, paths
-
-    user, home = _dev_auth()
-    try:
-        slug = _resolve_bubble(home, bubble)
-    except ValueError as e:
-        typer.secho(f"✗ {e}", fg="red")
-        raise typer.Exit(1)
-    with paths.use_root(home):
-        bubbles.refresh_citation_files([slug])
-        typer.echo(f"Authenticated user: {user}")
-        typer.echo(reports.scientist_context(slug))
-
-
-@app.command(name="refresh-scientist-index")
-def refresh_scientist_index():
-    """Rebuild attached-paper inventories for every approved bubble in every user workspace."""
-    from . import auth, bubbles, paths
-
-    users = 0
-    bubbles_refreshed = 0
-    for rec in auth.list_users():
-        home = paths.user_home(rec["username"])
-        if not home.exists():
-            continue
-        with paths.use_root(home):
-            active = [b["slug"] for b in bubbles.all_bubbles() if b.get("approved")]
-            bubbles.refresh_citation_files(active)
-        users += 1
-        bubbles_refreshed += len(active)
-    typer.echo(f"Refreshed scientist paper inventories for {bubbles_refreshed} approved bubbles across {users} users.")
 
 
 @app.command(name="refresh-asset-metadata")
@@ -259,32 +169,6 @@ def slackbot():
 
     typer.secho("Starting lockedin Slack bot …", fg="cyan")
     run(slack_bot_token=bot_token, slack_app_token=app_token)
-
-
-@app.command(name="news-grant")
-def news_grant(username: str = typer.Argument(..., help="Username to grant premium news.")):
-    """Enable the premium news crawler for a user."""
-    from . import auth
-
-    try:
-        auth.set_news_enabled(username, True)
-    except ValueError as e:
-        typer.secho(f"✗ {e}", fg="red")
-        raise typer.Exit(1)
-    typer.secho(f"✓ News enabled for '{username.strip().lower()}'.", fg="green")
-
-
-@app.command(name="news-revoke")
-def news_revoke(username: str = typer.Argument(..., help="Username to revoke premium news.")):
-    """Disable the premium news crawler for a user."""
-    from . import auth
-
-    try:
-        auth.set_news_enabled(username, False)
-    except ValueError as e:
-        typer.secho(f"✗ {e}", fg="red")
-        raise typer.Exit(1)
-    typer.secho(f"✓ News disabled for '{username.strip().lower()}'.", fg="green")
 
 
 if __name__ == "__main__":

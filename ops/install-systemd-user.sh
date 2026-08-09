@@ -31,7 +31,7 @@ if [ ! -f "$ENV_FILE" ]; then
     cp "$ROOT/ops/lockedin.env.example" "$ENV_FILE"
     chmod 600 "$ENV_FILE"
     echo "Created $ENV_FILE from ops/lockedin.env.example."
-    echo "Edit it before enabling optional tunnel, Slack, news, or public URL monitoring."
+    echo "Edit it before enabling optional tunnel, Slack, or public URL monitoring."
 fi
 
 for template in "$TEMPLATE_DIR"/*.service.template; do

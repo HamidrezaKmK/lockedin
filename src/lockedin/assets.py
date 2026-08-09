@@ -14,6 +14,7 @@ from __future__ import annotations
 import os
 import re
 import secrets
+import threading
 from datetime import datetime, timezone
 from urllib.parse import unquote, urlparse
 
@@ -23,11 +24,54 @@ from slugify import slugify
 
 from . import paths
 
-MAX_PDF_BYTES = 50 * 1024 * 1024  # 50 MB
+MAX_PDF_BYTES = 200 * 1024 * 1024  # 200 MB
+_META_LOCKS: dict[str, threading.RLock] = {}
+_META_LOCKS_GUARD = threading.Lock()
+_DOI_RE = re.compile(r'10\.\d{4,9}/[-._;()/:A-Z0-9]+', re.IGNORECASE)
+
+
+def _meta_lock(pdf_id: str) -> threading.RLock:
+    """Serialize metadata read-modify-write operations for one asset."""
+    with _META_LOCKS_GUARD:
+        return _META_LOCKS.setdefault(pdf_id, threading.RLock())
 
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _open_access_pdf_fallback(url: str) -> str | None:
+    """Find a repository PDF for a DOI when the publisher blocks automated downloads."""
+    match = _DOI_RE.search(unquote(url))
+    if not match:
+        return None
+    doi = match.group(0).rstrip(".,;)")
+    try:
+        response = httpx.get(f"https://api.openalex.org/works/https://doi.org/{doi}",
+                             timeout=10, headers={"User-Agent": "lockedin"})
+        response.raise_for_status()
+        work = response.json()
+    except (httpx.HTTPError, ValueError):
+        return None
+    locations = [work.get("best_oa_location"), *(work.get("locations") or [])]
+    seen: set[str] = set()
+    for location in locations:
+        if not isinstance(location, dict):
+            continue
+        candidate = str(location.get("pdf_url") or "").strip()
+        landing = str(location.get("landing_page_url") or "").strip()
+        parsed = urlparse(landing)
+        host = (parsed.hostname or "").lower()
+        # OpenAlex records HAL's repository landing URL rather than its direct PDF URL.  HAL
+        # uses several valid prefixes (for example ``hal-`` and ``inria-``), not just ``hal-``.
+        if not candidate and (host == "hal.science" or host.endswith(".hal.science")):
+            record = parsed.path.rstrip("/")
+            if re.fullmatch(r"/[a-z0-9]+-\d+(?:v\d+)?", record, re.IGNORECASE):
+                candidate = f"{parsed.scheme or 'https'}://{parsed.netloc}{record}/document"
+        if candidate and candidate not in seen:
+            seen.add(candidate)
+            return candidate
+    return None
 
 
 def fetch_pdf_from_url(url: str) -> tuple[bytes, str] | None:
@@ -42,10 +86,18 @@ def fetch_pdf_from_url(url: str) -> tuple[bytes, str] | None:
     """
     resp = httpx.get(url, follow_redirects=True, timeout=30,
                      headers={"User-Agent": "lockedin"})
-    resp.raise_for_status()
+    try:
+        resp.raise_for_status()
+    except httpx.HTTPStatusError:
+        fallback = _open_access_pdf_fallback(url)
+        if not fallback:
+            raise
+        resp = httpx.get(fallback, follow_redirects=True, timeout=30,
+                         headers={"User-Agent": "lockedin"})
+        resp.raise_for_status()
     data = resp.content
     if len(data) > MAX_PDF_BYTES:
-        raise ValueError("file is larger than the 50 MB limit")
+        raise ValueError("file is larger than the 200 MB limit")
     ctype = resp.headers.get("content-type", "").split(";")[0].strip().lower()
     # Trust the magic bytes over the header — servers often mislabel PDFs.
     if not (ctype == "application/pdf" or data[:5] == b"%PDF-"):
@@ -71,8 +123,11 @@ def _atomic_write(path, text: str) -> None:
 # Create
 # --------------------------------------------------------------------------- #
 def save_asset(pdf_bytes: bytes, filename: str, title: str = "",
-               tags: list[str] | None = None, url_source: str = "") -> str:
+               tags: list[str] | None = None, url_source: str = "",
+               bibliography: str = "") -> str:
     """Write a new PDF + its meta.yaml. Returns the new pdf_id."""
+    if len(pdf_bytes) > MAX_PDF_BYTES:
+        raise ValueError("file is larger than the 200 MB limit")
     pdf_id = secrets.token_hex(6)  # 12 hex chars
     adir = paths.asset_dir(pdf_id)
     adir.mkdir(parents=True, exist_ok=True)
@@ -87,13 +142,12 @@ def save_asset(pdf_bytes: bytes, filename: str, title: str = "",
         "idea_bubbles": [slug_of(t) for t in tags],
         "bubble_scores": {slug_of(t): 5 for t in tags},
         "attention_flag": True,
-        "suggested_tags": [],
         "summarized": False,
         "extracted_title": "",
         "authors": [],
         "metadata_extracted": False,
         "notes": "",
-        "bibliography": "",
+        "bibliography": bibliography.strip(),
         "date_added": _now_iso(),
     }
     save_meta(pdf_id, meta)
@@ -139,20 +193,22 @@ def list_assets() -> list[dict]:
 
 def update_asset(pdf_id: str, **fields) -> dict:
     """Patch allowed fields; keep tags<->idea_bubbles in sync."""
-    meta = load_meta(pdf_id)
-    if "tags" in fields and fields["tags"] is not None:
-        tags = [t.strip() for t in fields["tags"] if t.strip()]
-        old_scores = bubble_scores(meta)
-        slugs = [slug_of(t) for t in tags]
-        meta["tags"] = tags
-        meta["idea_bubbles"] = slugs
-        meta["bubble_scores"] = {slug: int(old_scores.get(slug, 5)) for slug in slugs}
-        fields.pop("tags")
-    for k in ("title", "notes", "url_source", "attention_flag", "suggested_tags", "bibliography"):
-        if k in fields and fields[k] is not None:
-            meta[k] = fields[k]
-    save_meta(pdf_id, meta)
-    return meta
+    with _meta_lock(pdf_id):
+        meta = load_meta(pdf_id)
+        if "tags" in fields and fields["tags"] is not None:
+            tags = [t.strip() for t in fields["tags"] if t.strip()]
+            old_scores = bubble_scores(meta)
+            slugs = [slug_of(t) for t in tags]
+            meta["tags"] = tags
+            meta["idea_bubbles"] = slugs
+            meta["bubble_scores"] = {slug: int(old_scores.get(slug, 5)) for slug in slugs}
+            fields.pop("tags")
+        for k in ("title", "notes", "url_source", "attention_flag", "bibliography",
+                  "extracted_title", "authors", "metadata_extracted", "summarized"):
+            if k in fields and fields[k] is not None:
+                meta[k] = fields[k]
+        save_meta(pdf_id, meta)
+        return meta
 
 
 def bubble_scores(meta: dict) -> dict[str, int]:
@@ -299,7 +355,7 @@ def delete_asset(pdf_id: str) -> bool:
     return True
 
 
-def attention_queue() -> list[dict]:
+def requires_attention() -> list[dict]:
     return [m for m in list_assets() if m.get("attention_flag")]
 
 

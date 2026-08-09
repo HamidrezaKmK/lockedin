@@ -66,11 +66,8 @@ def _context_paths() -> dict[str, Path]:
         "ACTIVE_MODEL_YAML": root / "config" / "active_model.yaml",
         "BUBBLES_YAML": root / "bubbles.yaml",
         "TODOS_YAML": root / "todos.yaml",
-        "NEWS_CONFIG_YAML": root / "config" / "news.yaml",
         "MATH_CONFIG_YAML": root / "config" / "math.yaml",
         "AESTHETICS_CONFIG_YAML": root / "config" / "aesthetics.yaml",
-        "NEWS_ITEMS_YAML": root / "news_items.yaml",
-        "BUBBLE_SUMMARIES_YAML": root / "bubble_summaries.yaml",
     }
 
 
@@ -127,9 +124,13 @@ def bubble_chats_dir(slug: str) -> Path:
     return bubble_dir(slug) / "chats"
 
 
-def news_chats_dir() -> Path:
-    """Per-user archive of ended crawl conversations (one JSON per session)."""
-    return _context_paths()["ROOT"] / "news_chats"
+def bubble_comments_dir(slug: str) -> Path:
+    """Private review-thread metadata, kept separate from report Markdown."""
+    return bubble_dir(slug) / "comments"
+
+
+def bubble_page_comments_path(slug: str, page_slug: str) -> Path:
+    return bubble_comments_dir(slug) / f"{page_slug}.json"
 
 
 def ensure_user_dirs(user: str) -> None:

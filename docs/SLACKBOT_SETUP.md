@@ -80,8 +80,7 @@ systemctl --user enable --now lockedin-slackbot.service
 DM the bot (or @-mention it in a channel). On first contact it asks for your lockedin username
 and password — after that your Slack user is linked to that lockedin account. The bot can refresh
 its session from that link after bot or web-server restarts, so you only need to log in again if
-you change your lockedin username or password. The lockedin account you log in with must be
-**approved** (see the approval flow in the README), or login fails.
+you change your lockedin username or password.
 
 For those persistent links, the web server and Slack bot must share
 `LOCKEDIN_SLACK_SHARED_SECRET`. If you do not set it, both processes can use the same
@@ -90,13 +89,11 @@ For those persistent links, the web server and Slack bot must share
 | Message | Action |
 |---|---|
 | *(first message)* | Bot asks for username, then password |
-| Attach a PDF / send a PDF link | Uploads it to your Assets queue |
+| Attach a PDF / send a PDF link | Uploads it to your Library queue |
 | `select` (or `switch`) | Lists your bubbles, reply with a number to set the active one |
 | `list` | Lists your bubbles |
-| `news` | Lists crawled news items + why each is relevant (premium) |
-| `crawl` | Searches the web for new papers for your bubbles (premium) |
 | `help` | Shows the command list |
-| anything else | Qwen answers using your **active** bubble's content (`select` one first) |
+| anything else | Your configured model answers using your **active** bubble's content (`select` one first) |
 
-Qwen must be running locally unless you change the bot model settings:
+If the active model is Qwen, Ollama must be running locally:
 `ollama serve && ollama pull qwen2.5:7b-instruct`

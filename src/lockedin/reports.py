@@ -1,8 +1,8 @@
 """Streamed research chat (read-only) + chat-title helper.
 
 The web app no longer writes to report pages with the model — that proved too unreliable with
-small local models. Editing is done by the user directly in the Markdown editor (or by a strong
-model in DEV_MODE). What remains here is:
+small local models. Editing is done by the user directly in the Markdown editor or through the
+synchronized Scientist client. What remains here is:
 
 * ``chat_stream`` — a knowledgeable, READ-ONLY research assistant grounded in the bubble's report
   pages, every tagged paper's summary, and the full text of any "deep-read" papers. It never
@@ -41,13 +41,14 @@ On phones, tap **☰** (top-left) to open the sidebar.
 
 Use the theme button in the top bar to cycle the colour scheme. Open
 **⚙️ Settings → Aesthetics** to choose which of **🌙 Dark, ☀️ Light, 🦄 Pink, 🤖 Techno,**
-and **⚪ Pearl** appear in that cycle. Your selection is remembered for your workspace and
-also limits the theme switcher on every public page you share. The landing page is always Dark.
+and **⚪ Pearl** appear in that cycle. Your selection is remembered for your workspace. Owner
+previews and public shared pages deliberately offer only **Dark** and **Light**. The landing page
+is always Dark.
 
 ## Your account
 
-Click your username in the top-right account menu to see whether you are **standard** or
-**premium**, request premium access, or log out.
+Click the active workspace name in the top-right menu to see whether your account is **standard**
+or **premium**, request premium access, log out, or open **Manage workspaces**.
 
 Go to **⚙️ Settings → Account** to change your username or password. You must supply your
 current password to confirm. A username change carries all your data over and keeps you
@@ -56,12 +57,48 @@ logged in.
 ## Admin: managing users
 
 Admins see a **User access** card in Settings. From there you can:
-- **Upgrade to premium** for users who should be allowed to use server-side Qwen and News
+- **Upgrade to premium** for users who should be allowed to use server-side Qwen
 - **Remove premium** to move an account back to bring-your-own-key model usage
 - **Delete** a user permanently
 
 Users who request premium from the top-right account menu appear with a **requested** badge.
 You cannot delete your own account.
+""",
+    },
+    {
+        "title": "Workspaces",
+        "content": """\
+## Your active workspace
+
+Every account has a private **Personal** workspace. It opens automatically when you sign in and
+is the safe home for your individual research. You can also create or join shared workspaces.
+The active workspace controls everything research-related: Library papers, Bubbles, report pages
+and figures, TODOs, chat history, citations, and math macros. The top-right workspace switcher
+shows the active workspace name; use it to switch before opening any of those views.
+
+Personal workspaces stay private and cannot be shared, transferred, or deleted independently.
+Shared workspaces are separate research containers: adding or removing a member changes access,
+not ownership of the work already contributed.
+
+## Workspace tab
+
+Open **🗂️ Workspace** in the sidebar to manage the active workspace.
+
+- **Create a workspace** creates a new shared workspace with you as its first admin.
+- **Active workspace** lists every member and their `admin` or `editor` role.
+- Every member can see the roster. Workspace admins can search approved LockedIn accounts, add
+  members, promote an editor to admin, demote an admin, or remove a member.
+- A workspace must always retain at least one admin. Personal workspaces have one fixed member.
+
+Editors can change research content. Admins additionally manage membership and workspace
+lifecycle. Switching workspaces immediately changes the Library, TODOs, Bubbles, and chat you
+see; unsaved report edits must be saved or discarded first.
+
+## Shared math macros
+
+**Math Macros** lives inside the active workspace settings. A macro belongs to the workspace,
+not an individual account, so every member, preview, public share, and Scientist client uses the
+same definitions. Add or edit a macro there before using it in report math.
 """,
     },
     {
@@ -85,13 +122,6 @@ sign-ups from consuming the server's local compute by default.
 
 The coloured dot next to the active model updates when a health-check runs.
 
-## Math macros
-
-In **⚙️ Settings → Math Macros**, click **Show macros** to expand the macro editor.
-You can define shorthand LaTeX commands; for example, define `\\mu` →
-`\\mathbf{\\mu}` to use your own shorthand everywhere on the page. Macros apply
-automatically to all math in your reports.
-
 ## Research chat
 
 The chat sidebar (right pane, inside any bubble) is a **read-only** assistant: it
@@ -106,12 +136,6 @@ With Claude the actual PDF is sent; with other models the extracted text is used
 **Sessions** — chat history is saved automatically. The session dropdown at the top of the
 chat pane lets you switch between or delete saved conversations.
 
-## News crawler (premium)
-
-If your account is premium, a **📰 News** view appears in the sidebar. Click **Crawl now**
-to search the web for recent papers relevant to your approved bubbles. Found papers stream
-into the feed; steer with follow-up messages, then **accept** (advances the date pointer)
-or **discard** the batch. Standard users can request premium from the top-right account menu.
 """,
     },
     {
@@ -120,19 +144,18 @@ or **discard** the batch. Standard users can request premium from the top-right 
 ## What is a bubble?
 
 A **bubble** is a topic group. Each bubble has a name, a multi-page Markdown wiki,
-attached papers, and a read-only research chat sidebar. Bubbles start in an unapproved
-state when auto-suggested; you must approve them before the wiki opens.
+attached papers, and a read-only research chat sidebar. Bubbles created in the app are
+available immediately.
 
-## Creating & approving
+## Creating
 
 Click **+ New bubble** in the Bubbles view, or tag any paper with a new topic name.
-Auto-suggested bubbles land in the **🔔 Attention** queue — approve them there.
+New bubbles are created explicitly from the Bubbles view.
 
 ## Renaming & deleting
 
-Rename a bubble from its detail view: an **approved** bubble is renamed via **🏷️ Edit titles**
-in the view dropdown (the same mode that renames its pages); an **unapproved** one has a ✏️
-pencil next to its name. The 🗑 icon on a bubble card deletes the bubble **and all its wiki pages**.
+Rename a bubble from its detail view via **🏷️ Edit titles** in the view dropdown (the same mode
+that renames its pages). The 🗑 icon on a bubble card deletes the bubble **and all its wiki pages**.
 
 ## Page tabs
 
@@ -163,7 +186,7 @@ are rewritten automatically.
 
 Click **🔗 Share** in the bubble header to publish an unlisted, read-only link. While
 sharing is active the button shows **🟢 Sharing** and a **📋 Copy link** button appears.
-Anyone with the link can browse all pages (no login needed). Toggle off to revoke
+Anyone with the link can browse visible pages (no login needed). Toggle off to revoke
 immediately; toggle back on to restore the same URL.
 
 Hovering a heading on the shared page reveals a 🔗 anchor for deep-linking to a section.
@@ -175,7 +198,7 @@ Shared pages have a theme-cycle button, restricted to the themes you enabled in 
         "content": """\
 ## Overview
 
-TODOs are your personal task list (like GitHub issues). Each item has a numeric **id**,
+TODOs are the active workspace's task list (like GitHub issues). Each item has a numeric **id**,
 a **title**, an optional Markdown **note**, and a **done** flag.
 
 ## Managing TODOs
@@ -202,42 +225,42 @@ of the editor. Use ↑/↓ to move, Enter/Tab to insert, or click an item.
 """,
     },
     {
-        "title": "Assets",
+        "title": "Library",
         "content": """\
 ## Uploading papers
 
-Use **📚 Assets** to add a PDF or a paper URL. You can optionally set:
+Use **📚 Library** to add a PDF or a paper URL. You can optionally set:
 - **Title** — defaults to the filename
 - **Extracted metadata** — the active model records a canonical paper title and author list
   from the PDF during background processing; your chosen asset title is preserved
 - **Tags** — comma-separated topic names; each tag links the paper to a bubble
 - **Source URL** — the paper's arXiv/DOI link
 
-Leave tags blank to let the AI auto-suggest them in the background.
+Leave tags blank to keep the paper unassigned until you organize it into a bubble.
 
 ## Editing an asset
 
 Click any asset card to open its detail panel:
 - Edit title, tags, notes, source URL
 - Open the paper PDF
-- **Move to attention queue** if you want to review or summarize it later
-- **Remove from attention queue** once it no longer needs attention
+- **Requires attention** if you want to review or summarize it later
+- **Clear attention** once it no longer needs attention
 
-## Auto-tagging & the Attention queue
+## Background processing & Requires attention
 
-After upload, papers without tags are summarised and given suggested tags. They appear in
-**🔔 Attention** until you review the suggestions. Auto-suggested bubbles also appear there
-until approved.
+After upload, LockedIn extracts text, records model-derived title and author metadata, and
+caches a summary. New papers appear in the Library's **Requires attention** filter until you
+clear that flag.
 
-The Assets view is always your full paper inventory. Attention is just a queue toggle on
-those same assets: every paper stays visible in Assets whether or not it is in Attention.
+The Library is always the active workspace's full paper inventory. Use its filter menu to switch
+between **Requires attention**, **Unassigned**, all papers, or a specific bubble.
 
-## Finding assets
+## Finding papers
 
-The Assets page has filters above the card grid:
+The Library page has filters above the card grid:
 - **Search** — matches your title, extracted paper title, authors, filename, PDF id, source URL,
   notes, tags, suggested tags, and BibTeX keys
-- **Bubble** — limits results to assets attached to that bubble
+- **Bubble** — limits results to papers attached to that bubble
 
 You can combine both filters, for example selecting a bubble and typing part of a paper
 title. Asset cards with saved BibTeX show a small **✓ BibTeX** badge.
@@ -288,18 +311,185 @@ You only need to log in again if you change your lockedin username or password.
 
 ## What it can do
 
+- **`workspaces`** or **`switch workspace`** — list and select the active workspace
 - **`select`** — choose the active bubble for questions
 - **`list`** — show your bubbles
 - **Ask a question** — the bot answers using your active bubble's reports and paper summaries
-- **Attach a PDF** — uploads it to your Assets queue
+- **Attach a PDF** — uploads it to your Library queue
 - **Send a PDF link** — fetches and uploads the paper when the link resolves to a PDF
 - **`todos`** — list, add, edit, complete, or remove open TODOs
-- **`news`** — list retrieved news items and why they match your bubbles, if News is enabled
-- **`crawl`** — run the premium News crawler from Slack, if enabled
 
-The Slackbot follows the same account, premium, and per-user workspace rules as the website.
+The Slackbot has an active workspace before it has an active bubble. Switching workspaces clears
+the active bubble and TODO flow, so uploads, TODOs, questions, and bubble selection always stay
+inside the workspace you chose. It follows the same account, premium, and workspace access rules
+as the website.
 Questions use your configured model. Qwen from Slack also requires premium; otherwise configure
 OpenAI, Claude, or Gemini with your own API key in the web settings.
+""",
+    },
+    {
+        "title": "Scientist CLI",
+        "content": """\
+## Work on a bubble from your terminal
+
+`lockedin-scientist` synchronizes one approved bubble into `.lockedin/` in the project where you
+run it. It does not launch Codex, Claude Code, or Antigravity: start your preferred agent normally
+after installing its native `lockedin-scientist` bootstrap skill.
+
+### Install
+
+On macOS or Linux (Python 3.11+):
+
+```
+curl -fsSL https://raw.githubusercontent.com/HamidrezaKmK/lockedin/main/install.sh | bash
+```
+
+On Windows PowerShell (Python 3.11+):
+
+```
+irm https://raw.githubusercontent.com/HamidrezaKmK/lockedin/main/install.ps1 | iex
+```
+
+The installer adds `lockedin-scientist` to your user PATH. On macOS/Linux, ensure
+`~/.local/bin` is on PATH if your shell cannot find the command.
+
+Scientist checks its compatible client version whenever it contacts the server. If it asks you to
+reinstall, rerun the installer for your platform. Authorization and active workspace persist.
+
+### Sign in and choose work
+
+Authorize a device once; the command opens a browser page on the server you specify:
+
+```
+lockedin-scientist login --server https://lockedin.codes
+```
+
+List the bubbles currently approved for this account. First list your available workspaces and
+select one; the selected workspace is saved across all local projects:
+
+```
+lockedin-scientist workspaces
+lockedin-scientist workspaces switch <workspace-id-or-name>
+lockedin-scientist bubbles
+lockedin-scientist sync <bubble-slug>
+```
+
+### Native agent skills
+
+Install the `lockedin-scientist` bootstrap once for each agent you use:
+
+```
+lockedin-scientist codex setup
+lockedin-scientist claude setup
+lockedin-scientist agy setup
+```
+
+The bootstrap is intentionally short. In a synchronized project it reads the complete current
+guide at `.lockedin/SKILL.md`, including that workspace's math macros and the bubble's editing
+rules. Invoke `$lockedin-scientist` in Codex, `/lockedin-scientist` in Claude Code, or select it
+through agy's `/skills` interface. Setup updates only the managed bootstrap and never overwrites
+a user-owned skill with the same name.
+
+`sync` creates `.lockedin/` and a background worker that pulls/pushes every five seconds. Git
+ignores this directory through the project-local exclude file, leaving tracked project files alone.
+
+### Sync behavior and scope
+
+The initial sync populates one project-local bubble. Within `.lockedin/`, `assets/<pdf-id>/` and
+`config/` are server-authoritative and read-only: they are restored from the server and detached
+papers are removed locally. Within that directory, only `reports/pages/` and `reports/assets/` are
+writable. The rest of the repository remains available to your coding agent under its normal
+permissions. A concurrent website edit restores the server copy and leaves the rejected local copy
+and a patch in `config/conflicts/`.
+
+Only pages and report assets inside the selected **approved** bubble can be written back.
+Credentials, sessions, chat history, TODOs, bubble settings, PDFs, and paper summaries are never
+writable by Scientist.
+
+### New report pages
+
+To add a page from Scientist, create a flat Markdown file at
+`.lockedin/reports/pages/<page-slug>.md`. Scientist registers it in the website automatically;
+the page tab title is derived from the filename with hyphens replaced by spaces. Do not edit
+`.lockedin/reports/pages.yaml` yourself.
+
+### Deleting pages and figures
+
+Ask the assistant to delete the page's file at `.lockedin/reports/pages/<page-slug>.md`.
+Scientist removes the page and its website navigation entry on the next sync; deleting a file in
+`.lockedin/reports/assets/` removes that figure the same way. Blanking a page instead of
+deleting its file does nothing: an empty sync write is refused so a damaged local copy can never wipe
+a report. A bubble's home page cannot be deleted from Scientist; that removal is reported as a
+conflict and the file is restored locally. Delete the home page in the browser instead.
+
+### Figures and GIFs
+
+Scientist can add report figures and animated GIFs using the same format as the browser editor.
+Place a descriptively named file in `.lockedin/reports/assets/`, then embed it in a page:
+
+```
+![Description of the figure](/api/bubbles/<bubble-slug>/assets/my-figure.gif)
+```
+
+Keep report artwork out of `.lockedin/assets/`, which is reserved for the paper library. Preview and shared
+bubble pages restart GIFs from their first frame whenever they render.
+
+### Manage workers and recover
+
+```
+lockedin-scientist ps
+lockedin-scientist stop <worker-id>
+lockedin-scientist hard-reset <bubble-slug>
+lockedin-scientist overleaf help
+```
+
+`stop` leaves `.lockedin/` intact. `hard-reset` stops the project worker, replaces the directory
+with the current server bubble, and starts a new worker. It preserves a connected Overleaf checkout
+unless you explicitly add `--discard-overleaf`.
+
+### Overleaf: an explicit publication workflow
+
+Each bubble can optionally link one Overleaf Cloud project from its header. The link is workspace
+metadata managed by LockedIn; Scientist only reads it. After the worker has downloaded the link,
+connect the local checkout:
+
+```
+lockedin-scientist overleaf help
+lockedin-scientist overleaf connect
+lockedin-scientist overleaf status
+```
+
+This creates `.lockedin/overleaf/`. It is deliberately separate from the report workspace:
+
+- `.lockedin/reports/` is the live, continuously synchronized research record for evolving notes,
+  experiments, and report figures.
+- `.lockedin/overleaf/` is the curated publication manuscript. You and your normal coding agent
+  may edit `.tex`, `.bib`, styles, figures, and other project files there. Review report material
+  before transferring it, preserve the manuscript's conventions, and compile when available.
+- The background Scientist worker never pulls, pushes, alters, or deletes the Overleaf checkout.
+  Do not change `.git/` or its configured remote.
+
+Publish Overleaf changes only when you explicitly ask for it:
+
+```
+lockedin-scientist overleaf sync
+lockedin-scientist overleaf abort
+lockedin-scientist overleaf disconnect
+```
+
+`sync` commits local checkout changes, fetches the linked remote's actual default branch,
+rebases, and pushes only after a clean result. It never force-pushes, stashes, or resolves a
+conflict. On the first Git prompt, enter username `git` and your Overleaf Git token. If no OS
+keychain helper is configured, Scientist installs one owner-only credential store for your user,
+globally scoped in Git only to `git.overleaf.com`; future LockedIn projects reuse it and the token
+never lives in the project directory. If synchronization fails, inspect `git status`, fetch and
+rebase the `lockedin-overleaf` remote's branch, resolve and commit the conflict manually, then
+push. `overleaf abort` cancels a rebase started by Scientist.
+
+If `ps` shows a **failed** worker because `.lockedin/config/binding.json` is missing, it prints the
+exact recovery command. Copy any unsynchronized report work elsewhere first, then run
+`lockedin-scientist hard-reset <bubble-slug>` from that project. Scientist does not guess which
+bubble a damaged local directory belongs to.
 """,
     },
     {
@@ -317,10 +507,11 @@ Open any bubble and use the view dropdown in the toolbar:
 **Save**: click the leftmost sync icon in the editor toolbar, or press **Ctrl/⌘+S**. It changes to
 **✎** while there are unsaved edits and **⚠** when a disk conflict needs attention.
 
-The editor toolbar shows: **↶ undo**, **↷ redo**, text colour, insert table, insert image,
-insert link, the page visibility eye, **☷ Show hidden pages**, and the leftmost sync icon. The eye hides
-or shows the current page in read-only previews and public shares; hidden page tabs stay out of
-the way until you use **☷**, then appear right-aligned in the tab bar.
+From left to right, the editor toolbar shows: the **sync** icon, **💬 Toggle review**, insert image,
+insert table, text colour, **≡ center selected text**, insert link, the page visibility eye,
+**☷ Show hidden pages**, **↶ undo**, and **↷ redo**. The eye hides or shows the current page
+in read-only previews and public shares; hidden page tabs stay out of the way until you use
+**☷**, then appear right-aligned in the tab bar.
 
 Use **⛶** in the page controls to enter a focused workspace that hides the navigation and chat;
 click it again to exit.
@@ -335,10 +526,44 @@ larger screen.)
 
 ---
 
+## Review comments
+
+Review comments are private to signed-in members of the active workspace. They are never
+included in read-only previews or unlisted shared links.
+
+On a desktop, switch to **✏️ Edit** or **◧ Split**, then use **💬 Toggle review** in the editor
+toolbar. In Edit mode, Review appears beside the source editor; in Split mode it sits between
+the editor and preview. Read, focused, and mobile views stay free of review UI.
+
+To start a review, select source text and click the coloured **+** in the Review header. The
+selected text receives a subtle yellow highlight in the editor. Click that highlighted text to
+open its thread. Threads are collapsed by default; opening one collapses the others.
+
+The Review header separates **Open** and **Resolved** threads. Workspace members can reply,
+resolve/reopen, or delete a thread. You can double-click only your own comment or reply to edit
+it in place; save with **Ctrl/⌘+Enter** or **Save**. If later edits remove the selected text, the
+thread remains in its original review-list position with an **Unanchored** badge, but no text is
+highlighted. Deleting a report page also removes all of that page's reviews.
+
+---
+
 ## Markdown
 
 Standard CommonMark: headings `#`, bold `**`, italic `*`, lists, blockquotes `>`,
 fenced code blocks, tables, images. Nothing unusual here.
+
+### Centred text
+
+Select a paragraph or block and use **≡ center selected text** in the editor toolbar. It writes
+portable Markdown-compatible HTML:
+
+```
+<div class="centered-text">
+Your centred text
+</div>
+```
+
+The same markup works for Scientist edits, live previews, and shared bubble pages.
 
 ---
 
@@ -433,6 +658,18 @@ proposition, assumption, corollary, and remark labels.
 
 ---
 
+## Figures
+
+Every Markdown image in a bubble is numbered in page order and receives a caption beneath it.
+To add a captioned figure, insert an image with descriptive alt text; that text becomes the
+caption in the rendered page. Add a `\\label{fig:your-key}` inside the same alt text when you
+want to refer to the figure elsewhere with `\\figref{fig:your-key}`.
+
+Figure numbers and references are bubble-wide, so they remain correct across pages. Type
+`\\figref{` in the editor to choose an existing figure label.
+
+---
+
 ## Citations
 
 Assets with saved BibTeX can be cited from pages in bubbles where those assets are attached.
@@ -485,8 +722,8 @@ APP_USAGE_GUIDE = "\n\n".join(s["content"] for s in APP_USAGE_GUIDE_SECTIONS)
 
 def guide_section(title: str) -> str:
     """Return the markdown body of the usage-guide section with the given title (matched by
-    title, not index), or "" if there is none. Single source of truth for the `lockedin
-    editguide` CLI command and the scientist launchers."""
+    title, not index), or "" if there is none. Single source of truth for the website and the
+    project-local Scientist skill."""
     return next((s["content"] for s in APP_USAGE_GUIDE_SECTIONS if s["title"] == title), "")
 
 # A SHORT, model-safe summary for the chat system prompt — facts only, no fenced code blocks.
@@ -495,8 +732,8 @@ APP_USAGE_BRIEF = (
     "- Reports are multi-page Markdown wikis, one per bubble; the editor is on the left, a "
     "live preview on the right. The user writes the reports themselves.\n"
     "- In Settings → Aesthetics, users choose which themes appear in their top-bar cycle. Those "
-    "same enabled themes are the only choices on owner previews and public share links; the "
-    "landing page is always Dark.\n"
+    "owner previews and public share links offer only Dark and Light; the landing page is "
+    "always Dark.\n"
     "- Math: $...$ inline, $$...$$ display. Number a display equation by putting \\label{name} "
     "inside its $$ block, then reference it with \\eqref{name} (renders as its number). Equation "
     "and theorem (\\thmref) numbers/refs are bubble-wide — they work across pages and inside math.\n"
@@ -630,35 +867,6 @@ def bubble_paper_context(slug: str, *, include_paths: bool = False,
         if summary_budget is not None:
             summary = _clip(summary, summary_budget, "paper summary")
         lines.append(summary or "(no summary)")
-    return "\n".join(lines)
-
-
-def scientist_context(slug: str) -> str:
-    """Generated context artifact for a scientist session scoped to one bubble."""
-    name = bubbles.slug_to_name(slug)
-    pages = bubbles.list_pages(slug)
-    papers = paths.bubble_dir(slug) / "_lockedin_papers.md"
-    lines = [
-        f"# lockedin Scientist Context: {name}",
-        "",
-        f"- Bubble slug: `{slug}`",
-        f"- Bubble report dir: `{paths.bubble_dir(slug)}`",
-        f"- Attached-paper inventory: `{papers}`",
-        "",
-        "Use only this bubble's report pages and the attached papers listed below. Higher",
-        "relevance scores should be prioritized for reading, retrieval, comparison, and citation.",
-        "",
-        "## Report Pages",
-    ]
-    if pages:
-        for p in pages:
-            page_path = paths.bubble_page_path(slug, p["page_slug"])
-            hidden = " hidden" if p.get("hidden") else ""
-            lines.append(f"- {p['title']} (`{p['page_slug']}`{hidden}): `{page_path}`")
-    else:
-        lines.append("- (no report pages yet)")
-    lines.extend(["", "## Attached Papers", "",
-                  bubble_paper_context(slug, include_paths=True, summary_budget=500)])
     return "\n".join(lines)
 
 

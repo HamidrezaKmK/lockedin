@@ -12,14 +12,7 @@ from pathlib import Path
 
 import yaml
 
-from . import assets, auth, bubbles, models, news, paths, reports, sharing, todos
-
-
-_CITE_REF_RE = re.compile(r"\\cite\{([^}]+)\}")
-
-
-class CitationValidationError(ValueError):
-    """Raised when a report page cites a key unavailable to its bubble."""
+from . import assets, auth, bubbles, models, paths, reports, sharing, tagger, todos, workspaces
 
 
 def ensure_workspace(home: Path) -> None:
@@ -28,18 +21,41 @@ def ensure_workspace(home: Path) -> None:
         (home / sub).mkdir(parents=True, exist_ok=True)
 
 
+def migrate_overleaf_fields() -> int:
+    """Backfill the optional Overleaf field in all workspace and remaining legacy registries."""
+    roots = list(workspaces.all_homes())
+    if paths.USERS_DIR.exists():
+        roots.extend(path for path in paths.USERS_DIR.iterdir() if path.is_dir())
+    seen, changed = set(), 0
+    for root in roots:
+        root = root.resolve()
+        if root in seen or not (root / "bubbles.yaml").exists():
+            continue
+        seen.add(root)
+        with paths.use_root(root):
+            changed += bubbles.migrate_overleaf_fields()
+    return changed
+
+
 # ---- assets ----
 def save_asset(home: Path, pdf_bytes: bytes, filename: str, title: str = "",
-               tags: list[str] | None = None, url_source: str = "") -> str:
+               tags: list[str] | None = None, url_source: str = "",
+               bibliography: str = "") -> str:
     with paths.use_root(home):
-        pdf_id = assets.save_asset(pdf_bytes, filename, title=title, tags=tags, url_source=url_source)
+        bibliography = bibliography.strip()
+        # Validate before creating files, so an invalid or duplicate key does not leave behind
+        # a partially added asset.
+        if bibliography:
+            assets.validate_bibtex_unique("", bibliography)
+        pdf_id = assets.save_asset(pdf_bytes, filename, title=title, tags=tags,
+                                   url_source=url_source, bibliography=bibliography)
         meta = assets.load_meta(pdf_id)
         bubbles.refresh_citation_files(meta.get("idea_bubbles", []))
         return pdf_id
 
 
 def fetch_and_save_asset(home: Path, url: str, title: str = "",
-                         tags: list[str] | None = None) -> str:
+                         tags: list[str] | None = None, bibliography: str = "") -> str:
     """Download a PDF from ``url`` and store it as a new asset. Returns the new pdf_id.
 
     Shares ``assets.fetch_pdf_from_url`` with the Slack bot. Raises ``ValueError`` if the link
@@ -49,7 +65,8 @@ def fetch_and_save_asset(home: Path, url: str, title: str = "",
     if fetched is None:
         raise ValueError("That link doesn't point to a PDF.")
     pdf_bytes, filename = fetched
-    return save_asset(home, pdf_bytes, filename, title=title, tags=tags, url_source=url)
+    return save_asset(home, pdf_bytes, filename, title=title, tags=tags,
+                      url_source=url, bibliography=bibliography)
 
 
 def list_assets(home: Path) -> list[dict]:
@@ -57,6 +74,7 @@ def list_assets(home: Path) -> list[dict]:
         out = []
         for meta in assets.list_assets():
             meta = dict(meta)
+            meta.pop("suggested_tags", None)  # legacy auto-suggestions are no longer surfaced
             meta["bubble_scores"] = assets.bubble_scores(meta)
             out.append(meta)
         return out
@@ -65,6 +83,7 @@ def list_assets(home: Path) -> list[dict]:
 def get_asset(home: Path, pdf_id: str) -> dict:
     with paths.use_root(home):
         meta = assets.load_meta(pdf_id)
+        meta.pop("suggested_tags", None)  # legacy auto-suggestions are no longer surfaced
         meta["bubble_scores"] = assets.bubble_scores(meta)
         meta["bubble_memberships"] = bubbles.memberships_for_asset(pdf_id)
         return meta
@@ -114,15 +133,31 @@ def asset_summary(home: Path, pdf_id: str) -> str:
         return assets.get_summary(pdf_id)
 
 
-def attention_queue(home: Path) -> list[dict]:
+class ModelUnavailableError(RuntimeError):
+    """Raised when a requested LLM action has no usable active provider."""
+
+
+def resummarize_asset(home: Path, pdf_id: str) -> str:
+    """Refresh an asset's cached summary with the workspace owner's active model."""
     with paths.use_root(home):
-        return assets.attention_queue()
+        if not assets.exists(pdf_id):
+            raise FileNotFoundError(pdf_id)
+        health = models.health_check(home, live=True)
+        if not health.get("ok"):
+            raise ModelUnavailableError("No working active LLM is available. " +
+                                        health.get("message", "Configure a model in Settings."))
+        summary = tagger.summarize_pdf(home, pdf_id)
+        if not summary.strip():
+            raise ValueError("This PDF has no extractable text to summarize.")
+        assets.update_asset(pdf_id, summarized=True)
+        return summary
 
 
 # ---- bubbles ----
-def list_bubbles(home: Path) -> list[dict]:
+def list_bubbles(home: Path, *, archived: bool = False) -> list[dict]:
     with paths.use_root(home):
-        return [b for b in bubbles.all_bubbles() if b.get("approved")]
+        return [b for b in bubbles.all_bubbles()
+                if b.get("approved") and bool(b.get("archived")) == archived]
 
 
 def bubble_detail(home: Path, slug: str) -> dict:
@@ -146,6 +181,17 @@ def register_user_tags(home: Path, tags: list[str]) -> None:
 def rename_bubble(home: Path, slug: str, new_name: str) -> dict:
     with paths.use_root(home):
         return bubbles.rename_bubble(slug, new_name)
+
+
+def set_bubble_overleaf(home: Path, slug: str, value: str | None) -> dict:
+    with paths.use_root(home):
+        bubbles.set_overleaf_project(slug, value)
+        return bubbles.bubble_detail(slug)
+
+
+def set_bubble_archived(home: Path, slug: str, archived: bool) -> dict:
+    with paths.use_root(home):
+        return bubbles.set_bubble_archived(slug, archived)
 
 
 def approve_bubble(home: Path, slug: str, instructions: str = "") -> dict:
@@ -179,14 +225,78 @@ def set_pdf_bubble_score(home: Path, slug: str, pdf_id: str, score: int) -> dict
         return bubbles.bubble_detail(slug)
 
 
+def migrate_papers(home: Path, source: str, dest: str, items: list[dict]) -> dict:
+    """Copy chosen papers from one bubble into another at explicit relevance scores.
+
+    Papers are shared assets and membership is a tag, so this copies without duplicating any file
+    and leaves the source bubble entirely untouched. Each item is ``{"pdf_id": str, "score": 1-5}``.
+
+    Only current members of ``source`` are eligible, and a paper already in ``dest`` is skipped
+    rather than re-scored: the picker hides those, so accepting them here would silently overwrite
+    a relevance the user never saw. Both rules are enforced server-side so a stale browser tab
+    cannot turn this into "tag any asset into any bubble".
+    """
+    if source == dest:
+        raise ValueError("Pick two different bubbles.")
+    # Validate every score before touching anything. Tagging happens before scoring, so a bad
+    # score found halfway through would otherwise leave that paper in the destination unscored.
+    planned = []
+    for item in items:
+        try:
+            score = int(item.get("score", 5))
+        except (TypeError, ValueError):
+            raise ValueError("Relevance score must be an integer from 1 to 5.")
+        if not 1 <= score <= 5:
+            raise ValueError("Relevance score must be an integer from 1 to 5.")
+        planned.append((str(item.get("pdf_id") or ""), score))
+    with paths.use_root(home):
+        registry = bubbles.load_registry()
+        for slug in (source, dest):
+            if slug not in registry:
+                raise KeyError(f"No such bubble: {slug!r}")
+        eligible = {m["pdf_id"] for m in bubbles.pdfs_for_bubble(source)}
+        already = {m["pdf_id"] for m in bubbles.pdfs_for_bubble(dest)}
+        migrated, skipped = [], []
+        for pdf_id, score in planned:
+            if pdf_id not in eligible or pdf_id in already:
+                skipped.append(pdf_id)
+                continue
+            # add_pdf_to_bubble tags via bubbles.tag_for_slug, which is what keeps a renamed
+            # destination from splitting into a phantom slug. Never hand-roll that tag.
+            bubbles.add_pdf_to_bubble(dest, pdf_id)
+            bubbles.set_pdf_bubble_score(dest, pdf_id, score)
+            migrated.append(pdf_id)
+        # Setting a score does not refresh the generated inventory, and its "[Relevance N]"
+        # headings are what a Scientist session reads as the authoritative paper list. Rewrite it
+        # once, after the batch has settled.
+        bubbles.write_citation_file(dest)
+        return {"migrated": migrated, "skipped": skipped, "bubble": bubbles.bubble_detail(dest)}
+
+
 # ---- public sharing ----
 def set_bubble_share(home: Path, slug: str, active: bool) -> dict:
     """Toggle a bubble's unlisted public share and register its token in the global index."""
     with paths.use_root(home):
         res = bubbles.set_share_active(slug, active)
     if res.get("share_token"):
-        sharing.register(res["share_token"], home.name, slug)
+        workspace = workspaces.get(home.name)
+        if workspace and workspaces.workspace_home(home.name).resolve() == home.resolve():
+            sharing.register(res["share_token"], "", slug, workspace_id=home.name)
+        else:  # legacy user-home shares remain supported for existing installations and tests
+            sharing.register(res["share_token"], home.name, slug)
     return res
+
+
+def migrate_share_index_to_workspaces() -> int:
+    """Move all legacy share-index entries onto the users' Personal workspace ids."""
+    accounts = auth.load_accounts()
+    personal = {username: rec.get("personal_workspace_id", "")
+                for username, rec in accounts.items()
+                if rec.get("personal_workspace_id") and workspaces.get(rec["personal_workspace_id"])}
+    # An early workspace implementation accidentally put the workspace id in the legacy
+    # ``user`` field. Normalize those records too.
+    personal.update({workspace_id: workspace_id for workspace_id in personal.values()})
+    return sharing.migrate_user_entries(personal)
 
 
 def share_target(token: str) -> tuple[Path, str] | None:
@@ -194,7 +304,11 @@ def share_target(token: str) -> tuple[Path, str] | None:
     ent = sharing.resolve(token)
     if not ent:
         return None
-    home = paths.user_home(ent["user"])
+    workspace_id = ent.get("workspace_id") or ent.get("user", "")
+    # Entries written before the workspace migration stored the workspace id in ``user``.
+    # Recognize those links so turning sharing back on is not required to repair them.
+    home = (workspaces.workspace_home(workspace_id)
+            if workspaces.get(workspace_id) else paths.user_home(workspace_id))
     with paths.use_root(home):
         entry = bubbles.load_registry().get(ent["slug"])
         if not entry or not entry.get("share_active"):
@@ -261,40 +375,7 @@ def get_page(home: Path, slug: str, page_slug: str) -> str:
 def save_page(home: Path, slug: str, page_slug: str, content: str,
               base_mtime: "float | None" = None) -> float:
     with paths.use_root(home):
-        _validate_page_citations(slug, content)
         return bubbles.save_page(slug, page_slug, content, base_mtime)
-
-
-def _citation_keys(content: str) -> list[str]:
-    keys: list[str] = []
-    for m in _CITE_REF_RE.finditer(content or ""):
-        keys.extend(k.strip() for k in m.group(1).split(",") if k.strip())
-    return keys
-
-
-def _validate_page_citations(slug: str, content: str) -> None:
-    cited = set(_citation_keys(content))
-    if not cited:
-        return
-    bubble_keys: set[str] = set()
-    global_keys: dict[str, dict] = {}
-    for meta in assets.list_assets():
-        keys = assets.bibtex_keys(meta.get("bibliography", ""))
-        if slug in meta.get("idea_bubbles", []):
-            bubble_keys.update(keys)
-        for key in keys:
-            global_keys.setdefault(key, meta)
-    unavailable = sorted(cited - bubble_keys)
-    if not unavailable:
-        return
-    key = unavailable[0]
-    meta = global_keys.get(key)
-    if meta:
-        title = meta.get("title") or meta.get("filename") or meta.get("pdf_id", key)
-        raise CitationValidationError(
-            f"Cannot cite {key!r} in this bubble because asset {title!r} is not attached to it.")
-    raise CitationValidationError(
-        f"Cannot cite {key!r}: no asset in this bubble has that BibTeX key.")
 
 
 def create_page(home: Path, slug: str, title: str) -> str:
@@ -332,9 +413,35 @@ def page_poll(home: Path, slug: str, page_slug: str) -> dict:
         page_path = paths.bubble_page_path(slug, page_slug)
         manifest_path = paths.bubble_manifest_path(slug)
         page_mtime = page_path.stat().st_mtime if page_path.exists() else 0
+        comments_mtime = bubbles.comments_mtime(slug, page_slug)
         manifest_mtime = manifest_path.stat().st_mtime if manifest_path.exists() else 0
         pages = bubbles.list_pages(slug) if manifest_path.exists() else []
-    return {"page_mtime": page_mtime, "manifest_mtime": manifest_mtime, "pages": pages}
+    return {"page_mtime": page_mtime, "comments_mtime": comments_mtime,
+            "manifest_mtime": manifest_mtime, "pages": pages}
+
+
+def list_comments(home: Path, slug: str, page_slug: str) -> dict:
+    with paths.use_root(home): return bubbles.list_comments(slug, page_slug)
+
+
+def create_comment(home: Path, slug: str, page_slug: str, author: str, body: str, anchor: dict) -> dict:
+    with paths.use_root(home): return bubbles.create_comment(slug, page_slug, author, body, anchor)
+
+
+def reply_comment(home: Path, slug: str, page_slug: str, thread_id: str, author: str, body: str) -> dict:
+    with paths.use_root(home): return bubbles.reply_comment(slug, page_slug, thread_id, author, body)
+
+
+def edit_comment_message(home: Path, slug: str, page_slug: str, thread_id: str, message_id: str, author: str, body: str) -> dict:
+    with paths.use_root(home): return bubbles.edit_comment_message(slug, page_slug, thread_id, message_id, author, body)
+
+
+def set_comment_status(home: Path, slug: str, page_slug: str, thread_id: str, status: str, actor: str) -> dict:
+    with paths.use_root(home): return bubbles.set_comment_status(slug, page_slug, thread_id, status, actor)
+
+
+def delete_comment(home: Path, slug: str, page_slug: str, thread_id: str) -> bool:
+    with paths.use_root(home): return bubbles.delete_comment(slug, page_slug, thread_id)
 
 
 # ---- todos (global per-user, referenced from report pages as @<id>) ----
@@ -455,6 +562,21 @@ def bubble_asset_path(home: Path, slug: str, filename: str) -> Path:
         return paths.bubble_assets_dir(slug) / filename
 
 
+def list_bubble_assets(home: Path, slug: str) -> list[dict]:
+    with paths.use_root(home):
+        return bubbles.list_bubble_assets(slug)
+
+
+def delete_bubble_asset(home: Path, slug: str, filename: str) -> bool:
+    with paths.use_root(home):
+        return bubbles.delete_bubble_asset(slug, filename)
+
+
+def bubble_text_asset(home: Path, slug: str, filename: str) -> str:
+    with paths.use_root(home):
+        return bubbles.read_bubble_text_asset(slug, filename)
+
+
 # ---- streaming (generators manage their own root) ----
 def chat(home: Path, slug: str, page_slug: str, messages: list[dict], page_context: str = "",
          deep_read_ids: list[str] | None = None):
@@ -504,27 +626,6 @@ def model_health(home: Path, *, live: bool = False) -> dict:
     return models.health_check(home, live=live)
 
 
-# ---- news (premium background crawler) ----
-def list_news(home: Path) -> dict:
-    with paths.use_root(home):
-        return {"items": news.list_items(), "bubbles": bubbles.all_bubbles()}
-
-
-def dismiss_news(home: Path, item_id: str) -> bool:
-    with paths.use_root(home):
-        return news.dismiss_item(item_id)
-
-
-def get_news_instructions(home: Path) -> list[dict]:
-    with paths.use_root(home):
-        return news.load_instructions()
-
-
-def save_news_instructions(home: Path, entries: list[dict]) -> list[dict]:
-    with paths.use_root(home):
-        return news.set_instructions(entries)
-
-
 # ---- math config ----
 def load_math_config(home: Path) -> dict:
     with paths.use_root(home):
@@ -540,7 +641,6 @@ def save_math_config(home: Path, cfg: dict) -> dict:
         p.parent.mkdir(parents=True, exist_ok=True)
         bubbles._atomic_write(p, yaml.dump(cfg, allow_unicode=True))
     return cfg
-
 
 # ---- aesthetics config ----
 THEMES = ("dark", "light", "pink", "techno", "pearl")
@@ -568,48 +668,3 @@ def save_aesthetics_config(home: Path, themes: list[str]) -> dict:
         p.parent.mkdir(parents=True, exist_ok=True)
         bubbles._atomic_write(p, yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True))
     return cfg
-
-
-def news_chat(home: Path, message: str, model: str | None = None,
-              since: str | None = None, until: str | None = None):
-    # generator manages its own use_root (it must survive across yields), like reports.chat_stream
-    return news.chat_stream(home, message, model, since, until)
-
-
-def accept_news(home: Path) -> dict:
-    with paths.use_root(home):
-        return news.accept_session()
-
-
-def discard_news(home: Path) -> dict:
-    with paths.use_root(home):
-        return news.discard_session()
-
-
-def news_session(home: Path) -> dict | None:
-    with paths.use_root(home):
-        return news.get_session()
-
-
-def news_models() -> list[dict]:
-    return news.model_options()
-
-
-def list_news_chats(home: Path) -> list[dict]:
-    with paths.use_root(home):
-        return news.list_chat_sessions()
-
-
-def get_news_chat(home: Path, sid: str) -> dict | None:
-    with paths.use_root(home):
-        return news.get_chat_session(sid)
-
-
-def delete_news_chat(home: Path, sid: str) -> bool:
-    with paths.use_root(home):
-        return news.delete_chat_session(sid)
-
-
-def news_status(home: Path) -> dict:
-    with paths.use_root(home):
-        return news.status()

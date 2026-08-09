@@ -25,13 +25,12 @@ SLACK_SECRET = ""
 
 _HELP = (
     "Commands:\n"
+    "• `workspaces` / `switch workspace` — choose your active workspace\n"
     "• `select` — choose your active bubble\n"
     "• `list` — show all bubbles\n"
-    "• `news` — list retrieved news + why each is relevant (premium)\n"
-    "• `crawl` — search the web for new papers for your bubbles (premium)\n"
     "• `todos` — list your open TODOs and add / edit / complete / remove them\n"
-    "• Attach a PDF — uploads it to your assets queue\n"
-    "• Send a PDF link — downloads it into your assets queue\n"
+    "• Attach a PDF — uploads it to your Library queue\n"
+    "• Send a PDF link — downloads it into your Library queue\n"
     "• Anything else — asks your configured model about your active bubble"
 )
 
@@ -41,21 +40,23 @@ _sessions:       dict[str, httpx.Client] = {}   # uid → logged-in HTTP client
 _auth:           dict[str, str | None]   = {}   # uid → None (need username) | str (need password)
 _usernames:      dict[str, str]          = {}   # uid → lockedin username for reauth prompts
 _active_bubble:  dict[str, dict]         = {}   # uid → active bubble dict
+_active_workspace: dict[str, dict]       = {}   # uid → active workspace dict
 _selecting:      dict[str, list[dict]]   = {}   # uid → bubble list (awaiting number reply)
-_news_flow:      dict[str, dict]         = {}   # uid → {stage:'from'|'to', since, until} (crawl wizard)
-_news_steer:     set[str]                = set()  # uids steering an open crawl session
+_workspace_selecting: dict[str, list[dict]] = {} # uid → workspace list (awaiting number reply)
 _todo_flow:      dict[str, dict]         = {}   # uid → {stage, id, title, ...} (todos wizard)
 
 _CONFIRM_RE = re.compile(r"^(ok|okay|yes|y|confirm|keep|default|same)$", re.IGNORECASE)
-_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _CANCEL_RE = re.compile(r"^(cancel|exit|quit|no|stop)$", re.IGNORECASE)
-_STEER_STOP_RE = re.compile(r"^(stop|exit|leave|quit|cancel|nevermind|never mind)$", re.IGNORECASE)
-_STEER_ACCEPT_RE = re.compile(r"^(accept|save|done|i'?m happy|looks good|that'?s enough|good enough)$",
-                              re.IGNORECASE)
 
 
 def _slack_headers() -> dict[str, str]:
     return {"X-Lockedin-Slack-Secret": SLACK_SECRET} if SLACK_SECRET else {}
+
+
+def _asset_title(filename: str) -> str:
+    """Provide the required Library title when Slack only supplies a filename."""
+    stem = os.path.splitext(os.path.basename(filename or "upload.pdf"))[0]
+    return stem.replace("_", " ").replace("-", " ").strip() or "Untitled PDF"
 
 
 def _login(username: str, password: str, uid: str = "") -> httpx.Client:
@@ -63,6 +64,16 @@ def _login(username: str, password: str, uid: str = "") -> httpx.Client:
     r = http.post(f"{URL}/api/login", json={"username": username, "password": password})
     r.raise_for_status()
     username = r.json().get("user") or username
+    if uid:
+        try:
+            ws = http.get(f"{URL}/api/workspaces").json()
+            personal = ws.get("personal_workspace_id", "")
+            chosen = next((x for x in ws.get("workspaces", []) if x.get("id") == personal), None)
+            if chosen:
+                _active_workspace[uid] = chosen
+                http.headers["X-LockedIn-Workspace"] = chosen["id"]
+        except Exception:
+            pass
     if uid and SLACK_SECRET:
         try:
             http.post(
@@ -90,6 +101,12 @@ def _linked_login(uid: str) -> httpx.Client | None:
             return None
         r.raise_for_status()
         _usernames[uid] = r.json().get("user", "")
+        ws = http.get(f"{URL}/api/workspaces").json()
+        personal = ws.get("personal_workspace_id", "")
+        chosen = next((x for x in ws.get("workspaces", []) if x.get("id") == personal), None)
+        if chosen:
+            _active_workspace[uid] = chosen
+            http.headers["X-LockedIn-Workspace"] = chosen["id"]
         return http
     except Exception as e:
         logger.warning("Could not refresh Slack-linked session for %s: %s", uid, e)
@@ -106,9 +123,9 @@ def _forget_session(uid: str) -> None:
     if old:
         old.close()
     _active_bubble.pop(uid, None)
+    _active_workspace.pop(uid, None)
     _selecting.pop(uid, None)
-    _news_flow.pop(uid, None)
-    _news_steer.discard(uid)
+    _workspace_selecting.pop(uid, None)
     _todo_flow.pop(uid, None)
 
 
@@ -408,6 +425,33 @@ def handle(event: dict, say) -> None:
     # ── normal operation ──────────────────────────────────────────────────────
     http = _sessions[uid]
 
+    if uid in _workspace_selecting:
+        rows = _workspace_selecting[uid]
+        try:
+            chosen = rows[int(text) - 1]
+        except (ValueError, IndexError):
+            say("Reply with a workspace number, or `cancel`.")
+            return
+        _active_workspace[uid] = chosen
+        http.headers["X-LockedIn-Workspace"] = chosen["id"]
+        _active_bubble.pop(uid, None); _todo_flow.pop(uid, None); _selecting.pop(uid, None)
+        _workspace_selecting.pop(uid, None)
+        say(f"Active workspace: *{chosen['name']}*.")
+        return
+
+    if re.match(r"^(workspaces|switch workspace)$", text, re.IGNORECASE):
+        try:
+            rows = http.get(f"{URL}/api/workspaces").raise_for_status().json().get("workspaces", [])
+        except Exception as e:
+            if _is_unauthorized(e):
+                _ask_reauth(uid, say)
+                return
+            say(f"Couldn't load workspaces: {e}"); return
+        active = _active_workspace.get(uid, {}).get("id")
+        say("Your workspaces:\n" + "\n".join(f"{i+1}. *{w['name']}* ({w['role']})" + (" ← active" if w['id']==active else "") for i,w in enumerate(rows)) + "\n\nReply with a number to switch.")
+        _workspace_selecting[uid] = rows
+        return
+
     # upload attached PDFs (checked before anything else)
     for f in files:
         if f.get("mimetype") != "application/pdf":
@@ -416,14 +460,18 @@ def handle(event: dict, say) -> None:
         if not url:
             continue
         try:
-            data = http.get(
+            download = http.get(
                 url, headers={"Authorization": f"Bearer {event.get('_bot_token', '')}"}
-            ).content
+            )
+            download.raise_for_status()
+            data = download.content
+            filename = f.get("name", "upload.pdf")
             http.post(
                 f"{URL}/api/assets/upload",
-                files={"file": (f.get("name", "upload.pdf"), data, "application/pdf")},
+                files={"file": (filename, data, "application/pdf")},
+                data={"title": _asset_title(filename)},
             ).raise_for_status()
-            say(f"Uploaded *{f.get('name', 'file')}* — auto-tagging in background.")
+            say(f"Uploaded *{f.get('name', 'file')}* — background processing has started; organize it into a bubble from the Library.")
         except Exception as e:
             if _is_unauthorized(e):
                 _ask_reauth(uid, say)
@@ -446,9 +494,9 @@ def handle(event: dict, say) -> None:
                 http.post(
                     f"{URL}/api/assets/upload",
                     files={"file": (name, data, "application/pdf")},
-                    data={"url_source": link},
+                    data={"title": _asset_title(name), "url_source": link},
                 ).raise_for_status()
-                say(f"📎 Added *{name}* to your assets — it's in the attention queue for tagging.")
+                say(f"📎 Added *{name}* to your assets — it is marked as requiring attention for tagging.")
             except Exception as e:
                 if _is_unauthorized(e):
                     _ask_reauth(uid, say)
@@ -477,7 +525,7 @@ def handle(event: dict, say) -> None:
         return
 
     # ── crawl wizard: collect the from/to date range, then run ────────────────
-    if uid in _news_flow:
+    if False:  # retired feature; retained temporarily only to avoid disrupting old running workers
         flow = _news_flow[uid]
         if _CANCEL_RE.match(text):
             del _news_flow[uid]
@@ -509,7 +557,7 @@ def handle(event: dict, say) -> None:
         return
 
     # ── crawl steering: free-text follow-ups drive the open crawl session ─────
-    if uid in _news_steer and text:
+    if False:
         if _STEER_STOP_RE.match(text):
             _news_steer.discard(uid)
             say("Left the crawl. Your session stays open — send `crawl` to resume, or use the web app.")
@@ -567,12 +615,12 @@ def handle(event: dict, say) -> None:
         return
 
     # ── news: list retrieved items + why they're relevant (premium) ───────────
-    if re.match(r"^news$", text, re.IGNORECASE):
+    if False:
         _news_list(http, say)
         return
 
     # ── crawl: start the date-range wizard (or resume an open session) ────────
-    if re.match(r"^crawl$", text, re.IGNORECASE):
+    if False:
         try:
             r = http.get(f"{URL}/api/news/status")
             if r.status_code == 403:
