@@ -22,7 +22,7 @@ import webbrowser
 from pathlib import Path
 
 APP = "lockedin-scientist"
-SCIENTIST_CLIENT_VERSION = "2026.08.09.7"
+SCIENTIST_CLIENT_VERSION = "2026.08.09.8"
 POLL_SECONDS = 5
 WORKER_HISTORY_LIMIT = 10
 TERMINAL_WORKER_STATUSES = {"stopped"}
@@ -77,10 +77,14 @@ def heading(title: str, subtitle: str = "") -> None:
 
 def welcome() -> None:
     """A human-first overview that matches the v2 project-local workflow."""
+    def frame_line(text: str, style) -> None:
+        # Center plain text first: ANSI escape codes added by `style` must not affect frame width.
+        print(violet("│") + style(text.center(36)) + violet("│"))
+
     print()
     print(violet("╭────────────────────────────────────╮"))
-    print(violet("│") + "         " + bold("LockedIn Scientist") + "         " + violet("│"))
-    print(violet("│") + "     " + dim("one bubble, in your project") + "     " + violet("│"))
+    frame_line("LockedIn Scientist", bold)
+    frame_line("research assistent", dim)
     print(violet("╰────────────────────────────────────╯"))
     print()
     print(bold("Get started"))
