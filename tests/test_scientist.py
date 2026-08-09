@@ -290,6 +290,7 @@ class ScientistProfileAndWorkersTest(unittest.TestCase):
         finally:
             scientist_cli.sys.argv = original
         self.assertIn("one bubble, in your project", output.getvalue())
+        self.assertIn("│     one bubble, in your project     │", output.getvalue())
         self.assertIn("hard-reset <bubble-slug>", output.getvalue())
         self.assertIn("Manual Overleaf publishing", output.getvalue())
         self.assertIn("overleaf help", output.getvalue())

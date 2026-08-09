@@ -22,7 +22,7 @@ import webbrowser
 from pathlib import Path
 
 APP = "lockedin-scientist"
-SCIENTIST_CLIENT_VERSION = "2026.08.09.6"
+SCIENTIST_CLIENT_VERSION = "2026.08.09.7"
 POLL_SECONDS = 5
 WORKER_HISTORY_LIMIT = 10
 TERMINAL_WORKER_STATUSES = {"stopped"}
@@ -80,7 +80,7 @@ def welcome() -> None:
     print()
     print(violet("╭────────────────────────────────────╮"))
     print(violet("│") + "         " + bold("LockedIn Scientist") + "         " + violet("│"))
-    print(violet("│") + "   " + dim("one bubble, in your project") + "   " + violet("│"))
+    print(violet("│") + "     " + dim("one bubble, in your project") + "     " + violet("│"))
     print(violet("╰────────────────────────────────────╯"))
     print()
     print(bold("Get started"))
