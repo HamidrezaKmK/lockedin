@@ -750,7 +750,8 @@ def create_comment(slug: str, page_slug: str, author: str, body: str, anchor: di
     if not quote:
         raise ValueError("Select text to comment on.")
     now = _now_iso()
-    item = {"id": secrets.token_urlsafe(12), "page_slug": page_slug, "status": "open",
+    # Keep the source wrapper readable in the editor; uniqueness is still ample within a bubble.
+    item = {"id": secrets.token_urlsafe(6), "page_slug": page_slug, "status": "open",
             "created_at": now, "updated_at": now, "resolved_at": "", "resolved_by": "",
             "anchor": {"quote": quote, "start": max(0, int((anchor or {}).get("start") or 0)),
                        "prefix": str((anchor or {}).get("prefix") or "")[-96:],
