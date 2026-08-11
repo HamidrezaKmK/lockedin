@@ -748,6 +748,18 @@
   .quick-add-paper input,.quick-add-paper textarea{padding:7px 9px;font-size:12px}
   .quick-add-paper textarea{min-height:68px;resize:vertical;font-family:var(--font-mono);line-height:1.35}
   .quick-add-paper .row{justify-content:flex-end}
+  /* Library upload membership picker. A paper can enter several existing bubbles at once, with
+     an explicit relevance for each one, without turning the upload form into a tag-entry field. */
+  .asset-bubble-picker{display:flex;flex-direction:column;gap:6px;padding:10px 12px;
+    border:1px solid var(--line);border-radius:9px;background:var(--panel2)}
+  .asset-bubble-picker-head{display:flex;flex-direction:column;gap:2px}
+  .asset-bubble-picker-list{display:flex;flex-direction:column;gap:5px;max-height:178px;overflow:auto}
+  .asset-bubble-picker-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:8px;
+    align-items:center;padding:6px 7px;border:1px solid var(--line);border-radius:7px;background:var(--panel)}
+  .asset-bubble-picker-row input[type=checkbox]{width:16px;height:16px;min-width:0;margin:0;padding:0}
+  .asset-bubble-picker-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .asset-bubble-picker-row select{width:auto;min-width:108px;padding:4px 7px;font-size:12px}
+  .asset-bubble-picker-row select:disabled{opacity:.5}
   /* Migrate-resources picker. The base rule above sets width:100% on every input, which stretches
      a bare checkbox across the whole row — its glyph then draws centred in that box, so each row's
      tick lands at a different x. Size the controls explicitly and use a grid so columns line up. */
@@ -2286,6 +2298,27 @@
     let bubbles=[];
     try{ bubbles=(await bubblesRequest).bubbles||[]; }catch(e){}
     if(!isCurrentRender(version))return;
+    const bubblePicker=el("div",{class:"asset-bubble-picker"});
+    bubblePicker.append(el("div",{class:"asset-bubble-picker-head"},
+      el("b",{},"Add to bubbles (optional)"),
+      el("span",{class:"muted"},"Choose one or more bubbles and set each paper's relevance.")));
+    const bubblePickerList=el("div",{class:"asset-bubble-picker-list"});
+    const selectedBubbleMemberships=[];
+    if(!bubbles.length){
+      bubblePickerList.append(el("span",{class:"muted"},"Create a bubble first, then you can attach papers here."));
+    }else{
+      bubbles.forEach(b=>{
+        const check=el("input",{type:"checkbox",title:"Add to "+(b.name||b.slug)});
+        const score=el("select",{disabled:true,"aria-label":"Relevance in "+(b.name||b.slug)});
+        for(let n=5;n>=1;n--)score.append(el("option",{value:String(n)},"Relevance "+n));
+        score.value="5";
+        check.onchange=()=>{score.disabled=!check.checked;};
+        selectedBubbleMemberships.push(()=>check.checked?{slug:b.slug,score:Number(score.value)}:null);
+        bubblePickerList.append(el("div",{class:"asset-bubble-picker-row"},check,
+          el("span",{class:"asset-bubble-picker-name",title:b.name||b.slug},b.name||b.slug),score));
+      });
+    }
+    bubblePicker.append(bubblePickerList);
     const url=el("input",{placeholder:"Paste a PDF link to fetch it automatically"});
     const applyUploadMode=mode=>{
       uploadMode=mode; S.assetUploadMode=mode;
@@ -2306,6 +2339,7 @@
       if(!title.value.trim()){toast("Enter a title.");title.focus();return;}
       btn.disabled=true; btn.textContent=uploadMode==="file"?"Uploading…":"Fetching…";
       try{
+        const memberships=selectedBubbleMemberships.map(read=>read()).filter(Boolean);
         let d;
         if(uploadMode==="file"){
           const fd=new FormData(); fd.append("file",file.files[0]);
@@ -2318,12 +2352,26 @@
         }else{
           d=await api("/api/assets/upload-url",{method:"POST",body:JSON.stringify({url:link,title:title.value,tags:"",bibliography:bibliography.value})});
         }
-        toast("Added — summarizing in background…");
+        const attachmentErrors=[];
+        for(const membership of memberships){
+          try{
+            await api("/api/bubbles/"+encodeURIComponent(membership.slug)+"/add-pdf",
+              {method:"POST",body:JSON.stringify({pdf_id:d.pdf_id})});
+            if(membership.score!==5){
+              await api("/api/bubbles/"+encodeURIComponent(membership.slug)+"/papers/"+encodeURIComponent(d.pdf_id),
+                {method:"PATCH",body:JSON.stringify({score:membership.score})});
+            }
+          }catch(e){attachmentErrors.push(e.message);}
+        }
+        toast(attachmentErrors.length
+          ?"Added, but one or more bubble attachments need attention: "+attachmentErrors[0]
+          :memberships.length?"Added to "+memberships.length+" bubble"+(memberships.length===1?"":"s")+" — summarizing in background…"
+          :"Added — summarizing in background…");
         file.value="";title.value="";url.value="";bibliography.value="";
         viewAssets();
       }catch(e){toast(e.message);} finally{btn.disabled=false;btn.textContent="Add paper";}
     };
-    f.append(el("b",{},"Add a PDF"),modeSeg,file,url,title,bibliography,btn);
+    f.append(el("b",{},"Add a PDF"),modeSeg,file,url,title,bibliography,bubblePicker,btn);
     m.insertBefore(f,loading);
     m.insertBefore(el("div",{style:"height:16px"}),loading);
 

@@ -122,6 +122,15 @@ class AestheticsConfigTests(unittest.TestCase):
         self.assertIn('`Unassigned (${unassignedCount})`', source)
         self.assertIn('"Every paper is assigned to at least one bubble."', source)
 
+    def test_library_upload_can_attach_a_paper_to_multiple_bubbles_with_relevance(self):
+        source = (Path(server.WEB_DIR) / "index.html").read_text()
+        self.assertIn('"Add to bubbles (optional)"', source)
+        self.assertIn('"Choose one or more bubbles and set each paper\'s relevance."', source)
+        self.assertIn('class:"asset-bubble-picker-row"', source)
+        self.assertIn('"Relevance "+n', source)
+        self.assertIn('"/add-pdf"', source)
+        self.assertIn('"/papers/"+encodeURIComponent(d.pdf_id)', source)
+
     def test_library_card_attention_action_uses_compact_labels(self):
         source = (Path(server.WEB_DIR) / "index.html").read_text()
         self.assertIn('a.attention_flag?"Clear":"Review"', source)
