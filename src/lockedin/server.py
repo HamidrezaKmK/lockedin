@@ -317,11 +317,14 @@ def _render_preview_html(*, name: str, page: str, all_pages: list, content: str,
     # citation preprocessing so KaTeX and rendered pages never expose the comment syntax.
     try:
         content = bubbles.strip_comment_markers(content)
-    except bubbles.ReviewMarkupError as exc:
+        bubbles.parse_textcolor_wrappers(content)
+    except (bubbles.ReviewMarkupError, bubbles.TextColorMarkupError) as exc:
         # Do not feed malformed review markup into Markdown or KaTeX. The standalone preview
         # remains safe and gives the author the same actionable source position as the editor.
+        label = ("Text-color markup error" if isinstance(exc, bubbles.TextColorMarkupError)
+                 else "Review markup error")
         content = (f'<div style="border:1px solid #f87171;background:#3b1717;color:#fecaca;'
-                   f'padding:14px;border-radius:10px"><strong>Review markup error</strong><br>'
+                   f'padding:14px;border-radius:10px"><strong>{label}</strong><br>'
                    f'{escape(str(exc))}</div>')
 
     # Private preview pages receive their workspace through a URL query parameter because a
@@ -597,8 +600,29 @@ blockquote p{{margin:5px 0}}
   const _usedFigureNumbers=new Set();
   const escHtml=t=>String(t||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
   const escAttr=t=>escHtml(t).replace(/"/g,"&quot;");
-  const renderTextColor=src=>src.replace(/\\\\textcolor\\{{(#[0-9a-fA-F]{{3}}(?:[0-9a-fA-F]{{3}})?)\\}}\\{{([^{{}}\\n]*)\\}}/g,
-    (_,color,text)=>'<span class="text-color" style="--tc:'+color+'">'+escHtml(text)+'</span>');
+  const textColorSpans=src=>{{
+    const spans=[],token="\\\\textcolor{{";let cursor=0;
+    while(cursor<src.length){{
+      const open=src.indexOf(token,cursor);if(open<0)break;
+      const colorStart=open+token.length,colorEnd=src.indexOf("}}",colorStart),bodyOpen=colorEnd+1;
+      if(colorEnd<0||src[bodyOpen]!=="{{")break;
+      const color=src.slice(colorStart,colorEnd);let depth=1,i=bodyOpen+1,slashes=0;
+      for(;i<src.length;i++){{
+        const escaped=slashes%2===1;
+        if(!escaped&&src[i]==="{{")depth++;
+        else if(!escaped&&src[i]==="}}"&&--depth===0)break;
+        slashes=src[i]==="\\\\"?slashes+1:0;
+      }}
+      if(depth)break;
+      spans.push({{color,openStart:open,bodyStart:bodyOpen+1,bodyEnd:i,closeEnd:i+1}});cursor=i+1;
+    }}
+    return spans;
+  }};
+  const renderTextColor=src=>{{
+    const spans=textColorSpans(src);if(!spans.length)return src;let out="",cursor=0;
+    spans.forEach(span=>{{out+=src.slice(cursor,span.openStart)+'<span class="text-color" style="--tc:'+span.color+'">'+escHtml(src.slice(span.bodyStart,span.bodyEnd))+'</span>';cursor=span.closeEnd;}});
+    return out+src.slice(cursor);
+  }};
   const renderMath=it=>{{ try{{ return katex.renderToString(it.src,{{displayMode:it.display,macros:_macros,throwOnError:false}}); }}
     catch(e){{ return '<span style="color:#ff7a7a">'+it.src+'</span>'; }} }};
   const stash=(re,display)=>{{ s=s.replace(re,(m,p1)=>{{ store.push({{src:p1,display}}); return "@@M"+(store.length-1)+"@@"; }}); }};
@@ -1830,7 +1854,7 @@ def build_app():
             # 409: the editor's base mtime is stale — an external edit landed first.
             raise HTTPException(status_code=409, detail="Page changed on disk",
                                 headers={"X-Disk-Mtime": repr(e.disk_mtime)})
-        except bubbles.ReviewMarkupError as e:
+        except (bubbles.ReviewMarkupError, bubbles.TextColorMarkupError) as e:
             raise HTTPException(status_code=422, detail=e.as_detail())
         except (bubbles.ReviewSidecarError, bubbles.ReviewTargetError) as e:
             raise review_failure(e)
@@ -1862,7 +1886,7 @@ def build_app():
         except bubbles.PageConflict as e:
             raise HTTPException(status_code=409, detail="Page changed on disk",
                                 headers={"X-Disk-Mtime": repr(e.disk_mtime)})
-        except bubbles.ReviewMarkupError as e:
+        except (bubbles.ReviewMarkupError, bubbles.TextColorMarkupError) as e:
             raise HTTPException(status_code=422, detail=e.as_detail())
         except (bubbles.ReviewSidecarError, bubbles.ReviewTargetError) as e:
             raise review_failure(e)
@@ -1913,7 +1937,7 @@ def build_app():
         except bubbles.PageConflict as e:
             raise HTTPException(status_code=409, detail="Page changed on disk",
                                 headers={"X-Disk-Mtime": repr(e.disk_mtime)})
-        except bubbles.ReviewMarkupError as e:
+        except (bubbles.ReviewMarkupError, bubbles.TextColorMarkupError) as e:
             raise HTTPException(status_code=422, detail=e.as_detail())
         except (bubbles.ReviewSidecarError, bubbles.ReviewTargetError) as e:
             raise review_failure(e)
@@ -1937,7 +1961,7 @@ def build_app():
         except bubbles.PageConflict as e:
             raise HTTPException(status_code=409, detail="Page changed on disk",
                                 headers={"X-Disk-Mtime": repr(e.disk_mtime)})
-        except bubbles.ReviewMarkupError as e:
+        except (bubbles.ReviewMarkupError, bubbles.TextColorMarkupError) as e:
             raise HTTPException(status_code=422, detail=e.as_detail())
         except (bubbles.ReviewSidecarError, bubbles.ReviewTargetError) as e:
             raise review_failure(e)

@@ -225,6 +225,12 @@ async function highlightedText(page) {
   });
 }
 
+async function textColorHighlightText(page) {
+  return page.evaluate(() => Array.from(globalThis.CSS?.highlights?.keys?.() || [])
+    .filter(name => String(name).startsWith("lockedin-textcolor-"))
+    .flatMap(name => Array.from(globalThis.CSS.highlights.get(name), range => range.toString())));
+}
+
 async function clickExactHighlight(page, exactText) {
   const point = await page.evaluate(expected => {
     const highlight = globalThis.CSS?.highlights?.get("lockedin-review");
@@ -383,6 +389,52 @@ async function main() {
     }
     await page.waitForTimeout(400);
     step("authenticated report editor loaded");
+
+    const colorSelection = "Emoji offset guard 😀 precedes this review.";
+    // Swatch hexes come from the active theme's --text-color-N variables, so the test reads
+    // them from the live palette instead of pinning values that change with the theme.
+    const swatches = await page.evaluate(() =>
+      Array.from(document.querySelectorAll(".color-tool .color-swatch"), node => node.title));
+    assert.ok(swatches.length >= 2, `expected a text-color palette, saw ${JSON.stringify(swatches)}`);
+    const [firstColor, secondColor] = swatches;
+    await selectSource(page, colorSelection);
+    await page.getByTitle("Color selected text").click();
+    await page.getByTitle(firstColor, { exact: true }).click();
+    try {
+      await page.waitForFunction(expected =>
+        document.querySelector(".toastui-editor-md-container .ProseMirror")?.innerText.includes(expected),
+      `\\textcolor{${firstColor}}{${colorSelection}}`, { timeout: 2_000 });
+    } catch (error) {
+      const diagnostic = await page.evaluate(() => ({
+        toast: document.querySelector("#toast")?.textContent || "",
+        markdown: globalThis.S?.editor?.getMarkdown?.() || "",
+        selection: globalThis.S?.colorSelection || null,
+      }));
+      throw new Error(`text-color insertion did not update the editor: ${JSON.stringify(diagnostic)}\n${error.message}`);
+    }
+    await page.waitForTimeout(800);
+    await page.waitForFunction(expected => Array.from(globalThis.CSS?.highlights?.keys?.() || [])
+      .filter(name => String(name).startsWith("lockedin-textcolor-"))
+      .some(name => Array.from(globalThis.CSS.highlights.get(name)).some(range => range.toString() === expected)),
+    colorSelection);
+    assert.deepEqual(await textColorHighlightText(page), [colorSelection]);
+    const coloredSource = (await api(
+      context.request, baseUrl, "GET", `/api/bubbles/${slug}/pages/${pageSlug}`,
+    )).content;
+    assert.ok(coloredSource.includes(`\\textcolor{${firstColor}}{${colorSelection}}`));
+    const colorOverlapStart = requests.length;
+    await selectSource(page, "offset guard");
+    await page.getByTitle("Color selected text").click();
+    await page.getByTitle(secondColor, { exact: true }).click();
+    await page.waitForFunction(() => /overlap|nested|intersect/i.test(document.querySelector("#toast")?.textContent || ""));
+    assert.equal(
+      requests.slice(colorOverlapStart).filter(item =>
+        item.method === "PUT" && item.path === `/api/bubbles/${slug}/pages/${pageSlug}`
+      ).length,
+      0,
+      "an intersecting text color reached the server",
+    );
+    step("text colors highlight only their exact body and reject overlap before saving");
 
     const requestStart = requests.length;
     const navigationsBefore = mainNavigations;

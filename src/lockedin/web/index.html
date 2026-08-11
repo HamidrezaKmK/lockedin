@@ -1349,6 +1349,50 @@
     });
     return wrappers;
   }
+  function textColorMarkupError(source,index,code,message,color){
+    const at=commentSourceLocation(source,index), error=new Error(message+" (line "+at.line+", column "+at.column+")");
+    error.name="TextColorMarkupError"; error.index=index; error.line=at.line; error.column=at.column;
+    error.code=code;error.color=color||null;return error;
+  }
+  // This mirrors the server's single-pass parser. Text colors support ordinary balanced LaTeX
+  // braces and multiline source, but never another text-color wrapper inside their body. That
+  // makes every displayed color range unambiguous while adjacent ranges remain valid.
+  function parseTextColorWrappers(value){
+    const source=String(value||""),token="\\textcolor{",wrappers=[];let cursor=0;
+    while(cursor<source.length){
+      const open=source.indexOf(token,cursor);if(open<0)break;
+      if(commentCharIsEscaped(source,open)){cursor=open+token.length;continue;}
+      const colorStart=open+token.length;let colorEnd=colorStart;
+      while(colorEnd<source.length&&source[colorEnd]!=="}"){
+        if(source[colorEnd]==="{"&&!commentCharIsEscaped(source,colorEnd))
+          throw textColorMarkupError(source,colorEnd,"invalid_textcolor","Text colors cannot contain braces.");
+        colorEnd++;
+      }
+      if(colorEnd>=source.length)throw textColorMarkupError(source,open,"unclosed_textcolor","The text color is missing its closing brace.");
+      const color=source.slice(colorStart,colorEnd);
+      if(!/^(?:#[0-9a-fA-F]{3}(?:[0-9a-fA-F]{3})?|[A-Za-z][A-Za-z0-9-]{0,63})$/.test(color))
+        throw textColorMarkupError(source,colorStart,"invalid_textcolor","Use a hex value or a CSS color name in \\textcolor.",color);
+      const bodyOpen=colorEnd+1;
+      if(source[bodyOpen]!=="{")throw textColorMarkupError(source,bodyOpen,"missing_textcolor_body","The text-color wrapper is missing its body.",color);
+      const bodyStart=bodyOpen+1;let depth=1,i=bodyStart,slashRun=0;
+      for(;i<source.length;i++){
+        const escaped=slashRun%2===1;
+        if(source.startsWith(token,i)&&!escaped)
+          throw textColorMarkupError(source,i,"intersecting_textcolors","Text colors cannot overlap, contain, or intersect another text color.",color);
+        if(!escaped&&source[i]==="{")depth++;
+        else if(!escaped&&source[i]==="}"&&--depth===0)break;
+        slashRun=source[i]==="\\"?slashRun+1:0;
+      }
+      if(depth!==0)throw textColorMarkupError(source,open,"unclosed_textcolor","The text-color wrapper is missing its closing brace.",color);
+      wrappers.push({color,openStart:open,bodyStart,bodyEnd:i,closeEnd:i+1,body:source.slice(bodyStart,i)});
+      cursor=i+1;
+    }
+    return wrappers;
+  }
+  function validateEditorMarkup(value){
+    validateEditorCommentMarkup(value);
+    return parseTextColorWrappers(value);
+  }
   function stripCommentMarkers(value){
     const source=String(value||""), wrappers=parseCommentWrappers(source); if(!wrappers.length)return source;
     let out="",cursor=0;
@@ -1356,16 +1400,20 @@
     return out+source.slice(cursor);
   }
   function reviewMarkupErrorHtml(error){
-    const safe=String(error&&error.message||"Invalid comment markup").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-    return '<div class="review-render-error" role="alert"><b>Review markup error</b>'+safe+'<br>Close or remove the broken <code>\\comment{id}{…}</code> wrapper before saving.</div>';
+    const isColor=error&&error.name==="TextColorMarkupError";
+    const safe=String(error&&error.message||(isColor?"Invalid text-color markup":"Invalid comment markup")).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    const syntax=isColor?"\\textcolor{color}{…}":"\\comment{id}{…}";
+    const noun=isColor?"text-color":"review";
+    return '<div class="review-render-error" role="alert"><b>'+noun+' markup error</b>'+safe+'<br>Close or remove the broken <code>'+syntax+'</code> wrapper before saving.</div>';
   }
   function showEditorReviewMarkupError(error){
     const host=$("#editorHost");if(!host)return;
     const existing=$("#reviewMarkupError");
     if(!error){if(existing)existing.remove();return;}
     const banner=existing||el("div",{id:"reviewMarkupError",class:"review-render-error review-editor-error",role:"alert"});
-    banner.replaceChildren(el("b",{},"Review markup error"),document.createTextNode(error.message),el("br"),
-      document.createTextNode("Close or remove the broken "),el("code",{},"\\comment{id}{…}"),document.createTextNode(" wrapper before saving."));
+    const isColor=error&&error.name==="TextColorMarkupError";
+    banner.replaceChildren(el("b",{},isColor?"Text-color markup error":"Review markup error"),document.createTextNode(error.message),el("br"),
+      document.createTextNode("Close or remove the broken "),el("code",{},isColor?"\\textcolor{color}{…}":"\\comment{id}{…}"),document.createTextNode(" wrapper before saving."));
     if(!existing)host.append(banner);
   }
   function renderMarkdown(md,opts){
@@ -1373,7 +1421,8 @@
     const store=[], captionStore=[]; let s=md||"";
     // Inline review delimiters are source-only. Strip them before math/KaTeX processing and
     // before marked.js renders the preview, while leaving the markers visible in Markdown mode.
-    try{s=stripCommentMarkers(s);}catch(error){if(error&&error.name==="CommentMarkupError")return reviewMarkupErrorHtml(error);throw error;}
+    try{ s=stripCommentMarkers(s); parseTextColorWrappers(s); }
+    catch(error){if(error&&(error.name==="CommentMarkupError"||error.name==="TextColorMarkupError"))return reviewMarkupErrorHtml(error);throw error;}
     if(opts.sourceMarkers) s=withSourceMarkers(s);
     // Stored report Markdown predates workspaces. Add the active workspace capability at render
     // time so existing report figures keep working after a workspace switch or in a new tab.
@@ -1482,8 +1531,15 @@
     const bib=(refs&&refs.bibliography)||{};
     const escAttr=t=>String(t||"").replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
     const escHtml=t=>String(t||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-    const renderTextColor=src=>src.replace(/\\textcolor\{(#[0-9a-fA-F]{3}(?:[0-9a-fA-F]{3})?)\}\{([^{}\n]*)\}/g,
-      (_,color,text)=>`<span class="text-color" style="--tc:${color}">${escHtml(text)}</span>`);
+    const renderTextColor=src=>{
+      const spans=parseTextColorWrappers(src); if(!spans.length)return src;
+      let out="",cursor=0;
+      spans.forEach(span=>{
+        out+=src.slice(cursor,span.openStart)+`<span class="text-color" style="--tc:${span.color}">${escHtml(span.body)}</span>`;
+        cursor=span.closeEnd;
+      });
+      return out+src.slice(cursor);
+    };
     const citationHref=k=>{
       const ent=bib[k], pdfId=ent&&ent.pdf_id;
       return (opts.citationPdfLinks&&pdfId)?workspaceUrl("/api/assets/"+encodeURIComponent(pdfId)+"/pdf"):"";
@@ -3631,6 +3687,15 @@
     const from=Math.max(0,Math.min(sel.from,md.length));
     const to=Math.max(from,Math.min(sel.to,md.length));
     const selected=md.slice(from,to);
+    try{
+      const overlap=parseTextColorWrappers(md).some(wrapper=>from<wrapper.closeEnd&&to>wrapper.openStart);
+      if(overlap){toast("Text colors cannot overlap or be nested.");return;}
+    }catch(error){
+      if(error&&error.name==="TextColorMarkupError"){
+        S.reviewMarkupError=error;showEditorReviewMarkupError(error);updatePreview();toast(error.message);return;
+      }
+      throw error;
+    }
     const replacement="\\textcolor{"+hex+"}{"+selected+"}";
     const restoreScroll=preserveEditorScroll();
     replaceEditorRange(from,to,replacement);
@@ -3894,9 +3959,9 @@
     const sTop=S.previewEl.scrollTop, sLeft=S.previewEl.scrollLeft;
     const savedResources=restartGifs?null:collectPreviewResources(S.previewEl);
     const markdown=S.editor.getMarkdown();
-    try{validateEditorCommentMarkup(markdown);S.reviewMarkupError=null;showEditorReviewMarkupError(null);}
+    try{validateEditorMarkup(markdown);S.reviewMarkupError=null;showEditorReviewMarkupError(null);}
     catch(error){
-      if(error&&error.name==="CommentMarkupError"){
+      if(error&&(error.name==="CommentMarkupError"||error.name==="TextColorMarkupError")){
         S.reviewMarkupError=error;showEditorReviewMarkupError(error);S.previewEl.innerHTML=reviewMarkupErrorHtml(error);
         S.previewEl.scrollTop=sTop;S.previewEl.scrollLeft=sLeft;return;
       }
@@ -3981,10 +4046,12 @@
     const view=editorView();
     if(!(window.CSS&&CSS.highlights&&window.Highlight)){return;}
     CSS.highlights.delete("lockedin-review"); S.reviewHitTargets=[];
-    if(!view||S.viewMode==="view")return;
+    if(!view||S.viewMode==="view"){clearEditorTextColorHighlights();return;}
+    const source=S.editor&&S.editor.getMarkdown?S.editor.getMarkdown():"";
+    renderEditorTextColorHighlights(view,source);
     const openIds=new Set((S.comments||[]).filter(t=>t.status!=="resolved"&&t.anchor_state!=="unanchored").map(t=>String(t.id)));
     if(!openIds.size)return;
-    const source=S.editor&&S.editor.getMarkdown?S.editor.getMarkdown():"";let wrappers=[];
+    let wrappers=[];
     try{wrappers=parseCommentWrappers(source).filter(w=>openIds.has(w.id)&&w.bodyStart<w.bodyEnd);}catch(e){return;}
     if(!wrappers.length)return;
     const index=editorVisibleTextIndex(view.dom,source);if(!index)return;
@@ -3997,8 +4064,37 @@
     });
     if(ranges.length)CSS.highlights.set("lockedin-review",new Highlight(...ranges));
   }
+  function clearEditorTextColorHighlights(){
+    (S.textColorHighlightNames||[]).forEach(name=>{try{CSS.highlights.delete(name);}catch(e){}});
+    S.textColorHighlightNames=[];
+    const style=$("#lockedinTextColorHighlights");if(style)style.textContent="";
+  }
+  function renderEditorTextColorHighlights(view,source){
+    clearEditorTextColorHighlights();
+    if(!(window.CSS&&CSS.highlights&&window.Highlight)||!view||!view.dom)return;
+    let wrappers=[];try{wrappers=parseTextColorWrappers(source);}catch(e){return;}
+    if(!wrappers.length)return;
+    const index=editorVisibleTextIndex(view.dom,source);if(!index)return;
+    const groups=new Map();
+    wrappers.forEach(wrapper=>{
+      const ranges=index.rangesFor(wrapper.bodyStart,wrapper.bodyEnd);if(!ranges.length)return;
+      const key=wrapper.color.toLowerCase();
+      if(!groups.has(key))groups.set(key,[]);groups.get(key).push(...ranges);
+    });
+    const style=$("#lockedinTextColorHighlights")||el("style",{id:"lockedinTextColorHighlights"});
+    if(!style.parentNode)document.head.append(style);
+    const rules=[];let indexNo=0;
+    groups.forEach((ranges,color)=>{
+      const name="lockedin-textcolor-"+indexNo++;
+      try{CSS.highlights.set(name,new Highlight(...ranges));}catch(e){return;}
+      S.textColorHighlightNames.push(name);
+      rules.push("::highlight("+name+"){color:"+color+" !important;background:color-mix(in srgb, "+color+" 14%, transparent);}");
+    });
+    style.textContent=rules.join("\n");
+  }
   function clearEditorCommentHighlights(){
     S.reviewHitTargets=[];try{if(window.CSS&&CSS.highlights)CSS.highlights.delete("lockedin-review");}catch(e){}
+    clearEditorTextColorHighlights();
   }
 
   // Rendering Markdown replaces the preview DOM. Keep every unchanged external resource through
@@ -4363,9 +4459,9 @@
     if(!S.editor||!S.page||S.saving)return false;
     if(S.reviewMutating){scheduleAutosave();return false;}
     const bubble=S.bubble, page=S.page, content=S.editor.getMarkdown();
-    try{validateEditorCommentMarkup(content);S.reviewMarkupError=null;}
+    try{validateEditorMarkup(content);S.reviewMarkupError=null;}
     catch(error){
-      if(error&&error.name==="CommentMarkupError"){
+      if(error&&(error.name==="CommentMarkupError"||error.name==="TextColorMarkupError")){
         S.reviewMarkupError=error;markStale();updatePreview();
         if(!opts.auto)toast("Cannot save: "+error.message);return false;
       }

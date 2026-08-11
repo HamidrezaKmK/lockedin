@@ -713,6 +713,8 @@ def _save_comments(slug: str, page_slug: str, data: dict) -> float:
 
 _COMMENT_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 _COMMENT_COMMAND = "\\comment"
+_TEXTCOLOR_COMMAND = "\\textcolor"
+_TEXTCOLOR_VALUE_RE = re.compile(r"^(?:#[0-9A-Fa-f]{3}(?:[0-9A-Fa-f]{3})?|[A-Za-z][A-Za-z0-9-]{0,63})$")
 
 
 @dataclass(frozen=True)
@@ -746,6 +748,39 @@ class ReviewMarkupError(ValueError):
         if self.thread_id:
             detail["comment_id"] = self.thread_id
         return detail
+
+
+class TextColorMarkupError(ValueError):
+    """A deterministic source error for ``\\textcolor{color}{body}`` markup."""
+
+    def __init__(self, code: str, message: str, content: str, offset: int,
+                 *, color: str = ""):
+        self.code = code
+        self.offset = max(0, min(int(offset), len(content)))
+        self.line = content.count("\n", 0, self.offset) + 1
+        line_start = content.rfind("\n", 0, self.offset) + 1
+        self.column = self.offset - line_start + 1
+        self.color = color
+        self.message = message
+        super().__init__(f"{message} (line {self.line}, column {self.column})")
+
+    def as_detail(self) -> dict:
+        detail = {"code": self.code, "message": self.message, "offset": self.offset,
+                  "line": self.line, "column": self.column}
+        if self.color:
+            detail["color"] = self.color
+        return detail
+
+
+@dataclass(frozen=True)
+class TextColorSpan:
+    """Exact source offsets for one ``\\textcolor{color}{body}`` wrapper."""
+
+    color: str
+    open_start: int
+    body_start: int
+    body_end: int
+    close_end: int
 
 
 def _is_escaped(content: str, offset: int) -> bool:
@@ -827,6 +862,74 @@ def parse_comment_wrappers(content: str) -> list[CommentSpan]:
         seen.add(thread_id)
         spans.append(CommentSpan(thread_id=thread_id, open_start=start, body_start=body_start,
                                  body_end=i, close_end=i + 1))
+        pos = i + 1
+    return spans
+
+
+def parse_textcolor_wrappers(content: str) -> list[TextColorSpan]:
+    """Parse text-color wrappers in one linear pass.
+
+    A color wrapper can contain multiline Markdown and ordinary balanced LaTeX braces. Color
+    wrappers themselves may not overlap or nest: a second ``\\textcolor`` inside a wrapper is
+    rejected, while adjacent wrappers are valid.
+    """
+    spans: list[TextColorSpan] = []
+    pos = 0
+    size = len(content)
+    while pos < size:
+        start = content.find(_TEXTCOLOR_COMMAND, pos)
+        if start < 0:
+            break
+        if _is_escaped(content, start):
+            pos = start + len(_TEXTCOLOR_COMMAND)
+            continue
+        arg = start + len(_TEXTCOLOR_COMMAND)
+        # Do not treat commands such as \textcolorful as color markup.
+        if arg >= size or content[arg] != "{":
+            pos = arg
+            continue
+        color_start = arg + 1
+        i = color_start
+        while i < size and content[i] != "}":
+            if content[i] == "{" and not _is_escaped(content, i):
+                raise TextColorMarkupError("invalid_textcolor", "Text colors cannot contain braces.",
+                                           content, i)
+            i += 1
+        if i >= size:
+            raise TextColorMarkupError("unclosed_textcolor", "The text color is missing its closing brace.",
+                                       content, start)
+        color = content[color_start:i]
+        if not _TEXTCOLOR_VALUE_RE.fullmatch(color):
+            raise TextColorMarkupError(
+                "invalid_textcolor", "Use a hex value or a CSS color name in \\textcolor.",
+                content, color_start, color=color)
+        body_open = i + 1
+        if body_open >= size or content[body_open] != "{":
+            raise TextColorMarkupError("missing_textcolor_body", "The text-color wrapper is missing its body.",
+                                       content, body_open, color=color)
+        body_start = body_open + 1
+        depth = 1
+        i = body_start
+        while i < size:
+            if (content.startswith(_TEXTCOLOR_COMMAND + "{", i)
+                    and not _is_escaped(content, i)):
+                raise TextColorMarkupError(
+                    "intersecting_textcolors",
+                    "Text colors cannot overlap, contain, or intersect another text color.",
+                    content, i, color=color)
+            char = content[i]
+            if char == "{" and not _is_escaped(content, i):
+                depth += 1
+            elif char == "}" and not _is_escaped(content, i):
+                depth -= 1
+                if depth == 0:
+                    break
+            i += 1
+        if depth:
+            raise TextColorMarkupError("unclosed_textcolor", "The text-color wrapper is missing its closing brace.",
+                                       content, start, color=color)
+        spans.append(TextColorSpan(color=color, open_start=start, body_start=body_start,
+                                   body_end=i, close_end=i + 1))
         pos = i + 1
     return spans
 
@@ -930,6 +1033,10 @@ def _validate_known_wrappers(content: str, data: dict, *,
 def _reconcile_comments(content: str, data: dict, *,
                         allow_reattach: bool = False) -> tuple[str, dict, bool]:
     """Validate wrappers and derive every thread's anchor state from this exact source."""
+    # Text-color wrappers are ordinary report source, but they share the same fast, strict
+    # source-validation contract as review wrappers. Keeping this here makes every page-writing
+    # path (browser saves, Scientist writes, and authoritative comment transitions) agree.
+    parse_textcolor_wrappers(content)
     before = _json.dumps(data, ensure_ascii=False, sort_keys=True)
     spans = _validate_known_wrappers(content, data, allow_unanchored=allow_reattach)
     empty = [span for span in spans if span.body_start == span.body_end]
@@ -1398,6 +1505,7 @@ def register_page(slug: str, page_slug: str, content: str) -> None:
     # A newly registered page has no review sidecar, so every wrapper would necessarily be
     # fabricated. Scientist must never introduce comment markup itself.
     _validate_known_wrappers(content, {"version": 2, "threads": []})
+    parse_textcolor_wrappers(content)
     ensure_pages(slug)
     data = manifest(slug)
     if any(p["page_slug"] == page_slug for p in data.get("pages", [])):

@@ -393,6 +393,10 @@ passage only when the user explicitly requests that scope; removing the wrapper 
 unanchored. Wrappers disappear automatically from rendered previews and KaTeX but remain in
 Markdown while the review is attached.
 
+Colored passages use `\\textcolor{<color>}{text}`, where the color is a hex value or a CSS color
+name. LockedIn rejects a page whose color wrappers are unclosed or overlap another one, so keep
+each wrapper balanced and never nest colors. Edit inside an existing wrapper rather than around it.
+
 ## Before relying on a report submission
 
 Before telling the user that a report edit is synchronized—or before making a sequence of edits

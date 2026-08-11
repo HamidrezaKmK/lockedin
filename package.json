@@ -1,6 +1,7 @@
 {
   "scripts": {
     "test:review-parser": "node tests/review-parser.mjs",
+    "test:textcolor-parser": "node tests/textcolor-parser.mjs",
     "test:review-e2e": "node tests/review-e2e.mjs"
   },
   "devDependencies": {

@@ -1211,6 +1211,42 @@ class PrivateReviewComments(unittest.TestCase):
             self.assertGreaterEqual(caught.exception.line, 1)
             self.assertGreaterEqual(caught.exception.column, 1)
 
+    def test_textcolor_parser_supports_latex_multiline_and_adjacent_ranges(self):
+        source = (r"\textcolor{red}{First $\frac{a}{b}$ and \{literal\}}" + "\n"
+                  r"\textcolor{#8bd3ff}{second {line}}")
+        spans = bubbles.parse_textcolor_wrappers(source)
+        self.assertEqual([span.color for span in spans], ["red", "#8bd3ff"])
+        self.assertEqual(source[spans[0].body_start:spans[0].body_end],
+                         r"First $\frac{a}{b}$ and \{literal\}")
+        self.assertEqual(source[spans[1].body_start:spans[1].body_end], "second {line}")
+
+    def test_textcolor_parser_rejects_unclosed_invalid_and_nested_ranges(self):
+        cases = [
+            (r"\textcolor{red}{open", "unclosed_textcolor"),
+            (r"\textcolor{red;display:block}{text}", "invalid_textcolor"),
+            (r"\textcolor{red}{one \textcolor{blue}{two}}", "intersecting_textcolors"),
+        ]
+        for source, code in cases:
+            with self.subTest(code=code), self.assertRaises(bubbles.TextColorMarkupError) as caught:
+                bubbles.parse_textcolor_wrappers(source)
+            self.assertEqual(caught.exception.code, code)
+            self.assertGreaterEqual(caught.exception.line, 1)
+            self.assertGreaterEqual(caught.exception.column, 1)
+
+    def test_page_save_rejects_overlapping_textcolors_without_changing_disk(self):
+        with temp_home() as home:
+            slug = make_bubble(home)
+            service.save_page(home, slug, "overview", "Plain source")
+            with self.assertRaises(bubbles.TextColorMarkupError) as caught:
+                service.save_page(
+                    home, slug, "overview",
+                    r"\textcolor{red}{one \textcolor{blue}{two}}")
+            self.assertEqual(caught.exception.code, "intersecting_textcolors")
+            self.assertEqual(service.get_page(home, slug, "overview"), "Plain source")
+            service.save_page(home, slug, "overview", r"\textcolor{red}{one}\textcolor{blue}{two}")
+            self.assertEqual(service.get_page(home, slug, "overview"),
+                             r"\textcolor{red}{one}\textcolor{blue}{two}")
+
     def test_save_rejects_unknown_and_resolved_wrappers_without_changing_disk(self):
         with temp_home() as home:
             slug = make_bubble(home)
