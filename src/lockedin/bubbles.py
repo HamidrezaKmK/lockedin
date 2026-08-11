@@ -799,7 +799,15 @@ def set_comment_status(slug: str, page_slug: str, thread_id: str, status: str, a
     item["status"] = status; item["updated_at"] = now
     item["resolved_at"] = now if status == "resolved" else ""
     item["resolved_by"] = actor if status == "resolved" else ""
-    _save_comments(slug, page_slug, data); return item
+    _save_comments(slug, page_slug, data)
+    path = paths.bubble_page_path(slug, page_slug)
+    if status == "resolved" and path.exists():
+        content = remove_comment_marker(path.read_text(), thread_id)
+        _atomic_write(path, content)
+        touch_bubble(slug)
+    elif status == "open":
+        ensure_comment_markers(slug, page_slug)
+    return item
 
 
 def delete_comment(slug: str, page_slug: str, thread_id: str) -> bool:

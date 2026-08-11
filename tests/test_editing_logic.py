@@ -1077,6 +1077,7 @@ class PrivateReviewComments(unittest.TestCase):
     def test_thread_lifecycle_and_author_only_message_editing(self):
         with temp_home() as home:
             slug = make_bubble(home)
+            service.save_page(home, slug, "overview", "An important text follows")
             anchor = {"start": 3, "quote": "important text", "prefix": "An ", "suffix": " follows"}
             thread = service.create_comment(home, slug, "overview", "alice", "Needs a citation", anchor)
             self.assertEqual(thread["status"], "open")
@@ -1085,9 +1086,11 @@ class PrivateReviewComments(unittest.TestCase):
                 service.edit_comment_message(home, slug, "overview", thread["id"], reply["id"], "alice", "Changed")
             edited = service.edit_comment_message(home, slug, "overview", thread["id"], reply["id"], "bob", "Citation added")
             self.assertEqual(edited["body"], "Citation added")
+            self.assertIn(bubbles.comment_marker(thread["id"]), service.get_page(home, slug, "overview"))
             service.set_comment_status(home, slug, "overview", thread["id"], "resolved", "alice")
             data = service.list_comments(home, slug, "overview")
             self.assertEqual(data["threads"][0]["status"], "resolved")
+            self.assertNotIn(bubbles.comment_marker(thread["id"]), service.get_page(home, slug, "overview"))
             self.assertTrue(service.delete_comment(home, slug, "overview", thread["id"]))
             self.assertEqual(service.list_comments(home, slug, "overview")["threads"], [])
 

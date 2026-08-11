@@ -4582,14 +4582,9 @@
     const scroll=captureEditorScroll();
     try{
       await api("/api/bubbles/"+S.bubble+"/pages/"+S.page+"/comments/"+t.id,{method:"PATCH",body:JSON.stringify({status})});
-      if(status==="resolved"&&S.editor){
-        const md=S.editor.getMarkdown(), found=findCommentMarker(md,String(t.id||""));
-        if(found){
-          const cleaned=md.slice(0,found.open)+md.slice(found.start,found.end)+md.slice(found.closeEnd);
-          S.applyingRemote=true;try{S.editor.setMarkdown(cleaned,false);}finally{S.applyingRemote=false;}
-          S.baseMtime=null;S.remoteChangePending=false;await doSave({skipComments:true});
-        }
-      }
+      const page=await api("/api/bubbles/"+S.bubble+"/pages/"+S.page);
+      if(S.editor)applyRemote(page.content||"");
+      await primeSync();
       await loadComments(); restoreEditorScroll(scroll);
     }catch(e){restoreEditorScroll(scroll);toast(e.message);}
   }
