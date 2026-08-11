@@ -40,7 +40,30 @@ def workspace():
             (home / name).mkdir(parents=True)
         slug = service.create_bubble(home, "Current Work")
         service.approve_bubble(home, slug)
+        with paths.use_root(home):
+            bubbles.ensure_pages(slug)
         yield home, slug
+
+
+def create_review_thread(slug, page, author, body, anchor):
+    source_path = paths.bubble_page_path(slug, page)
+    quote = str(anchor["quote"])
+    start = int(anchor["start"])
+    return bubbles.create_comment_state(
+        slug, page, author, body, content=source_path.read_text(),
+        base_mtime=source_path.stat().st_mtime, selection_start=start,
+        selection_end=start + len(quote))["thread"]
+
+
+def reply_review_thread(slug, page, thread_id, author, body):
+    return bubbles.reply_comment_state(slug, page, thread_id, author, body)["message"]
+
+
+def resolve_review_thread(slug, page, thread_id, actor):
+    source_path = paths.bubble_page_path(slug, page)
+    return bubbles.set_comment_status_state(
+        slug, page, thread_id, "resolved", actor, content=source_path.read_text(),
+        base_mtime=source_path.stat().st_mtime)["thread"]
 
 
 class FakeBubbleServer:
@@ -151,23 +174,29 @@ class ScientistServerBoundaryTest(unittest.TestCase):
 
     def test_open_review_threads_are_exported_as_read_only_feedback_context(self):
         with workspace() as (home, slug):
+            content = "Before Current claim after"
+            service.save_page(home, slug, "overview", content)
             with paths.use_root(home):
-                thread = bubbles.create_comment(
+                start = content.index("Current claim")
+                thread = create_review_thread(
                     slug, "overview", "reviewer", "Clarify this claim.",
-                    {"quote": "Current claim", "start": 12, "prefix": "Before ", "suffix": " after"})
-                bubbles.reply_comment(slug, "overview", thread["id"], "author", "Will revise it.")
+                    {"quote": "Current claim", "start": start,
+                     "prefix": "Before ", "suffix": " after"})
+                reply_review_thread(slug, "overview", thread["id"], "author", "Will revise it.")
                 names = {item["path"] for item in scientist_sync.manifest(home, slug)["files"]}
                 self.assertIn("config/reviews.yaml", names)
                 self.assertNotIn("reports/comments/overview.json", names)
                 payload = scientist_sync.read_files(home, slug, ["config/reviews.yaml"])["files"][0]
                 review = yaml.safe_load(base64.b64decode(payload["content_b64"]))
+                self.assertEqual(review["version"], 2)
                 self.assertEqual(review["threads"][0]["page_slug"], "overview")
-                self.assertEqual(review["threads"][0]["anchor"]["quote"], "Current claim")
-                self.assertEqual(review["threads"][0]["marker"],
-                                 bubbles.comment_marker(thread["id"]))
+                self.assertEqual(review["threads"][0]["anchor_state"], "attached")
+                self.assertEqual(review["threads"][0]["selected_text"], "Current claim")
+                self.assertEqual(review["threads"][0]["offsets"]["end"] -
+                                 review["threads"][0]["offsets"]["start"], len("Current claim"))
                 self.assertEqual([m["body"] for m in review["threads"][0]["messages"]],
                                  ["Clarify this claim.", "Will revise it."])
-                bubbles.set_comment_status(slug, "overview", thread["id"], "resolved", "author")
+                resolve_review_thread(slug, "overview", thread["id"], "author")
                 names = {item["path"] for item in scientist_sync.manifest(home, slug)["files"]}
         self.assertNotIn("config/reviews.yaml", names)
 
@@ -189,16 +218,14 @@ class ScientistServerBoundaryTest(unittest.TestCase):
             service.save_page(home, slug, "overview", original.decode())
             start = original.decode().index("this is a highlight")
             with paths.use_root(home):
-                thread = bubbles.create_comment(
+                thread = create_review_thread(
                     slug, "overview", "reviewer", "Keep this attached.",
                     {"quote": "this is a highlight", "start": start,
                      "prefix": "Before ", "suffix": " after"})
             base = service.get_page(home, slug, "overview").encode()
             marker = bubbles.comment_marker(thread["id"])
-            marked = b"Before " + marker.encode() + b"this is a highlight" + marker.encode() + b" after."
-            service.save_page(home, slug, "overview", marked.decode())
-            base = service.get_page(home, slug, "overview").encode()
-            updated = b"Before " + marker.encode() + b"this is a NEW highlight" + marker.encode() + b" after."
+            self.assertIn(marker.encode() + b"this is a highlight}", base)
+            updated = base.replace(b"this is a highlight", b"this is a NEW highlight")
             result = scientist_sync.apply_writes(home, slug, [{
                 "path": "reports/pages/overview.md",
                 "base_revision": scientist_sync.revision(base),
@@ -206,6 +233,48 @@ class ScientistServerBoundaryTest(unittest.TestCase):
             }])
             self.assertEqual(result["conflicts"], [])
             self.assertIn(marker.encode(), service.get_page(home, slug, "overview").encode())
+            payload = scientist_sync.read_files(home, slug, ["config/reviews.yaml"])["files"][0]
+            review = yaml.safe_load(base64.b64decode(payload["content_b64"]))
+            self.assertEqual(review["threads"][0]["selected_text"], "this is a NEW highlight")
+
+    def test_scientist_wrapper_removal_makes_review_unanchored_without_guessing(self):
+        with workspace() as (home, slug):
+            content = "Before selected passage after."
+            service.save_page(home, slug, "overview", content)
+            with paths.use_root(home):
+                start = content.index("selected passage")
+                thread = create_review_thread(
+                    slug, "overview", "reviewer", "Please tighten this.",
+                    {"quote": "selected passage", "start": start})
+            marked = service.get_page(home, slug, "overview").encode()
+            marker = bubbles.comment_marker(thread["id"])
+            unwrapped = marked.replace(marker.encode(), b"", 1)
+            body_end = unwrapped.index(b" after.")
+            unwrapped = unwrapped[:body_end - 1] + unwrapped[body_end:]
+            result = scientist_sync.apply_writes(home, slug, [{
+                "path": "reports/pages/overview.md",
+                "base_revision": scientist_sync.revision(marked),
+                "content_b64": base64.b64encode(unwrapped).decode(),
+            }])
+            self.assertEqual(result["conflicts"], [])
+            payload = scientist_sync.read_files(home, slug, ["config/reviews.yaml"])["files"][0]
+            review = yaml.safe_load(base64.b64decode(payload["content_b64"]))
+            self.assertEqual(review["threads"][0]["anchor_state"], "unanchored")
+            self.assertNotIn("offsets", review["threads"][0])
+            self.assertNotIn(marker, service.get_page(home, slug, "overview"))
+
+    def test_scientist_cannot_fabricate_or_nest_review_wrappers(self):
+        with workspace() as (home, slug):
+            page = service.get_page(home, slug, "overview").encode()
+            fabricated = page + b"\\comment{made-up}{Do not accept this.}\n"
+            result = scientist_sync.apply_writes(home, slug, [{
+                "path": "reports/pages/overview.md",
+                "base_revision": scientist_sync.revision(page),
+                "content_b64": base64.b64encode(fabricated).decode(),
+            }])
+            self.assertEqual(result["applied"], [])
+            self.assertIn("does not exist", result["conflicts"][0]["reason"])
+            self.assertEqual(service.get_page(home, slug, "overview").encode(), page)
 
     def test_page_creation_is_bubble_scoped(self):
         with workspace() as (home, slug):
@@ -280,7 +349,7 @@ class ScientistProjectSyncTest(unittest.TestCase):
 
     def test_resolved_review_feedback_is_removed_locally_without_uploading(self):
         files = {"reports/pages/overview.md": b"# Overview\n",
-                 "config/reviews.yaml": b"version: 1\nthreads: []\n"}
+                 "config/reviews.yaml": b"version: 2\nthreads: []\n"}
         fake = FakeBubbleServer(files)
         with tempfile.TemporaryDirectory() as directory, patch.object(scientist_cli, "request", side_effect=fake.request):
             sync = scientist_cli.ProjectSync(ACCOUNT, Path(directory), "work")
@@ -487,7 +556,7 @@ class ScientistProfileAndWorkersTest(unittest.TestCase):
         self.assertIn("the sync worker registers it automatically", scientist_cli.SKILL_RULES)
         self.assertIn("the sync worker removes it", scientist_cli.SKILL_RULES)
         self.assertIn("config/math.yaml", scientist_cli.SKILL_RULES)
-        self.assertIn("lockedin-scientist-skill: 12", scientist_cli.SKILL_RULES)
+        self.assertIn("lockedin-scientist-skill: 13", scientist_cli.SKILL_RULES)
         self.assertIn("Outside `.lockedin/`, work on this repository normally", scientist_cli.SKILL_RULES)
         self.assertIn("manuscript changes stay local until that explicit sync", scientist_cli.SKILL_RULES)
         self.assertIn("create or edit `.tex`, `.bib`, `.sty`, `.cls`", scientist_cli.SKILL_RULES)
@@ -497,6 +566,9 @@ class ScientistProfileAndWorkersTest(unittest.TestCase):
         self.assertIn("Treat feedback critically", scientist_cli.SKILL_RULES)
         self.assertIn("Make the smallest change", scientist_cli.SKILL_RULES)
         self.assertIn("never reply to, edit, delete, or resolve", scientist_cli.SKILL_RULES)
+        self.assertIn("never create, copy, fabricate, rename, nest, or move one", scientist_cli.SKILL_RULES)
+        self.assertIn("Never guess where an unanchored review belongs", scientist_cli.SKILL_RULES)
+        self.assertIn("make the smallest useful edit inside its body", scientist_cli.SKILL_RULES)
         self.assertIn("Direct LockedIn paths — do not search for them", scientist_cli.SKILL_RULES)
         self.assertIn("For any report-related search, search only inside `.lockedin/`", scientist_cli.SKILL_RULES)
         self.assertIn("lockedin-scientist doctor", scientist_cli.SKILL_RULES)

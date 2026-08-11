@@ -13,11 +13,16 @@ All paths resolve against the active per-user context root.
 """
 from __future__ import annotations
 
+import hashlib
 import json as _json
+import logging
 import os
 import re
 import secrets
 import shutil
+import threading
+from contextlib import ExitStack, contextmanager
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
@@ -26,6 +31,15 @@ import yaml
 from slugify import slugify
 
 from . import assets, paths
+
+
+logger = logging.getLogger(__name__)
+_CANONICAL_REVIEW_SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+
+try:  # POSIX only; the in-process lock below remains the portable fallback.
+    import fcntl
+except ImportError:  # pragma: no cover - exercised on non-POSIX hosts
+    fcntl = None
 
 
 def _now_iso() -> str:
@@ -292,15 +306,27 @@ def delete_bubble(slug: str) -> None:
     """Remove a bubble from the registry, delete its reports, and strip its tag from all PDFs."""
     import shutil
 
-    # Remove from registry
+    # Snapshot page locks before removing the registry entry. Removing the entry first prevents
+    # new review mutations from validating; acquiring every existing page lock then drains any
+    # mutation that had already started before the reports directory is removed.
     reg = load_registry()
+    if not _CANONICAL_REVIEW_SLUG.fullmatch(str(slug or "")) or slug not in reg:
+        return
+    page_slugs = []
+    if paths.bubble_manifest_path(slug).exists():
+        page_slugs = sorted({str(item.get("page_slug") or "")
+                             for item in manifest(slug).get("pages", [])
+                             if _CANONICAL_REVIEW_SLUG.fullmatch(str(item.get("page_slug") or ""))})
     reg.pop(slug, None)
     save_registry(reg)
 
-    # Delete the reports directory (pages + assets)
-    bdir = paths.bubble_dir(slug)
-    if bdir.exists():
-        shutil.rmtree(bdir)
+    with ExitStack() as locks:
+        for page_slug in page_slugs:
+            locks.enter_context(_page_lock(slug, page_slug))
+        # Delete the reports directory (pages + assets) only after in-flight review writes drain.
+        bdir = paths.bubble_dir(slug)
+        if bdir.exists():
+            shutil.rmtree(bdir)
 
     # Strip the slug from every PDF's idea_bubbles + tags
     for m in assets.list_assets():
@@ -625,7 +651,6 @@ def list_pages(slug: str) -> list[dict]:
 
 
 def get_page(slug: str, page_slug: str) -> str:
-    ensure_comment_markers(slug, page_slug)
     p = paths.bubble_page_path(slug, page_slug)
     return p.read_text() if p.exists() else ""
 
@@ -633,18 +658,50 @@ def get_page(slug: str, page_slug: str) -> str:
 # --------------------------------------------------------------------------- #
 # Private review comments — deliberately separate from Markdown/source previews
 # --------------------------------------------------------------------------- #
+class ReviewSidecarError(ValueError):
+    """A review sidecar exists but cannot safely be read as review state."""
+
+    def __init__(self, path: Path, reason: str):
+        self.path = path
+        self.reason = reason
+        super().__init__(f"Review sidecar {path} is unreadable: {reason}")
+
+    def as_detail(self) -> dict:
+        return {"code": "invalid_review_sidecar", "message": str(self),
+                "path": str(self.path)}
+
+
+class ReviewTargetError(ValueError):
+    """A review request did not name a real approved manifest page."""
+
+
+def validate_review_target(slug: str, page_slug: str) -> None:
+    """Reject path-like, unapproved, and orphan review targets before path construction."""
+    if (not isinstance(slug, str) or not _CANONICAL_REVIEW_SLUG.fullmatch(slug)
+            or not isinstance(page_slug, str) or not _CANONICAL_REVIEW_SLUG.fullmatch(page_slug)):
+        raise ReviewTargetError("Review target must use canonical bubble and page slugs.")
+    entry = load_registry().get(slug)
+    if not entry or not entry.get("approved") or not paths.bubble_dir(slug).is_dir():
+        raise ReviewTargetError("Review target bubble does not exist or is not approved.")
+    pages = manifest(slug).get("pages", [])
+    if not any(item.get("page_slug") == page_slug for item in pages):
+        raise ReviewTargetError("Review target page is not in the bubble manifest.")
+    if not paths.bubble_page_path(slug, page_slug).is_file():
+        raise ReviewTargetError("Review target page does not exist.")
+
+
 def _comments(slug: str, page_slug: str) -> dict:
     path = paths.bubble_page_comments_path(slug, page_slug)
     if not path.exists():
-        return {"version": 1, "threads": []}
+        return {"version": 2, "threads": []}
     try:
         data = _json.loads(path.read_text())
-        if isinstance(data, dict) and isinstance(data.get("threads"), list):
-            data.setdefault("version", 1)
-            return data
-    except Exception:  # noqa: BLE001 - a damaged sidecar must not break the report
-        pass
-    return {"version": 1, "threads": []}
+    except (OSError, UnicodeError, _json.JSONDecodeError) as exc:
+        raise ReviewSidecarError(path, str(exc)) from exc
+    if not isinstance(data, dict) or not isinstance(data.get("threads"), list):
+        raise ReviewSidecarError(path, "expected a JSON object with a threads list")
+    data.setdefault("version", 1)
+    return data
 
 
 def _save_comments(slug: str, page_slug: str, data: dict) -> float:
@@ -654,7 +711,124 @@ def _save_comments(slug: str, page_slug: str, data: dict) -> float:
     return path.stat().st_mtime
 
 
-_COMMENT_OPEN_RE = re.compile(r"\\comment\{([A-Za-z0-9_-]+)\}\{")
+_COMMENT_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+_COMMENT_COMMAND = "\\comment"
+
+
+@dataclass(frozen=True)
+class CommentSpan:
+    """Exact source offsets for one ``\\comment{id}{body}`` wrapper."""
+
+    thread_id: str
+    open_start: int
+    body_start: int
+    body_end: int
+    close_end: int
+
+
+class ReviewMarkupError(ValueError):
+    """A deterministic, source-addressable review-wrapper validation failure."""
+
+    def __init__(self, code: str, message: str, content: str, offset: int,
+                 *, thread_id: str = ""):
+        self.code = code
+        self.offset = max(0, min(int(offset), len(content)))
+        self.line = content.count("\n", 0, self.offset) + 1
+        line_start = content.rfind("\n", 0, self.offset) + 1
+        self.column = self.offset - line_start + 1
+        self.thread_id = thread_id
+        self.message = message
+        super().__init__(f"{message} (line {self.line}, column {self.column})")
+
+    def as_detail(self) -> dict:
+        detail = {"code": self.code, "message": self.message, "offset": self.offset,
+                  "line": self.line, "column": self.column}
+        if self.thread_id:
+            detail["comment_id"] = self.thread_id
+        return detail
+
+
+def _is_escaped(content: str, offset: int) -> bool:
+    backslashes = 0
+    i = offset - 1
+    while i >= 0 and content[i] == "\\":
+        backslashes += 1
+        i -= 1
+    return bool(backslashes % 2)
+
+
+def parse_comment_wrappers(content: str) -> list[CommentSpan]:
+    """Parse review wrappers in one linear pass.
+
+    Ordinary balanced braces inside a body (including LaTeX arguments) are supported. A
+    ``\\comment`` inside another comment is rejected because comment ranges may never overlap
+    or contain one another. Adjacent wrappers remain valid.
+    """
+    spans: list[CommentSpan] = []
+    seen: set[str] = set()
+    pos = 0
+    size = len(content)
+    while pos < size:
+        start = content.find(_COMMENT_COMMAND, pos)
+        if start < 0:
+            break
+        if _is_escaped(content, start):
+            pos = start + len(_COMMENT_COMMAND)
+            continue
+        arg = start + len(_COMMENT_COMMAND)
+        # Do not treat commands such as \commentary as review markup.
+        if arg >= size or content[arg] != "{":
+            pos = arg
+            continue
+        id_start = arg + 1
+        i = id_start
+        while i < size and content[i] != "}":
+            if content[i] == "{" and not _is_escaped(content, i):
+                raise ReviewMarkupError("invalid_comment_id", "Comment IDs cannot contain braces.",
+                                        content, i)
+            i += 1
+        if i >= size:
+            raise ReviewMarkupError("unclosed_comment_id", "The comment ID is missing its closing brace.",
+                                    content, start)
+        thread_id = content[id_start:i]
+        if not _COMMENT_ID_RE.fullmatch(thread_id):
+            raise ReviewMarkupError(
+                "invalid_comment_id",
+                "Comment IDs may contain only letters, numbers, hyphens, and underscores.",
+                content, id_start, thread_id=thread_id)
+        if thread_id in seen:
+            raise ReviewMarkupError("duplicate_comment", "A comment ID may appear only once on a page.",
+                                    content, start, thread_id=thread_id)
+        body_open = i + 1
+        if body_open >= size or content[body_open] != "{":
+            raise ReviewMarkupError("missing_comment_body", "The comment wrapper is missing its body.",
+                                    content, body_open, thread_id=thread_id)
+        body_start = body_open + 1
+        depth = 1
+        i = body_start
+        while i < size:
+            if (content.startswith(_COMMENT_COMMAND + "{", i)
+                    and not _is_escaped(content, i)):
+                raise ReviewMarkupError(
+                    "intersecting_comments",
+                    "Comments cannot overlap, contain, or intersect another comment.",
+                    content, i, thread_id=thread_id)
+            char = content[i]
+            if char == "{" and not _is_escaped(content, i):
+                depth += 1
+            elif char == "}" and not _is_escaped(content, i):
+                depth -= 1
+                if depth == 0:
+                    break
+            i += 1
+        if depth:
+            raise ReviewMarkupError("unclosed_comment", "The comment wrapper is missing its closing brace.",
+                                    content, start, thread_id=thread_id)
+        seen.add(thread_id)
+        spans.append(CommentSpan(thread_id=thread_id, open_start=start, body_start=body_start,
+                                 body_end=i, close_end=i + 1))
+        pos = i + 1
+    return spans
 
 
 def comment_marker(thread_id: str) -> str:
@@ -662,105 +836,260 @@ def comment_marker(thread_id: str) -> str:
 
 
 def strip_comment_markers(content: str) -> str:
-    """Remove inline review wrappers while preserving reviewed Markdown text."""
-    out, pos = [], 0
-    while True:
-        match = _COMMENT_OPEN_RE.search(content, pos)
-        if not match:
-            out.append(content[pos:]); break
-        out.append(content[pos:match.start()]); depth = 1; i = match.end()
-        while i < len(content) and depth:
-            if content[i] == "{" and (i == 0 or content[i - 1] != "\\"): depth += 1
-            elif content[i] == "}" and (i == 0 or content[i - 1] != "\\"): depth -= 1
-            i += 1
-        if depth:
-            out.append(content[match.start():]); break
-        out.append(content[match.end():i - 1]); pos = i
-    return "".join(out)
-
-
-def _has_comment_marker(content: str, thread_id: str) -> bool:
-    return bool(re.search(r"\\comment\{" + re.escape(thread_id) + r"\}\{", content))
+    """Remove validated review wrappers while preserving their Markdown bodies."""
+    spans = parse_comment_wrappers(content)
+    for span in reversed(spans):
+        content = (content[:span.open_start] + content[span.body_start:span.body_end]
+                   + content[span.close_end:])
+    return content
 
 
 def remove_comment_marker(content: str, thread_id: str) -> str:
-    """Remove one comment wrapper, including nested Markdown/LaTeX braces."""
-    opening = comment_marker(thread_id)
-    start = content.find(opening)
-    if start < 0: return content
-    depth = 1; i = start + len(opening)
-    while i < len(content) and depth:
-        if content[i] == "{" and (i == 0 or content[i - 1] != "\\"): depth += 1
-        elif content[i] == "}" and (i == 0 or content[i - 1] != "\\"): depth -= 1
-        i += 1
-    return content[:start] + content[start + len(opening):i - 1] + content[i:] if depth == 0 else content
+    """Remove one validated wrapper while preserving its body."""
+    for span in parse_comment_wrappers(content):
+        if span.thread_id == thread_id:
+            return (content[:span.open_start] + content[span.body_start:span.body_end]
+                    + content[span.close_end:])
+    return content
 
 
-def ensure_comment_markers(slug: str, page_slug: str) -> bool:
-    """Migrate legacy sidecar-only anchors into inline markers once, preserving their text."""
+_PAGE_LOCKS: dict[str, threading.RLock] = {}
+_PAGE_LOCKS_GUARD = threading.Lock()
+
+
+@contextmanager
+def _page_lock(slug: str, page_slug: str):
+    """Serialize one page across threads and, where available, server processes.
+
+    The lock file lives in the workspace config area, keyed by the page's absolute path, so
+    deleting a report cannot let a waiting process recreate its directory merely to acquire a
+    lock. Independent pages never block one another. ``flock`` is advisory and unavailable on
+    some platforms; the per-process re-entrant lock remains the portable fallback.
+    """
+    key = str(paths.bubble_page_path(slug, page_slug).resolve())
+    with _PAGE_LOCKS_GUARD:
+        thread_lock = _PAGE_LOCKS.setdefault(key, threading.RLock())
+    with thread_lock:
+        fd = None
+        try:
+            if fcntl is not None:
+                lock_name = hashlib.sha256(key.encode("utf-8")).hexdigest() + ".lock"
+                lock_path = paths.CONFIG_DIR / ".review-locks" / lock_name
+                lock_path.parent.mkdir(parents=True, exist_ok=True)
+                fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_EX)
+                except OSError as exc:  # e.g. a filesystem without advisory-lock support
+                    logger.warning("Review interprocess lock unavailable for %s/%s: %s",
+                                   slug, page_slug, exc)
+                    os.close(fd)
+                    fd = None
+            yield
+        finally:
+            if fd is not None:
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_UN)
+                finally:
+                    os.close(fd)
+
+
+@contextmanager
+def _review_page_lock(slug: str, page_slug: str):
+    """Validate a review target before any lock path can be materialized."""
+    validate_review_target(slug, page_slug)
+    with _page_lock(slug, page_slug):
+        # The page or bubble may have been deleted while this caller waited for the lock.
+        validate_review_target(slug, page_slug)
+        yield
+
+
+def _copy_comments(data: dict) -> dict:
+    return _json.loads(_json.dumps(data))
+
+
+def _validate_known_wrappers(content: str, data: dict, *,
+                             allow_unanchored: bool = False) -> list[CommentSpan]:
+    spans = parse_comment_wrappers(content)
+    known = {str(t.get("id") or ""): t for t in data.get("threads", [])}
+    for span in spans:
+        thread = known.get(span.thread_id)
+        if thread is None:
+            raise ReviewMarkupError("unknown_comment", "This comment ID does not exist.",
+                                    content, span.open_start, thread_id=span.thread_id)
+        if thread.get("status", "open") != "open":
+            raise ReviewMarkupError("resolved_comment", "Resolved comments cannot remain in Markdown.",
+                                    content, span.open_start, thread_id=span.thread_id)
+        if not allow_unanchored and thread.get("anchor_state") == "unanchored":
+            raise ReviewMarkupError(
+                "reattached_comment",
+                "Unanchored comments cannot be reattached by writing a comment wrapper.",
+                content, span.open_start, thread_id=span.thread_id)
+    return spans
+
+
+def _reconcile_comments(content: str, data: dict, *,
+                        allow_reattach: bool = False) -> tuple[str, dict, bool]:
+    """Validate wrappers and derive every thread's anchor state from this exact source."""
+    before = _json.dumps(data, ensure_ascii=False, sort_keys=True)
+    spans = _validate_known_wrappers(content, data, allow_unanchored=allow_reattach)
+    empty = [span for span in spans if span.body_start == span.body_end]
+    if empty:
+        for span in reversed(empty):
+            content = content[:span.open_start] + content[span.close_end:]
+        spans = _validate_known_wrappers(content, data, allow_unanchored=allow_reattach)
+    by_id = {span.thread_id: span for span in spans}
+    data["version"] = 2
+    for thread in data.get("threads", []):
+        tid = str(thread.get("id") or "")
+        anchor = thread.setdefault("anchor", {})
+        span = by_id.get(tid) if thread.get("status", "open") == "open" else None
+        if span is None:
+            thread["anchor_state"] = "unanchored"
+            continue
+        body = content[span.body_start:span.body_end]
+        thread["anchor_state"] = "attached"
+        anchor["quote"] = body
+        anchor["start"] = span.body_start
+        anchor["end"] = span.body_end
+        anchor["prefix"] = content[max(0, span.open_start - 96):span.open_start]
+        anchor["suffix"] = content[span.close_end:span.close_end + 96]
+    changed = before != _json.dumps(data, ensure_ascii=False, sort_keys=True)
+    return content, data, changed
+
+
+def _project_comments(slug: str, page_slug: str, data: dict) -> dict:
+    """Return current anchor states without changing either page or sidecar."""
+    projected = _copy_comments(data)
     path = paths.bubble_page_path(slug, page_slug)
     if not path.exists():
-        return False
-    content = path.read_text()
-    data = _comments(slug, page_slug)
-    changed = False
-    # Process from right to left so offsets from legacy anchors remain valid.
-    additions = []
-    for thread in data.get("threads", []):
-        tid, anchor = str(thread.get("id") or ""), thread.get("anchor") or {}
-        if not tid or thread.get("status", "open") != "open" or _has_comment_marker(content, tid):
-            continue
-        quote = str(anchor.get("quote") or "")
-        try:
-            start = int(anchor.get("start") or 0)
-        except (TypeError, ValueError):
-            start = 0
-        if not quote or start < 0:
-            continue
-        pos = content.find(quote, min(start, len(content)))
-        if pos < 0:
-            pos = content.find(quote)
-        if pos >= 0:
-            additions.append((pos, pos + len(quote), tid))
-    for start, end, tid in sorted(additions, reverse=True):
-        content = content[:start] + comment_marker(tid) + content[start:end] + "}" + content[end:]
-        changed = True
-    if changed:
-        _atomic_write(path, content)
-        touch_bubble(slug)
-    return changed
+        for thread in projected.get("threads", []):
+            thread["anchor_state"] = "unanchored"
+        return projected
+    try:
+        _, projected, _ = _reconcile_comments(path.read_text(), projected)
+    except ReviewMarkupError as exc:
+        projected["markup_error"] = exc.as_detail()
+    return projected
 
 
 def list_comments(slug: str, page_slug: str) -> dict:
     """Return private threads for one page; callers must already enforce membership."""
-    ensure_comment_markers(slug, page_slug)
-    return _comments(slug, page_slug)
+    with _review_page_lock(slug, page_slug):
+        return _project_comments(slug, page_slug, _comments(slug, page_slug))
 
 
 def comments_mtime(slug: str, page_slug: str) -> float:
+    validate_review_target(slug, page_slug)
     path = paths.bubble_page_comments_path(slug, page_slug)
     return path.stat().st_mtime if path.exists() else 0
 
 
-def create_comment(slug: str, page_slug: str, author: str, body: str, anchor: dict) -> dict:
+def _check_page_conflict(path: Path, base_mtime: "float | None") -> None:
+    if base_mtime is not None:
+        if not path.exists():
+            raise PageConflict(0.0)
+        disk_mtime = path.stat().st_mtime
+        if abs(disk_mtime - base_mtime) > 1e-6:
+            raise PageConflict(disk_mtime)
+
+
+def _write_page_and_comments(slug: str, page_slug: str, content: str, data: dict) -> None:
+    """Replace page and sidecar together, rolling the page back if the second replace fails."""
+    page_path = paths.bubble_page_path(slug, page_slug)
+    comments_path = paths.bubble_page_comments_path(slug, page_slug)
+    page_path.parent.mkdir(parents=True, exist_ok=True)
+    comments_path.parent.mkdir(parents=True, exist_ok=True)
+    token = secrets.token_hex(6)
+    page_tmp = page_path.with_name(page_path.name + f".txn-{token}")
+    comments_tmp = comments_path.with_name(comments_path.name + f".txn-{token}")
+    old_page = page_path.read_bytes() if page_path.exists() else None
+    old_comments = comments_path.read_bytes() if comments_path.exists() else None
+    page_tmp.write_text(content)
+    comments_tmp.write_text(_json.dumps(data, ensure_ascii=False, indent=2) + "\n")
+    page_replaced = comments_replaced = False
+    try:
+        os.replace(page_tmp, page_path); page_replaced = True
+        os.replace(comments_tmp, comments_path); comments_replaced = True
+    except Exception:
+        try:
+            if page_replaced:
+                if old_page is None:
+                    page_path.unlink(missing_ok=True)
+                else:
+                    rollback = page_path.with_name(page_path.name + f".rollback-{token}")
+                    rollback.write_bytes(old_page); os.replace(rollback, page_path)
+            if comments_replaced:
+                if old_comments is None:
+                    comments_path.unlink(missing_ok=True)
+                else:
+                    rollback = comments_path.with_name(comments_path.name + f".rollback-{token}")
+                    rollback.write_bytes(old_comments); os.replace(rollback, comments_path)
+        except Exception:  # noqa: BLE001 - preserve the original transaction error
+            logger.exception("Could not roll back review transaction for %s/%s", slug, page_slug)
+        raise
+    finally:
+        page_tmp.unlink(missing_ok=True)
+        comments_tmp.unlink(missing_ok=True)
+    touch_bubble(slug)
+
+
+def _review_result(slug: str, page_slug: str, content: str, data: dict,
+                   *, thread: "dict | None" = None) -> dict:
+    page_path = paths.bubble_page_path(slug, page_slug)
+    comments_path = paths.bubble_page_comments_path(slug, page_slug)
+    result = {"content": content,
+              "page_mtime": page_path.stat().st_mtime if page_path.exists() else 0,
+              "comments_mtime": comments_path.stat().st_mtime if comments_path.exists() else 0,
+              "threads": _copy_comments(data).get("threads", [])}
+    if thread is not None:
+        result["thread"] = _copy_comments(thread)
+    return result
+
+
+def create_comment_state(slug: str, page_slug: str, author: str, body: str, *,
+                         content: str, base_mtime: "float | None",
+                         selection_start: int, selection_end: int) -> dict:
+    """Atomically create a thread and wrap the exact selected source range."""
     body = str(body or "").strip()
-    quote = str((anchor or {}).get("quote") or "")
     if not body:
         raise ValueError("Comment text required.")
-    if not quote:
-        raise ValueError("Select text to comment on.")
-    now = _now_iso()
-    # Keep the source wrapper readable in the editor; uniqueness is still ample within a bubble.
-    item = {"id": secrets.token_urlsafe(6), "page_slug": page_slug, "status": "open",
-            "created_at": now, "updated_at": now, "resolved_at": "", "resolved_by": "",
-            "anchor": {"quote": quote, "start": max(0, int((anchor or {}).get("start") or 0)),
-                       "prefix": str((anchor or {}).get("prefix") or "")[-96:],
-                       "suffix": str((anchor or {}).get("suffix") or "")[:96]},
-            "messages": [{"id": secrets.token_urlsafe(12), "author": author, "body": body,
-                          "created_at": now, "edited_at": ""}]}
-    data = _comments(slug, page_slug); data["threads"].append(item)
-    _save_comments(slug, page_slug, data)
-    return item
+    with _review_page_lock(slug, page_slug):
+        path = paths.bubble_page_path(slug, page_slug)
+        _check_page_conflict(path, base_mtime)
+        data = _copy_comments(_comments(slug, page_slug))
+        spans = _validate_known_wrappers(content, data)
+        start, end = int(selection_start), int(selection_end)
+        if start < 0 or end > len(content) or start >= end:
+            raise ReviewMarkupError("invalid_selection", "Select non-empty report text to comment on.",
+                                    content, max(0, start))
+        for span in spans:
+            if start < span.close_end and end > span.open_start:
+                raise ReviewMarkupError(
+                    "intersecting_comments",
+                    "Comments cannot overlap, contain, or intersect another comment.",
+                    content, start, thread_id=span.thread_id)
+        quote = content[start:end]
+        known_ids = {str(t.get("id") or "") for t in data.get("threads", [])}
+        while True:
+            thread_id = secrets.token_urlsafe(6)
+            if thread_id not in known_ids:
+                break
+        now = _now_iso()
+        item = {"id": thread_id, "page_slug": page_slug, "status": "open",
+                "anchor_state": "attached", "created_at": now, "updated_at": now,
+                "resolved_at": "", "resolved_by": "",
+                "anchor": {"quote": quote, "start": start,
+                           "prefix": content[max(0, start - 96):start],
+                           "suffix": content[end:end + 96]},
+                "messages": [{"id": secrets.token_urlsafe(12), "author": author, "body": body,
+                              "created_at": now, "edited_at": ""}]}
+        marked = content[:start] + comment_marker(thread_id) + quote + "}" + content[end:]
+        data.setdefault("threads", []).append(item)
+        normalized = normalize_display_math(normalize_wikilinks(slug, marked))
+        normalized, data, _ = _reconcile_comments(normalized, data)
+        _write_page_and_comments(slug, page_slug, normalized, data)
+        item = _thread(data, thread_id)
+        return _review_result(slug, page_slug, normalized, data, thread=item)
 
 
 def _thread(data: dict, thread_id: str) -> dict:
@@ -770,55 +1099,159 @@ def _thread(data: dict, thread_id: str) -> dict:
     raise KeyError(thread_id)
 
 
-def reply_comment(slug: str, page_slug: str, thread_id: str, author: str, body: str) -> dict:
+def reply_comment_state(slug: str, page_slug: str, thread_id: str, author: str, body: str) -> dict:
     body = str(body or "").strip()
     if not body: raise ValueError("Reply text required.")
-    data = _comments(slug, page_slug); item = _thread(data, thread_id); now = _now_iso()
-    msg = {"id": secrets.token_urlsafe(12), "author": author, "body": body,
-           "created_at": now, "edited_at": ""}
-    item.setdefault("messages", []).append(msg); item["updated_at"] = now
-    _save_comments(slug, page_slug, data); return msg
+    with _review_page_lock(slug, page_slug):
+        data = _comments(slug, page_slug); item = _thread(data, thread_id); now = _now_iso()
+        msg = {"id": secrets.token_urlsafe(12), "author": author, "body": body,
+               "created_at": now, "edited_at": ""}
+        item.setdefault("messages", []).append(msg); item["updated_at"] = now
+        _save_comments(slug, page_slug, data)
+        page = paths.bubble_page_path(slug, page_slug)
+        result = _review_result(slug, page_slug, page.read_text() if page.exists() else "", data,
+                                thread=item)
+        result["message"] = _copy_comments(msg)
+        return result
 
 
-def edit_comment_message(slug: str, page_slug: str, thread_id: str, message_id: str,
-                         author: str, body: str) -> dict:
+def edit_comment_message_state(slug: str, page_slug: str, thread_id: str, message_id: str,
+                               author: str, body: str) -> dict:
     body = str(body or "").strip()
     if not body: raise ValueError("Comment text required.")
-    data = _comments(slug, page_slug); item = _thread(data, thread_id)
-    for msg in item.get("messages", []):
-        if msg.get("id") == message_id:
-            if msg.get("author") != author: raise PermissionError("You can only edit your own comments.")
-            now = _now_iso(); msg["body"] = body; msg["edited_at"] = now; item["updated_at"] = now
-            _save_comments(slug, page_slug, data); return msg
-    raise KeyError(message_id)
+    with _review_page_lock(slug, page_slug):
+        data = _comments(slug, page_slug); item = _thread(data, thread_id)
+        for msg in item.get("messages", []):
+            if msg.get("id") == message_id:
+                if msg.get("author") != author: raise PermissionError("You can only edit your own comments.")
+                now = _now_iso(); msg["body"] = body; msg["edited_at"] = now; item["updated_at"] = now
+                _save_comments(slug, page_slug, data)
+                page = paths.bubble_page_path(slug, page_slug)
+                result = _review_result(
+                    slug, page_slug, page.read_text() if page.exists() else "", data, thread=item)
+                result["message"] = _copy_comments(msg)
+                return result
+        raise KeyError(message_id)
 
 
-def set_comment_status(slug: str, page_slug: str, thread_id: str, status: str, actor: str) -> dict:
+def set_comment_status_state(slug: str, page_slug: str, thread_id: str, status: str, actor: str,
+                             *, content: "str | None" = None,
+                             base_mtime: "float | None" = None) -> dict:
     if status not in {"open", "resolved"}: raise ValueError("Invalid comment status.")
-    data = _comments(slug, page_slug); item = _thread(data, thread_id); now = _now_iso()
-    item["status"] = status; item["updated_at"] = now
-    item["resolved_at"] = now if status == "resolved" else ""
-    item["resolved_by"] = actor if status == "resolved" else ""
-    _save_comments(slug, page_slug, data)
-    path = paths.bubble_page_path(slug, page_slug)
-    if status == "resolved" and path.exists():
-        content = remove_comment_marker(path.read_text(), thread_id)
-        _atomic_write(path, content)
-        touch_bubble(slug)
-    elif status == "open":
-        ensure_comment_markers(slug, page_slug)
-    return item
+    with _review_page_lock(slug, page_slug):
+        path = paths.bubble_page_path(slug, page_slug)
+        _check_page_conflict(path, base_mtime)
+        source = content if content is not None else (path.read_text() if path.exists() else "")
+        data = _copy_comments(_comments(slug, page_slug)); item = _thread(data, thread_id)
+        _validate_known_wrappers(source, data)
+        now = _now_iso()
+        if status == "resolved":
+            source = remove_comment_marker(source, thread_id)
+        item["status"] = status; item["updated_at"] = now
+        item["resolved_at"] = now if status == "resolved" else ""
+        item["resolved_by"] = actor if status == "resolved" else ""
+        # Reopening does not guess or recreate a source anchor.
+        item["anchor_state"] = "unanchored"
+        normalized = normalize_display_math(normalize_wikilinks(slug, source))
+        normalized, data, _ = _reconcile_comments(normalized, data)
+        _write_page_and_comments(slug, page_slug, normalized, data)
+        item = _thread(data, thread_id)
+        return _review_result(slug, page_slug, normalized, data, thread=item)
 
 
-def delete_comment(slug: str, page_slug: str, thread_id: str) -> bool:
-    data = _comments(slug, page_slug); before = len(data["threads"])
-    data["threads"] = [t for t in data["threads"] if t.get("id") != thread_id]
-    if len(data["threads"]) == before: return False
-    path = paths.bubble_page_path(slug, page_slug)
-    if path.exists():
-        content = remove_comment_marker(path.read_text(), thread_id)
-        _atomic_write(path, content)
-    _save_comments(slug, page_slug, data); return True
+def delete_comment_state(slug: str, page_slug: str, thread_id: str, *,
+                         content: "str | None" = None,
+                         base_mtime: "float | None" = None) -> "dict | None":
+    with _review_page_lock(slug, page_slug):
+        path = paths.bubble_page_path(slug, page_slug)
+        _check_page_conflict(path, base_mtime)
+        source = content if content is not None else (path.read_text() if path.exists() else "")
+        data = _copy_comments(_comments(slug, page_slug))
+        before = len(data.get("threads", []))
+        if not any(t.get("id") == thread_id for t in data.get("threads", [])):
+            return None
+        _validate_known_wrappers(source, data)
+        source = remove_comment_marker(source, thread_id)
+        data["threads"] = [t for t in data["threads"] if t.get("id") != thread_id]
+        assert len(data["threads"]) < before
+        normalized = normalize_display_math(normalize_wikilinks(slug, source))
+        normalized, data, _ = _reconcile_comments(normalized, data)
+        _write_page_and_comments(slug, page_slug, normalized, data)
+        return _review_result(slug, page_slug, normalized, data)
+
+
+def migrate_review_comments() -> dict:
+    """Migrate every page in the active root to explicit, non-recreated anchor states.
+
+    Unknown and resolved wrappers are unwrapped while preserving their bodies. Missing wrappers
+    become unanchored. Malformed pages are left byte-for-byte intact and reported through logs so
+    an owner can repair the source deliberately.
+    """
+    stats = {"pages": 0, "sidecars": 0, "errors": 0, "unknown_wrappers": 0}
+    reports_dir = paths.REPORTS_DIR
+    if not reports_dir.exists():
+        return stats
+    for bubble_dir in reports_dir.iterdir():
+        if not bubble_dir.is_dir():
+            continue
+        slug = bubble_dir.name
+        pages_dir = bubble_dir / "pages"
+        comments_dir = bubble_dir / "comments"
+        page_slugs = set()
+        if pages_dir.exists():
+            page_slugs.update(path.stem for path in pages_dir.glob("*.md"))
+        if comments_dir.exists():
+            page_slugs.update(path.stem for path in comments_dir.glob("*.json"))
+        for page_slug in sorted(page_slugs):
+            page_path = paths.bubble_page_path(slug, page_slug)
+            comments_path = paths.bubble_page_comments_path(slug, page_slug)
+            if not page_path.exists():
+                continue
+            with _page_lock(slug, page_slug):
+                try:
+                    source = page_path.read_text()
+                    data = _copy_comments(_comments(slug, page_slug))
+                    before_source = source
+                    before_data = _json.dumps(data, ensure_ascii=False, sort_keys=True)
+                    spans = parse_comment_wrappers(source)
+                    legacy_sidecar = data.get("version") != 2
+                    known = {str(t.get("id") or ""): t for t in data.get("threads", [])}
+                    removable = []
+                    for span in spans:
+                        thread = known.get(span.thread_id)
+                        if thread is None:
+                            stats["unknown_wrappers"] += 1
+                            removable.append(span)
+                            logger.warning("Removing unknown review wrapper %s from %s/%s",
+                                           span.thread_id, slug, page_slug)
+                        elif thread.get("status", "open") != "open":
+                            removable.append(span)
+                        elif not legacy_sidecar and thread.get("anchor_state") == "unanchored":
+                            # Version-2 unanchored state is deliberate. A raw out-of-band wrapper
+                            # must not turn startup into an implicit reattachment mechanism.
+                            removable.append(span)
+                    for span in reversed(removable):
+                        source = (source[:span.open_start] + source[span.body_start:span.body_end]
+                                  + source[span.close_end:])
+                    source, data, _ = _reconcile_comments(
+                        source, data, allow_reattach=legacy_sidecar)
+                except (OSError, UnicodeError, ReviewMarkupError, ReviewSidecarError) as exc:
+                    stats["errors"] += 1
+                    logger.error("Review migration skipped %s/%s; preserving page and sidecar bytes: %s",
+                                 slug, page_slug, exc)
+                    continue
+                page_changed = source != before_source
+                data_changed = before_data != _json.dumps(data, ensure_ascii=False, sort_keys=True)
+                if page_changed and (comments_path.exists() or data.get("threads")):
+                    _write_page_and_comments(slug, page_slug, source, data)
+                else:
+                    if page_changed:
+                        _atomic_write(page_path, source); touch_bubble(slug)
+                    if data_changed:
+                        _save_comments(slug, page_slug, data)
+                stats["pages"] += int(page_changed)
+                stats["sidecars"] += int(data_changed)
+    return stats
 
 
 _WIKILINK_RE = re.compile(r"\[\[([^\]]+)\]\]")
@@ -922,15 +1355,24 @@ def save_page(slug: str, page_slug: str, content: str,
     :class:`PageConflict` instead of overwriting. ``None`` (the default) skips the check
     and always writes — preserving every existing caller.
     """
-    path = paths.bubble_page_path(slug, page_slug)
-    if base_mtime is not None and path.exists():
-        disk_mtime = path.stat().st_mtime
-        if abs(disk_mtime - base_mtime) > 1e-6:
-            raise PageConflict(disk_mtime)
-    normalized = normalize_display_math(normalize_wikilinks(slug, content))
-    _atomic_write(path, normalized)
-    touch_bubble(slug)
-    return path.stat().st_mtime
+    return save_page_state(slug, page_slug, content, base_mtime)["page_mtime"]
+
+
+def save_page_state(slug: str, page_slug: str, content: str,
+                    base_mtime: "float | None" = None) -> dict:
+    """Validate/reconcile review wrappers and return the authoritative page state."""
+    with _review_page_lock(slug, page_slug):
+        path = paths.bubble_page_path(slug, page_slug)
+        _check_page_conflict(path, base_mtime)
+        data = _copy_comments(_comments(slug, page_slug))
+        normalized = normalize_display_math(normalize_wikilinks(slug, content))
+        normalized, data, comments_changed = _reconcile_comments(normalized, data)
+        if comments_changed:
+            _write_page_and_comments(slug, page_slug, normalized, data)
+        else:
+            _atomic_write(path, normalized)
+            touch_bubble(slug)
+        return _review_result(slug, page_slug, normalized, data)
 
 
 def create_page(slug: str, title: str) -> str:
@@ -953,6 +1395,9 @@ def register_page(slug: str, page_slug: str, content: str) -> None:
     """
     if not page_slug or slugify(page_slug) != page_slug:
         raise ValueError("Invalid page slug.")
+    # A newly registered page has no review sidecar, so every wrapper would necessarily be
+    # fabricated. Scientist must never introduce comment markup itself.
+    _validate_known_wrappers(content, {"version": 2, "threads": []})
     ensure_pages(slug)
     data = manifest(slug)
     if any(p["page_slug"] == page_slug for p in data.get("pages", [])):
@@ -1029,24 +1474,28 @@ def _rewrite_title_links(slug: str, old_title: str, page_slug: str) -> None:
 
 
 def delete_page(slug: str, page_slug: str) -> bool:
-    data = manifest(slug)
-    if page_slug == data.get("home"):
-        raise ValueError("Cannot delete the home page.")
-    before = len(data["pages"])
-    data["pages"] = [p for p in data["pages"] if p["page_slug"] != page_slug]
-    if len(data["pages"]) == before:
+    try:
+        with _review_page_lock(slug, page_slug):
+            data = manifest(slug)
+            if page_slug == data.get("home"):
+                raise ValueError("Cannot delete the home page.")
+            before = len(data["pages"])
+            data["pages"] = [p for p in data["pages"] if p["page_slug"] != page_slug]
+            if len(data["pages"]) == before:
+                return False
+            _save_manifest(slug, data)
+            try:
+                paths.bubble_page_path(slug, page_slug).unlink()
+            except OSError:
+                pass
+            try:
+                paths.bubble_page_comments_path(slug, page_slug).unlink()
+            except OSError:
+                pass
+            touch_bubble(slug)
+            return True
+    except ReviewTargetError:
         return False
-    _save_manifest(slug, data)
-    try:
-        paths.bubble_page_path(slug, page_slug).unlink()
-    except OSError:
-        pass
-    try:
-        paths.bubble_page_comments_path(slug, page_slug).unlink()
-    except OSError:
-        pass
-    touch_bubble(slug)
-    return True
 
 
 # --------------------------------------------------------------------------- #

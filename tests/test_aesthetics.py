@@ -138,16 +138,22 @@ class AestheticsConfigTests(unittest.TestCase):
         self.assertIn('alt:"Preview: "+item.name', source)
         self.assertIn('.asset-file-preview img{width:100%;height:100%;object-fit:contain', source)
 
-    def test_review_highlights_use_inline_markdown_markers(self):
+    def test_review_comments_use_server_owned_markers_and_dom_body_ranges(self):
         source = (Path(server.WEB_DIR) / "index.html").read_text()
-        self.assertIn('function addInlineCommentMarker(md,anchor,id)', source)
-        self.assertIn("Read the live browser selection first", source)
-        self.assertIn("if(selected&&md.includes(selected))", source)
-        self.assertIn("function resetEditorHorizontalScroll()", source)
-        self.assertIn('marker="\\\\comment{"+id+"}{"', source)
-        self.assertIn('lockedin-review-markers', source)
+        self.assertIn("function parseCommentWrappers(value)", source)
+        self.assertIn("function snapshotReviewSelection()", source)
+        self.assertIn("function editorVisibleTextIndex(root,source)", source)
+        self.assertIn("const start=source.indexOf(value,cursor)", source)
+        self.assertIn("function serverSelectionOffsets(source,start,end)", source)
+        self.assertIn("selection_start:serverOffsets.start,selection_end:serverOffsets.end", source)
+        self.assertIn("function applyAuthoritativeReviewResponse(result,state,", source)
+        self.assertIn("epoch===(S.reviewMutationEpoch||0)", source)
+        self.assertIn("Comments cannot overlap or be nested", source)
         self.assertIn('s=stripCommentMarkers(s);', source)
-        self.assertIn('if(S.comments&&S.comments.length&&!opts.skipComments)await loadComments();', source)
+        self.assertIn('Cannot save: "+error.message', source)
+        self.assertNotIn("function addInlineCommentMarker", source)
+        self.assertNotIn("await doSave({}); await loadComments()", source)
+        self.assertNotIn("caretPositionFromPoint", source)
 
     def test_server_preview_strips_review_markers_before_math_rendering(self):
         html = server._render_preview_html(

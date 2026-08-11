@@ -17,13 +17,17 @@ Run: ``uv run python -m unittest discover -s tests -t .``
 from __future__ import annotations
 
 import os
+import json
 import re
 import tempfile
+import threading
+import time
 import unittest
 from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import patch
 
+from fastapi.testclient import TestClient
 from lockedin import assets, bubbles, models, paths, reports, server, service, tagger
 
 from tests._fixtures import make_bubble
@@ -36,6 +40,41 @@ def temp_home():
         for sub in ("ASSETS", "REPORTS", "config"):
             (home / sub).mkdir(parents=True, exist_ok=True)
         yield home
+
+
+def create_review_comment(home, slug, page, author, body, anchor):
+    content = service.get_page(home, slug, page)
+    quote = str(anchor["quote"])
+    start = int(anchor["start"])
+    with paths.use_root(home):
+        mtime = paths.bubble_page_path(slug, page).stat().st_mtime
+    return service.create_comment_state(
+        home, slug, page, author, body, content=content, base_mtime=mtime,
+        selection_start=start, selection_end=start + len(quote))["thread"]
+
+
+def reply_review_comment(home, slug, page, thread_id, author, body):
+    return service.reply_comment_state(home, slug, page, thread_id, author, body)["message"]
+
+
+def edit_review_message(home, slug, page, thread_id, message_id, author, body):
+    return service.edit_comment_message_state(home, slug, page, thread_id, message_id, author, body)["message"]
+
+
+def set_review_status(home, slug, page, thread_id, status, actor):
+    content = service.get_page(home, slug, page)
+    with paths.use_root(home):
+        mtime = paths.bubble_page_path(slug, page).stat().st_mtime
+    return service.set_comment_status_state(
+        home, slug, page, thread_id, status, actor, content=content, base_mtime=mtime)["thread"]
+
+
+def delete_review_comment(home, slug, page, thread_id):
+    content = service.get_page(home, slug, page)
+    with paths.use_root(home):
+        mtime = paths.bubble_page_path(slug, page).stat().st_mtime
+    return service.delete_comment_state(
+        home, slug, page, thread_id, content=content, base_mtime=mtime) is not None
 
 
 @contextmanager
@@ -1057,48 +1096,518 @@ class FigureReferences(unittest.TestCase):
 
 
 class PrivateReviewComments(unittest.TestCase):
-    def test_legacy_review_is_migrated_to_inline_markers(self):
+    def test_http_review_mutations_return_authoritative_state_and_structured_errors(self):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+                os.environ, {"LOCKEDIN_HOME": directory}):
+            with TestClient(server.build_app(), base_url="https://testserver") as client:
+                self.assertEqual(client.post(
+                    "/api/signup", json={"username": "reviewer", "password": "testpass"}).status_code, 200)
+                slug = client.post("/api/bubbles", json={"name": "Review API"}).json()["slug"]
+                page = client.post(f"/api/bubbles/{slug}/pages", json={"title": "Draft"}).json()["page_slug"]
+                saved = client.put(
+                    f"/api/bubbles/{slug}/pages/{page}", json={"content": "alpha beta"}).json()
+                created = client.post(
+                    f"/api/bubbles/{slug}/pages/{page}/comments",
+                    json={"body": "Review beta", "content": saved["content"],
+                          "base_mtime": saved["page_mtime"], "selection_start": 6,
+                          "selection_end": 10})
+                self.assertEqual(created.status_code, 200)
+                state = created.json(); tid = state["thread"]["id"]
+                self.assertEqual(state["threads"][0]["anchor"]["quote"], "beta")
+                malformed = client.put(
+                    f"/api/bubbles/{slug}/pages/{page}",
+                    json={"content": r"\comment{broken}{no close",
+                          "base_mtime": state["page_mtime"]})
+                self.assertEqual(malformed.status_code, 422)
+                self.assertEqual(malformed.json()["detail"]["code"], "unclosed_comment")
+                resolved = client.patch(
+                    f"/api/bubbles/{slug}/pages/{page}/comments/{tid}",
+                    json={"status": "resolved", "content": state["content"],
+                          "base_mtime": state["page_mtime"]})
+                self.assertEqual(resolved.status_code, 200)
+                resolved_state = resolved.json()
+                self.assertNotIn("\\comment{", resolved_state["content"])
+                deleted = client.request(
+                    "DELETE", f"/api/bubbles/{slug}/pages/{page}/comments/{tid}",
+                    json={"content": resolved_state["content"],
+                          "base_mtime": resolved_state["page_mtime"]})
+                self.assertEqual(deleted.status_code, 200)
+                self.assertEqual(deleted.json()["threads"], [])
+
+    def test_comment_creation_wraps_exact_selection_atomically(self):
+        with temp_home() as home:
+            slug = make_bubble(home)
+            mtime = service.save_page(home, slug, "overview", "Before selected material after.")
+            start = len("Before ")
+            result = service.create_comment_state(
+                home, slug, "overview", "alice", "Review",
+                content="Before selected material after.", base_mtime=mtime,
+                selection_start=start, selection_end=start + len("selected material"))
+            thread = result["thread"]
+            self.assertEqual(
+                result["content"],
+                "Before " + bubbles.comment_marker(thread["id"]) + "selected material} after.")
+            self.assertEqual(result["threads"][0]["anchor_state"], "attached")
+            self.assertEqual(result["threads"][0]["anchor"]["quote"], "selected material")
+            self.assertEqual(result["threads"][0]["anchor"]["end"],
+                             result["threads"][0]["anchor"]["start"] + len("selected material"))
+
+    def test_reads_never_recreate_a_missing_wrapper(self):
         with temp_home() as home:
             slug = make_bubble(home)
             service.save_page(home, slug, "overview", "Before selected material after.")
-            start = len("Before ")
-            thread = service.create_comment(home, slug, "overview", "alice", "Review", {
-                "start": start, "quote": "selected material", "prefix": "Before ", "suffix": " after"})
+            thread = create_review_comment(home, slug, "overview", "alice", "Review", {
+                "start": 7, "quote": "selected material"})
+            marked = service.get_page(home, slug, "overview")
+            plain = bubbles.remove_comment_marker(marked, thread["id"])
+            service.save_page(home, slug, "overview", plain)
+            with paths.use_root(home):
+                page_path = paths.bubble_page_path(slug, "overview")
+                before = (page_path.read_text(), page_path.stat().st_mtime)
             comments = service.list_comments(home, slug, "overview")
-            marker = bubbles.comment_marker(thread["id"])
-            self.assertIn(marker + "selected material}", service.get_page(home, slug, "overview"))
-            self.assertEqual(comments["threads"][0]["id"], thread["id"])
+            self.assertEqual(comments["threads"][0]["anchor_state"], "unanchored")
+            self.assertNotIn(bubbles.comment_marker(thread["id"]), service.get_page(home, slug, "overview"))
+            with paths.use_root(home):
+                self.assertEqual(before, (page_path.read_text(), page_path.stat().st_mtime))
 
     def test_comment_markers_strip_without_changing_math_source(self):
         marker = bubbles.comment_marker("abc")
         source = marker + "$x^2$}"
         self.assertEqual(bubbles.strip_comment_markers(source), "$x^2$")
 
+    def test_standalone_preview_shows_safe_error_for_unclosed_comment(self):
+        html = server._render_preview_html(
+            name="Review", page="overview",
+            all_pages=[{"page_slug": "overview", "title": "Overview"}],
+            content=r"\comment{broken}{unfinished $x^2$", slug="review",
+            link_base="/preview", asset_base="/assets", show_back=False)
+        self.assertIn("Review markup error", html)
+        self.assertIn("line 1, column 1", html)
+        self.assertNotIn("unfinished $x^2$", html)
+
+    def test_balanced_parser_supports_latex_multiline_and_adjacent_comments(self):
+        source = (r"\comment{x}{First $\frac{a}{b}$ and \{literal\}}" + "\n"
+                  r"\comment{long-id_123}{second line}")
+        spans = bubbles.parse_comment_wrappers(source)
+        self.assertEqual([span.thread_id for span in spans], ["x", "long-id_123"])
+        self.assertEqual(source[spans[0].body_start:spans[0].body_end],
+                         r"First $\frac{a}{b}$ and \{literal\}")
+        self.assertEqual(bubbles.strip_comment_markers(source),
+                         "First $\\frac{a}{b}$ and \\{literal\\}\nsecond line")
+        escaped = r"\\comment{x}{this is literal source}"
+        self.assertEqual(bubbles.parse_comment_wrappers(escaped), [])
+        self.assertEqual(bubbles.strip_comment_markers(escaped), escaped)
+
+    def test_parser_rejects_unclosed_duplicate_and_nested_comments(self):
+        cases = [
+            (r"\comment{x}{open", "unclosed_comment"),
+            (r"\comment{x}{one} \comment{x}{two}", "duplicate_comment"),
+            (r"\comment{x}{one \comment{y}{two}}", "intersecting_comments"),
+        ]
+        for source, code in cases:
+            with self.subTest(code=code), self.assertRaises(bubbles.ReviewMarkupError) as caught:
+                bubbles.parse_comment_wrappers(source)
+            self.assertEqual(caught.exception.code, code)
+            self.assertGreaterEqual(caught.exception.line, 1)
+            self.assertGreaterEqual(caught.exception.column, 1)
+
+    def test_save_rejects_unknown_and_resolved_wrappers_without_changing_disk(self):
+        with temp_home() as home:
+            slug = make_bubble(home)
+            service.save_page(home, slug, "overview", "Review target")
+            original = service.get_page(home, slug, "overview")
+            with self.assertRaises(bubbles.ReviewMarkupError) as caught:
+                service.save_page(home, slug, "overview", r"\comment{made-up}{Review target}")
+            self.assertEqual(caught.exception.code, "unknown_comment")
+            self.assertEqual(service.get_page(home, slug, "overview"), original)
+            thread = create_review_comment(home, slug, "overview", "alice", "Review", {
+                "start": 0, "quote": "Review target"})
+            set_review_status(home, slug, "overview", thread["id"], "resolved", "alice")
+            with self.assertRaises(bubbles.ReviewMarkupError) as caught:
+                service.save_page(home, slug, "overview",
+                                  bubbles.comment_marker(thread["id"]) + "Review target}")
+            self.assertEqual(caught.exception.code, "resolved_comment")
+
+    def test_save_rejects_manual_reattachment_of_an_unanchored_thread(self):
+        with temp_home() as home:
+            slug = make_bubble(home)
+            service.save_page(home, slug, "overview", "Review target")
+            thread = create_review_comment(home, slug, "overview", "alice", "Review", {
+                "start": 0, "quote": "Review target"})
+            marked = service.get_page(home, slug, "overview")
+            service.save_page(home, slug, "overview",
+                              bubbles.remove_comment_marker(marked, thread["id"]))
+            with self.assertRaises(bubbles.ReviewMarkupError) as caught:
+                service.save_page(home, slug, "overview", marked)
+            self.assertEqual(caught.exception.code, "reattached_comment")
+
+    def test_overlapping_creation_is_rejected_but_adjacent_is_allowed(self):
+        with temp_home() as home:
+            slug = make_bubble(home)
+            content = "alpha beta gamma"
+            mtime = service.save_page(home, slug, "overview", content)
+            first = service.create_comment_state(
+                home, slug, "overview", "alice", "First", content=content, base_mtime=mtime,
+                selection_start=0, selection_end=5)
+            marked = first["content"]
+            with self.assertRaises(bubbles.ReviewMarkupError) as caught:
+                service.create_comment_state(
+                    home, slug, "overview", "alice", "Overlap", content=marked,
+                    base_mtime=first["page_mtime"], selection_start=0,
+                    selection_end=marked.index("beta") + 4)
+            self.assertEqual(caught.exception.code, "intersecting_comments")
+            gamma = marked.index("gamma")
+            adjacent = service.create_comment_state(
+                home, slug, "overview", "alice", "Adjacent", content=marked,
+                base_mtime=first["page_mtime"], selection_start=gamma,
+                selection_end=gamma + len("gamma"))
+            self.assertEqual(len(adjacent["threads"]), 2)
+
+    def test_comment_creation_honors_page_revision_guard(self):
+        with temp_home() as home:
+            slug = make_bubble(home)
+            stale = service.save_page(home, slug, "overview", "alpha beta")
+            service.save_page(home, slug, "overview", "alpha beta changed")
+            with self.assertRaises(bubbles.PageConflict):
+                service.create_comment_state(
+                    home, slug, "overview", "alice", "Review", content="alpha beta",
+                    base_mtime=stale, selection_start=0, selection_end=5)
+            self.assertEqual(service.list_comments(home, slug, "overview")["threads"], [])
+
+    def test_comment_creation_rolls_page_back_if_sidecar_replace_fails(self):
+        with temp_home() as home:
+            slug = make_bubble(home)
+            mtime = service.save_page(home, slug, "overview", "alpha beta")
+            with paths.use_root(home):
+                comment_path = paths.bubble_page_comments_path(slug, "overview").resolve()
+            real_replace = os.replace
+            failed = False
+
+            def fail_comment_replace(source, destination):
+                nonlocal failed
+                if (not failed and Path(destination).resolve() == comment_path
+                        and ".txn-" in Path(source).name):
+                    failed = True
+                    raise OSError("simulated sidecar failure")
+                return real_replace(source, destination)
+
+            with patch.object(bubbles.os, "replace", side_effect=fail_comment_replace):
+                with self.assertRaises(OSError):
+                    service.create_comment_state(
+                        home, slug, "overview", "alice", "Review", content="alpha beta",
+                        base_mtime=mtime, selection_start=0, selection_end=5)
+            self.assertTrue(failed)
+            self.assertEqual(service.get_page(home, slug, "overview"), "alpha beta")
+            self.assertEqual(service.list_comments(home, slug, "overview")["threads"], [])
+
+    def test_editing_body_reconciles_anchor_and_empty_body_unanchors(self):
+        with temp_home() as home:
+            slug = make_bubble(home)
+            service.save_page(home, slug, "overview", "alpha beta")
+            thread = create_review_comment(home, slug, "overview", "alice", "Review", {
+                "start": 6, "quote": "beta"})
+            marked = service.get_page(home, slug, "overview")
+            changed = marked.replace("beta", "better beta")
+            state = service.save_page_state(home, slug, "overview", changed)
+            self.assertEqual(state["threads"][0]["anchor"]["quote"], "better beta")
+            emptied = changed.replace("better beta", "")
+            state = service.save_page_state(home, slug, "overview", emptied,
+                                            state["page_mtime"])
+            self.assertEqual(state["threads"][0]["anchor_state"], "unanchored")
+            self.assertNotIn(bubbles.comment_marker(thread["id"]), state["content"])
+
     def test_thread_lifecycle_and_author_only_message_editing(self):
         with temp_home() as home:
             slug = make_bubble(home)
             service.save_page(home, slug, "overview", "An important text follows")
             anchor = {"start": 3, "quote": "important text", "prefix": "An ", "suffix": " follows"}
-            thread = service.create_comment(home, slug, "overview", "alice", "Needs a citation", anchor)
+            thread = create_review_comment(home, slug, "overview", "alice", "Needs a citation", anchor)
             self.assertEqual(thread["status"], "open")
-            reply = service.reply_comment(home, slug, "overview", thread["id"], "bob", "I will add one")
+            reply = reply_review_comment(home, slug, "overview", thread["id"], "bob", "I will add one")
             with self.assertRaises(PermissionError):
-                service.edit_comment_message(home, slug, "overview", thread["id"], reply["id"], "alice", "Changed")
-            edited = service.edit_comment_message(home, slug, "overview", thread["id"], reply["id"], "bob", "Citation added")
+                edit_review_message(home, slug, "overview", thread["id"], reply["id"], "alice", "Changed")
+            edited = edit_review_message(home, slug, "overview", thread["id"], reply["id"], "bob", "Citation added")
             self.assertEqual(edited["body"], "Citation added")
             self.assertIn(bubbles.comment_marker(thread["id"]), service.get_page(home, slug, "overview"))
-            service.set_comment_status(home, slug, "overview", thread["id"], "resolved", "alice")
+            set_review_status(home, slug, "overview", thread["id"], "resolved", "alice")
             data = service.list_comments(home, slug, "overview")
             self.assertEqual(data["threads"][0]["status"], "resolved")
             self.assertNotIn(bubbles.comment_marker(thread["id"]), service.get_page(home, slug, "overview"))
-            self.assertTrue(service.delete_comment(home, slug, "overview", thread["id"]))
+            self.assertTrue(delete_review_comment(home, slug, "overview", thread["id"]))
             self.assertEqual(service.list_comments(home, slug, "overview")["threads"], [])
+
+    def test_resolve_delete_and_reopen_return_authoritative_page_state(self):
+        with temp_home() as home:
+            slug = make_bubble(home)
+            mtime = service.save_page(home, slug, "overview", "one two three")
+            created = service.create_comment_state(
+                home, slug, "overview", "alice", "Review", content="one two three",
+                base_mtime=mtime, selection_start=4, selection_end=7)
+            tid = created["thread"]["id"]
+            resolved = service.set_comment_status_state(
+                home, slug, "overview", tid, "resolved", "alice",
+                content=created["content"], base_mtime=created["page_mtime"])
+            self.assertEqual(resolved["content"], "one two three")
+            self.assertEqual(resolved["thread"]["status"], "resolved")
+            reopened = service.set_comment_status_state(
+                home, slug, "overview", tid, "open", "alice",
+                content=resolved["content"], base_mtime=resolved["page_mtime"])
+            self.assertEqual(reopened["thread"]["anchor_state"], "unanchored")
+            deleted = service.delete_comment_state(
+                home, slug, "overview", tid, content=reopened["content"],
+                base_mtime=reopened["page_mtime"])
+            self.assertIsNotNone(deleted)
+            self.assertEqual(deleted["content"], "one two three")
+            self.assertEqual(deleted["threads"], [])
+
+    def test_review_migration_strips_unknown_and_resolved_and_unanchors_missing(self):
+        with temp_home() as home:
+            slug = make_bubble(home)
+            resolved_id, open_id = "resolved-1", "open-1"
+            source = (bubbles.comment_marker(resolved_id) + "resolved text} "
+                      + bubbles.comment_marker("unknown-1") + "unknown text} open target")
+            now = "2026-01-01T00:00:00+00:00"
+            data = {"version": 1, "threads": [
+                {"id": resolved_id, "page_slug": "overview", "status": "resolved",
+                 "anchor": {"quote": "resolved text", "start": 0}, "messages": [],
+                 "created_at": now, "updated_at": now},
+                {"id": open_id, "page_slug": "overview", "status": "open",
+                 "anchor": {"quote": "open target", "start": len(source) - 11},
+                 "messages": [], "created_at": now, "updated_at": now},
+            ]}
+            with paths.use_root(home):
+                paths.bubble_page_path(slug, "overview").write_text(source)
+                comment_path = paths.bubble_page_comments_path(slug, "overview")
+                comment_path.parent.mkdir(parents=True, exist_ok=True)
+                comment_path.write_text(json.dumps(data))
+                stats = bubbles.migrate_review_comments()
+                migrated = json.loads(comment_path.read_text())
+            self.assertEqual(stats["unknown_wrappers"], 1)
+            self.assertEqual(service.get_page(home, slug, "overview"),
+                             "resolved text unknown text open target")
+            by_id = {thread["id"]: thread for thread in migrated["threads"]}
+            self.assertEqual(by_id[resolved_id]["anchor_state"], "unanchored")
+            self.assertEqual(by_id[open_id]["anchor_state"], "unanchored")
+            self.assertEqual(migrated["version"], 2)
+            with paths.use_root(home):
+                again = bubbles.migrate_review_comments()
+            self.assertEqual(again, {"pages": 0, "sidecars": 0, "errors": 0,
+                                     "unknown_wrappers": 0})
+
+    def test_review_migration_reports_malformed_source_without_rewriting_it(self):
+        with temp_home() as home:
+            slug = make_bubble(home)
+            source = r"\comment{broken}{never closes"
+            with paths.use_root(home):
+                path = paths.bubble_page_path(slug, "overview")
+                path.write_text(source)
+                stats = bubbles.migrate_review_comments()
+                self.assertEqual(path.read_text(), source)
+            self.assertEqual(stats["errors"], 1)
+
+    def test_corrupt_review_sidecar_is_never_reset_or_overwritten(self):
+        with temp_home() as home:
+            slug = make_bubble(home)
+            with paths.use_root(home):
+                page_path = paths.bubble_page_path(slug, "overview")
+                sidecar_path = paths.bubble_page_comments_path(slug, "overview")
+                page_path.write_bytes(b"source bytes\\n")
+                sidecar_path.parent.mkdir(parents=True, exist_ok=True)
+                sidecar_path.write_bytes(b"{not json\\n")
+                before = (page_path.read_bytes(), sidecar_path.read_bytes())
+            with self.assertRaises(bubbles.ReviewSidecarError):
+                service.save_page_state(home, slug, "overview", "replacement")
+            with self.assertRaises(bubbles.ReviewSidecarError):
+                service.list_comments(home, slug, "overview")
+            with paths.use_root(home):
+                stats = bubbles.migrate_review_comments()
+                self.assertEqual((page_path.read_bytes(), sidecar_path.read_bytes()), before)
+            self.assertEqual(stats["errors"], 1)
+
+    def test_review_operations_reject_path_like_unapproved_and_orphan_pages(self):
+        with temp_home() as home:
+            slug = make_bubble(home)
+            for bad_slug, bad_page in (("../" + slug, "overview"), (slug, "../overview"),
+                                       (slug, "orphan")):
+                with self.subTest(slug=bad_slug, page=bad_page):
+                    with self.assertRaises(bubbles.ReviewTargetError):
+                        service.list_comments(home, bad_slug, bad_page)
+            with paths.use_root(home):
+                pending = bubbles.propose_bubble("Pending Review")
+                bubbles.ensure_pages(pending)
+            with self.assertRaises(bubbles.ReviewTargetError):
+                service.list_comments(home, pending, "overview")
+
+    def test_page_deletion_cannot_race_a_review_into_orphan_files(self):
+        with temp_home() as home:
+            slug = make_bubble(home)
+            page = service.create_page(home, slug, "Disposable")
+            content = "# Disposable\n\nselected text"
+            mtime = service.save_page(home, slug, page, content)
+            selection_start = content.index("selected text")
+            validation_started = threading.Event()
+            comment_errors, delete_results = [], []
+            original_validate = bubbles.validate_review_target
+
+            def observed_validate(target_slug, target_page):
+                result = original_validate(target_slug, target_page)
+                if threading.current_thread().name == "review-create-race":
+                    validation_started.set()
+                return result
+
+            def create_review():
+                try:
+                    service.create_comment_state(
+                        home, slug, page, "alice", "Review", content=content,
+                        base_mtime=mtime, selection_start=selection_start,
+                        selection_end=selection_start + len("selected text"))
+                except Exception as exc:  # captured for the deterministic race assertion
+                    comment_errors.append(exc)
+
+            def delete_review_page():
+                delete_results.append(service.delete_page(home, slug, page))
+
+            with patch.object(bubbles, "validate_review_target", side_effect=observed_validate):
+                with paths.use_root(home), bubbles._page_lock(slug, page):
+                    comment_thread = threading.Thread(
+                        target=create_review, name="review-create-race")
+                    comment_thread.start()
+                    self.assertTrue(validation_started.wait(2), "review mutation did not reach validation")
+                    delete_thread = threading.Thread(target=delete_review_page)
+                    delete_thread.start()
+                    time.sleep(0.03)
+                comment_thread.join(2); delete_thread.join(2)
+
+            self.assertFalse(comment_thread.is_alive() or delete_thread.is_alive())
+            self.assertEqual(delete_results, [True])
+            self.assertTrue(not comment_errors or isinstance(comment_errors[0], bubbles.ReviewTargetError))
+            with paths.use_root(home):
+                self.assertFalse(paths.bubble_page_path(slug, page).exists())
+                self.assertFalse(paths.bubble_page_comments_path(slug, page).exists())
+                self.assertNotIn(page, {item["page_slug"] for item in bubbles.list_pages(slug)})
+
+    def test_bubble_deletion_drains_inflight_review_mutations(self):
+        with temp_home() as home:
+            slug = make_bubble(home)
+            page = service.create_page(home, slug, "Disposable")
+            content = "# Disposable\n\nselected text"
+            mtime = service.save_page(home, slug, page, content)
+            selection_start = content.index("selected text")
+            validation_started = threading.Event()
+            comment_errors, delete_errors = [], []
+            original_validate = bubbles.validate_review_target
+
+            def observed_validate(target_slug, target_page):
+                result = original_validate(target_slug, target_page)
+                if threading.current_thread().name == "review-bubble-race":
+                    validation_started.set()
+                return result
+
+            def create_review():
+                try:
+                    service.create_comment_state(
+                        home, slug, page, "alice", "Review", content=content,
+                        base_mtime=mtime, selection_start=selection_start,
+                        selection_end=selection_start + len("selected text"))
+                except Exception as exc:  # expected if deletion removes the registry first
+                    comment_errors.append(exc)
+
+            def delete_review_bubble():
+                try:
+                    service.delete_bubble(home, slug)
+                except Exception as exc:
+                    delete_errors.append(exc)
+
+            with patch.object(bubbles, "validate_review_target", side_effect=observed_validate):
+                with paths.use_root(home), bubbles._page_lock(slug, page):
+                    comment_thread = threading.Thread(
+                        target=create_review, name="review-bubble-race")
+                    comment_thread.start()
+                    self.assertTrue(validation_started.wait(2), "review mutation did not reach validation")
+                    delete_thread = threading.Thread(target=delete_review_bubble)
+                    delete_thread.start()
+                    time.sleep(0.03)
+                comment_thread.join(2); delete_thread.join(2)
+
+            self.assertFalse(comment_thread.is_alive() or delete_thread.is_alive())
+            self.assertEqual(delete_errors, [])
+            self.assertEqual(len(comment_errors), 1)
+            self.assertIsInstance(comment_errors[0], bubbles.ReviewTargetError)
+            with paths.use_root(home):
+                self.assertNotIn(slug, bubbles.load_registry())
+                self.assertFalse(paths.bubble_dir(slug).exists())
+
+    def test_page_save_uses_one_sidecar_read_and_one_wrapper_parse(self):
+        with temp_home() as home:
+            slug = make_bubble(home)
+            service.save_page(home, slug, "overview", "review target")
+            thread = create_review_comment(home, slug, "overview", "alice", "Review", {
+                "start": 0, "quote": "review target"})
+            source = service.get_page(home, slug, "overview")
+            real_comments = bubbles._comments
+            real_parse = bubbles.parse_comment_wrappers
+            with patch.object(bubbles, "_comments", wraps=real_comments) as comments_read, \
+                    patch.object(bubbles, "parse_comment_wrappers", wraps=real_parse) as parses:
+                service.save_page_state(home, slug, "overview", source)
+            self.assertEqual(comments_read.call_count, 1)
+            self.assertEqual(parses.call_count, 1)
+            self.assertIn(bubbles.comment_marker(thread["id"]), service.get_page(home, slug, "overview"))
+
+    def test_http_review_mutations_require_base_mtime_without_writing(self):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+                os.environ, {"LOCKEDIN_HOME": directory}):
+            with TestClient(server.build_app(), base_url="https://testserver") as client:
+                client.post("/api/signup", json={"username": "reviewer", "password": "testpass"})
+                slug = client.post("/api/bubbles", json={"name": "Review API"}).json()["slug"]
+                page = client.post(f"/api/bubbles/{slug}/pages", json={"title": "Draft"}).json()["page_slug"]
+                saved = client.put(f"/api/bubbles/{slug}/pages/{page}",
+                                   json={"content": "alpha beta"}).json()
+                rejected = client.post(f"/api/bubbles/{slug}/pages/{page}/comments", json={
+                    "body": "Review", "content": saved["content"], "selection_start": 0,
+                    "selection_end": 5})
+                self.assertEqual(rejected.status_code, 428)
+                self.assertEqual(client.get(f"/api/bubbles/{slug}/pages/{page}/comments").json()["threads"], [])
+                created = client.post(f"/api/bubbles/{slug}/pages/{page}/comments", json={
+                    "body": "Review", "content": saved["content"], "base_mtime": saved["page_mtime"],
+                    "selection_start": 0, "selection_end": 5}).json()
+                thread_id = created["thread"]["id"]
+                self.assertEqual(client.patch(f"/api/bubbles/{slug}/pages/{page}/comments/{thread_id}",
+                                              json={"status": "resolved", "content": created["content"]}).status_code,
+                                 428)
+                self.assertEqual(client.request("DELETE", f"/api/bubbles/{slug}/pages/{page}/comments/{thread_id}",
+                                                json={"content": created["content"]}).status_code, 428)
+                self.assertEqual(client.get(f"/api/bubbles/{slug}/pages/{page}/comments").json()["threads"][0]["status"],
+                                 "open")
+
+    def test_large_page_with_hundreds_of_reviews_saves_in_under_one_second(self):
+        with temp_home() as home:
+            slug = make_bubble(home)
+            threads, pieces = [], []
+            for index in range(300):
+                tid = f"review-{index}"
+                pieces.append(bubbles.comment_marker(tid) + f"selected text {index}}}")
+                threads.append({"id": tid, "page_slug": "overview", "status": "open",
+                                "anchor_state": "attached",
+                                "anchor": {"quote": f"selected text {index}", "start": 0},
+                                "messages": []})
+            source = "\n".join(pieces)
+            with paths.use_root(home):
+                page_path = paths.bubble_page_path(slug, "overview")
+                page_path.write_text(source)
+                comment_path = paths.bubble_page_comments_path(slug, "overview")
+                comment_path.parent.mkdir(parents=True, exist_ok=True)
+                comment_path.write_text(json.dumps({"version": 2, "threads": threads}))
+            started = time.perf_counter()
+            state = service.save_page_state(home, slug, "overview", source + "\nfast edit")
+            elapsed = time.perf_counter() - started
+            self.assertLess(elapsed, 1.0)
+            self.assertEqual(len(state["threads"]), 300)
 
     def test_deleting_a_page_removes_its_review_sidecar(self):
         with temp_home() as home:
             slug = make_bubble(home)
             page = service.create_page(home, slug, "Draft")
-            service.create_comment(home, slug, page, "alice", "Review this", {"start": 0, "quote": "# Draft"})
+            create_review_comment(home, slug, page, "alice", "Review this", {"start": 0, "quote": "# Draft"})
             with paths.use_root(home):
                 comment_path = paths.bubble_page_comments_path(slug, page)
                 self.assertTrue(comment_path.exists())

@@ -112,6 +112,7 @@ inside `.lockedin/`; it does not limit an agent's normal access to the rest of t
 Manage workers or rebuild a project from the server:
 ```bash
 lockedin-scientist ps
+lockedin-scientist doctor
 lockedin-scientist stop <worker-id>
 lockedin-scientist hard-reset <bubble-slug>
 ```
@@ -140,6 +141,13 @@ in Git to `git.overleaf.com`; subsequent LockedIn projects reuse it. It is not s
 repository. If a sync needs manual recovery, use `git status`, fetch/rebase the configured
 `lockedin-overleaf` remote branch, resolve conflicts, and push manually. `hard-reset` preserves a
 connected Overleaf checkout unless you explicitly add `--discard-overleaf`.
+
+Open private report reviews are projected read-only into `.lockedin/config/reviews.yaml`. An
+attached review maps to the exact source wrapped by `\comment{<comment-id>}{...}`. The generated
+skill tells agents to preserve that server-owned wrapper, read the full conversation, make the
+smallest in-scope edit inside it, and ask about vague feedback. Agents must never fabricate,
+reinsert, move, reply to, resolve, or delete review markers. Run `lockedin-scientist doctor` before
+claiming a report edit synchronized; it verifies that this project has a reachable healthy worker.
 
 If `lockedin-scientist ps` reports a **failed** worker because `binding.json` is missing, Scientist
 will show the recovery command. First copy any unsynchronized report work out of `.lockedin/`, then

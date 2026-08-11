@@ -37,6 +37,25 @@ def migrate_overleaf_fields() -> int:
     return changed
 
 
+def migrate_review_comments() -> dict:
+    """Backfill explicit review anchor states across workspace and remaining legacy roots."""
+    roots = list(workspaces.all_homes())
+    if paths.USERS_DIR.exists():
+        roots.extend(path for path in paths.USERS_DIR.iterdir() if path.is_dir())
+    seen = set()
+    total = {"pages": 0, "sidecars": 0, "errors": 0, "unknown_wrappers": 0}
+    for root in roots:
+        root = root.resolve()
+        if root in seen or not (root / "REPORTS").exists():
+            continue
+        seen.add(root)
+        with paths.use_root(root):
+            stats = bubbles.migrate_review_comments()
+        for key in total:
+            total[key] += int(stats.get(key, 0))
+    return total
+
+
 # ---- assets ----
 def save_asset(home: Path, pdf_bytes: bytes, filename: str, title: str = "",
                tags: list[str] | None = None, url_source: str = "",
@@ -378,6 +397,12 @@ def save_page(home: Path, slug: str, page_slug: str, content: str,
         return bubbles.save_page(slug, page_slug, content, base_mtime)
 
 
+def save_page_state(home: Path, slug: str, page_slug: str, content: str,
+                    base_mtime: "float | None" = None) -> dict:
+    with paths.use_root(home):
+        return bubbles.save_page_state(slug, page_slug, content, base_mtime)
+
+
 def create_page(home: Path, slug: str, title: str) -> str:
     with paths.use_root(home):
         return bubbles.create_page(slug, title)
@@ -424,24 +449,50 @@ def list_comments(home: Path, slug: str, page_slug: str) -> dict:
     with paths.use_root(home): return bubbles.list_comments(slug, page_slug)
 
 
-def create_comment(home: Path, slug: str, page_slug: str, author: str, body: str, anchor: dict) -> dict:
-    with paths.use_root(home): return bubbles.create_comment(slug, page_slug, author, body, anchor)
+def review_page_exists(home: Path, slug: str, page_slug: str) -> bool:
+    """Validate a review target without allowing a request to create filesystem state."""
+    with paths.use_root(home):
+        bubbles.validate_review_target(slug, page_slug)
+    return True
 
 
-def reply_comment(home: Path, slug: str, page_slug: str, thread_id: str, author: str, body: str) -> dict:
-    with paths.use_root(home): return bubbles.reply_comment(slug, page_slug, thread_id, author, body)
+def create_comment_state(home: Path, slug: str, page_slug: str, author: str, body: str, *,
+                         content: str, base_mtime: "float | None",
+                         selection_start: int, selection_end: int) -> dict:
+    with paths.use_root(home):
+        return bubbles.create_comment_state(
+            slug, page_slug, author, body, content=content, base_mtime=base_mtime,
+            selection_start=selection_start, selection_end=selection_end)
 
 
-def edit_comment_message(home: Path, slug: str, page_slug: str, thread_id: str, message_id: str, author: str, body: str) -> dict:
-    with paths.use_root(home): return bubbles.edit_comment_message(slug, page_slug, thread_id, message_id, author, body)
+def reply_comment_state(home: Path, slug: str, page_slug: str, thread_id: str,
+                        author: str, body: str) -> dict:
+    with paths.use_root(home):
+        return bubbles.reply_comment_state(slug, page_slug, thread_id, author, body)
 
 
-def set_comment_status(home: Path, slug: str, page_slug: str, thread_id: str, status: str, actor: str) -> dict:
-    with paths.use_root(home): return bubbles.set_comment_status(slug, page_slug, thread_id, status, actor)
+def edit_comment_message_state(home: Path, slug: str, page_slug: str, thread_id: str,
+                               message_id: str, author: str, body: str) -> dict:
+    with paths.use_root(home):
+        return bubbles.edit_comment_message_state(
+            slug, page_slug, thread_id, message_id, author, body)
 
 
-def delete_comment(home: Path, slug: str, page_slug: str, thread_id: str) -> bool:
-    with paths.use_root(home): return bubbles.delete_comment(slug, page_slug, thread_id)
+def set_comment_status_state(home: Path, slug: str, page_slug: str, thread_id: str,
+                             status: str, actor: str, *, content: "str | None" = None,
+                             base_mtime: "float | None" = None) -> dict:
+    with paths.use_root(home):
+        return bubbles.set_comment_status_state(
+            slug, page_slug, thread_id, status, actor,
+            content=content, base_mtime=base_mtime)
+
+
+def delete_comment_state(home: Path, slug: str, page_slug: str, thread_id: str, *,
+                         content: "str | None" = None,
+                         base_mtime: "float | None" = None) -> "dict | None":
+    with paths.use_root(home):
+        return bubbles.delete_comment_state(
+            slug, page_slug, thread_id, content=content, base_mtime=base_mtime)
 
 
 # ---- todos (global per-user, referenced from report pages as @<id>) ----

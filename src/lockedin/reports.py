@@ -407,6 +407,26 @@ Only pages and report assets inside the selected **approved** bubble can be writ
 Credentials, sessions, chat history, TODOs, bubble settings, PDFs, and paper summaries are never
 writable by Scientist.
 
+### Review feedback and health
+
+Open private report reviews are available read-only at `.lockedin/config/reviews.yaml`. Each entry
+includes its page, current `anchor_state`, selected or last-known text, and complete conversation.
+An attached review maps to the exact Markdown body in `\\comment{<comment-id>}{...}`. The wrapper is
+server-owned: an agent may make the smallest requested edit inside its existing body, but must not
+create, copy, rename, nest, move, or reinsert a wrapper. It should read the entire thread, question
+vague or unsupported feedback, and avoid unrelated rewrites. Unanchored reviews must never be
+guessed back into the report; replying, resolving, and deleting remain website actions.
+
+Before relying on a report submission, run:
+
+```
+lockedin-scientist doctor
+```
+
+It verifies that this project has a matching healthy worker and that its bound server/bubble can
+be reached. If it fails, do not claim that local report work synchronized; follow the recovery
+guidance printed by the command.
+
 ### New report pages
 
 To add a page from Scientist, create a flat Markdown file at
@@ -429,7 +449,7 @@ Scientist can add report figures and animated GIFs using the same format as the 
 Place a descriptively named file in `.lockedin/reports/assets/`, then embed it in a page:
 
 ```
-![Description of the figure](/api/bubbles/<bubble-slug>/assets/my-figure.gif)
+![Description of the figure](assets/my-figure.gif)
 ```
 
 Keep report artwork out of `.lockedin/assets/`, which is reserved for the paper library. Preview and shared
@@ -538,16 +558,22 @@ the editor and preview. Read, focused, and mobile views stay free of review UI.
 
 To start a review, select source text and click the coloured **+** in the Review header. The
 selected text receives a subtle yellow highlight in the editor. The source is wrapped in
-`\\comment{<comment-id>}{...}` markers; preserve the wrapper and edit only the text inside it
-when responding to that review. Click that highlighted text to open
-its thread. Threads are collapsed by default; opening one collapses the others. Markers are
-removed from rendered previews and KaTeX, so they are source-only bookkeeping.
+`\\comment{<comment-id>}{...}` markers. LockedIn creates and removes those markers together with
+the review thread in one save; do not type, copy, nest, or rename them yourself. Click the
+highlighted body text to open its thread. Threads are collapsed by default; opening one collapses
+the others. Markers are removed from rendered previews and KaTeX, so they are source-only
+bookkeeping. A missing closing brace is shown as a source error and must be repaired before the
+page can be saved. Commented ranges may sit next to one another but cannot overlap or contain one
+another.
 
 The Review header separates **Open** and **Resolved** threads. Workspace members can reply,
 resolve/reopen, or delete a thread. You can double-click only your own comment or reply to edit
-it in place; save with **Ctrl/⌘+Enter** or **Save**. If later edits remove the selected text, the
-thread remains in its original review-list position with an **Unanchored** badge, but no text is
-highlighted. Deleting a report page also removes all of that page's reviews.
+it in place; save with **Ctrl/⌘+Enter** or **Save**. Resolving or deleting a thread removes its
+wrapper while preserving the report text. Reopening a resolved thread leaves it unanchored rather
+than guessing where it belongs. If later edits remove the wrapper or selected text, the open thread
+remains in its original review-list position with an **Unanchored** badge, but no text is
+highlighted and LockedIn never recreates the wrapper. Deleting a report page also removes all of
+that page's reviews.
 
 ---
 

@@ -36,17 +36,30 @@ def _review_feedback(slug: str) -> bytes | None:
         for thread in bubbles.list_comments(slug, page_slug).get("threads", []):
             if thread.get("status") != "open":
                 continue
-            threads.append({
-                "id": thread.get("id", ""), "page_slug": page_slug,
-                "status": "open", "created_at": thread.get("created_at", ""),
+            anchor = dict(thread.get("anchor") or {})
+            state = "attached" if thread.get("anchor_state") == "attached" else "unanchored"
+            selected = str(anchor.get("quote") or "")
+            exported = {
+                "id": str(thread.get("id") or ""),
+                "page_slug": page_slug,
+                "status": "open",
+                "anchor_state": state,
+                "selected_text": selected,
+                "created_at": thread.get("created_at", ""),
                 "updated_at": thread.get("updated_at", ""),
-                "marker": bubbles.comment_marker(str(thread.get("id", ""))),
-                "anchor": dict(thread.get("anchor") or {}),
+                "context": {
+                    "prefix": str(anchor.get("prefix") or ""),
+                    "suffix": str(anchor.get("suffix") or ""),
+                },
                 "messages": [dict(message) for message in thread.get("messages", [])],
-            })
+            }
+            if state == "attached":
+                start = int(anchor.get("start") or 0)
+                exported["offsets"] = {"start": start, "end": start + len(selected)}
+            threads.append(exported)
     if not threads:
         return None
-    payload = {"version": 1, "threads": threads}
+    payload = {"version": 2, "threads": threads}
     return yaml.safe_dump(payload, allow_unicode=True, sort_keys=False).encode("utf-8")
 
 
@@ -159,7 +172,7 @@ def apply_writes(home: Path, slug: str, writes: list[dict]) -> dict:
                 try:
                     bubbles.save_page(slug, Path(rel).stem, raw.decode("utf-8"),
                                       target.stat().st_mtime if target.exists() else None)
-                except (UnicodeDecodeError, bubbles.PageConflict) as exc:
+                except (UnicodeDecodeError, bubbles.PageConflict, bubbles.ReviewMarkupError) as exc:
                     conflicts.append({"path": rel, "reason": str(exc),
                                       "revision": revision(current),
                                       "content_b64": base64.b64encode(current).decode("ascii")})

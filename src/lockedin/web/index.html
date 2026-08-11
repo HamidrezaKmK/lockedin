@@ -656,7 +656,7 @@
   .ptab .x{opacity:.5;font-size:11px}
   .ptab .x:hover{opacity:1;color:var(--bad)}
   .ptab-edit{font-size:13px;padding:2px 6px;width:130px;border-radius:5px}
-  #editorHost{flex:1;min-height:0;min-width:0;display:flex;overflow:hidden;overflow:clip}
+  #editorHost{position:relative;flex:1;min-height:0;min-width:0;display:flex;overflow:hidden;overflow:clip}
   #editorWrap{flex:1;min-height:0;min-width:0;overflow:hidden;overflow:clip}
   #editorWrap .toastui-editor-defaultUI{height:100%}
   #reviewWrap{flex:0 0 300px;min-width:240px;overflow:auto;border-left:1px solid var(--line);
@@ -686,9 +686,11 @@
   .review-compose textarea{min-height:58px;resize:vertical;font:inherit;font-size:12px}.review-orphan{color:var(--warn);font-size:11px;font-weight:700}
   .review-inline-edit{display:block;width:100%;box-sizing:border-box;min-height:66px;resize:vertical;font:inherit;font-size:13px}
   ::highlight(lockedin-review){background-color:rgba(245,204,62,.24)}
-  /* Review markers stay in Markdown source but are deliberately not highlighted; only the
-     selected content receives the review highlight and click target. */
-  ::highlight(lockedin-review-markers){background:transparent;color:inherit;font-weight:inherit}
+  .review-render-error{margin:14px;padding:12px 14px;border:1px solid var(--danger);border-radius:8px;
+    background:color-mix(in srgb,var(--danger) 12%,var(--panel));color:var(--ink);font-family:var(--font-ui)}
+  .review-render-error b{display:block;color:var(--danger);margin-bottom:4px}
+  .review-editor-error{position:absolute;z-index:12;top:58px;left:18px;right:18px;max-width:760px;
+    box-shadow:var(--shadow);pointer-events:none}
   #previewWrap{flex:1;overflow:auto;padding:12px 16px;min-width:0;min-height:0;line-height:1.6;
     overflow-anchor:none}
   /* The editor pane has three view modes, chosen from the toolbar dropdown:
@@ -1193,7 +1195,9 @@
     const headers={"Content-Type":"application/json",...(opts.headers||{})};
     if(S.workspaceId) headers["X-LockedIn-Workspace"]=S.workspaceId;
     const r = await fetch(path, {credentials:"include", headers, ...opts});
-    if(!r.ok){ let d; try{d=(await r.json()).detail;}catch(e){d=r.statusText;} const err=new Error(d||"Error"); err.status=r.status; throw err; }
+    if(!r.ok){ let d; try{d=(await r.json()).detail;}catch(e){d=r.statusText;}
+      if(d&&typeof d==="object")d=d.message||d.error||JSON.stringify(d);
+      const err=new Error(d||"Error"); err.status=r.status; throw err; }
     const ct=r.headers.get("content-type")||""; return ct.includes("json")?r.json():r.text();
   }
 
@@ -1291,26 +1295,85 @@
   // equation/theorem numbers and \eqref/\thmref resolve ACROSS pages; without them numbering is
   // self-contained to this content (chat, TODO notes, summaries, the help guide). Mirrors the
   // server's _build_refs/_preprocess_* so the live editor preview matches the standalone pages.
-  function stripCommentMarkers(s){
-    // Source-only \comment{id}{text} wrappers; balanced braces keep LaTeX inside a review intact.
-    let out="",pos=0;
-    while(pos<s.length){
-      const hit=s.slice(pos).match(/\\comment\{([A-Za-z0-9_-]+)\}\{/);
-      if(!hit){out+=s.slice(pos);break;}
-      const start=pos+hit.index, body=start+hit[0].length; out+=s.slice(pos,start);
-      let depth=1,i=body;
-      for(;i<s.length&&depth;i++){if(s[i]==="{"&&s[i-1]!=="\\")depth++;else if(s[i]==="}"&&s[i-1]!=="\\")depth--;}
-      if(depth){out+=s.slice(start);break;}
-      out+=s.slice(body,i-1);pos=i;
+  function commentSourceLocation(source,index){
+    const before=String(source||"").slice(0,Math.max(0,index)), lines=before.split("\n");
+    return {line:lines.length,column:Array.from(lines[lines.length-1]).length+1};
+  }
+  function commentMarkupError(source,index,code,message,id){
+    const at=commentSourceLocation(source,index), error=new Error(message+" (line "+at.line+", column "+at.column+")");
+    error.name="CommentMarkupError"; error.index=index; error.line=at.line; error.column=at.column;
+    error.code=code;error.commentId=id||null; return error;
+  }
+  function commentCharIsEscaped(source,index){
+    let slashes=0; for(let i=index-1;i>=0&&source[i]==="\\";i--)slashes++;
+    return slashes%2===1;
+  }
+  // Canonical, single-pass parser shared by live validation, preview stripping, highlighting,
+  // and click hit-testing. Comment wrappers may contain ordinary balanced LaTeX braces, but a
+  // comment may never contain another comment wrapper.
+  function parseCommentWrappers(value){
+    const source=String(value||""), token="\\comment{", wrappers=[], ids=new Set(); let cursor=0;
+    while(cursor<source.length){
+      const open=source.indexOf(token,cursor); if(open<0)break;
+      if(commentCharIsEscaped(source,open)){cursor=open+token.length;continue;}
+      const idStart=open+token.length, idEnd=source.indexOf("}",idStart);
+      if(idEnd<0)throw commentMarkupError(source,open,"unclosed_comment_id","The comment ID is missing its closing brace.");
+      const id=source.slice(idStart,idEnd);
+      if(!/^[A-Za-z0-9_-]+$/.test(id))throw commentMarkupError(source,idStart,"invalid_comment_id","Comment IDs may contain only letters, numbers, hyphens, and underscores.",id);
+      if(source[idEnd+1]!=="{")throw commentMarkupError(source,idEnd+1,"missing_comment_body","The comment wrapper is missing its body.",id);
+      if(ids.has(id))throw commentMarkupError(source,open,"duplicate_comment","A comment ID may appear only once on a page.",id);
+      const bodyStart=idEnd+2; let depth=1, i=bodyStart, slashRun=0;
+      for(;i<source.length;i++){
+        const escaped=slashRun%2===1;
+        if(source.startsWith(token,i)&&!escaped)
+          throw commentMarkupError(source,i,"intersecting_comments","Comments cannot overlap, contain, or intersect another comment.",id);
+        if(!escaped&&source[i]==="{")depth++;
+        else if(!escaped&&source[i]==="}"&&--depth===0)break;
+        slashRun=source[i]==="\\"?slashRun+1:0;
+      }
+      if(depth!==0)throw commentMarkupError(source,open,"unclosed_comment","The comment wrapper is missing its closing brace.",id);
+      ids.add(id); wrappers.push({id,openStart:open,idStart,idEnd,bodyStart,bodyEnd:i,closeEnd:i+1,body:source.slice(bodyStart,i)});
+      cursor=i+1;
     }
-    return out;
+    return wrappers;
+  }
+  function validateEditorCommentMarkup(value){
+    const source=String(value||""),wrappers=parseCommentWrappers(source);
+    if(!S.reviewCommentsLoaded)return wrappers;
+    const known=new Map((S.comments||[]).map(thread=>[String(thread.id||""),thread]));
+    wrappers.forEach(wrapper=>{
+      const thread=known.get(wrapper.id);
+      if(!thread)throw commentMarkupError(source,wrapper.openStart,"unknown_comment","This comment ID does not exist.",wrapper.id);
+      if(thread.status==="resolved")throw commentMarkupError(source,wrapper.openStart,"resolved_comment","Resolved comments cannot remain in Markdown.",wrapper.id);
+      if(thread.anchor_state==="unanchored")throw commentMarkupError(source,wrapper.openStart,"reattached_comment","Unanchored comments cannot be reinserted manually.",wrapper.id);
+    });
+    return wrappers;
+  }
+  function stripCommentMarkers(value){
+    const source=String(value||""), wrappers=parseCommentWrappers(source); if(!wrappers.length)return source;
+    let out="",cursor=0;
+    wrappers.forEach(w=>{out+=source.slice(cursor,w.openStart)+source.slice(w.bodyStart,w.bodyEnd);cursor=w.closeEnd;});
+    return out+source.slice(cursor);
+  }
+  function reviewMarkupErrorHtml(error){
+    const safe=String(error&&error.message||"Invalid comment markup").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    return '<div class="review-render-error" role="alert"><b>Review markup error</b>'+safe+'<br>Close or remove the broken <code>\\comment{id}{…}</code> wrapper before saving.</div>';
+  }
+  function showEditorReviewMarkupError(error){
+    const host=$("#editorHost");if(!host)return;
+    const existing=$("#reviewMarkupError");
+    if(!error){if(existing)existing.remove();return;}
+    const banner=existing||el("div",{id:"reviewMarkupError",class:"review-render-error review-editor-error",role:"alert"});
+    banner.replaceChildren(el("b",{},"Review markup error"),document.createTextNode(error.message),el("br"),
+      document.createTextNode("Close or remove the broken "),el("code",{},"\\comment{id}{…}"),document.createTextNode(" wrapper before saving."));
+    if(!existing)host.append(banner);
   }
   function renderMarkdown(md,opts){
     opts=opts||{}; const refs=opts.refs;
     const store=[], captionStore=[]; let s=md||"";
     // Inline review delimiters are source-only. Strip them before math/KaTeX processing and
     // before marked.js renders the preview, while leaving the markers visible in Markdown mode.
-    s=stripCommentMarkers(s);
+    try{s=stripCommentMarkers(s);}catch(error){if(error&&error.name==="CommentMarkupError")return reviewMarkupErrorHtml(error);throw error;}
     if(opts.sourceMarkers) s=withSourceMarkers(s);
     // Stored report Markdown predates workspaces. Add the active workspace capability at render
     // time so existing report figures keep working after a workspace switch or in a new tab.
@@ -1613,6 +1676,8 @@
     previewEl:null, remoteChangePending:false, papersMenu:null, chatPane:null,
     detailWrap:null,
     comments:[], reviewOpen:false, reviewTab:"open", selectedComment:null, lastCommentsMtime:null,
+    reviewSelection:null, reviewHitTargets:[], reviewMarkupError:null, reviewHighlightFrame:null,reviewMutationObserver:null,
+    reviewMutating:false,reviewMutationEpoch:0,reviewCommentsLoaded:false,
     refAc:null,
     healthTimer:null, healthSeq:0, verifiedActive:null,
     shareActive:false, shareToken:"", bubbleFocus:false, showHiddenPages:false, renderVersion:0,
@@ -1681,7 +1746,9 @@
     S.editor=null; S.bubble=null; S.page=null; S.pages=[]; S.previewEl=null;
     S.chatPane=null; S.detailWrap=null; S.papersMenu=null;
     S.remoteChangePending=false; S.sessionId=null; S.sessionTitle=null;
-    try{ if(window.CSS&&CSS.highlights){CSS.highlights.delete("lockedin-review");CSS.highlights.delete("lockedin-review-markers");} }catch(e){}
+    if(S.reviewMutationObserver){S.reviewMutationObserver.disconnect();S.reviewMutationObserver=null;}
+    S.comments=[];S.reviewSelection=null;S.reviewHitTargets=[];S.reviewMarkupError=null;S.commentDraftAnchor=null;S.reviewMutating=false;S.reviewCommentsLoaded=false;
+    try{ if(window.CSS&&CSS.highlights)CSS.highlights.delete("lockedin-review"); }catch(e){}
   }
 
   // ================= AUTH =================
@@ -3213,7 +3280,7 @@
     const token=S.openToken=(S.openToken||0)+1;
     if(!noRoute)pushRoute("bubble/"+slug);
     S.bubble=slug; S.refs=null; S.chat=[]; S.page=null; S.pages=[]; S.sessionId=null; S.sessionTitle=null;
-    S.selectedComment=null;
+    S.selectedComment=null;S.reviewSelection=null;S.reviewHitTargets=[];S.reviewMarkupError=null;S.commentDraftAnchor=null;S.reviewMutating=false;S.reviewMutationEpoch=(S.reviewMutationEpoch||0)+1;S.reviewCommentsLoaded=false;
     S.previewEl=null; S.remoteChangePending=false; S.papersMenu=null; S.chatPane=null; S.detailWrap=null;
     S.baseMtime=null; S.saving=false; S.syncState="synced";
     S.shareActive=false; S.shareToken=""; S.editingTitles=false; S.nameInput=null; S.showHiddenPages=false;
@@ -3501,7 +3568,7 @@
       if(S.applyingRemote)return;            // programmatic setMarkdown — not a user edit
       markStale(); scheduleAutosave();
       refreshReferenceAutocomplete();
-      resolveCommentAnchors(); renderEditorCommentHighlights(); renderReview();
+      refreshCommentSourceState(); scheduleEditorCommentHighlights(); renderReview();
       clearTimeout(deb); deb=setTimeout(updatePreview,300); });
     // A newly opened report should start its animations from the beginning. Ordinary
     // typing updates below deliberately keep the existing GIF elements in place.
@@ -3826,7 +3893,16 @@
     if(!S.previewEl||!S.editor)return;
     const sTop=S.previewEl.scrollTop, sLeft=S.previewEl.scrollLeft;
     const savedResources=restartGifs?null:collectPreviewResources(S.previewEl);
-    S.previewEl.innerHTML=renderMarkdown(S.editor.getMarkdown(),{refs:S.refs,pageSlug:S.page,citationPdfLinks:true,sourceMarkers:true});
+    const markdown=S.editor.getMarkdown();
+    try{validateEditorCommentMarkup(markdown);S.reviewMarkupError=null;showEditorReviewMarkupError(null);}
+    catch(error){
+      if(error&&error.name==="CommentMarkupError"){
+        S.reviewMarkupError=error;showEditorReviewMarkupError(error);S.previewEl.innerHTML=reviewMarkupErrorHtml(error);
+        S.previewEl.scrollTop=sTop;S.previewEl.scrollLeft=sLeft;return;
+      }
+      throw error;
+    }
+    S.previewEl.innerHTML=renderMarkdown(markdown,{refs:S.refs,pageSlug:S.page,citationPdfLinks:true,sourceMarkers:true});
     bindPreviewSourceOffsets(S.previewEl);
     decorateFigures(S.previewEl);
     linkifyWikilinks(S.previewEl);
@@ -3836,62 +3912,93 @@
     restoreScroll(); requestAnimationFrame(restoreScroll);
   }
 
+  function reviewEditorScrollElements(){
+    const view=editorView(),dom=view&&view.dom;if(!dom)return null;
+    return Array.from(new Set([dom,dom.closest(".toastui-editor-md-container"),dom.closest(".toastui-editor-main"),dom.parentElement].filter(Boolean)));
+  }
+  function reviewEditorScroller(){
+    const candidates=reviewEditorScrollElements()||[];
+    return candidates.find(node=>node.scrollHeight>node.clientHeight)
+      ||candidates.find(node=>node.scrollWidth>node.clientWidth)||candidates[0]||null;
+  }
   function installEditorCommentHighlights(host){
     const view=editorView();
-    // CSS Highlights are bound to real DOM Ranges, so CodeMirror scrolls and reflows them with
-    // its text. Unlike an absolute overlay, there is no independent geometry to drift.
+    if(!view||!view.dom)return;
     const openCommentAtPointer=e=>{
-      try{
-        let pos=null, caret=null;
-        if(document.caretPositionFromPoint)caret=document.caretPositionFromPoint(e.clientX,e.clientY);
-        else if(document.caretRangeFromPoint)caret=document.caretRangeFromPoint(e.clientX,e.clientY);
-        if(caret&&caret.offsetNode)pos=view.posAtDOM(caret.offsetNode,caret.offset);
-        else if(caret&&caret.startContainer)pos=view.posAtDOM(caret.startContainer,caret.startOffset);
-        if(pos==null)pos=view.posAtCoords({x:e.clientX,y:e.clientY});
-        const thread=(S.comments||[]).find(t=>t.status!=="resolved"&&t._start>=0&&pos>=t._start&&pos<=t._end);
-        if(!thread)return;
-        S.selectedComment=thread.id; if(!S.reviewOpen)toggleReview(); renderReview();
-      }catch(err){}
+      const hit=(S.reviewHitTargets||[]).find(target=>target.rects.some(rect=>
+        e.clientX>=rect.left&&e.clientX<=rect.right&&e.clientY>=rect.top&&e.clientY<=rect.bottom));
+      if(hit)openReviewThread(hit.id);
     };
-    if(view&&view.dom){view.dom.addEventListener("click",openCommentAtPointer);view.dom.addEventListener("dblclick",openCommentAtPointer);}
-    window.addEventListener("resize",renderEditorCommentHighlights,{passive:true});
+    const captureSelection=()=>requestAnimationFrame(()=>{snapshotReviewSelection();scheduleEditorCommentHighlights();});
+    // Bind to the stable editor host. Toast replaces its ProseMirror root during setMarkdown;
+    // listeners attached to that root would silently disappear after resolve/delete/page loads.
+    host.addEventListener("click",openCommentAtPointer);
+    host.addEventListener("mouseup",captureSelection);
+    host.addEventListener("keyup",captureSelection);
+    host.addEventListener("scroll",scheduleEditorCommentHighlights,{capture:true,passive:true});
+    if(S.reviewMutationObserver)S.reviewMutationObserver.disconnect();
+    S.reviewMutationObserver=new MutationObserver(scheduleEditorCommentHighlights);
+    S.reviewMutationObserver.observe(host,{childList:true,subtree:true,characterData:true});
+    if(!S.reviewResizeBound){S.reviewResizeBound=true;window.addEventListener("resize",scheduleEditorCommentHighlights,{passive:true});}
+  }
+  function scheduleEditorCommentHighlights(){
+    if(S.reviewHighlightFrame)cancelAnimationFrame(S.reviewHighlightFrame);
+    S.reviewHighlightFrame=requestAnimationFrame(()=>{S.reviewHighlightFrame=null;renderEditorCommentHighlights();});
+  }
+  function editorVisibleTextIndex(root,source){
+    if(!root)return null;
+    const spans=[],walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);let node,cursor=0;
+    while(node=walker.nextNode()){
+      const value=String(node.nodeValue||"");if(!value)continue;
+      const start=source.indexOf(value,cursor);if(start<0)continue;
+      const end=start+value.length;spans.push({node,start,end,length:value.length});cursor=end;
+    }
+    spans.sort((a,b)=>a.start-b.start||a.end-b.end);
+    const rangesFor=(start,end)=>{
+      let low=0,high=spans.length;
+      while(low<high){const middle=(low+high)>>1;if(spans[middle].end<=start)low=middle+1;else high=middle;}
+      const visible=[];for(let i=low;i<spans.length&&spans[i].start<end;i++)if(spans[i].end>start)visible.push(spans[i]);
+      if(!visible.length)return [];
+      const groups=[];
+      visible.forEach(span=>{
+        const last=groups[groups.length-1];
+        if(last&&span.start<=last[last.length-1].end+1)last.push(span);else groups.push([span]);
+      });
+      return groups.map(group=>{
+        const first=group[0],last=group[group.length-1],range=document.createRange();
+        range.setStart(first.node,Math.max(0,Math.min(first.length,start-first.start)));
+        range.setEnd(last.node,Math.max(0,Math.min(last.length,end-last.start)));
+        return range;
+      });
+    };
+    const sourceOffsetFor=(node,domOffset)=>{
+      const span=spans.find(item=>item.node===node);if(!span)return null;
+      return span.start+Math.max(0,Math.min(span.length,Number(domOffset)||0));
+    };
+    return {spans,rangesFor,sourceOffsetFor};
   }
   function renderEditorCommentHighlights(){
     const view=editorView();
     if(!(window.CSS&&CSS.highlights&&window.Highlight)){return;}
-    CSS.highlights.delete("lockedin-review"); CSS.highlights.delete("lockedin-review-markers");
+    CSS.highlights.delete("lockedin-review"); S.reviewHitTargets=[];
     if(!view||S.viewMode==="view")return;
-    const ranges=[], markerRanges=[];
-    const domTextRange=(root,needle)=>{
-      const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT); let node;
-      while(node=walker.nextNode()){
-        const at=String(node.nodeValue||"").indexOf(needle);
-        if(at>=0){const r=document.createRange();r.setStart(node,at);r.setEnd(node,at+needle.length);return r;}
-      }
-      return null;
-    };
-    const domCommentRange=(root,t,md)=>{
-      const quote=md.slice(t._start,t._end), opening="\\comment{"+t.id+"}{", needle=opening+quote+"}";
-      const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT); let node;
-      while(node=walker.nextNode()){
-        const at=String(node.nodeValue||"").indexOf(needle);
-        if(at>=0){const r=document.createRange();r.setStart(node,at+opening.length);r.setEnd(node,at+opening.length+quote.length);return r;}
-      }
-      return null;
-    };
-    const sourceMd=S.editor&&S.editor.getMarkdown?S.editor.getMarkdown():"";
-    (S.comments||[]).filter(t=>t._start>=0&&t.status!=="resolved").forEach(t=>{
-      try{
-        const exact=domCommentRange(view.dom,t,sourceMd);
-        if(exact)ranges.push(exact);
-        else {const from=view.domAtPos(t._start), to=view.domAtPos(t._end), range=document.createRange();
-          range.setStart(from.node,from.offset); range.setEnd(to.node,to.offset); ranges.push(range);}
-        const opening=domTextRange(view.dom,"\\comment{"+t.id+"}{");
-        if(opening)markerRanges.push(opening);
-      }catch(e){}
+    const openIds=new Set((S.comments||[]).filter(t=>t.status!=="resolved"&&t.anchor_state!=="unanchored").map(t=>String(t.id)));
+    if(!openIds.size)return;
+    const source=S.editor&&S.editor.getMarkdown?S.editor.getMarkdown():"";let wrappers=[];
+    try{wrappers=parseCommentWrappers(source).filter(w=>openIds.has(w.id)&&w.bodyStart<w.bodyEnd);}catch(e){return;}
+    if(!wrappers.length)return;
+    const index=editorVisibleTextIndex(view.dom,source);if(!index)return;
+    const ranges=[];
+    wrappers.forEach(w=>{
+      index.rangesFor(w.bodyStart,w.bodyEnd).forEach(range=>{try{
+        const rects=Array.from(range.getClientRects()).map(r=>({left:r.left,right:r.right,top:r.top,bottom:r.bottom}));
+        if(rects.length){ranges.push(range);S.reviewHitTargets.push({id:w.id,range,rects});}
+      }catch(e){}});
     });
     if(ranges.length)CSS.highlights.set("lockedin-review",new Highlight(...ranges));
-    if(markerRanges.length)CSS.highlights.set("lockedin-review-markers",new Highlight(...markerRanges));
+  }
+  function clearEditorCommentHighlights(){
+    S.reviewHitTargets=[];try{if(window.CSS&&CSS.highlights)CSS.highlights.delete("lockedin-review");}catch(e){}
   }
 
   // Rendering Markdown replaces the preview DOM. Keep every unchanged external resource through
@@ -4232,13 +4339,14 @@
     refreshTabs();
   }
   // ---- autosave (debounced) + optimistic-concurrency save ----
-  const AUTOSAVE_MS=2500;
+  const AUTOSAVE_MS=500;
   function scheduleAutosave(){
     clearTimeout(S.autosaveTimer);
     S.autosaveTimer=setTimeout(()=>autosave(),AUTOSAVE_MS);
   }
   async function autosave(){
     if(!S.editor||!S.page)return;
+    if(S.reviewMutating){scheduleAutosave();return;}
     // Don't clobber an external edit: when a remote change is pending, stay in the
     // conflict state and wait for the user to resolve it by hand (click the badge).
     if(S.remoteChangePending){ markConflict(); return; }
@@ -4253,18 +4361,34 @@
   // from; a 409 means the file changed underneath us -> flag a conflict, don't overwrite.
   async function doSave(opts={}){
     if(!S.editor||!S.page||S.saving)return false;
+    if(S.reviewMutating){scheduleAutosave();return false;}
     const bubble=S.bubble, page=S.page, content=S.editor.getMarkdown();
+    try{validateEditorCommentMarkup(content);S.reviewMarkupError=null;}
+    catch(error){
+      if(error&&error.name==="CommentMarkupError"){
+        S.reviewMarkupError=error;markStale();updatePreview();
+        if(!opts.auto)toast("Cannot save: "+error.message);return false;
+      }
+      throw error;
+    }
+    const editorState=captureReviewEditorState();
     S.saving=true; markSaving();
     try{
       const r=await api("/api/bubbles/"+bubble+"/pages/"+page,
         {method:"PUT",body:JSON.stringify({content,base_mtime:S.baseMtime})});
       if(S.bubble!==bubble||S.page!==page)return true;   // navigated away mid-save
-      S.baseMtime=r.page_mtime; S.lastPageMtime=r.page_mtime; S.remoteChangePending=false;
-      // Only declare "synced" if nothing was typed while the request was in flight.
-      if(content===S.editor.getMarkdown())markSynced(); else scheduleAutosave();
-      // The server rebases review anchors during the save; fetch those updated ranges so the
-      // highlight remains visible immediately instead of waiting for the polling interval.
-      if(S.comments&&S.comments.length&&!opts.skipComments)await loadComments();
+      if(content===S.editor.getMarkdown()&&typeof r.content==="string"&&r.content!==content)applyAuthoritativeReviewResponse(r,editorState);
+      else if(content===S.editor.getMarkdown()){
+        S.baseMtime=r.page_mtime;S.lastPageMtime=r.page_mtime;S.remoteChangePending=false;markSynced();
+        if(Array.isArray(r.threads)){S.comments=r.threads;S.reviewCommentsLoaded=true;}
+        if(r.comments_mtime!=null)S.lastCommentsMtime=r.comments_mtime;
+        refreshCommentSourceState();requestAnimationFrame(()=>{renderReview();scheduleEditorCommentHighlights();});
+      }
+      else{
+        S.baseMtime=r.page_mtime;S.lastPageMtime=r.page_mtime;S.remoteChangePending=false;
+        if(Array.isArray(r.threads)){S.comments=r.threads;S.reviewCommentsLoaded=true;}
+        refreshCommentSourceState();scheduleEditorCommentHighlights();renderReview();scheduleAutosave();
+      }
       if(!opts.auto)toast("Page saved");
       fetchRefs().then(()=>updatePreview());   // pick up labels/numbers added on this save
       return true;
@@ -4303,10 +4427,10 @@
   // Capture the current on-disk mtime as our base, without diffing (used after a load).
   async function primeSync(){
     if(!S.bubble||!S.page)return;
-    const bubble=S.bubble, page=S.page;
+    const bubble=S.bubble, page=S.page, epoch=S.reviewMutationEpoch||0;
     try{
       const r=await api("/api/bubbles/"+bubble+"/poll?page="+page);
-      if(S.bubble!==bubble||S.page!==page)return;
+      if(S.bubble!==bubble||S.page!==page||S.reviewMutating||epoch!==(S.reviewMutationEpoch||0))return;
       S.baseMtime=r.page_mtime; S.lastPageMtime=r.page_mtime; S.lastManifestMtime=r.manifest_mtime;
       S.lastCommentsMtime=r.comments_mtime;
     }catch(e){}
@@ -4331,6 +4455,7 @@
   }
   // Set editor content without it counting as a user edit (suppresses the change hook).
   function applyRemote(md){
+    clearEditorCommentHighlights();
     S.applyingRemote=true;
     try{ S.editor.setMarkdown(md||"",false); }
     finally{ setTimeout(()=>{ S.applyingRemote=false; },0); }
@@ -4349,9 +4474,10 @@
     }
     await savePage();
     const c=(await api("/api/bubbles/"+S.bubble+"/pages/"+match.page_slug)).content;
-    S.page=match.page_slug; S.remoteChangePending=false;
+    S.page=match.page_slug; S.remoteChangePending=false;S.baseMtime=null;S.lastPageMtime=null;
     if(!noRoute)pushRoute("bubble/"+S.bubble+"/"+S.page);   // keep the page across refresh
-    applyRemote(c||""); markSynced(); refreshTabs(); S.selectedComment=null; S.comments=[]; renderEditorCommentHighlights(); S.lastCommentsMtime=null; loadComments();
+    applyRemote(c||""); markSynced(); refreshTabs(); S.selectedComment=null;S.reviewSelection=null;S.reviewHitTargets=[];S.reviewMarkupError=null;S.commentDraftAnchor=null;
+    S.comments=[];S.reviewCommentsLoaded=false;scheduleEditorCommentHighlights();S.lastCommentsMtime=null;loadComments();
     scrollContentTop();                                     // start the new page at the top
     primeSync();
   }
@@ -4435,80 +4561,52 @@
     const b=$("#reviewToolbarButton"); if(b)b.classList.toggle("active",S.reviewOpen);
     if(S.reviewOpen)renderReview();
   }
-  function commentAnchorFromSelection(){
-    const md=S.editor&&S.editor.getMarkdown?S.editor.getMarkdown():"", view=editorView(); let sel=null;
-    // Read the live browser selection first. Toast UI can leave CodeMirror's stored selection at
-    // the previous review range when the + button is clicked, so relying on that state can wrap
-    // an old sentence instead of the text currently selected by the user.
+  function snapshotReviewSelection(){
+    const content=S.editor&&S.editor.getMarkdown?S.editor.getMarkdown():"",view=editorView();let selection=null;
     try{
-      const nativeSel=window.getSelection&&window.getSelection(), selected=String(nativeSel&&nativeSel.toString()||"");
-      if(selected&&md.includes(selected)){
-        let hint=0;
-        if(nativeSel&&nativeSel.anchorNode&&view&&view.dom&&view.dom.contains(nativeSel.anchorNode)){
-          try{hint=view.posAtDOM(nativeSel.anchorNode,nativeSel.anchorOffset);}catch(e){}
-        }
-        let at=md.indexOf(selected), next;
-        while((next=md.indexOf(selected,at+1))>=0){if(Math.abs(next-hint)<Math.abs(at-hint))at=next;else break;}
-        return {start:at,quote:selected,prefix:md.slice(Math.max(0,at-96),at),suffix:md.slice(at+selected.length,at+selected.length+96)};
+      const native=window.getSelection&&window.getSelection(),index=view&&editorVisibleTextIndex(view.dom,content);
+      if(native&&native.rangeCount&&index&&view.dom.contains(native.anchorNode)&&view.dom.contains(native.focusNode)){
+        const anchor=index.sourceOffsetFor(native.anchorNode,native.anchorOffset),focus=index.sourceOffsetFor(native.focusNode,native.focusOffset);
+        if(anchor!=null&&focus!=null&&anchor!==focus)selection={from:Math.min(anchor,focus),to:Math.max(anchor,focus)};
       }
     }catch(e){}
-    // Fallback for environments without a DOM selection: use the editor document selection.
-    try{
-      const main=view&&view.state&&view.state.selection&&view.state.selection.main;
-      if(main&&main.from!==main.to)sel={from:Math.min(main.from,main.to),to:Math.max(main.from,main.to)};
-    }catch(e){}
-    if(!sel)sel=currentEditorSelectionOffsets();
-    if(!sel||sel.from===sel.to)return null;
-    return {start:sel.from,quote:md.slice(sel.from,sel.to),prefix:md.slice(Math.max(0,sel.from-96),sel.from),suffix:md.slice(sel.to,sel.to+96)};
+    if(!selection)selection=currentEditorSelectionOffsets();
+    if(!selection||selection.from===selection.to){S.reviewSelection=null;return null;}
+    const start=Math.max(0,Math.min(selection.from,selection.to,content.length)),end=Math.max(start,Math.min(Math.max(selection.from,selection.to),content.length));
+    S.reviewSelection={start,end,quote:content.slice(start,end)};return S.reviewSelection;
   }
   function startComment(){
-    const anchor=commentAnchorFromSelection();
-    if(!anchor){toast("Select text first");return;}
+    const selection=S.reviewSelection;
+    if(!selection||selection.start===selection.end){toast("Select text first");return;}
+    const content=S.editor.getMarkdown();
+    if(content.slice(selection.start,selection.end)!==selection.quote){toast("The selected text changed. Select it again.");return;}
+    try{
+      const overlap=parseCommentWrappers(content).some(w=>selection.start<w.closeEnd&&selection.end>w.openStart);
+      if(overlap){toast("Comments cannot overlap or be nested.");return;}
+    }catch(error){toast(error.message);updatePreview();return;}
     if(!S.reviewOpen)toggleReview();
-    S.commentDraftAnchor=anchor; S.selectedComment=null; renderReview();
+    S.reviewTab="open";S.commentDraftAnchor={...selection}; S.selectedComment=null; renderReview();
   }
-  function addInlineCommentMarker(md,anchor,id){
-    const quote=String(anchor&&anchor.quote||""), marker="\\comment{"+id+"}{";
-    if(!quote)return null;
-    let start=Number(anchor.start||0);
-    if(md.slice(start,start+quote.length)!==quote)start=md.indexOf(quote);
-    if(start<0)return null;
-    const end=start+quote.length;
-    return md.slice(0,start)+marker+md.slice(start,end)+"}"+md.slice(end);
-  }
-  function resetEditorHorizontalScroll(){
-    const view=editorView(); if(!view)return;
-    try{view.scrollDOM.scrollLeft=0; const scroller=view.scrollDOM.querySelector&&view.scrollDOM.querySelector(".cm-scroller");if(scroller)scroller.scrollLeft=0;}catch(e){}
-  }
-  function captureEditorScroll(){const v=editorView();return v?{top:v.scrollDOM.scrollTop,left:v.scrollDOM.scrollLeft}:null;}
-  function restoreEditorScroll(pos){const v=editorView();if(!v||!pos)return;requestAnimationFrame(()=>{v.scrollDOM.scrollTop=pos.top;v.scrollDOM.scrollLeft=pos.left;});}
-  function findCommentMarker(md,id){
-    const marker="\\comment{"+id+"}{", open=md.indexOf(marker); if(open<0)return null;
-    const start=open+marker.length; let depth=1,i=start;
-    for(;i<md.length&&depth;i++){if(md[i]==="{"&&md[i-1]!=="\\")depth++;else if(md[i]==="}"&&md[i-1]!=="\\")depth--;}
-    return depth?null:{open,start,end:i-1,closeEnd:i};
-  }
-  function resolveCommentAnchors(){
-    const md=S.editor&&S.editor.getMarkdown?S.editor.getMarkdown():"";
-    (S.comments||[]).forEach(t=>{
-      const id=String(t.id||""), found=findCommentMarker(md,id);
-      if(found){
-        t._start=found.start; t._end=found.end; t._markerStart=found.open; t._markerEnd=found.end;
-        return;
-      }
-      // Legacy sidecar-only comments are resolved by their original quote until the next page
-      // read migrates them to inline markers.
-      const q=String((t.anchor||{}).quote||""); let best=-1, pos=q?md.indexOf(q):-1;
-      const original=Number((t.anchor||{}).start||0);
-      while(pos>=0){if(best<0||Math.abs(pos-original)<Math.abs(best-original))best=pos;pos=md.indexOf(q,pos+1);}
-      t._start=best; t._end=best<0?-1:best+q.length; delete t._markerStart; delete t._markerEnd;
+  function refreshCommentSourceState(){
+    const content=S.editor&&S.editor.getMarkdown?S.editor.getMarkdown():"";let byId=new Map();
+    try{byId=new Map(validateEditorCommentMarkup(content).map(wrapper=>[wrapper.id,wrapper]));S.reviewMarkupError=null;}
+    catch(error){S.reviewMarkupError=error;}
+    (S.comments||[]).forEach(thread=>{
+      const wrapper=thread.status!=="resolved"&&byId.get(String(thread.id||""));
+      thread._start=wrapper?wrapper.bodyStart:-1;thread._end=wrapper?wrapper.bodyEnd:-1;
     });
   }
+  function openReviewThread(id){
+    S.selectedComment=id;S.reviewTab="open";
+    if(!S.reviewOpen){S.reviewOpen=true;try{localStorage.setItem("lockedin:review:"+S.bubble,"1");}catch(e){}
+      const host=$("#editorHost");if(host)host.classList.remove("review-closed");const button=$("#reviewToolbarButton");if(button)button.classList.add("active");}
+    renderReview();requestAnimationFrame(()=>{const node=document.querySelector('.review-thread[data-review-id="'+CSS.escape(String(id))+'"]');if(node)node.scrollIntoView({block:"nearest"});});
+  }
   async function loadComments(){
-    if(!S.bubble||!S.page)return;
-    const bubble=S.bubble,page=S.page;
+    if(!S.bubble||!S.page||S.reviewMutating)return;
+    const bubble=S.bubble,page=S.page,epoch=S.reviewMutationEpoch||0;
     try{const r=await api("/api/bubbles/"+bubble+"/pages/"+page+"/comments");
-      if(S.bubble===bubble&&S.page===page){S.comments=r.threads||[];resolveCommentAnchors();renderEditorCommentHighlights();renderReview();updatePreview();}}
+      if(S.bubble===bubble&&S.page===page&&!S.reviewMutating&&epoch===(S.reviewMutationEpoch||0)){S.comments=r.threads||[];S.reviewCommentsLoaded=true;refreshCommentSourceState();scheduleEditorCommentHighlights();renderReview();if(S.reviewMarkupError)updatePreview();}}
     catch(e){}
   }
   function reviewThreads(){
@@ -4520,6 +4618,80 @@
       const bb=b._start<0?Number((b.anchor||{}).start||0):b._start; return aa-bb;
     });
   }
+  function captureReviewEditorState(){
+    const selection=currentEditorSelectionOffsets(),scrolls=(reviewEditorScrollElements()||[]).map(node=>({node,top:node.scrollTop,left:node.scrollLeft}));
+    return {content:S.editor&&S.editor.getMarkdown?S.editor.getMarkdown():"",
+      from:selection?selection.from:0,to:selection?selection.to:0,
+      scrolls};
+  }
+  function mapOffsetThroughAuthoritativeEdit(before,after,offset){
+    try{
+      const oldWrappers=parseCommentWrappers(before),newWrappers=parseCommentWrappers(after),newIds=new Set(newWrappers.map(w=>w.id)),oldIds=new Set(oldWrappers.map(w=>w.id));
+      const removed=oldWrappers.filter(w=>!newIds.has(w.id));
+      if(removed.length===1){
+        const w=removed[0],unwrapped=before.slice(0,w.openStart)+before.slice(w.bodyStart,w.bodyEnd)+before.slice(w.closeEnd);
+        if(unwrapped===after){const opening=w.bodyStart-w.openStart,closing=w.closeEnd-w.bodyEnd;
+          if(offset<=w.openStart)return offset;if(offset<w.bodyStart)return w.openStart;
+          if(offset<=w.bodyEnd)return offset-opening;if(offset<w.closeEnd)return w.bodyEnd-opening;
+          return offset-opening-closing;}
+      }
+      const added=newWrappers.filter(w=>!oldIds.has(w.id));
+      if(added.length===1){
+        const w=added[0],unwrapped=after.slice(0,w.openStart)+after.slice(w.bodyStart,w.bodyEnd)+after.slice(w.closeEnd);
+        if(unwrapped===before){const opening=w.bodyStart-w.openStart,closing=w.closeEnd-w.bodyEnd,rawEnd=w.openStart+(w.bodyEnd-w.bodyStart);
+          if(offset<w.openStart)return offset;if(offset<=rawEnd)return offset+opening;return offset+opening+closing;}
+      }
+    }catch(e){}
+    let prefix=0;while(prefix<before.length&&prefix<after.length&&before[prefix]===after[prefix])prefix++;
+    let suffix=0;while(suffix<before.length-prefix&&suffix<after.length-prefix&&before[before.length-1-suffix]===after[after.length-1-suffix])suffix++;
+    if(offset<=prefix)return offset;
+    if(offset>=before.length-suffix)return Math.max(prefix,offset+(after.length-before.length));
+    return Math.min(after.length-suffix,prefix);
+  }
+  function setReviewMutationBusy(busy){
+    if(busy&&!S.reviewMutating)S.reviewMutationEpoch=(S.reviewMutationEpoch||0)+1;
+    S.reviewMutating=!!busy;
+    if(busy){clearTimeout(S.autosaveTimer);S.autosaveTimer=null;}
+    const view=editorView();if(view&&view.dom)view.dom.inert=!!busy;
+    const panel=$("#reviewWrap");if(panel){panel.inert=!!busy;panel.setAttribute("aria-busy",busy?"true":"false");}
+    if(!busy&&S.syncState==="stale")scheduleAutosave();
+  }
+  function restoreReviewEditorScroll(state){
+    (state&&state.scrolls||[]).forEach(item=>{try{item.node.scrollTop=item.top;item.node.scrollLeft=item.left;}catch(e){}});
+  }
+  function upsertReviewThread(thread){
+    if(!thread||!thread.id)return;
+    const at=(S.comments||[]).findIndex(item=>item.id===thread.id);
+    if(at<0)S.comments=[...(S.comments||[]),thread];else S.comments[at]=thread;
+  }
+  function serverSelectionOffsets(source,start,end){
+    // Browser/editor offsets count UTF-16 code units; Python source offsets count Unicode code
+    // points. Convert once at the API boundary so an emoji before a selection cannot shift it.
+    const prefix=Array.from(source.slice(0,start)).length;
+    return {start:prefix,end:prefix+Array.from(source.slice(start,end)).length};
+  }
+  function applyAuthoritativeReviewResponse(result,state,{pageMutation=true}={}){
+    result=result||{};state=state||captureReviewEditorState();
+    const authoritative=pageMutation&&typeof result.content==="string"?result.content:state.content;
+    if(pageMutation&&typeof result.content==="string"&&S.editor&&authoritative!==S.editor.getMarkdown()){
+      clearEditorCommentHighlights();
+      S.applyingRemote=true;try{S.editor.setMarkdown(authoritative,false);}finally{setTimeout(()=>{S.applyingRemote=false;},0);}
+      try{
+        const from=mapOffsetThroughAuthoritativeEdit(state.content,authoritative,state.from),to=mapOffsetThroughAuthoritativeEdit(state.content,authoritative,state.to);
+        S.editor.setSelection(_srcPosFromOffset(authoritative,Math.min(from,authoritative.length)),_srcPosFromOffset(authoritative,Math.min(to,authoritative.length)));
+      }catch(e){}
+      restoreReviewEditorScroll(state);
+    }
+    if(Array.isArray(result.threads)){S.comments=result.threads;S.reviewCommentsLoaded=true;}else if(result.thread)upsertReviewThread(result.thread);
+    if(pageMutation&&result.page_mtime!=null){S.baseMtime=result.page_mtime;S.lastPageMtime=result.page_mtime;S.remoteChangePending=false;markSynced();}
+    if(result.comments_mtime!=null)S.lastCommentsMtime=result.comments_mtime;
+    refreshCommentSourceState();
+    requestAnimationFrame(()=>{
+      restoreReviewEditorScroll(state);
+      setTimeout(()=>{restoreReviewEditorScroll(state);scheduleEditorCommentHighlights();},30);
+      renderReview();scheduleEditorCommentHighlights();
+    });
+  }
   function renderReview(){
     const wrap=$("#reviewWrap"); if(!wrap)return; wrap.innerHTML="";
     const hd=el("div",{class:"review-hd"});
@@ -4528,29 +4700,33 @@
     wrap.append(hd);
     if(S.commentDraftAnchor){
       const ta=el("textarea",{placeholder:"Add a review comment…"}), save=el("button",{class:"primary small"},"Comment");
-      save.onclick=async()=>{try{
-        const anchor=S.commentDraftAnchor;
-        const result=await api("/api/bubbles/"+S.bubble+"/pages/"+S.page+"/comments",
-          {method:"POST",body:JSON.stringify({body:ta.value,anchor})});
-        const thread=result.thread||{}, marked=addInlineCommentMarker(S.editor.getMarkdown(),anchor,thread.id);
-        if(!marked)throw new Error("Could not place the review marker around the selected text.");
-        S.applyingRemote=true; try{S.editor.setMarkdown(marked,false);}finally{S.applyingRemote=false;}
-        resetEditorHorizontalScroll();
-        S.commentDraftAnchor=null; markStale(); resolveCommentAnchors(); renderEditorCommentHighlights(); renderReview();
-        await doSave({}); await loadComments();
-      }catch(e){toast(e.message);}};
+      save.onclick=async()=>{
+        const selection=S.commentDraftAnchor,content=S.editor&&S.editor.getMarkdown?S.editor.getMarkdown():"";
+        if(!ta.value.trim()){toast("Comment text required");return;}
+        if(!selection||content.slice(selection.start,selection.end)!==selection.quote){toast("The selected text changed. Select it again.");return;}
+        if(S.baseMtime==null){toast("The page revision is still loading. Try again in a moment.");primeSync();return;}
+        const serverOffsets=serverSelectionOffsets(content,selection.start,selection.end);
+        const state=captureReviewEditorState();save.disabled=true;setReviewMutationBusy(true);
+        try{
+          const result=await api("/api/bubbles/"+S.bubble+"/pages/"+S.page+"/comments",{method:"POST",body:JSON.stringify({
+            body:ta.value,content,base_mtime:S.baseMtime,selection_start:serverOffsets.start,selection_end:serverOffsets.end})});
+          if(!Array.isArray(result.threads)&&result.thread)upsertReviewThread(result.thread);
+          S.commentDraftAnchor=null;S.reviewSelection=null;S.selectedComment=result.thread&&result.thread.id||null;
+          applyAuthoritativeReviewResponse(result,state);
+        }catch(e){toast(e.message);save.disabled=false;}finally{setReviewMutationBusy(false);}
+      };
       wrap.append(el("div",{class:"review-compose"},el("b",{},"New review"),ta,save)); setTimeout(()=>ta.focus(),0);
     }
     const rows=reviewThreads(); if(!rows.length&&!S.commentDraftAnchor)wrap.append(el("div",{class:"muted",style:"padding:12px;font-size:12px"},"No "+S.reviewTab+" reviews."));
     rows.forEach(t=>wrap.append(reviewThreadNode(t)));
   }
   function reviewThreadNode(t){
-    const messages=t.messages||[], first=messages[0]||{}, details=el("details",{class:"review-thread"+(S.selectedComment===t.id?" selected":"")});
+    const messages=t.messages||[], first=messages[0]||{}, details=el("details",{class:"review-thread"+(S.selectedComment===t.id?" selected":""),"data-review-id":t.id});
     details.open=S.selectedComment===t.id;
     const replyCount=Math.max(0,messages.length-1);
     const summary=el("summary",{},el("b",{},first.author||"Unknown"),
       el("div",{class:"review-meta"},replyCount?(replyCount+" "+(replyCount===1?"reply":"replies")):"No replies"));
-    if(t._start<0)summary.append(el("span",{class:"review-orphan"}," Unanchored"));
+    if(t._start<0||t.anchor_state==="unanchored")summary.append(el("span",{class:"review-orphan"}," Unanchored"));
     summary.onclick=e=>{e.preventDefault();S.selectedComment=t.id;if(t._start>=0)scrollToCommentAnchor(t);renderReview();}; details.append(summary);
     (t.messages||[]).forEach(msg=>{
       const row=el("div",{class:"review-msg"},el("b",{},msg.author||"Unknown")," "+msg.body);
@@ -4566,52 +4742,51 @@
     actions.append(el("button",{class:"ghost",onclick:()=>deleteReview(t)},"Delete"));
     details.append(el("div",{class:"review-compose"},reply,actions)); return details;
   }
-  async function replyReview(t,ta){try{await api("/api/bubbles/"+S.bubble+"/pages/"+S.page+"/comments/"+t.id+"/replies",{method:"POST",body:JSON.stringify({body:ta.value})});await loadComments();}catch(e){toast(e.message);}}
+  async function replyReview(t,ta){
+    if(!ta.value.trim()){toast("Reply text required");return;}
+    const state=captureReviewEditorState();setReviewMutationBusy(true);
+    try{const result=await api("/api/bubbles/"+S.bubble+"/pages/"+S.page+"/comments/"+t.id+"/replies",{method:"POST",body:JSON.stringify({body:ta.value})});
+      if(!Array.isArray(result.threads)&&result.message)t.messages=[...(t.messages||[]),result.message];
+      applyAuthoritativeReviewResponse(result,state,{pageMutation:false});
+    }catch(e){toast(e.message);}finally{setReviewMutationBusy(false);}
+  }
   function inlineEditReviewMessage(t,msg,row){
     if(row.dataset.editing)return; row.dataset.editing="1"; row.replaceChildren();
     const ta=el("textarea",{class:"review-inline-edit"}); ta.value=msg.body;
     const save=el("button",{class:"primary small"},"Save"), cancel=el("button",{class:"ghost small"},"Cancel");
-    const finish=async()=>{const body=ta.value.trim();if(!body){toast("Comment text required");return;}save.disabled=true;try{
-      await api("/api/bubbles/"+S.bubble+"/pages/"+S.page+"/comments/"+t.id+"/messages/"+msg.id,{method:"PATCH",body:JSON.stringify({body})});await loadComments();
-    }catch(e){save.disabled=false;toast(e.message);}};
+    const finish=async()=>{const body=ta.value.trim();if(!body){toast("Comment text required");return;}const state=captureReviewEditorState();save.disabled=true;setReviewMutationBusy(true);try{
+      const result=await api("/api/bubbles/"+S.bubble+"/pages/"+S.page+"/comments/"+t.id+"/messages/"+msg.id,{method:"PATCH",body:JSON.stringify({body})});
+      if(!Array.isArray(result.threads)&&result.message){const at=(t.messages||[]).findIndex(item=>item.id===msg.id);if(at>=0)t.messages[at]=result.message;}
+      applyAuthoritativeReviewResponse(result,state,{pageMutation:false});
+    }catch(e){save.disabled=false;toast(e.message);}finally{setReviewMutationBusy(false);}};
     save.onclick=finish; cancel.onclick=()=>renderReview();
     ta.onkeydown=e=>{if((e.ctrlKey||e.metaKey)&&e.key==="Enter"){e.preventDefault();finish();}if(e.key==="Escape"){e.preventDefault();renderReview();}};
     row.append(ta,el("div",{class:"review-actions"},save,cancel)); ta.focus(); ta.setSelectionRange(ta.value.length,ta.value.length);
   }
   async function setReviewStatus(t,status){
-    const scroll=captureEditorScroll();
+    if(S.baseMtime==null){toast("The page revision is still loading. Try again in a moment.");primeSync();return;}
+    const state=captureReviewEditorState(),content=state.content;setReviewMutationBusy(true);
     try{
-      await api("/api/bubbles/"+S.bubble+"/pages/"+S.page+"/comments/"+t.id,{method:"PATCH",body:JSON.stringify({status})});
-      const page=await api("/api/bubbles/"+S.bubble+"/pages/"+S.page);
-      if(S.editor)applyRemote(page.content||"");
-      await primeSync();
-      await loadComments(); restoreEditorScroll(scroll);
-    }catch(e){restoreEditorScroll(scroll);toast(e.message);}
+      const result=await api("/api/bubbles/"+S.bubble+"/pages/"+S.page+"/comments/"+t.id,{method:"PATCH",body:JSON.stringify({status,content,base_mtime:S.baseMtime})});
+      if(!Array.isArray(result.threads)&&result.thread)upsertReviewThread(result.thread);
+      S.reviewTab=status;S.selectedComment=t.id;applyAuthoritativeReviewResponse(result,state);
+    }catch(e){toast(e.message);}finally{setReviewMutationBusy(false);}
   }
   async function deleteReview(t){
     if(!confirm("Delete this review and all replies?"))return;
-    const scroll=captureEditorScroll();
+    if(S.baseMtime==null){toast("The page revision is still loading. Try again in a moment.");primeSync();return;}
+    const state=captureReviewEditorState(),content=state.content;setReviewMutationBusy(true);
     try{
-      // The editor still has the source marker in memory. Remove it locally before the worker
-      // can autosave the stale document back and resurrect the deleted thread.
-      const md=S.editor&&S.editor.getMarkdown?S.editor.getMarkdown():"";
-      const found=findCommentMarker(md,String(t.id||""));
-      const cleaned=found?md.slice(0,found.open)+md.slice(found.start,found.end)+md.slice(found.closeEnd):md;
-      if(cleaned!==md&&S.editor){
-        S.applyingRemote=true;try{S.editor.setMarkdown(cleaned,false);}finally{S.applyingRemote=false;}
-        // This is an intentional coordinated write, not a stale-edit conflict.
-        S.baseMtime=null; S.remoteChangePending=false; await doSave({});
-      }
-      await api("/api/bubbles/"+S.bubble+"/pages/"+S.page+"/comments/"+t.id,{method:"DELETE"});
-      await loadComments(); restoreEditorScroll(scroll);
-    }catch(e){restoreEditorScroll(scroll);toast(e.message);}
+      const result=await api("/api/bubbles/"+S.bubble+"/pages/"+S.page+"/comments/"+t.id,{method:"DELETE",body:JSON.stringify({content,base_mtime:S.baseMtime})});
+      if(!Array.isArray(result.threads))S.comments=(S.comments||[]).filter(thread=>thread.id!==t.id);
+      S.selectedComment=null;applyAuthoritativeReviewResponse(result,state);
+    }catch(e){toast(e.message);}finally{setReviewMutationBusy(false);}
   }
   function scrollToCommentAnchor(t){
-    const view=editorView(), scroller=view&&view.scrollDOM; if(!view||!scroller||t._start<0)return;
-    try{
-      const rect=view.coordsAtPos(t._start), box=scroller.getBoundingClientRect();
-      if(rect)scroller.scrollTop+=rect.top-box.top-(box.height*.32);
-    }catch(e){}
+    const scroller=reviewEditorScroller(),target=(S.reviewHitTargets||[]).find(item=>item.id===String(t.id));
+    if(!scroller||!target||!target.rects.length)return;
+    const rect=target.rects[0],box=scroller.getBoundingClientRect();scroller.scrollTop+=rect.top-box.top-(box.height*.32);
+    scheduleEditorCommentHighlights();
   }
   function buildSyncTool(){
     const b=editorToolButton("syncToolbarButton","Saved automatically; click to save now",clickSave);
@@ -4670,12 +4845,12 @@
     S.baseMtime=null; S.saving=false; S.syncState="synced";
   }
   async function pollSync(){
-    if(!S.bubble||!S.page)return;
+    if(!S.bubble||!S.page||S.reviewMutating)return;
     if(S.editingTitles)return;   // don't re-render tabs (wiping title inputs) mid-edit
-    const bubble=S.bubble, page=S.page;
+    const bubble=S.bubble, page=S.page, epoch=S.reviewMutationEpoch||0;
     try{
       const r=await api("/api/bubbles/"+bubble+"/poll?page="+page);
-      if(S.bubble!==bubble||S.page!==page)return; // navigated away during await
+      if(S.bubble!==bubble||S.page!==page||S.reviewMutating||epoch!==(S.reviewMutationEpoch||0))return; // navigated or mutated during await
       if(S.lastManifestMtime!==null&&r.manifest_mtime!==S.lastManifestMtime){
         S.pages=r.pages||[]; refreshTabs();
       }
@@ -4686,7 +4861,7 @@
         } else if(S.syncState==="synced"&&S.editor){
           // editor is clean — safe to pull the external edit in automatically
           const c=(await api("/api/bubbles/"+bubble+"/pages/"+page)).content;
-          if(S.bubble!==bubble||S.page!==page)return;
+          if(S.bubble!==bubble||S.page!==page||S.reviewMutating||epoch!==(S.reviewMutationEpoch||0))return;
           applyRemote(c||""); S.baseMtime=r.page_mtime; S.remoteChangePending=false;
         } else {
           // unsaved local edits + an external edit -> conflict; user resolves by hand

@@ -19,6 +19,7 @@ import re
 import secrets
 import threading
 import time
+from html import escape
 from pathlib import Path
 from typing import Optional
 from urllib.parse import quote
@@ -40,7 +41,7 @@ _REQUEST_WORKSPACE: contextvars.ContextVar[str | None] = contextvars.ContextVar(
 # Keep this equal to ``scientist_cli.SCIENTIST_CLIENT_VERSION``. Bump both when a Scientist
 # release needs an installed client refresh; the dependency-free installed client cannot import
 # package metadata from this server.
-SCIENTIST_CLIENT_VERSION = "2026.08.11.3"
+SCIENTIST_CLIENT_VERSION = "2026.08.11.4"
 
 
 def _build_refs(pages: "list[dict]", bibliography: "dict | None" = None) -> dict:
@@ -314,7 +315,14 @@ def _render_preview_html(*, name: str, page: str, all_pages: list, content: str,
     """
     # Review delimiters are source-only markers. Remove them before any Markdown, math, or
     # citation preprocessing so KaTeX and rendered pages never expose the comment syntax.
-    content = bubbles.strip_comment_markers(content)
+    try:
+        content = bubbles.strip_comment_markers(content)
+    except bubbles.ReviewMarkupError as exc:
+        # Do not feed malformed review markup into Markdown or KaTeX. The standalone preview
+        # remains safe and gives the author the same actionable source position as the editor.
+        content = (f'<div style="border:1px solid #f87171;background:#3b1717;color:#fecaca;'
+                   f'padding:14px;border-radius:10px"><strong>Review markup error</strong><br>'
+                   f'{escape(str(exc))}</div>')
 
     # Private preview pages receive their workspace through a URL query parameter because a
     # new browser tab cannot carry the SPA's request header. Keep it on every page/wikilink;
@@ -710,6 +718,12 @@ def _sse(obj: dict) -> str:
     return f"data: {json.dumps(obj)}\n\n"
 
 
+def _warn_slow_mutation(kind: str, started: float, slug: str, page: str) -> None:
+    elapsed_ms = (time.perf_counter() - started) * 1000
+    if elapsed_ms > 250:
+        logger.warning("Slow %s mutation for %s/%s: %.1f ms", kind, slug, page, elapsed_ms)
+
+
 def build_app():
     from fastapi import (BackgroundTasks, Cookie, Depends, FastAPI, File, Form,
                          Header, HTTPException, UploadFile)
@@ -722,6 +736,10 @@ def build_app():
     # workspace-owned. Existing links retain their tokens and now target Personal workspaces.
     service.migrate_share_index_to_workspaces()
     service.migrate_overleaf_fields()
+    review_migration = service.migrate_review_comments()
+    if review_migration.get("errors"):
+        logger.warning("Review migration found %d malformed page(s) requiring repair.",
+                       review_migration["errors"])
     if CROSS_SITE:
         app.add_middleware(CORSMiddleware, allow_origins=PUBLIC_ORIGINS,
                            allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
@@ -855,7 +873,10 @@ def build_app():
 
     class CommentCreateIn(BaseModel):
         body: str
-        anchor: dict
+        content: str
+        base_mtime: float | None = None
+        selection_start: int
+        selection_end: int
 
     class CommentReplyIn(BaseModel):
         body: str
@@ -865,6 +886,23 @@ def build_app():
 
     class CommentStatusIn(BaseModel):
         status: str
+        content: str | None = None
+        base_mtime: float | None = None
+
+    class CommentDeleteIn(BaseModel):
+        content: str | None = None
+        base_mtime: float | None = None
+
+    def review_failure(exc: Exception) -> HTTPException:
+        detail = exc.as_detail() if isinstance(exc, bubbles.ReviewSidecarError) else str(exc)
+        return HTTPException(status_code=422, detail=detail)
+
+    def require_review_base_mtime(home: Path, slug: str, page: str, base_mtime: float | None) -> None:
+        """Mutating an existing review page without its revision token is unsafe."""
+        service.review_page_exists(home, slug, page)
+        if base_mtime is None:
+            raise HTTPException(status_code=428,
+                                detail="base_mtime is required for review mutations on an existing page.")
 
     class ChatIn(BaseModel):
         messages: list[dict]
@@ -1784,13 +1822,21 @@ def build_app():
 
     @app.put("/api/bubbles/{slug}/pages/{page}")
     def put_page(slug: str, page: str, body: PageContentIn, user: str = Depends(current_user)):
+        started = time.perf_counter()
         try:
-            mtime = service.save_page(home_of(user), slug, page, body.content, body.base_mtime)
+            result = service.save_page_state(
+                home_of(user), slug, page, body.content, body.base_mtime)
         except bubbles.PageConflict as e:
             # 409: the editor's base mtime is stale — an external edit landed first.
             raise HTTPException(status_code=409, detail="Page changed on disk",
                                 headers={"X-Disk-Mtime": repr(e.disk_mtime)})
-        return {"ok": True, "page_mtime": mtime}
+        except bubbles.ReviewMarkupError as e:
+            raise HTTPException(status_code=422, detail=e.as_detail())
+        except (bubbles.ReviewSidecarError, bubbles.ReviewTargetError) as e:
+            raise review_failure(e)
+        finally:
+            _warn_slow_mutation("page save", started, slug, page)
+        return {"ok": True, **result}
 
     @app.get("/api/bubbles/{slug}/poll")
     def bubble_poll(slug: str, page: str, user: str = Depends(current_user)):
@@ -1799,22 +1845,42 @@ def build_app():
     # ---- private review comments (never used by public preview/share routes) ----
     @app.get("/api/bubbles/{slug}/pages/{page}/comments")
     def get_comments(slug: str, page: str, user: str = Depends(current_user)):
-        return service.list_comments(home_of(user), slug, page)
+        try:
+            return service.list_comments(home_of(user), slug, page)
+        except (bubbles.ReviewSidecarError, bubbles.ReviewTargetError) as e:
+            raise review_failure(e)
 
     @app.post("/api/bubbles/{slug}/pages/{page}/comments")
     def post_comment(slug: str, page: str, body: CommentCreateIn, user: str = Depends(current_user)):
+        started = time.perf_counter()
         try:
-            return {"thread": service.create_comment(home_of(user), slug, page, user, body.body, body.anchor)}
+            require_review_base_mtime(home_of(user), slug, page, body.base_mtime)
+            return service.create_comment_state(
+                home_of(user), slug, page, user, body.body, content=body.content,
+                base_mtime=body.base_mtime, selection_start=body.selection_start,
+                selection_end=body.selection_end)
+        except bubbles.PageConflict as e:
+            raise HTTPException(status_code=409, detail="Page changed on disk",
+                                headers={"X-Disk-Mtime": repr(e.disk_mtime)})
+        except bubbles.ReviewMarkupError as e:
+            raise HTTPException(status_code=422, detail=e.as_detail())
+        except (bubbles.ReviewSidecarError, bubbles.ReviewTargetError) as e:
+            raise review_failure(e)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
+        finally:
+            _warn_slow_mutation("comment create", started, slug, page)
 
     @app.post("/api/bubbles/{slug}/pages/{page}/comments/{thread_id}/replies")
     def post_comment_reply(slug: str, page: str, thread_id: str, body: CommentReplyIn,
                            user: str = Depends(current_user)):
         try:
-            return {"message": service.reply_comment(home_of(user), slug, page, thread_id, user, body.body)}
+            return service.reply_comment_state(
+                home_of(user), slug, page, thread_id, user, body.body)
         except KeyError:
             raise HTTPException(status_code=404, detail="No such review thread.")
+        except (bubbles.ReviewSidecarError, bubbles.ReviewTargetError) as e:
+            raise review_failure(e)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
@@ -1822,29 +1888,61 @@ def build_app():
     def patch_comment_message(slug: str, page: str, thread_id: str, message_id: str,
                               body: CommentEditIn, user: str = Depends(current_user)):
         try:
-            return {"message": service.edit_comment_message(home_of(user), slug, page, thread_id, message_id, user, body.body)}
+            return service.edit_comment_message_state(
+                home_of(user), slug, page, thread_id, message_id, user, body.body)
         except KeyError:
             raise HTTPException(status_code=404, detail="No such review message.")
         except PermissionError as e:
             raise HTTPException(status_code=403, detail=str(e))
+        except (bubbles.ReviewSidecarError, bubbles.ReviewTargetError) as e:
+            raise review_failure(e)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
     @app.patch("/api/bubbles/{slug}/pages/{page}/comments/{thread_id}")
     def patch_comment_status(slug: str, page: str, thread_id: str, body: CommentStatusIn,
                              user: str = Depends(current_user)):
+        started = time.perf_counter()
         try:
-            return {"thread": service.set_comment_status(home_of(user), slug, page, thread_id, body.status, user)}
+            require_review_base_mtime(home_of(user), slug, page, body.base_mtime)
+            return service.set_comment_status_state(
+                home_of(user), slug, page, thread_id, body.status, user,
+                content=body.content, base_mtime=body.base_mtime)
         except KeyError:
             raise HTTPException(status_code=404, detail="No such review thread.")
+        except bubbles.PageConflict as e:
+            raise HTTPException(status_code=409, detail="Page changed on disk",
+                                headers={"X-Disk-Mtime": repr(e.disk_mtime)})
+        except bubbles.ReviewMarkupError as e:
+            raise HTTPException(status_code=422, detail=e.as_detail())
+        except (bubbles.ReviewSidecarError, bubbles.ReviewTargetError) as e:
+            raise review_failure(e)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
+        finally:
+            _warn_slow_mutation("comment status", started, slug, page)
 
     @app.delete("/api/bubbles/{slug}/pages/{page}/comments/{thread_id}")
-    def del_comment(slug: str, page: str, thread_id: str, user: str = Depends(current_user)):
-        if not service.delete_comment(home_of(user), slug, page, thread_id):
-            raise HTTPException(status_code=404, detail="No such review thread.")
-        return {"ok": True}
+    def del_comment(slug: str, page: str, thread_id: str, body: CommentDeleteIn,
+                    user: str = Depends(current_user)):
+        started = time.perf_counter()
+        try:
+            require_review_base_mtime(home_of(user), slug, page, body.base_mtime)
+            result = service.delete_comment_state(
+                home_of(user), slug, page, thread_id,
+                content=body.content, base_mtime=body.base_mtime)
+            if result is None:
+                raise HTTPException(status_code=404, detail="No such review thread.")
+            return result
+        except bubbles.PageConflict as e:
+            raise HTTPException(status_code=409, detail="Page changed on disk",
+                                headers={"X-Disk-Mtime": repr(e.disk_mtime)})
+        except bubbles.ReviewMarkupError as e:
+            raise HTTPException(status_code=422, detail=e.as_detail())
+        except (bubbles.ReviewSidecarError, bubbles.ReviewTargetError) as e:
+            raise review_failure(e)
+        finally:
+            _warn_slow_mutation("comment delete", started, slug, page)
 
     @app.patch("/api/bubbles/{slug}/pages/{page}")
     def patch_page(slug: str, page: str, body: PageRenameIn, user: str = Depends(current_user)):

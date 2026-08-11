@@ -220,6 +220,9 @@ __marimo__/
 # lockedin: all per-user content (PDFs, reports, credentials) lives here
 data/
 
+# Browser test dependencies are restored from package-lock.json.
+node_modules/
+
 .claude/*
 # lockedin ops monitor — secrets, logs, runtime state (keep healthcheck.sh + README.md tracked)
 ops/tunnel.env

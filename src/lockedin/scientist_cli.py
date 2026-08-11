@@ -22,7 +22,7 @@ import webbrowser
 from pathlib import Path
 
 APP = "lockedin-scientist"
-SCIENTIST_CLIENT_VERSION = "2026.08.11.3"
+SCIENTIST_CLIENT_VERSION = "2026.08.11.4"
 POLL_SECONDS = 5
 WORKER_HISTORY_LIMIT = 10
 TERMINAL_WORKER_STATUSES = {"stopped"}
@@ -299,9 +299,9 @@ def bubbles_command(account: dict) -> list[dict]:
     return rows
 
 
-SKILL_VERSION = 12
+SKILL_VERSION = 13
 
-SKILL_RULES = """<!-- lockedin-scientist-skill: 12 -->
+SKILL_RULES = """<!-- lockedin-scientist-skill: 13 -->
 # LockedIn Scientist research and publication skill
 
 This project is synchronized with one LockedIn bubble. Read this file before editing.
@@ -382,13 +382,15 @@ material, broaden claims, or make large conceptual changes unless the feedback e
 that scope. `reviews.yaml` is read-only: never reply to, edit, delete, or resolve a review thread.
 The author reviews the report change and manages comment status in LockedIn.
 
-Review highlights are also explicit in the report Markdown. Each open or resolved comment uses
-the form `\\comment{<comment-id>}{highlighted source text}`. The text inside the matching braces
-is exactly the highlighted source shown to the reviewer. Preserve the wrapper and its comment ID
-when editing report pages; edit only the text inside it when answering that review. Never move a
-wrapper into math syntax or delete one unless the user explicitly asks to remove the review
-itself. The wrappers are removed automatically from rendered previews and KaTeX, but must remain
-in the synchronized Markdown source.
+An attached open review is linked to its exact report source by
+`\\comment{<comment-id>}{highlighted source text}`. Match the ID in `reviews.yaml` to the wrapper
+on the cited page, then read the full thread and nearby source. Wrappers are managed by LockedIn:
+never create, copy, fabricate, rename, nest, or move one, and never add a wrapper for an unanchored
+thread. Never guess where an unanchored review belongs. For an attached review, preserve its
+existing wrapper and make the smallest useful edit inside its body. Remove the whole commented
+passage only when the user explicitly requests that scope; removing the wrapper makes the review
+unanchored. Wrappers disappear automatically from rendered previews and KaTeX but remain in
+Markdown while the review is attached.
 
 ## Before relying on a report submission
 
