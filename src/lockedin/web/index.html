@@ -4463,6 +4463,10 @@
     const end=start+quote.length;
     return md.slice(0,start)+marker+md.slice(start,end)+"}"+md.slice(end);
   }
+  function resetEditorHorizontalScroll(){
+    const view=editorView(); if(!view)return;
+    try{view.scrollDOM.scrollLeft=0; const scroller=view.scrollDOM.querySelector&&view.scrollDOM.querySelector(".cm-scroller");if(scroller)scroller.scrollLeft=0;}catch(e){}
+  }
   function findCommentMarker(md,id){
     const marker="\\comment{"+id+"}{", open=md.indexOf(marker); if(open<0)return null;
     const start=open+marker.length; let depth=1,i=start;
@@ -4516,6 +4520,7 @@
         const thread=result.thread||{}, marked=addInlineCommentMarker(S.editor.getMarkdown(),anchor,thread.id);
         if(!marked)throw new Error("Could not place the review marker around the selected text.");
         S.applyingRemote=true; try{S.editor.setMarkdown(marked,false);}finally{S.applyingRemote=false;}
+        resetEditorHorizontalScroll();
         S.commentDraftAnchor=null; markStale(); resolveCommentAnchors(); renderEditorCommentHighlights(); renderReview();
         await doSave({}); await loadComments();
       }catch(e){toast(e.message);}};
@@ -4569,6 +4574,7 @@
       const cleaned=found?md.slice(0,found.open)+md.slice(found.start,found.end)+md.slice(found.closeEnd):md;
       if(cleaned!==md&&S.editor){
         S.applyingRemote=true;try{S.editor.setMarkdown(cleaned,false);}finally{S.applyingRemote=false;}
+        resetEditorHorizontalScroll();
         // This is an intentional coordinated write, not a stale-edit conflict.
         S.baseMtime=null; S.remoteChangePending=false; await doSave({});
       }

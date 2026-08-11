@@ -143,6 +143,7 @@ class AestheticsConfigTests(unittest.TestCase):
         self.assertIn('function addInlineCommentMarker(md,anchor,id)', source)
         self.assertIn("Read the live browser selection first", source)
         self.assertIn("if(selected&&md.includes(selected))", source)
+        self.assertIn("function resetEditorHorizontalScroll()", source)
         self.assertIn('marker="\\\\comment{"+id+"}{"', source)
         self.assertIn('lockedin-review-markers', source)
         self.assertIn('s=stripCommentMarkers(s);', source)
