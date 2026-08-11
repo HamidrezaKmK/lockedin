@@ -314,7 +314,7 @@ def _render_preview_html(*, name: str, page: str, all_pages: list, content: str,
     """
     # Review delimiters are source-only markers. Remove them before any Markdown, math, or
     # citation preprocessing so KaTeX and rendered pages never expose the comment syntax.
-    content = re.sub(r"/comment:([A-Za-z0-9_-]+)/([\s\S]*?)/comment:\1/", r"\2", content)
+    content = bubbles.strip_comment_markers(content)
 
     # Private preview pages receive their workspace through a URL query parameter because a
     # new browser tab cannot carry the SPA's request header. Keep it on every page/wikilink;

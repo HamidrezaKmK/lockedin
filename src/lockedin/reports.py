@@ -538,8 +538,8 @@ the editor and preview. Read, focused, and mobile views stay free of review UI.
 
 To start a review, select source text and click the coloured **+** in the Review header. The
 selected text receives a subtle yellow highlight in the editor. The source is wrapped in
-`/comment:<comment-id>/.../comment:<comment-id>/` markers; preserve matching markers and edit
-only the text between them when responding to that review. Click that highlighted text to open
+`\\comment{<comment-id>}{...}` markers; preserve the wrapper and edit only the text inside it
+when responding to that review. Click that highlighted text to open
 its thread. Threads are collapsed by default; opening one collapses the others. Markers are
 removed from rendered previews and KaTeX, so they are source-only bookkeeping.
 

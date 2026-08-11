@@ -1289,12 +1289,26 @@
   // equation/theorem numbers and \eqref/\thmref resolve ACROSS pages; without them numbering is
   // self-contained to this content (chat, TODO notes, summaries, the help guide). Mirrors the
   // server's _build_refs/_preprocess_* so the live editor preview matches the standalone pages.
+  function stripCommentMarkers(s){
+    // Source-only \comment{id}{text} wrappers; balanced braces keep LaTeX inside a review intact.
+    let out="",pos=0;
+    while(pos<s.length){
+      const hit=s.slice(pos).match(/\\comment\{([A-Za-z0-9_-]+)\}\{/);
+      if(!hit){out+=s.slice(pos);break;}
+      const start=pos+hit.index, body=start+hit[0].length; out+=s.slice(pos,start);
+      let depth=1,i=body;
+      for(;i<s.length&&depth;i++){if(s[i]==="{"&&s[i-1]!=="\\")depth++;else if(s[i]==="}"&&s[i-1]!=="\\")depth--;}
+      if(depth){out+=s.slice(start);break;}
+      out+=s.slice(body,i-1);pos=i;
+    }
+    return out.replace(/\/comment:[A-Za-z0-9_-]+\/([\s\S]*?)\/comment:[A-Za-z0-9_-]+\//g,"$1");
+  }
   function renderMarkdown(md,opts){
     opts=opts||{}; const refs=opts.refs;
     const store=[], captionStore=[]; let s=md||"";
     // Inline review delimiters are source-only. Strip them before math/KaTeX processing and
     // before marked.js renders the preview, while leaving the markers visible in Markdown mode.
-    s=s.replace(/\/comment:([A-Za-z0-9_-]+)\/([\s\S]*?)\/comment:\1\//g,"$2");
+    s=stripCommentMarkers(s);
     if(opts.sourceMarkers) s=withSourceMarkers(s);
     // Stored report Markdown predates workspaces. Add the active workspace capability at render
     // time so existing report figures keep working after a workspace switch or in a new tab.
@@ -3852,8 +3866,8 @@
         range.setStart(from.node,from.offset); range.setEnd(to.node,to.offset);
         ranges.push(range);
         if(t._markerStart!=null&&t._markerEnd!=null){
-          const left=view.domAtPos(t._markerStart), right=view.domAtPos(t._markerStart+String("/comment:"+t.id+"/").length);
-          const endLeft=view.domAtPos(t._markerEnd), endRight=view.domAtPos(t._markerEnd+String("/comment:"+t.id+"/").length);
+          const left=view.domAtPos(t._markerStart), right=view.domAtPos(t._markerStart+String("\\comment{"+t.id+"}{").length);
+          const endLeft=view.domAtPos(t._markerEnd), endRight=view.domAtPos(t._markerEnd+1);
           const opening=document.createRange(), closing=document.createRange();
           opening.setStart(left.node,left.offset); opening.setEnd(right.node,right.offset);
           closing.setStart(endLeft.node,endLeft.offset); closing.setEnd(endRight.node,endRight.offset);
@@ -4426,22 +4440,26 @@
     S.commentDraftAnchor=anchor; S.selectedComment=null; renderReview();
   }
   function addInlineCommentMarker(md,anchor,id){
-    const quote=String(anchor&&anchor.quote||""), marker="/comment:"+id+"/";
+    const quote=String(anchor&&anchor.quote||""), marker="\\comment{"+id+"}{";
     if(!quote)return null;
     let start=Number(anchor.start||0);
     if(md.slice(start,start+quote.length)!==quote)start=md.indexOf(quote);
     if(start<0)return null;
     const end=start+quote.length;
-    return md.slice(0,start)+marker+md.slice(start,end)+marker+md.slice(end);
+    return md.slice(0,start)+marker+md.slice(start,end)+"}"+md.slice(end);
+  }
+  function findCommentMarker(md,id){
+    const marker="\\comment{"+id+"}{", open=md.indexOf(marker); if(open<0)return null;
+    const start=open+marker.length; let depth=1,i=start;
+    for(;i<md.length&&depth;i++){if(md[i]==="{"&&md[i-1]!=="\\")depth++;else if(md[i]==="}"&&md[i-1]!=="\\")depth--;}
+    return depth?null:{open,start,end:i-1,closeEnd:i};
   }
   function resolveCommentAnchors(){
     const md=S.editor&&S.editor.getMarkdown?S.editor.getMarkdown():"";
     (S.comments||[]).forEach(t=>{
-      const id=String(t.id||""), marker="/comment:"+id+"/";
-      const open=marker?md.indexOf(marker):-1;
-      const close=open<0?-1:md.indexOf(marker,open+marker.length);
-      if(open>=0&&close>open){
-        t._start=open+marker.length; t._end=close; t._markerStart=open; t._markerEnd=close+marker.length;
+      const id=String(t.id||""), found=findCommentMarker(md,id);
+      if(found){
+        t._start=found.start; t._end=found.end; t._markerStart=found.open; t._markerEnd=found.end;
         return;
       }
       // Legacy sidecar-only comments are resolved by their original quote until the next page
@@ -4531,9 +4549,9 @@
     try{
       // The editor still has the source marker in memory. Remove it locally before the worker
       // can autosave the stale document back and resurrect the deleted thread.
-      const marker="/comment:"+t.id+"/", escaped=marker.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
       const md=S.editor&&S.editor.getMarkdown?S.editor.getMarkdown():"";
-      const cleaned=md.replace(new RegExp(escaped+"([\\s\\S]*?)"+escaped),"$1");
+      const found=findCommentMarker(md,String(t.id||""));
+      const cleaned=found?md.slice(0,found.open)+md.slice(found.start,found.end)+md.slice(found.closeEnd):md;
       if(cleaned!==md&&S.editor){
         S.applyingRemote=true;try{S.editor.setMarkdown(cleaned,false);}finally{S.applyingRemote=false;}
         // This is an intentional coordinated write, not a stale-edit conflict.

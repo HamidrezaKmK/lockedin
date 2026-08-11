@@ -654,21 +654,48 @@ def _save_comments(slug: str, page_slug: str, data: dict) -> float:
     return path.stat().st_mtime
 
 
-_COMMENT_MARKER_RE = re.compile(r"/comment:([A-Za-z0-9_-]+)/([\s\S]*?)/comment:\1/")
+_COMMENT_OPEN_RE = re.compile(r"\\comment\{([A-Za-z0-9_-]+)\}\{")
+_COMMENT_OLD_RE = re.compile(r"/comment:([A-Za-z0-9_-]+)/([\s\S]*?)/comment:\1/")
 
 
 def comment_marker(thread_id: str) -> str:
-    return f"/comment:{thread_id}/"
+    return f"\\comment{{{thread_id}}}{{"
 
 
 def strip_comment_markers(content: str) -> str:
-    """Remove inline review delimiters while preserving the reviewed Markdown text."""
-    return _COMMENT_MARKER_RE.sub(lambda match: match.group(2), content)
+    """Remove inline review wrappers while preserving reviewed Markdown text."""
+    content = _COMMENT_OLD_RE.sub(lambda match: match.group(2), content)
+    out, pos = [], 0
+    while True:
+        match = _COMMENT_OPEN_RE.search(content, pos)
+        if not match:
+            out.append(content[pos:]); break
+        out.append(content[pos:match.start()]); depth = 1; i = match.end()
+        while i < len(content) and depth:
+            if content[i] == "{" and (i == 0 or content[i - 1] != "\\"): depth += 1
+            elif content[i] == "}" and (i == 0 or content[i - 1] != "\\"): depth -= 1
+            i += 1
+        if depth:
+            out.append(content[match.start():]); break
+        out.append(content[match.end():i - 1]); pos = i
+    return "".join(out)
 
 
 def _has_comment_marker(content: str, thread_id: str) -> bool:
-    marker = re.escape(comment_marker(thread_id))
-    return bool(re.search(marker + r"[\s\S]*?" + marker, content))
+    return bool(re.search(r"\\comment\{" + re.escape(thread_id) + r"\}\{", content))
+
+
+def remove_comment_marker(content: str, thread_id: str) -> str:
+    """Remove one comment wrapper, including nested Markdown/LaTeX braces."""
+    opening = comment_marker(thread_id)
+    start = content.find(opening)
+    if start < 0: return content
+    depth = 1; i = start + len(opening)
+    while i < len(content) and depth:
+        if content[i] == "{" and (i == 0 or content[i - 1] != "\\"): depth += 1
+        elif content[i] == "}" and (i == 0 or content[i - 1] != "\\"): depth -= 1
+        i += 1
+    return content[:start] + content[start + len(opening):i - 1] + content[i:] if depth == 0 else content
 
 
 def ensure_comment_markers(slug: str, page_slug: str) -> bool:
@@ -698,8 +725,7 @@ def ensure_comment_markers(slug: str, page_slug: str) -> bool:
         if pos >= 0:
             additions.append((pos, pos + len(quote), tid))
     for start, end, tid in sorted(additions, reverse=True):
-        marker = comment_marker(tid)
-        content = content[:start] + marker + content[start:end] + marker + content[end:]
+        content = content[:start] + comment_marker(tid) + content[start:end] + "}" + content[end:]
         changed = True
     if changed:
         _atomic_write(path, content)
@@ -783,8 +809,7 @@ def delete_comment(slug: str, page_slug: str, thread_id: str) -> bool:
     if len(data["threads"]) == before: return False
     path = paths.bubble_page_path(slug, page_slug)
     if path.exists():
-        marker = re.escape(comment_marker(thread_id))
-        content = re.sub(marker + r"([\s\S]*?)" + marker, lambda match: match.group(1), path.read_text())
+        content = remove_comment_marker(path.read_text(), thread_id)
         _atomic_write(path, content)
     _save_comments(slug, page_slug, data); return True
 

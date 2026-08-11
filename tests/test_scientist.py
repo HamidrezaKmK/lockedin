@@ -487,7 +487,7 @@ class ScientistProfileAndWorkersTest(unittest.TestCase):
         self.assertIn("the sync worker registers it automatically", scientist_cli.SKILL_RULES)
         self.assertIn("the sync worker removes it", scientist_cli.SKILL_RULES)
         self.assertIn("config/math.yaml", scientist_cli.SKILL_RULES)
-        self.assertIn("lockedin-scientist-skill: 11", scientist_cli.SKILL_RULES)
+        self.assertIn("lockedin-scientist-skill: 12", scientist_cli.SKILL_RULES)
         self.assertIn("Outside `.lockedin/`, work on this repository normally", scientist_cli.SKILL_RULES)
         self.assertIn("manuscript changes stay local until that explicit sync", scientist_cli.SKILL_RULES)
         self.assertIn("create or edit `.tex`, `.bib`, `.sty`, `.cls`", scientist_cli.SKILL_RULES)

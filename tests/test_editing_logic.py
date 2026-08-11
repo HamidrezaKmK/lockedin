@@ -1066,12 +1066,12 @@ class PrivateReviewComments(unittest.TestCase):
                 "start": start, "quote": "selected material", "prefix": "Before ", "suffix": " after"})
             comments = service.list_comments(home, slug, "overview")
             marker = bubbles.comment_marker(thread["id"])
-            self.assertIn(marker + "selected material" + marker, service.get_page(home, slug, "overview"))
+            self.assertIn(marker + "selected material}", service.get_page(home, slug, "overview"))
             self.assertEqual(comments["threads"][0]["id"], thread["id"])
 
     def test_comment_markers_strip_without_changing_math_source(self):
         marker = bubbles.comment_marker("abc")
-        source = marker + "$x^2$" + marker
+        source = marker + "$x^2$}"
         self.assertEqual(bubbles.strip_comment_markers(source), "$x^2$")
 
     def test_thread_lifecycle_and_author_only_message_editing(self):

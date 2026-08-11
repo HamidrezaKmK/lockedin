@@ -143,20 +143,20 @@ class AestheticsConfigTests(unittest.TestCase):
         self.assertIn('function addInlineCommentMarker(md,anchor,id)', source)
         self.assertIn("CodeMirror's document selection is the sole source of truth", source)
         self.assertIn("if(main&&main.from!==main.to)sel={from:Math.min(main.from,main.to)", source)
-        self.assertIn('marker="/comment:"+id+"/"', source)
+        self.assertIn('marker="\\\\comment{"+id+"}{"', source)
         self.assertIn('lockedin-review-markers', source)
-        self.assertIn('s=s.replace(/\\/comment:([A-Za-z0-9_-]+)\\/([\\s\\S]*?)\\/comment:\\1\\//g,"$2");', source)
+        self.assertIn('s=stripCommentMarkers(s);', source)
         self.assertIn('if(S.comments&&S.comments.length)await loadComments();', source)
 
     def test_server_preview_strips_review_markers_before_math_rendering(self):
         html = server._render_preview_html(
             name="Test", page="overview",
             all_pages=[{"page_slug": "overview", "title": "Overview"}],
-            content="See /comment:thread-1/$x^2$/comment:thread-1/.",
+            content="See \\comment{thread-1}{$x^2$}.",
             slug="test", link_base="/api/bubbles/test/preview",
             asset_base="/api/bubbles/test/assets", show_back=False,
         )
-        self.assertNotIn("/comment:", html)
+        self.assertNotIn("\\comment{", html)
         self.assertIn("x^2", html)
 
     def test_library_card_attention_action_uses_compact_labels(self):
