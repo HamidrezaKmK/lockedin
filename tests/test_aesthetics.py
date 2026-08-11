@@ -131,6 +131,13 @@ class AestheticsConfigTests(unittest.TestCase):
         self.assertIn('"/add-pdf"', source)
         self.assertIn('"/papers/"+encodeURIComponent(d.pdf_id)', source)
 
+    def test_bubble_assets_modal_previews_images_and_gifs(self):
+        source = (Path(server.WEB_DIR) / "index.html").read_text()
+        self.assertIn('const previewable=/\\.(?:apng|avif|gif|jpe?g|png|svg|webp)$/i.test(item.name);', source)
+        self.assertIn('class:"asset-file-preview"', source)
+        self.assertIn('alt:"Preview: "+item.name', source)
+        self.assertIn('.asset-file-preview img{width:100%;height:100%;object-fit:contain', source)
+
     def test_library_card_attention_action_uses_compact_labels(self):
         source = (Path(server.WEB_DIR) / "index.html").read_text()
         self.assertIn('a.attention_flag?"Clear":"Review"', source)
