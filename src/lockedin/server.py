@@ -40,7 +40,7 @@ _REQUEST_WORKSPACE: contextvars.ContextVar[str | None] = contextvars.ContextVar(
 # Keep this equal to ``scientist_cli.SCIENTIST_CLIENT_VERSION``. Bump both when a Scientist
 # release needs an installed client refresh; the dependency-free installed client cannot import
 # package metadata from this server.
-SCIENTIST_CLIENT_VERSION = "2026.08.11.1"
+SCIENTIST_CLIENT_VERSION = "2026.08.11.2"
 
 
 def _build_refs(pages: "list[dict]", bibliography: "dict | None" = None) -> dict:

@@ -22,7 +22,7 @@ import webbrowser
 from pathlib import Path
 
 APP = "lockedin-scientist"
-SCIENTIST_CLIENT_VERSION = "2026.08.11.1"
+SCIENTIST_CLIENT_VERSION = "2026.08.11.2"
 POLL_SECONDS = 5
 WORKER_HISTORY_LIMIT = 10
 TERMINAL_WORKER_STATUSES = {"stopped"}
@@ -281,9 +281,9 @@ def bubbles_command(account: dict) -> list[dict]:
     return rows
 
 
-SKILL_VERSION = 8
+SKILL_VERSION = 9
 
-SKILL_RULES = """<!-- lockedin-scientist-skill: 8 -->
+SKILL_RULES = """<!-- lockedin-scientist-skill: 9 -->
 # LockedIn Scientist research and publication skill
 
 This project is synchronized with one LockedIn bubble. Read this file before editing.
@@ -310,6 +310,27 @@ edited, moved, deleted, or permission-changed. This does not restrict similarly 
 elsewhere in the repository. Read paper information only from
 `.lockedin/reports/_lockedin_papers.md` and the listed asset directories. Prefer higher relevance
 papers first.
+
+## Direct LockedIn paths — do not search for them
+
+Use these exact paths when their information is needed; do not spend time searching the project
+for an alternative copy:
+
+- `.lockedin/config/math.yaml` — workspace math macros; the generated macro table below is the
+  preferred ready-to-use form.
+- `.lockedin/config/aesthetics.yaml` — report appearance configuration.
+- `.lockedin/config/reviews.yaml` — open private review feedback, only when present.
+- `.lockedin/config/overleaf.yaml` — website-linked Overleaf metadata, only when present.
+- `.lockedin/config/conflicts/` — rejected local report edits to recover manually, only when
+  present.
+- `.lockedin/reports/_lockedin_papers.md` — bubble paper index.
+- `.lockedin/assets/<pdf-id>/` — the selected paper's PDF, metadata, extracted text, and summary.
+
+For any report-related search, search only inside `.lockedin/`: use
+`.lockedin/reports/pages/` for report source, `.lockedin/reports/assets/` for report figures,
+`.lockedin/reports/_lockedin_papers.md` for attached-paper discovery, and `.lockedin/assets/` for
+paper material. Do not search the surrounding repository for report content unless the user
+explicitly asks to combine it with project code or files.
 
 ## Workspace math macros
 

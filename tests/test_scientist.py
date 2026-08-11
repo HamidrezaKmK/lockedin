@@ -422,7 +422,7 @@ class ScientistProfileAndWorkersTest(unittest.TestCase):
         self.assertIn("the sync worker registers it automatically", scientist_cli.SKILL_RULES)
         self.assertIn("the sync worker removes it", scientist_cli.SKILL_RULES)
         self.assertIn("config/math.yaml", scientist_cli.SKILL_RULES)
-        self.assertIn("lockedin-scientist-skill: 8", scientist_cli.SKILL_RULES)
+        self.assertIn("lockedin-scientist-skill: 9", scientist_cli.SKILL_RULES)
         self.assertIn("Outside `.lockedin/`, work on this repository normally", scientist_cli.SKILL_RULES)
         self.assertIn("manuscript changes stay local until that explicit sync", scientist_cli.SKILL_RULES)
         self.assertIn("create or edit `.tex`, `.bib`, `.sty`, `.cls`", scientist_cli.SKILL_RULES)
@@ -432,6 +432,8 @@ class ScientistProfileAndWorkersTest(unittest.TestCase):
         self.assertIn("Treat feedback critically", scientist_cli.SKILL_RULES)
         self.assertIn("Make the smallest change", scientist_cli.SKILL_RULES)
         self.assertIn("never reply to, edit, delete, or resolve", scientist_cli.SKILL_RULES)
+        self.assertIn("Direct LockedIn paths — do not search for them", scientist_cli.SKILL_RULES)
+        self.assertIn("For any report-related search, search only inside `.lockedin/`", scientist_cli.SKILL_RULES)
 
     def test_skill_embeds_the_active_math_macro_table(self):
         skill = scientist_cli.skill_document("## Markdown\n", {"\\E": "\\mathbb{E}"})
