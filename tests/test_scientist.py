@@ -163,6 +163,8 @@ class ScientistServerBoundaryTest(unittest.TestCase):
                 review = yaml.safe_load(base64.b64decode(payload["content_b64"]))
                 self.assertEqual(review["threads"][0]["page_slug"], "overview")
                 self.assertEqual(review["threads"][0]["anchor"]["quote"], "Current claim")
+                self.assertEqual(review["threads"][0]["marker"],
+                                 bubbles.comment_marker(thread["id"]))
                 self.assertEqual([m["body"] for m in review["threads"][0]["messages"]],
                                  ["Clarify this claim.", "Will revise it."])
                 bubbles.set_comment_status(slug, "overview", thread["id"], "resolved", "author")
@@ -179,7 +181,7 @@ class ScientistServerBoundaryTest(unittest.TestCase):
                 ])
         self.assertEqual(len(result["conflicts"]), 3)
 
-    def test_scientist_page_write_rebases_review_anchor(self):
+    def test_scientist_page_write_preserves_inline_review_marker(self):
         with workspace() as (home, slug):
             original = b"Before this is a highlight after."
             with paths.use_root(home):
@@ -192,15 +194,18 @@ class ScientistServerBoundaryTest(unittest.TestCase):
                     {"quote": "this is a highlight", "start": start,
                      "prefix": "Before ", "suffix": " after"})
             base = service.get_page(home, slug, "overview").encode()
-            updated = b"Before this is a NEW highlight after."
+            marker = bubbles.comment_marker(thread["id"])
+            marked = b"Before " + marker.encode() + b"this is a highlight" + marker.encode() + b" after."
+            service.save_page(home, slug, "overview", marked.decode())
+            base = service.get_page(home, slug, "overview").encode()
+            updated = b"Before " + marker.encode() + b"this is a NEW highlight" + marker.encode() + b" after."
             result = scientist_sync.apply_writes(home, slug, [{
                 "path": "reports/pages/overview.md",
                 "base_revision": scientist_sync.revision(base),
                 "content_b64": base64.b64encode(updated).decode(),
             }])
             self.assertEqual(result["conflicts"], [])
-            anchor = service.list_comments(home, slug, "overview")["threads"][0]["anchor"]
-            self.assertEqual(anchor["quote"], "this is a NEW highlight")
+            self.assertIn(marker.encode(), service.get_page(home, slug, "overview").encode())
 
     def test_page_creation_is_bubble_scoped(self):
         with workspace() as (home, slug):
@@ -482,7 +487,7 @@ class ScientistProfileAndWorkersTest(unittest.TestCase):
         self.assertIn("the sync worker registers it automatically", scientist_cli.SKILL_RULES)
         self.assertIn("the sync worker removes it", scientist_cli.SKILL_RULES)
         self.assertIn("config/math.yaml", scientist_cli.SKILL_RULES)
-        self.assertIn("lockedin-scientist-skill: 10", scientist_cli.SKILL_RULES)
+        self.assertIn("lockedin-scientist-skill: 11", scientist_cli.SKILL_RULES)
         self.assertIn("Outside `.lockedin/`, work on this repository normally", scientist_cli.SKILL_RULES)
         self.assertIn("manuscript changes stay local until that explicit sync", scientist_cli.SKILL_RULES)
         self.assertIn("create or edit `.tex`, `.bib`, `.sty`, `.cls`", scientist_cli.SKILL_RULES)

@@ -138,11 +138,23 @@ class AestheticsConfigTests(unittest.TestCase):
         self.assertIn('alt:"Preview: "+item.name', source)
         self.assertIn('.asset-file-preview img{width:100%;height:100%;object-fit:contain', source)
 
-    def test_review_highlights_use_context_when_quote_is_expanded(self):
+    def test_review_highlights_use_inline_markdown_markers(self):
         source = (Path(server.WEB_DIR) / "index.html").read_text()
-        self.assertIn("If an insertion/replacement occurred inside the highlight", source)
-        self.assertIn("const prefix=String(a.prefix||\"\"), suffix=String(a.suffix||\"\");", source)
+        self.assertIn('function addInlineCommentMarker(md,anchor,id)', source)
+        self.assertIn('marker="/comment:"+id+"/"', source)
+        self.assertIn('s=s.replace(/\\/comment:([A-Za-z0-9_-]+)\\/([\\s\\S]*?)\\/comment:\\1\\//g,"$2");', source)
         self.assertIn('if(S.comments&&S.comments.length)await loadComments();', source)
+
+    def test_server_preview_strips_review_markers_before_math_rendering(self):
+        html = server._render_preview_html(
+            name="Test", page="overview",
+            all_pages=[{"page_slug": "overview", "title": "Overview"}],
+            content="See /comment:thread-1/$x^2$/comment:thread-1/.",
+            slug="test", link_base="/api/bubbles/test/preview",
+            asset_base="/api/bubbles/test/assets", show_back=False,
+        )
+        self.assertNotIn("/comment:", html)
+        self.assertIn("x^2", html)
 
     def test_library_card_attention_action_uses_compact_labels(self):
         source = (Path(server.WEB_DIR) / "index.html").read_text()

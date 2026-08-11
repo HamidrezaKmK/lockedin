@@ -14,7 +14,6 @@ All paths resolve against the active per-user context root.
 from __future__ import annotations
 
 import json as _json
-import difflib
 import os
 import re
 import secrets
@@ -626,6 +625,7 @@ def list_pages(slug: str) -> list[dict]:
 
 
 def get_page(slug: str, page_slug: str) -> str:
+    ensure_comment_markers(slug, page_slug)
     p = paths.bubble_page_path(slug, page_slug)
     return p.read_text() if p.exists() else ""
 
@@ -654,106 +654,68 @@ def _save_comments(slug: str, page_slug: str, data: dict) -> float:
     return path.stat().st_mtime
 
 
+_COMMENT_MARKER_RE = re.compile(r"/comment:([A-Za-z0-9_-]+)/([\s\S]*?)/comment:\1/")
+
+
+def comment_marker(thread_id: str) -> str:
+    return f"/comment:{thread_id}/"
+
+
+def strip_comment_markers(content: str) -> str:
+    """Remove inline review delimiters while preserving the reviewed Markdown text."""
+    return _COMMENT_MARKER_RE.sub(lambda match: match.group(2), content)
+
+
+def _has_comment_marker(content: str, thread_id: str) -> bool:
+    marker = re.escape(comment_marker(thread_id))
+    return bool(re.search(marker + r"[\s\S]*?" + marker, content))
+
+
+def ensure_comment_markers(slug: str, page_slug: str) -> bool:
+    """Migrate legacy sidecar-only anchors into inline markers once, preserving their text."""
+    path = paths.bubble_page_path(slug, page_slug)
+    if not path.exists():
+        return False
+    content = path.read_text()
+    data = _comments(slug, page_slug)
+    changed = False
+    # Process from right to left so offsets from legacy anchors remain valid.
+    additions = []
+    for thread in data.get("threads", []):
+        tid, anchor = str(thread.get("id") or ""), thread.get("anchor") or {}
+        if not tid or _has_comment_marker(content, tid):
+            continue
+        quote = str(anchor.get("quote") or "")
+        try:
+            start = int(anchor.get("start") or 0)
+        except (TypeError, ValueError):
+            start = 0
+        if not quote or start < 0:
+            continue
+        pos = content.find(quote, min(start, len(content)))
+        if pos < 0:
+            pos = content.find(quote)
+        if pos >= 0:
+            additions.append((pos, pos + len(quote), tid))
+    for start, end, tid in sorted(additions, reverse=True):
+        marker = comment_marker(tid)
+        content = content[:start] + marker + content[start:end] + marker + content[end:]
+        changed = True
+    if changed:
+        _atomic_write(path, content)
+        touch_bubble(slug)
+    return changed
+
+
 def list_comments(slug: str, page_slug: str) -> dict:
     """Return private threads for one page; callers must already enforce membership."""
+    ensure_comment_markers(slug, page_slug)
     return _comments(slug, page_slug)
 
 
 def comments_mtime(slug: str, page_slug: str) -> float:
     path = paths.bubble_page_comments_path(slug, page_slug)
     return path.stat().st_mtime if path.exists() else 0
-
-
-def _mapped_anchor_range(old_text: str, new_text: str, start: int, end: int) -> tuple[int, int] | None:
-    """Map an anchor interval through one Markdown edit without diffing the whole document.
-
-    Most saves have one small changed region. Finding that region is linear; only the old quote
-    (normally a few words) is compared with that region. This keeps report saves responsive even
-    for very large pages while still expanding a highlight around inserted/replaced text.
-    """
-    if start < 0 or end <= start or start > len(old_text):
-        return None
-    end = min(end, len(old_text))
-    prefix = 0
-    common = min(len(old_text), len(new_text))
-    while prefix < common and old_text[prefix] == new_text[prefix]:
-        prefix += 1
-    old_suffix = len(old_text)
-    new_suffix = len(new_text)
-    while old_suffix > prefix and new_suffix > prefix and old_text[old_suffix - 1] == new_text[new_suffix - 1]:
-        old_suffix -= 1
-        new_suffix -= 1
-
-    # A pure insertion exactly at an anchor edge is naturally part of the user's continued
-    # selection. Include it so typing at the first/last highlighted character grows the range.
-    if prefix == old_suffix and start == prefix:
-        return prefix, end + (new_suffix - prefix)
-    if prefix == old_suffix and end == prefix:
-        return start, end + (new_suffix - prefix)
-
-    # The edit is wholly outside this anchor: shift only when it precedes the selection.
-    if end <= prefix:
-        return start, end
-    if start >= old_suffix:
-        shift = (new_suffix - new_suffix)  # kept explicit below for readability
-        shift = (new_suffix - prefix) - (old_suffix - prefix)
-        return start + shift, end + shift
-
-    old_quote = old_text[start:end]
-    new_middle = new_text[prefix:new_suffix]
-    if not old_quote or not new_middle:
-        return None
-
-    # A pathological full-page rewrite should still be bounded. The expected position is enough
-    # to find the changed selection, while ordinary edits use the complete changed middle.
-    context = max(len(old_quote) * 2, 256)
-    if len(new_middle) > 12000:
-        estimate = prefix + int((start - prefix) * len(new_middle) / max(1, old_suffix - prefix))
-        radius = max(2048, min(8192, len(old_quote) * 8))
-        window_start = max(prefix, estimate - radius)
-        window_end = min(new_suffix, estimate + radius + len(old_quote))
-        candidate = new_text[window_start:window_end]
-        candidate_offset = window_start
-    else:
-        candidate_offset = max(prefix - context, 0)
-        candidate_end = min(new_suffix + context, len(new_text))
-        candidate = new_text[candidate_offset:candidate_end]
-    matcher = difflib.SequenceMatcher(None, old_quote, candidate, autojunk=False)
-    matches = [block for block in matcher.get_matching_blocks() if block.size]
-    if not matches:
-        return None
-    return (candidate_offset + min(block.b for block in matches),
-            candidate_offset + max(block.b + block.size for block in matches))
-
-
-def rebase_comment_anchors(slug: str, page_slug: str, old_text: str, new_text: str) -> bool:
-    """Persist review anchors after a successful page edit; return whether anything changed."""
-    path = paths.bubble_page_comments_path(slug, page_slug)
-    if not path.exists() or old_text == new_text:
-        return False
-    data = _comments(slug, page_slug)
-    changed = False
-    for thread in data.get("threads", []):
-        anchor = thread.get("anchor") or {}
-        old_quote = str(anchor.get("quote") or "")
-        old_start = int(anchor.get("start") or 0)
-        old_end = old_start + len(old_quote)
-        mapped = _mapped_anchor_range(old_text, new_text, old_start, old_end)
-        if mapped:
-            new_start, new_end = mapped
-            quote = new_text[new_start:new_end]
-            updated = {"quote": quote, "start": new_start,
-                       "prefix": new_text[max(0, new_start - 96):new_start],
-                       "suffix": new_text[new_end:new_end + 96]}
-        else:
-            updated = {"quote": "", "start": -1, "prefix": "", "suffix": ""}
-        if any(anchor.get(k) != v for k, v in updated.items()):
-            thread["anchor"] = updated
-            thread["updated_at"] = _now_iso()
-            changed = True
-    if changed:
-        _save_comments(slug, page_slug, data)
-    return changed
 
 
 def create_comment(slug: str, page_slug: str, author: str, body: str, anchor: dict) -> dict:
@@ -819,6 +781,11 @@ def delete_comment(slug: str, page_slug: str, thread_id: str) -> bool:
     data = _comments(slug, page_slug); before = len(data["threads"])
     data["threads"] = [t for t in data["threads"] if t.get("id") != thread_id]
     if len(data["threads"]) == before: return False
+    path = paths.bubble_page_path(slug, page_slug)
+    if path.exists():
+        marker = re.escape(comment_marker(thread_id))
+        content = re.sub(marker + r"([\s\S]*?)" + marker, lambda match: match.group(1), path.read_text())
+        _atomic_write(path, content)
     _save_comments(slug, page_slug, data); return True
 
 
@@ -928,10 +895,8 @@ def save_page(slug: str, page_slug: str, content: str,
         disk_mtime = path.stat().st_mtime
         if abs(disk_mtime - base_mtime) > 1e-6:
             raise PageConflict(disk_mtime)
-    old_text = path.read_text() if path.exists() else ""
     normalized = normalize_display_math(normalize_wikilinks(slug, content))
     _atomic_write(path, normalized)
-    rebase_comment_anchors(slug, page_slug, old_text, normalized)
     touch_bubble(slug)
     return path.stat().st_mtime
 

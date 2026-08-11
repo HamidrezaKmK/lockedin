@@ -299,9 +299,9 @@ def bubbles_command(account: dict) -> list[dict]:
     return rows
 
 
-SKILL_VERSION = 10
+SKILL_VERSION = 11
 
-SKILL_RULES = """<!-- lockedin-scientist-skill: 10 -->
+SKILL_RULES = """<!-- lockedin-scientist-skill: 11 -->
 # LockedIn Scientist research and publication skill
 
 This project is synchronized with one LockedIn bubble. Read this file before editing.
@@ -381,6 +381,14 @@ Make the smallest change that directly addresses an actionable comment. Do not r
 material, broaden claims, or make large conceptual changes unless the feedback explicitly asks for
 that scope. `reviews.yaml` is read-only: never reply to, edit, delete, or resolve a review thread.
 The author reviews the report change and manages comment status in LockedIn.
+
+Review highlights are also explicit in the report Markdown. Each open or resolved comment uses
+the form `/comment:<comment-id>/highlighted source text/comment:<comment-id>/`. The text between
+the matching markers is exactly the highlighted source shown to the reviewer. Preserve both
+markers and their comment ID when editing report pages; edit the text between them when answering
+that review. Never move a marker into math syntax or delete one unless the user explicitly asks
+to remove the review itself. The markers are removed automatically from rendered previews and
+KaTeX, but must remain in the synchronized Markdown source.
 
 ## Before relying on a report submission
 

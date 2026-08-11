@@ -40,6 +40,7 @@ def _review_feedback(slug: str) -> bytes | None:
                 "id": thread.get("id", ""), "page_slug": page_slug,
                 "status": "open", "created_at": thread.get("created_at", ""),
                 "updated_at": thread.get("updated_at", ""),
+                "marker": bubbles.comment_marker(str(thread.get("id", ""))),
                 "anchor": dict(thread.get("anchor") or {}),
                 "messages": [dict(message) for message in thread.get("messages", [])],
             })
