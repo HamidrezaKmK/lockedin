@@ -748,18 +748,6 @@
   .quick-add-paper input,.quick-add-paper textarea{padding:7px 9px;font-size:12px}
   .quick-add-paper textarea{min-height:68px;resize:vertical;font-family:var(--font-mono);line-height:1.35}
   .quick-add-paper .row{justify-content:flex-end}
-  /* Library upload membership picker. A paper can enter several existing bubbles at once, with
-     an explicit relevance for each one, without turning the upload form into a tag-entry field. */
-  .asset-bubble-picker{display:flex;flex-direction:column;gap:6px;padding:10px 12px;
-    border:1px solid var(--line);border-radius:9px;background:var(--panel2)}
-  .asset-bubble-picker-head{display:flex;flex-direction:column;gap:2px}
-  .asset-bubble-picker-list{display:flex;flex-direction:column;gap:5px;max-height:178px;overflow:auto}
-  .asset-bubble-picker-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:8px;
-    align-items:center;padding:6px 7px;border:1px solid var(--line);border-radius:7px;background:var(--panel)}
-  .asset-bubble-picker-row input[type=checkbox]{width:16px;height:16px;min-width:0;margin:0;padding:0}
-  .asset-bubble-picker-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .asset-bubble-picker-row select{width:auto;min-width:108px;padding:4px 7px;font-size:12px}
-  .asset-bubble-picker-row select:disabled{opacity:.5}
   /* Migrate-resources picker. The base rule above sets width:100% on every input, which stretches
      a bare checkbox across the whole row — its glyph then draws centred in that box, so each row's
      tick lands at a different x. Size the controls explicitly and use a grid so columns line up. */
@@ -2276,6 +2264,43 @@
   }
 
   // ================= ASSETS =================
+  // Shared by the Library upload form and the asset editor. Keeping one membership control means
+  // a paper is organized the same way whether it is linked before or after it is uploaded.
+  function buildAssetBubbleMembershipPanel({allBubbles,getMemberships,onAdd,onScore,onRemove,
+                                             heading="Bubbles it belongs to:",emptyText="This paper is not in any bubble yet."}){
+    const memberships=el("div",{class:"col",style:"gap:6px"});
+    const render=()=>{
+      memberships.innerHTML="";
+      memberships.append(el("b",{},heading));
+      const rows=(getMemberships()||[]).filter(x=>x.approved!==false);
+      if(!rows.length)memberships.append(el("div",{class:"muted"},emptyText));
+      rows.forEach(mem=>{
+        const score=Number(mem.score||5);
+        memberships.append(el("div",{class:"membership-row"},
+          el("span",{class:"truncate",title:mem.slug},(mem.name||mem.slug)+"  <"+mem.slug+">"),
+          el("span",{class:"score"},"Score "+score),
+          el("button",{class:"ghost small",type:"button",title:"Promote relevance",disabled:score>=5,
+            onclick:async()=>{try{await onScore(mem.slug,score+1);render();toast("Relevance set to "+(score+1));}catch(e){toast(e.message);}}},"+"),
+          el("button",{class:"ghost small",type:"button",title:"Demote relevance",disabled:score<=1,
+            onclick:async()=>{try{await onScore(mem.slug,score-1);render();toast("Relevance set to "+(score-1));}catch(e){toast(e.message);}}},"-"),
+          el("button",{class:"ghost small",type:"button",title:"Remove from bubble",
+            onclick:async()=>{if(!confirm('Remove this paper from "'+(mem.name||mem.slug)+'"?'))return;
+              try{await onRemove(mem.slug);render();}catch(e){toast(e.message);}}},"Remove")));
+      });
+      const have=new Set(rows.map(x=>x.slug));
+      const addSel=el("select");
+      addSel.append(el("option",{value:""},"Add to bubble…"));
+      allBubbles.filter(b=>!have.has(b.slug)).forEach(b=>addSel.append(el("option",{value:b.slug},b.name||b.slug)));
+      addSel.onchange=async()=>{
+        const slug=addSel.value; addSel.value=""; if(!slug)return;
+        try{await onAdd(slug);render();toast("Added to bubble");}catch(e){toast(e.message);}
+      };
+      memberships.append(addSel);
+    };
+    render();
+    return memberships;
+  }
+
   async function viewAssets(){
     const {m,version}=beginMainRender();
     m.append(el("h2",{class:"section-title"},"📚 Library"));
@@ -2298,27 +2323,19 @@
     let bubbles=[];
     try{ bubbles=(await bubblesRequest).bubbles||[]; }catch(e){}
     if(!isCurrentRender(version))return;
-    const bubblePicker=el("div",{class:"asset-bubble-picker"});
-    bubblePicker.append(el("div",{class:"asset-bubble-picker-head"},
-      el("b",{},"Add to bubbles (optional)"),
-      el("span",{class:"muted"},"Choose one or more bubbles and set each paper's relevance.")));
-    const bubblePickerList=el("div",{class:"asset-bubble-picker-list"});
-    const selectedBubbleMemberships=[];
-    if(!bubbles.length){
-      bubblePickerList.append(el("span",{class:"muted"},"Create a bubble first, then you can attach papers here."));
-    }else{
-      bubbles.forEach(b=>{
-        const check=el("input",{type:"checkbox",title:"Add to "+(b.name||b.slug)});
-        const score=el("select",{disabled:true,"aria-label":"Relevance in "+(b.name||b.slug)});
-        for(let n=5;n>=1;n--)score.append(el("option",{value:String(n)},"Relevance "+n));
-        score.value="5";
-        check.onchange=()=>{score.disabled=!check.checked;};
-        selectedBubbleMemberships.push(()=>check.checked?{slug:b.slug,score:Number(score.value)}:null);
-        bubblePickerList.append(el("div",{class:"asset-bubble-picker-row"},check,
-          el("span",{class:"asset-bubble-picker-name",title:b.name||b.slug},b.name||b.slug),score));
-      });
-    }
-    bubblePicker.append(bubblePickerList);
+    const pendingMemberships=[];
+    const bubblePicker=buildAssetBubbleMembershipPanel({
+      allBubbles:bubbles,
+      getMemberships:()=>pendingMemberships,
+      onAdd:async slug=>{
+        const b=bubbles.find(item=>item.slug===slug);
+        pendingMemberships.push({slug,name:(b&&b.name)||slug,score:5});
+      },
+      onScore:async(slug,score)=>{const row=pendingMemberships.find(item=>item.slug===slug);if(row)row.score=score;},
+      onRemove:async slug=>{const index=pendingMemberships.findIndex(item=>item.slug===slug);if(index>=0)pendingMemberships.splice(index,1);},
+      heading:"Add to bubbles (optional)",
+      emptyText:"Use the dropdown to attach this paper to one or more bubbles."
+    });
     const url=el("input",{placeholder:"Paste a PDF link to fetch it automatically"});
     const applyUploadMode=mode=>{
       uploadMode=mode; S.assetUploadMode=mode;
@@ -2339,7 +2356,7 @@
       if(!title.value.trim()){toast("Enter a title.");title.focus();return;}
       btn.disabled=true; btn.textContent=uploadMode==="file"?"Uploading…":"Fetching…";
       try{
-        const memberships=selectedBubbleMemberships.map(read=>read()).filter(Boolean);
+        const memberships=pendingMemberships.map(row=>({slug:row.slug,score:row.score}));
         let d;
         if(uploadMode==="file"){
           const fd=new FormData(); fd.append("file",file.files[0]);
@@ -2524,51 +2541,16 @@
     if(!isCurrentRender(version))return;
     try{ a=(await api("/api/assets/"+a.pdf_id)).meta; }catch(e){}
     if(!isCurrentRender(version))return;
-    const memberships=el("div",{class:"col",style:"gap:6px"});
     const refreshAssetMemberships=async()=>{
       try{ a=(await api("/api/assets/"+a.pdf_id)).meta; }catch(e){}
-      renderAssetMembershipPanel();
     };
-    const renderAssetMembershipPanel=()=>{
-      memberships.innerHTML="";
-      memberships.append(el("b",{},"Bubbles it belongs to:"));
-      const rows=(a.bubble_memberships||[]).filter(x=>x.approved!==false);
-      if(!rows.length)memberships.append(el("div",{class:"muted"},"This paper is not in any bubble yet."));
-      rows.forEach(mem=>{
-        const score=Number(mem.score||5);
-        const row=el("div",{class:"membership-row"},
-          el("span",{class:"truncate",title:mem.slug},(mem.name||mem.slug)+"  <"+mem.slug+">"),
-          el("span",{class:"score"},"Score "+score),
-          el("button",{class:"ghost small",type:"button",title:"Promote relevance",disabled:score>=5,
-            onclick:async()=>{ try{ await api("/api/bubbles/"+mem.slug+"/papers/"+a.pdf_id,
-              {method:"PATCH",body:JSON.stringify({score:score+1})}); await refreshAssetMemberships();
-              toast("Relevance set to "+(score+1)); }
-              catch(e){ toast(e.message); } }},"+"),
-          el("button",{class:"ghost small",type:"button",title:"Demote relevance",disabled:score<=1,
-            onclick:async()=>{ try{ await api("/api/bubbles/"+mem.slug+"/papers/"+a.pdf_id,
-              {method:"PATCH",body:JSON.stringify({score:score-1})}); await refreshAssetMemberships();
-              toast("Relevance set to "+(score-1)); }
-              catch(e){ toast(e.message); } }},"-"),
-          el("button",{class:"ghost small",type:"button",title:"Remove from bubble",
-            onclick:async()=>{ if(!confirm('Remove this paper from "'+(mem.name||mem.slug)+'"?'))return;
-              try{ await api("/api/bubbles/"+mem.slug+"/remove-pdf",
-                {method:"POST",body:JSON.stringify({pdf_id:a.pdf_id})}); await refreshAssetMemberships(); }
-              catch(e){ toast(e.message); } }},"Remove"));
-        memberships.append(row);
-      });
-      const have=new Set(rows.map(x=>x.slug));
-      const addSel=el("select");
-      addSel.append(el("option",{value:""},"Add to bubble…"));
-      allBubbles.filter(b=>!have.has(b.slug)).forEach(b=>addSel.append(el("option",{value:b.slug},b.name||b.slug)));
-      addSel.onchange=async()=>{
-        const slug=addSel.value; addSel.value=""; if(!slug)return;
-        try{ await api("/api/bubbles/"+slug+"/add-pdf",{method:"POST",body:JSON.stringify({pdf_id:a.pdf_id})});
-          await refreshAssetMemberships(); toast("Added to bubble"); }
-        catch(e){ toast(e.message); }
-      };
-      memberships.append(addSel);
-    };
-    renderAssetMembershipPanel();
+    const memberships=buildAssetBubbleMembershipPanel({
+      allBubbles,
+      getMemberships:()=>a.bubble_memberships||[],
+      onAdd:async slug=>{await api("/api/bubbles/"+slug+"/add-pdf",{method:"POST",body:JSON.stringify({pdf_id:a.pdf_id})});await refreshAssetMemberships();},
+      onScore:async(slug,score)=>{await api("/api/bubbles/"+slug+"/papers/"+a.pdf_id,{method:"PATCH",body:JSON.stringify({score})});await refreshAssetMemberships();},
+      onRemove:async slug=>{await api("/api/bubbles/"+slug+"/remove-pdf",{method:"POST",body:JSON.stringify({pdf_id:a.pdf_id})});await refreshAssetMemberships();}
+    });
     box.append(el("b",{},"Edit asset"),
       el("label",{class:"muted"},"Title"),title,
       memberships,
