@@ -147,7 +147,7 @@ class AestheticsConfigTests(unittest.TestCase):
         self.assertIn('marker="\\\\comment{"+id+"}{"', source)
         self.assertIn('lockedin-review-markers', source)
         self.assertIn('s=stripCommentMarkers(s);', source)
-        self.assertIn('if(S.comments&&S.comments.length)await loadComments();', source)
+        self.assertIn('if(S.comments&&S.comments.length&&!opts.skipComments)await loadComments();', source)
 
     def test_server_preview_strips_review_markers_before_math_rendering(self):
         html = server._render_preview_html(

@@ -4264,7 +4264,7 @@
       if(content===S.editor.getMarkdown())markSynced(); else scheduleAutosave();
       // The server rebases review anchors during the save; fetch those updated ranges so the
       // highlight remains visible immediately instead of waiting for the polling interval.
-      if(S.comments&&S.comments.length)await loadComments();
+      if(S.comments&&S.comments.length&&!opts.skipComments)await loadComments();
       if(!opts.auto)toast("Page saved");
       fetchRefs().then(()=>updatePreview());   // pick up labels/numbers added on this save
       return true;
@@ -4587,7 +4587,7 @@
         if(found){
           const cleaned=md.slice(0,found.open)+md.slice(found.start,found.end)+md.slice(found.closeEnd);
           S.applyingRemote=true;try{S.editor.setMarkdown(cleaned,false);}finally{S.applyingRemote=false;}
-          S.baseMtime=null;S.remoteChangePending=false;await doSave({});
+          S.baseMtime=null;S.remoteChangePending=false;await doSave({skipComments:true});
         }
       }
       await loadComments(); restoreEditorScroll(scroll);
