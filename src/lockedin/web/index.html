@@ -686,6 +686,7 @@
   .review-compose textarea{min-height:58px;resize:vertical;font:inherit;font-size:12px}.review-orphan{color:var(--warn);font-size:11px;font-weight:700}
   .review-inline-edit{display:block;width:100%;box-sizing:border-box;min-height:66px;resize:vertical;font:inherit;font-size:13px}
   ::highlight(lockedin-review){background-color:rgba(245,204,62,.24)}
+  ::highlight(lockedin-review-markers){background-color:rgba(255,82,82,.22);color:#ff8b8b;font-weight:700;text-decoration:underline wavy #ff5252}
   #previewWrap{flex:1;overflow:auto;padding:12px 16px;min-width:0;min-height:0;line-height:1.6;
     overflow-anchor:none}
   /* The editor pane has three view modes, chosen from the toolbar dropdown:
@@ -1664,7 +1665,7 @@
     S.editor=null; S.bubble=null; S.page=null; S.pages=[]; S.previewEl=null;
     S.chatPane=null; S.detailWrap=null; S.papersMenu=null;
     S.remoteChangePending=false; S.sessionId=null; S.sessionTitle=null;
-    try{ if(window.CSS&&CSS.highlights)CSS.highlights.delete("lockedin-review"); }catch(e){}
+    try{ if(window.CSS&&CSS.highlights){CSS.highlights.delete("lockedin-review");CSS.highlights.delete("lockedin-review-markers");} }catch(e){}
   }
 
   // ================= AUTH =================
@@ -3842,17 +3843,26 @@
   function renderEditorCommentHighlights(){
     const view=editorView();
     if(!(window.CSS&&CSS.highlights&&window.Highlight)){return;}
-    CSS.highlights.delete("lockedin-review");
+    CSS.highlights.delete("lockedin-review"); CSS.highlights.delete("lockedin-review-markers");
     if(!view||S.viewMode==="view")return;
-    const ranges=[];
+    const ranges=[], markerRanges=[];
     (S.comments||[]).filter(t=>t._start>=0&&t.status!=="resolved").forEach(t=>{
       try{
         const from=view.domAtPos(t._start), to=view.domAtPos(t._end), range=document.createRange();
         range.setStart(from.node,from.offset); range.setEnd(to.node,to.offset);
         ranges.push(range);
+        if(t._markerStart!=null&&t._markerEnd!=null){
+          const left=view.domAtPos(t._markerStart), right=view.domAtPos(t._markerStart+String("/comment:"+t.id+"/").length);
+          const endLeft=view.domAtPos(t._markerEnd), endRight=view.domAtPos(t._markerEnd+String("/comment:"+t.id+"/").length);
+          const opening=document.createRange(), closing=document.createRange();
+          opening.setStart(left.node,left.offset); opening.setEnd(right.node,right.offset);
+          closing.setStart(endLeft.node,endLeft.offset); closing.setEnd(endRight.node,endRight.offset);
+          markerRanges.push(opening,closing);
+        }
       }catch(e){}
     });
     if(ranges.length)CSS.highlights.set("lockedin-review",new Highlight(...ranges));
+    if(markerRanges.length)CSS.highlights.set("lockedin-review-markers",new Highlight(...markerRanges));
   }
 
   // Rendering Markdown replaces the preview DOM. Keep every unchanged external resource through
@@ -4398,16 +4408,25 @@
   }
   function commentAnchorFromSelection(){
     const md=S.editor&&S.editor.getMarkdown?S.editor.getMarkdown():"", view=editorView(); let sel=null;
-    // Review anchors use the DOM range → CodeMirror mapping so their overlay agrees exactly
-    // with the visible selection. Keep the generic selection helper untouched for Center/Color.
+    // The browser's selected text is the final authority for what the user can see. Use the
+    // editor document only to locate that exact string, which avoids Toast UI wrapper/line
+    // offset differences while retaining the original Markdown (including newlines).
     try{
-      const nativeSel=window.getSelection&&window.getSelection();
-      if(nativeSel&&nativeSel.rangeCount&&view&&view.dom&&view.dom.contains(nativeSel.anchorNode)
-        &&view.dom.contains(nativeSel.focusNode)){
-        const from=view.posAtDOM(nativeSel.anchorNode,nativeSel.anchorOffset);
-        const to=view.posAtDOM(nativeSel.focusNode,nativeSel.focusOffset);
-        if(from!==to)sel={from:Math.min(from,to),to:Math.max(from,to)};
+      const nativeSel=window.getSelection&&window.getSelection(), selected=String(nativeSel&&nativeSel.toString()||"");
+      if(selected&&md.includes(selected)){
+        const main=view&&view.state&&view.state.selection&&view.state.selection.main;
+        const hint=main?Math.min(main.from,main.to):0;
+        let at=md.indexOf(selected), next;
+        while((next=md.indexOf(selected,at+1))>=0){if(Math.abs(next-hint)<Math.abs(at-hint))at=next;else break;}
+        return {start:at,quote:selected,prefix:md.slice(Math.max(0,at-96),at),suffix:md.slice(at+selected.length,at+selected.length+96)};
       }
+    }catch(e){}
+    // CodeMirror's document offsets are the same offsets used by domAtPos() when painting the
+    // highlight. Do not infer them from a browser DOM range: Toast UI can insert wrapper nodes
+    // and that mapping can land a marker a character or two inside the selected text.
+    try{
+      const main=view&&view.state&&view.state.selection&&view.state.selection.main;
+      if(main&&main.from!==main.to)sel={from:Math.min(main.from,main.to),to:Math.max(main.from,main.to)};
     }catch(e){}
     if(!sel)sel=currentEditorSelectionOffsets();
     if(!sel||sel.from===sel.to)return null;
@@ -4520,7 +4539,23 @@
     row.append(ta,el("div",{class:"review-actions"},save,cancel)); ta.focus(); ta.setSelectionRange(ta.value.length,ta.value.length);
   }
   async function setReviewStatus(t,status){try{await api("/api/bubbles/"+S.bubble+"/pages/"+S.page+"/comments/"+t.id,{method:"PATCH",body:JSON.stringify({status})});await loadComments();}catch(e){toast(e.message);}}
-  async function deleteReview(t){if(!confirm("Delete this review and all replies?"))return;try{await api("/api/bubbles/"+S.bubble+"/pages/"+S.page+"/comments/"+t.id,{method:"DELETE"});await loadComments();}catch(e){toast(e.message);}}
+  async function deleteReview(t){
+    if(!confirm("Delete this review and all replies?"))return;
+    try{
+      // The editor still has the source marker in memory. Remove it locally before the worker
+      // can autosave the stale document back and resurrect the deleted thread.
+      const marker="/comment:"+t.id+"/", escaped=marker.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+      const md=S.editor&&S.editor.getMarkdown?S.editor.getMarkdown():"";
+      const cleaned=md.replace(new RegExp(escaped+"([\\s\\S]*?)"+escaped),"$1");
+      if(cleaned!==md&&S.editor){
+        S.applyingRemote=true;try{S.editor.setMarkdown(cleaned,false);}finally{S.applyingRemote=false;}
+        // This is an intentional coordinated write, not a stale-edit conflict.
+        S.baseMtime=null; S.remoteChangePending=false; await doSave({});
+      }
+      await api("/api/bubbles/"+S.bubble+"/pages/"+S.page+"/comments/"+t.id,{method:"DELETE"});
+      await loadComments();
+    }catch(e){toast(e.message);}
+  }
   function scrollToCommentAnchor(t){
     const view=editorView(), scroller=view&&view.scrollDOM; if(!view||!scroller||t._start<0)return;
     try{

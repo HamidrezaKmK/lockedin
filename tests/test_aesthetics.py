@@ -141,7 +141,9 @@ class AestheticsConfigTests(unittest.TestCase):
     def test_review_highlights_use_inline_markdown_markers(self):
         source = (Path(server.WEB_DIR) / "index.html").read_text()
         self.assertIn('function addInlineCommentMarker(md,anchor,id)', source)
+        self.assertIn("The browser's selected text is the final authority", source)
         self.assertIn('marker="/comment:"+id+"/"', source)
+        self.assertIn('lockedin-review-markers', source)
         self.assertIn('s=s.replace(/\\/comment:([A-Za-z0-9_-]+)\\/([\\s\\S]*?)\\/comment:\\1\\//g,"$2");', source)
         self.assertIn('if(S.comments&&S.comments.length)await loadComments();', source)
 
