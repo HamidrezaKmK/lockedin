@@ -708,7 +708,7 @@ def ensure_comment_markers(slug: str, page_slug: str) -> bool:
     additions = []
     for thread in data.get("threads", []):
         tid, anchor = str(thread.get("id") or ""), thread.get("anchor") or {}
-        if not tid or _has_comment_marker(content, tid):
+        if not tid or thread.get("status", "open") != "open" or _has_comment_marker(content, tid):
             continue
         quote = str(anchor.get("quote") or "")
         try:

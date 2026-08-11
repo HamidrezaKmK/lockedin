@@ -4480,6 +4480,8 @@
     const view=editorView(); if(!view)return;
     try{view.scrollDOM.scrollLeft=0; const scroller=view.scrollDOM.querySelector&&view.scrollDOM.querySelector(".cm-scroller");if(scroller)scroller.scrollLeft=0;}catch(e){}
   }
+  function captureEditorScroll(){const v=editorView();return v?{top:v.scrollDOM.scrollTop,left:v.scrollDOM.scrollLeft}:null;}
+  function restoreEditorScroll(pos){const v=editorView();if(!v||!pos)return;requestAnimationFrame(()=>{v.scrollDOM.scrollTop=pos.top;v.scrollDOM.scrollLeft=pos.left;});}
   function findCommentMarker(md,id){
     const marker="\\comment{"+id+"}{", open=md.indexOf(marker); if(open<0)return null;
     const start=open+marker.length; let depth=1,i=start;
@@ -4576,9 +4578,24 @@
     ta.onkeydown=e=>{if((e.ctrlKey||e.metaKey)&&e.key==="Enter"){e.preventDefault();finish();}if(e.key==="Escape"){e.preventDefault();renderReview();}};
     row.append(ta,el("div",{class:"review-actions"},save,cancel)); ta.focus(); ta.setSelectionRange(ta.value.length,ta.value.length);
   }
-  async function setReviewStatus(t,status){try{await api("/api/bubbles/"+S.bubble+"/pages/"+S.page+"/comments/"+t.id,{method:"PATCH",body:JSON.stringify({status})});await loadComments();}catch(e){toast(e.message);}}
+  async function setReviewStatus(t,status){
+    const scroll=captureEditorScroll();
+    try{
+      await api("/api/bubbles/"+S.bubble+"/pages/"+S.page+"/comments/"+t.id,{method:"PATCH",body:JSON.stringify({status})});
+      if(status==="resolved"&&S.editor){
+        const md=S.editor.getMarkdown(), found=findCommentMarker(md,String(t.id||""));
+        if(found){
+          const cleaned=md.slice(0,found.open)+md.slice(found.start,found.end)+md.slice(found.closeEnd);
+          S.applyingRemote=true;try{S.editor.setMarkdown(cleaned,false);}finally{S.applyingRemote=false;}
+          S.baseMtime=null;S.remoteChangePending=false;await doSave({});
+        }
+      }
+      await loadComments(); restoreEditorScroll(scroll);
+    }catch(e){restoreEditorScroll(scroll);toast(e.message);}
+  }
   async function deleteReview(t){
     if(!confirm("Delete this review and all replies?"))return;
+    const scroll=captureEditorScroll();
     try{
       // The editor still has the source marker in memory. Remove it locally before the worker
       // can autosave the stale document back and resurrect the deleted thread.
@@ -4587,13 +4604,12 @@
       const cleaned=found?md.slice(0,found.open)+md.slice(found.start,found.end)+md.slice(found.closeEnd):md;
       if(cleaned!==md&&S.editor){
         S.applyingRemote=true;try{S.editor.setMarkdown(cleaned,false);}finally{S.applyingRemote=false;}
-        resetEditorHorizontalScroll();
         // This is an intentional coordinated write, not a stale-edit conflict.
         S.baseMtime=null; S.remoteChangePending=false; await doSave({});
       }
       await api("/api/bubbles/"+S.bubble+"/pages/"+S.page+"/comments/"+t.id,{method:"DELETE"});
-      await loadComments();
-    }catch(e){toast(e.message);}
+      await loadComments(); restoreEditorScroll(scroll);
+    }catch(e){restoreEditorScroll(scroll);toast(e.message);}
   }
   function scrollToCommentAnchor(t){
     const view=editorView(), scroller=view&&view.scrollDOM; if(!view||!scroller||t._start<0)return;
