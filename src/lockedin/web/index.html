@@ -3860,19 +3860,21 @@
     CSS.highlights.delete("lockedin-review"); CSS.highlights.delete("lockedin-review-markers");
     if(!view||S.viewMode==="view")return;
     const ranges=[], markerRanges=[];
+    const domTextRange=(root,needle)=>{
+      const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT); let node;
+      while(node=walker.nextNode()){
+        const at=String(node.nodeValue||"").indexOf(needle);
+        if(at>=0){const r=document.createRange();r.setStart(node,at);r.setEnd(node,at+needle.length);return r;}
+      }
+      return null;
+    };
     (S.comments||[]).filter(t=>t._start>=0&&t.status!=="resolved").forEach(t=>{
       try{
         const from=view.domAtPos(t._start), to=view.domAtPos(t._end), range=document.createRange();
         range.setStart(from.node,from.offset); range.setEnd(to.node,to.offset);
         ranges.push(range);
-        if(t._markerStart!=null&&t._markerEnd!=null){
-          const left=view.domAtPos(t._markerStart), right=view.domAtPos(t._markerStart+String("\\comment{"+t.id+"}{").length);
-          const endLeft=view.domAtPos(t._markerEnd), endRight=view.domAtPos(t._markerEnd+1);
-          const opening=document.createRange(), closing=document.createRange();
-          opening.setStart(left.node,left.offset); opening.setEnd(right.node,right.offset);
-          closing.setStart(endLeft.node,endLeft.offset); closing.setEnd(endRight.node,endRight.offset);
-          markerRanges.push(opening,closing);
-        }
+        const opening=domTextRange(view.dom,"\\comment{"+t.id+"}{");
+        if(opening)markerRanges.push(opening);
       }catch(e){}
     });
     if(ranges.length)CSS.highlights.set("lockedin-review",new Highlight(...ranges));
