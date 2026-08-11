@@ -9,6 +9,7 @@ import base64
 import hashlib
 from pathlib import Path
 
+import yaml
 from slugify import slugify
 
 from . import assets, bubbles, paths
@@ -27,7 +28,28 @@ def _safe_rel(rel: str) -> bool:
     return bool(parts) and not any(part in ("", ".", "..") for part in parts)
 
 
-def _files(home: Path, slug: str) -> dict[str, Path]:
+def _review_feedback(slug: str) -> bytes | None:
+    """Serialize open private review threads as Scientist's read-only feedback context."""
+    threads = []
+    for page in bubbles.list_pages(slug):
+        page_slug = page["page_slug"]
+        for thread in bubbles.list_comments(slug, page_slug).get("threads", []):
+            if thread.get("status") != "open":
+                continue
+            threads.append({
+                "id": thread.get("id", ""), "page_slug": page_slug,
+                "status": "open", "created_at": thread.get("created_at", ""),
+                "updated_at": thread.get("updated_at", ""),
+                "anchor": dict(thread.get("anchor") or {}),
+                "messages": [dict(message) for message in thread.get("messages", [])],
+            })
+    if not threads:
+        return None
+    payload = {"version": 1, "threads": threads}
+    return yaml.safe_dump(payload, allow_unicode=True, sort_keys=False).encode("utf-8")
+
+
+def _files(home: Path, slug: str) -> dict[str, Path | bytes]:
     """Map v2 project-local paths to source files for one bubble."""
     with paths.use_root(home):
         if not _approved(slug):
@@ -59,12 +81,19 @@ def _files(home: Path, slug: str) -> dict[str, Path]:
                            ("aesthetics.yaml", paths.AESTHETICS_CONFIG_YAML)):
             if path.is_file():
                 out[(Path("config") / name).as_posix()] = path
+        feedback = _review_feedback(slug)
+        if feedback is not None:
+            out["config/reviews.yaml"] = feedback
         return out
 
 
+def _content(source: Path | bytes) -> bytes:
+    return source if isinstance(source, bytes) else source.read_bytes()
+
+
 def manifest(home: Path, slug: str) -> dict:
-    return {"files": [{"path": rel, "revision": revision(path.read_bytes())}
-                      for rel, path in sorted(_files(home, slug).items())]}
+    return {"files": [{"path": rel, "revision": revision(_content(source))}
+                      for rel, source in sorted(_files(home, slug).items())]}
 
 
 def read_files(home: Path, slug: str, wanted: list[str]) -> dict:
@@ -73,7 +102,7 @@ def read_files(home: Path, slug: str, wanted: list[str]) -> dict:
     for rel in dict.fromkeys(wanted):
         if not _safe_rel(rel) or rel not in available:
             continue
-        raw = available[rel].read_bytes()
+        raw = _content(available[rel])
         files.append({"path": rel, "revision": revision(raw),
                       "content_b64": base64.b64encode(raw).decode("ascii")})
     return {"files": files}

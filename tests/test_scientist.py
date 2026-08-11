@@ -7,6 +7,7 @@ import json
 import os
 import tempfile
 import unittest
+import yaml
 from contextlib import contextmanager, redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
@@ -147,6 +148,26 @@ class ScientistServerBoundaryTest(unittest.TestCase):
         self.assertNotIn(f"assets/{detached}/paper.pdf", names)
         self.assertNotIn("reports/chats/private.md", names)
 
+    def test_open_review_threads_are_exported_as_read_only_feedback_context(self):
+        with workspace() as (home, slug):
+            with paths.use_root(home):
+                thread = bubbles.create_comment(
+                    slug, "overview", "reviewer", "Clarify this claim.",
+                    {"quote": "Current claim", "start": 12, "prefix": "Before ", "suffix": " after"})
+                bubbles.reply_comment(slug, "overview", thread["id"], "author", "Will revise it.")
+                names = {item["path"] for item in scientist_sync.manifest(home, slug)["files"]}
+                self.assertIn("config/reviews.yaml", names)
+                self.assertNotIn("reports/comments/overview.json", names)
+                payload = scientist_sync.read_files(home, slug, ["config/reviews.yaml"])["files"][0]
+                review = yaml.safe_load(base64.b64decode(payload["content_b64"]))
+                self.assertEqual(review["threads"][0]["page_slug"], "overview")
+                self.assertEqual(review["threads"][0]["anchor"]["quote"], "Current claim")
+                self.assertEqual([m["body"] for m in review["threads"][0]["messages"]],
+                                 ["Clarify this claim.", "Will revise it."])
+                bubbles.set_comment_status(slug, "overview", thread["id"], "resolved", "author")
+                names = {item["path"] for item in scientist_sync.manifest(home, slug)["files"]}
+        self.assertNotIn("config/reviews.yaml", names)
+
     def test_only_report_pages_and_flat_report_assets_are_writable(self):
         with workspace() as (home, slug):
             with paths.use_root(home):
@@ -193,7 +214,7 @@ class ScientistProjectSyncTest(unittest.TestCase):
 
     def test_pull_only_assets_are_restored_and_detached_assets_removed(self):
         files = {"assets/paper/paper.pdf": b"server pdf", "assets/paper/summary.md": b"server summary",
-                 "config/math.yaml": b"math", "config/overleaf.yaml": b'{"overleaf_project_id":"abcDEF123"}', "reports/pages.yaml": b"pages: []\n",
+                 "config/math.yaml": b"math", "config/reviews.yaml": b"threads: []\n", "config/overleaf.yaml": b'{"overleaf_project_id":"abcDEF123"}', "reports/pages.yaml": b"pages: []\n",
                  "reports/_lockedin_papers.md": b"# Papers\n", "reports/pages/overview.md": b"# Overview\n"}
         fake = FakeBubbleServer(files)
         with tempfile.TemporaryDirectory() as directory, patch.object(scientist_cli, "request", side_effect=fake.request):
@@ -210,6 +231,9 @@ class ScientistProjectSyncTest(unittest.TestCase):
             self.assertTrue((sync.root / "reports" / "pages.yaml").exists())
             self.assertTrue((sync.root / "reports" / "_lockedin_papers.md").exists())
             self.assertTrue((sync.root / "config" / "overleaf.yaml").exists())
+            reviews = sync.root / "config" / "reviews.yaml"
+            self.assertEqual(reviews.read_bytes(), b"threads: []\n")
+            self.assertFalse(os.stat(reviews).st_mode & 0o222)
             self.assertFalse((sync.root / "overleaf").exists())
             self.assertIn("`\\bmu`", (sync.root / "SKILL.md").read_text())
 
@@ -224,6 +248,20 @@ class ScientistProjectSyncTest(unittest.TestCase):
             sync.sync_once()
             self.assertEqual(page.read_bytes(), b"# New server\n")
             self.assertTrue(list((sync.root / "config" / "conflicts").rglob("*.patch")))
+
+    def test_resolved_review_feedback_is_removed_locally_without_uploading(self):
+        files = {"reports/pages/overview.md": b"# Overview\n",
+                 "config/reviews.yaml": b"version: 1\nthreads: []\n"}
+        fake = FakeBubbleServer(files)
+        with tempfile.TemporaryDirectory() as directory, patch.object(scientist_cli, "request", side_effect=fake.request):
+            sync = scientist_cli.ProjectSync(ACCOUNT, Path(directory), "work")
+            sync.sync_once()
+            review = sync.root / "config" / "reviews.yaml"
+            self.assertTrue(review.exists())
+            del fake.files["config/reviews.yaml"]
+            sync.sync_once()
+            self.assertFalse(review.exists())
+            self.assertNotIn("config/reviews.yaml", fake.files)
 
     def test_new_page_and_delete_are_sent_to_server(self):
         files = {"reports/pages/overview.md": b"# Overview\n"}
@@ -384,13 +422,16 @@ class ScientistProfileAndWorkersTest(unittest.TestCase):
         self.assertIn("the sync worker registers it automatically", scientist_cli.SKILL_RULES)
         self.assertIn("the sync worker removes it", scientist_cli.SKILL_RULES)
         self.assertIn("config/math.yaml", scientist_cli.SKILL_RULES)
-        self.assertIn("lockedin-scientist-skill: 7", scientist_cli.SKILL_RULES)
+        self.assertIn("lockedin-scientist-skill: 8", scientist_cli.SKILL_RULES)
         self.assertIn("Outside `.lockedin/`, work on this repository normally", scientist_cli.SKILL_RULES)
         self.assertIn("manuscript changes stay local until that explicit sync", scientist_cli.SKILL_RULES)
         self.assertIn("create or edit `.tex`, `.bib`, `.sty`, `.cls`", scientist_cli.SKILL_RULES)
         self.assertIn("Reports: the live research record", scientist_cli.SKILL_RULES)
         self.assertIn("the curated publication source", scientist_cli.SKILL_RULES)
         self.assertIn("portable relative Markdown image", scientist_cli.SKILL_RULES)
+        self.assertIn("Treat feedback critically", scientist_cli.SKILL_RULES)
+        self.assertIn("Make the smallest change", scientist_cli.SKILL_RULES)
+        self.assertIn("never reply to, edit, delete, or resolve", scientist_cli.SKILL_RULES)
 
     def test_skill_embeds_the_active_math_macro_table(self):
         skill = scientist_cli.skill_document("## Markdown\n", {"\\E": "\\mathbb{E}"})

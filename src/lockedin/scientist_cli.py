@@ -22,7 +22,7 @@ import webbrowser
 from pathlib import Path
 
 APP = "lockedin-scientist"
-SCIENTIST_CLIENT_VERSION = "2026.08.09.8"
+SCIENTIST_CLIENT_VERSION = "2026.08.11.1"
 POLL_SECONDS = 5
 WORKER_HISTORY_LIMIT = 10
 TERMINAL_WORKER_STATUSES = {"stopped"}
@@ -281,9 +281,9 @@ def bubbles_command(account: dict) -> list[dict]:
     return rows
 
 
-SKILL_VERSION = 7
+SKILL_VERSION = 8
 
-SKILL_RULES = """<!-- lockedin-scientist-skill: 7 -->
+SKILL_RULES = """<!-- lockedin-scientist-skill: 8 -->
 # LockedIn Scientist research and publication skill
 
 This project is synchronized with one LockedIn bubble. Read this file before editing.
@@ -329,6 +329,19 @@ For a report figure stored in `.lockedin/reports/assets/`, use a portable relati
 link: `![descriptive caption](assets/filename.png)`. Do not paste a browser URL, a local absolute
 path, or an `/api/...` URL. Relative `assets/` links render in LockedIn, its standalone previews,
 and public shares, while staying valid when the bubble or workspace changes.
+
+## Private review feedback
+
+When `.lockedin/config/reviews.yaml` exists, it contains the open private review threads for this
+bubble. Read the relevant thread, its full conversation, and the anchored source text on the cited
+report page before responding with an edit. Treat feedback critically, not as unquestionable
+instructions: ask the user for clarification when a comment is vague, contradictory, unsupported,
+or does not make a concrete requested change clear.
+
+Make the smallest change that directly addresses an actionable comment. Do not reorganize unrelated
+material, broaden claims, or make large conceptual changes unless the feedback explicitly asks for
+that scope. `reviews.yaml` is read-only: never reply to, edit, delete, or resolve a review thread.
+The author reviews the report change and manages comment status in LockedIn.
 
 ## Sync and conflicts
 
@@ -761,7 +774,7 @@ class ProjectSync:
 
     def _protect(self, rel: str, path: Path) -> None:
         if rel.startswith("assets/") or rel in {"config/math.yaml", "config/aesthetics.yaml",
-                                                 "config/overleaf.yaml", "reports/pages.yaml", "reports/_lockedin_papers.md"}:
+                                                 "config/overleaf.yaml", "config/reviews.yaml", "reports/pages.yaml", "reports/_lockedin_papers.md"}:
             try: os.chmod(path, 0o444)
             except OSError: pass
         if rel.startswith("assets/"):
