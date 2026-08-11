@@ -4408,22 +4408,9 @@
   }
   function commentAnchorFromSelection(){
     const md=S.editor&&S.editor.getMarkdown?S.editor.getMarkdown():"", view=editorView(); let sel=null;
-    // The browser's selected text is the final authority for what the user can see. Use the
-    // editor document only to locate that exact string, which avoids Toast UI wrapper/line
-    // offset differences while retaining the original Markdown (including newlines).
-    try{
-      const nativeSel=window.getSelection&&window.getSelection(), selected=String(nativeSel&&nativeSel.toString()||"");
-      if(selected&&md.includes(selected)){
-        const main=view&&view.state&&view.state.selection&&view.state.selection.main;
-        const hint=main?Math.min(main.from,main.to):0;
-        let at=md.indexOf(selected), next;
-        while((next=md.indexOf(selected,at+1))>=0){if(Math.abs(next-hint)<Math.abs(at-hint))at=next;else break;}
-        return {start:at,quote:selected,prefix:md.slice(Math.max(0,at-96),at),suffix:md.slice(at+selected.length,at+selected.length+96)};
-      }
-    }catch(e){}
-    // CodeMirror's document offsets are the same offsets used by domAtPos() when painting the
-    // highlight. Do not infer them from a browser DOM range: Toast UI can insert wrapper nodes
-    // and that mapping can land a marker a character or two inside the selected text.
+    // CodeMirror's document selection is the sole source of truth. Browser DOM selections from
+    // Toast UI's wrapped editor can include the next rendered line even when only one word was
+    // selected; using the document offsets keeps insertion and highlight ranges identical.
     try{
       const main=view&&view.state&&view.state.selection&&view.state.selection.main;
       if(main&&main.from!==main.to)sel={from:Math.min(main.from,main.to),to:Math.max(main.from,main.to)};
