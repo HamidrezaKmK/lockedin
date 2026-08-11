@@ -1301,7 +1301,7 @@
       if(depth){out+=s.slice(start);break;}
       out+=s.slice(body,i-1);pos=i;
     }
-    return out.replace(/\/comment:[A-Za-z0-9_-]+\/([\s\S]*?)\/comment:[A-Za-z0-9_-]+\//g,"$1");
+    return out;
   }
   function renderMarkdown(md,opts){
     opts=opts||{}; const refs=opts.refs;

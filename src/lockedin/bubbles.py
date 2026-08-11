@@ -655,7 +655,6 @@ def _save_comments(slug: str, page_slug: str, data: dict) -> float:
 
 
 _COMMENT_OPEN_RE = re.compile(r"\\comment\{([A-Za-z0-9_-]+)\}\{")
-_COMMENT_OLD_RE = re.compile(r"/comment:([A-Za-z0-9_-]+)/([\s\S]*?)/comment:\1/")
 
 
 def comment_marker(thread_id: str) -> str:
@@ -664,7 +663,6 @@ def comment_marker(thread_id: str) -> str:
 
 def strip_comment_markers(content: str) -> str:
     """Remove inline review wrappers while preserving reviewed Markdown text."""
-    content = _COMMENT_OLD_RE.sub(lambda match: match.group(2), content)
     out, pos = [], 0
     while True:
         match = _COMMENT_OPEN_RE.search(content, pos)
