@@ -42,7 +42,8 @@ description: Work safely with a project-local LockedIn Scientist bubble. Read it
 
 # LockedIn Scientist
 
-Find `.lockedin/SKILL.md` in the current project and read it in full before making any change.
+Open exactly `.lockedin/SKILL.md` relative to the current project root and read it in full before
+making any change. Do not search the repository, home directory, or other projects for the guide.
 It contains the current bubble's editing guide, paper context, math conventions, permitted write
 paths, conflict recovery rules, and—when present—rules for the local Overleaf checkout. Follow it
 as the source of truth.

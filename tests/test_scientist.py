@@ -589,6 +589,8 @@ class ScientistProfileAndWorkersTest(unittest.TestCase):
                 content = skill.read_text()
                 self.assertIn("name: lockedin-scientist", content)
                 self.assertIn(".lockedin/SKILL.md", content)
+                self.assertIn("Open exactly `.lockedin/SKILL.md`", content)
+                self.assertIn("Do not search the repository, home directory", content)
             plugin = json.loads(agy[0].read_text())
             self.assertEqual(plugin["name"], "lockedin-scientist")
             self.assertEqual(plugin["managed_by"], "lockedin-scientist")
