@@ -141,8 +141,8 @@ class AestheticsConfigTests(unittest.TestCase):
     def test_review_highlights_use_inline_markdown_markers(self):
         source = (Path(server.WEB_DIR) / "index.html").read_text()
         self.assertIn('function addInlineCommentMarker(md,anchor,id)', source)
-        self.assertIn("CodeMirror's document selection is the sole source of truth", source)
-        self.assertIn("if(main&&main.from!==main.to)sel={from:Math.min(main.from,main.to)", source)
+        self.assertIn("Read the live browser selection first", source)
+        self.assertIn("if(selected&&md.includes(selected))", source)
         self.assertIn('marker="\\\\comment{"+id+"}{"', source)
         self.assertIn('lockedin-review-markers', source)
         self.assertIn('s=stripCommentMarkers(s);', source)

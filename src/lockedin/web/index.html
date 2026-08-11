@@ -4424,9 +4424,22 @@
   }
   function commentAnchorFromSelection(){
     const md=S.editor&&S.editor.getMarkdown?S.editor.getMarkdown():"", view=editorView(); let sel=null;
-    // CodeMirror's document selection is the sole source of truth. Browser DOM selections from
-    // Toast UI's wrapped editor can include the next rendered line even when only one word was
-    // selected; using the document offsets keeps insertion and highlight ranges identical.
+    // Read the live browser selection first. Toast UI can leave CodeMirror's stored selection at
+    // the previous review range when the + button is clicked, so relying on that state can wrap
+    // an old sentence instead of the text currently selected by the user.
+    try{
+      const nativeSel=window.getSelection&&window.getSelection(), selected=String(nativeSel&&nativeSel.toString()||"");
+      if(selected&&md.includes(selected)){
+        let hint=0;
+        if(nativeSel&&nativeSel.anchorNode&&view&&view.dom&&view.dom.contains(nativeSel.anchorNode)){
+          try{hint=view.posAtDOM(nativeSel.anchorNode,nativeSel.anchorOffset);}catch(e){}
+        }
+        let at=md.indexOf(selected), next;
+        while((next=md.indexOf(selected,at+1))>=0){if(Math.abs(next-hint)<Math.abs(at-hint))at=next;else break;}
+        return {start:at,quote:selected,prefix:md.slice(Math.max(0,at-96),at),suffix:md.slice(at+selected.length,at+selected.length+96)};
+      }
+    }catch(e){}
+    // Fallback for environments without a DOM selection: use the editor document selection.
     try{
       const main=view&&view.state&&view.state.selection&&view.state.selection.main;
       if(main&&main.from!==main.to)sel={from:Math.min(main.from,main.to),to:Math.max(main.from,main.to)};
