@@ -3870,11 +3870,22 @@
       }
       return null;
     };
+    const domCommentRange=(root,t,md)=>{
+      const quote=md.slice(t._start,t._end), opening="\\comment{"+t.id+"}{", needle=opening+quote+"}";
+      const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT); let node;
+      while(node=walker.nextNode()){
+        const at=String(node.nodeValue||"").indexOf(needle);
+        if(at>=0){const r=document.createRange();r.setStart(node,at+opening.length);r.setEnd(node,at+opening.length+quote.length);return r;}
+      }
+      return null;
+    };
+    const sourceMd=S.editor&&S.editor.getMarkdown?S.editor.getMarkdown():"";
     (S.comments||[]).filter(t=>t._start>=0&&t.status!=="resolved").forEach(t=>{
       try{
-        const from=view.domAtPos(t._start), to=view.domAtPos(t._end), range=document.createRange();
-        range.setStart(from.node,from.offset); range.setEnd(to.node,to.offset);
-        ranges.push(range);
+        const exact=domCommentRange(view.dom,t,sourceMd);
+        if(exact)ranges.push(exact);
+        else {const from=view.domAtPos(t._start), to=view.domAtPos(t._end), range=document.createRange();
+          range.setStart(from.node,from.offset); range.setEnd(to.node,to.offset); ranges.push(range);}
         const opening=domTextRange(view.dom,"\\comment{"+t.id+"}{");
         if(opening)markerRanges.push(opening);
       }catch(e){}
