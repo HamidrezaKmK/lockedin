@@ -22,7 +22,7 @@ import webbrowser
 from pathlib import Path
 
 APP = "lockedin-scientist"
-SCIENTIST_CLIENT_VERSION = "2026.08.11.4"
+SCIENTIST_CLIENT_VERSION = "2026.08.11.5"
 POLL_SECONDS = 5
 WORKER_HISTORY_LIMIT = 10
 TERMINAL_WORKER_STATUSES = {"stopped"}
@@ -300,9 +300,9 @@ def bubbles_command(account: dict) -> list[dict]:
     return rows
 
 
-SKILL_VERSION = 13
+SKILL_VERSION = 14
 
-SKILL_RULES = """<!-- lockedin-scientist-skill: 13 -->
+SKILL_RULES = """<!-- lockedin-scientist-skill: 14 -->
 # LockedIn Scientist research and publication skill
 
 This project is synchronized with one LockedIn bubble. Read this file before editing.

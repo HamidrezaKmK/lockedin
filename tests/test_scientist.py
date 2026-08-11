@@ -546,6 +546,12 @@ class ScientistProfileAndWorkersTest(unittest.TestCase):
         self.assertEqual(len(data["workers"]), scientist_cli.WORKER_HISTORY_LIMIT + 2)
         self.assertNotIn("old-0", data["workers"])
 
+    def test_client_version_matches_the_server_gate(self):
+        # The server answers 426 to any client whose version header differs, so a one-sided bump
+        # would lock every installed Scientist out instead of prompting a reinstall.
+        from lockedin import server
+        self.assertEqual(scientist_cli.SCIENTIST_CLIENT_VERSION, server.SCIENTIST_CLIENT_VERSION)
+
     def test_command_surface_has_no_vendor_wrappers(self):
         source = Path(scientist_cli.__file__).read_text()
         self.assertNotIn('add_parser("resume")', source)
@@ -556,7 +562,10 @@ class ScientistProfileAndWorkersTest(unittest.TestCase):
         self.assertIn("the sync worker registers it automatically", scientist_cli.SKILL_RULES)
         self.assertIn("the sync worker removes it", scientist_cli.SKILL_RULES)
         self.assertIn("config/math.yaml", scientist_cli.SKILL_RULES)
-        self.assertIn("lockedin-scientist-skill: 13", scientist_cli.SKILL_RULES)
+        # The embedded marker is what `_ensure` compares against an already-installed SKILL.md,
+        # so it must track the constant. A mismatch would silently strand every project on its
+        # old guide.
+        self.assertIn(f"lockedin-scientist-skill: {scientist_cli.SKILL_VERSION}", scientist_cli.SKILL_RULES)
         self.assertIn("Outside `.lockedin/`, work on this repository normally", scientist_cli.SKILL_RULES)
         self.assertIn("manuscript changes stay local until that explicit sync", scientist_cli.SKILL_RULES)
         self.assertIn("create or edit `.tex`, `.bib`, `.sty`, `.cls`", scientist_cli.SKILL_RULES)
@@ -569,6 +578,7 @@ class ScientistProfileAndWorkersTest(unittest.TestCase):
         self.assertIn("never create, copy, fabricate, rename, nest, or move one", scientist_cli.SKILL_RULES)
         self.assertIn("Never guess where an unanchored review belongs", scientist_cli.SKILL_RULES)
         self.assertIn("make the smallest useful edit inside its body", scientist_cli.SKILL_RULES)
+        self.assertIn("Colored passages use", scientist_cli.SKILL_RULES)
         self.assertIn("Direct LockedIn paths — do not search for them", scientist_cli.SKILL_RULES)
         self.assertIn("For any report-related search, search only inside `.lockedin/`", scientist_cli.SKILL_RULES)
         self.assertIn("lockedin-scientist doctor", scientist_cli.SKILL_RULES)
