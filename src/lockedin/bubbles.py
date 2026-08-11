@@ -684,6 +684,13 @@ def _mapped_anchor_range(old_text: str, new_text: str, start: int, end: int) -> 
         old_suffix -= 1
         new_suffix -= 1
 
+    # A pure insertion exactly at an anchor edge is naturally part of the user's continued
+    # selection. Include it so typing at the first/last highlighted character grows the range.
+    if prefix == old_suffix and start == prefix:
+        return prefix, end + (new_suffix - prefix)
+    if prefix == old_suffix and end == prefix:
+        return start, end + (new_suffix - prefix)
+
     # The edit is wholly outside this anchor: shift only when it precedes the selection.
     if end <= prefix:
         return start, end

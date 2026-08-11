@@ -1083,6 +1083,14 @@ class PrivateReviewComments(unittest.TestCase):
             self.assertEqual(followed["quote"], "this is a revised highlight")
             self.assertEqual(followed["start"], replacement.index("this is a revised highlight"))
 
+            edge_text = "Added before. Before this is a revised highlight after."
+            service.save_page(home, slug, "overview", edge_text)
+            edge_start = edge_text.index("this is a revised highlight")
+            service.save_page(home, slug, "overview",
+                              edge_text[:edge_start] + "NEW " + edge_text[edge_start:])
+            edge = service.list_comments(home, slug, "overview")["threads"][0]["anchor"]
+            self.assertEqual(edge["quote"], "NEW this is a revised highlight")
+
     def test_review_anchor_becomes_unanchored_when_selection_is_deleted(self):
         with temp_home() as home:
             slug = make_bubble(home)
