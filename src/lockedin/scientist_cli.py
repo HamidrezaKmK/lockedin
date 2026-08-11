@@ -22,7 +22,7 @@ import webbrowser
 from pathlib import Path
 
 APP = "lockedin-scientist"
-SCIENTIST_CLIENT_VERSION = "2026.08.11.2"
+SCIENTIST_CLIENT_VERSION = "2026.08.11.3"
 POLL_SECONDS = 5
 WORKER_HISTORY_LIMIT = 10
 TERMINAL_WORKER_STATUSES = {"stopped"}
@@ -97,6 +97,7 @@ def welcome() -> None:
     print(f"  {cyan('•')} {dim('List workers')}\n     {cyan('lockedin-scientist ps')}")
     print(f"  {cyan('•')} {dim('Stop a worker without removing local files')}\n     {cyan('lockedin-scientist stop <worker-id>')}")
     print(f"  {cyan('•')} {dim('Replace this project’s .lockedin from the server')}\n     {cyan('lockedin-scientist hard-reset <bubble-slug>')}")
+    print(f"  {cyan('•')} {dim('Verify this project’s worker and server connection')}\n     {cyan('lockedin-scientist doctor')}")
     print()
     print(bold("Native agent skills"))
     print(f"  {cyan('•')} {dim('Install the LockedIn Scientist skill once for your agent')}\n     {cyan('lockedin-scientist <codex|claude|agy> setup')}")
@@ -174,7 +175,7 @@ def save_workers(data: dict) -> None:
     _atomic_json(workers_path(), data, private=True)
 
 
-def request(server: str, method: str, path: str, body: dict | None = None, token: str = "", workspace: str = "") -> dict:
+def request(server: str, method: str, path: str, body: dict | None = None, token: str = "", workspace: str = "", *, timeout: float = 90) -> dict:
     data = json.dumps(body).encode() if body is not None else None
     headers = {"Content-Type": "application/json", "Accept": "application/json",
                "User-Agent": f"{APP}/{SCIENTIST_CLIENT_VERSION}",
@@ -183,7 +184,7 @@ def request(server: str, method: str, path: str, body: dict | None = None, token
     if workspace: headers["X-LockedIn-Workspace"] = workspace
     req = urllib.request.Request(server.rstrip("/") + path, data=data, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(req, timeout=90) as response:
+        with urllib.request.urlopen(req, timeout=timeout) as response:
             return json.loads(response.read())
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode(errors="replace")
@@ -194,8 +195,9 @@ def request(server: str, method: str, path: str, body: dict | None = None, token
         raise RuntimeError(f"cannot reach LockedIn server: {exc.reason}") from exc
 
 
-def account_request(account: dict, method: str, path: str, body: dict | None = None, *, workspace: str = "") -> dict:
-    return request(account["server"], method, path, body, account["token"], workspace or account.get("workspace_id", ""))
+def account_request(account: dict, method: str, path: str, body: dict | None = None, *, workspace: str = "", timeout: float = 90) -> dict:
+    args = (account["server"], method, path, body, account["token"], workspace or account.get("workspace_id", ""))
+    return request(*args, **({"timeout": timeout} if timeout != 90 else {}))
 
 
 def choose_account() -> dict:
@@ -203,6 +205,22 @@ def choose_account() -> dict:
     if not accounts:
         raise RuntimeError("No account authorized. Run `lockedin-scientist login --server <URL>` first.")
     return accounts[-1]
+
+
+def warn_if_outdated(account: dict | None = None) -> None:
+    """Show an upgrade warning for local-only commands before a worker discovers it later."""
+    if account is None:
+        accounts = load_config().get("accounts", [])
+        if not accounts:
+            return
+        account = accounts[-1]
+    try:
+        account_request(account, "GET", "/api/scientist/v2/bubbles", timeout=3)
+    except RuntimeError as exc:
+        if "out of date" not in str(exc).lower():
+            return
+        print(orange("! LockedIn Scientist is out of date."), file=sys.stderr)
+        print("  Reinstall: curl -fsSL https://raw.githubusercontent.com/HamidrezaKmK/lockedin/main/install.sh | bash", file=sys.stderr)
 
 
 def login(server: str) -> None:
@@ -281,9 +299,9 @@ def bubbles_command(account: dict) -> list[dict]:
     return rows
 
 
-SKILL_VERSION = 9
+SKILL_VERSION = 10
 
-SKILL_RULES = """<!-- lockedin-scientist-skill: 9 -->
+SKILL_RULES = """<!-- lockedin-scientist-skill: 10 -->
 # LockedIn Scientist research and publication skill
 
 This project is synchronized with one LockedIn bubble. Read this file before editing.
@@ -363,6 +381,14 @@ Make the smallest change that directly addresses an actionable comment. Do not r
 material, broaden claims, or make large conceptual changes unless the feedback explicitly asks for
 that scope. `reviews.yaml` is read-only: never reply to, edit, delete, or resolve a review thread.
 The author reviews the report change and manages comment status in LockedIn.
+
+## Before relying on a report submission
+
+Before telling the user that a report edit is synchronized—or before making a sequence of edits
+that relies on background synchronization—run `lockedin-scientist doctor` from the project root.
+It verifies that this `.lockedin` directory has a matching, healthy worker and can reach its bound
+LockedIn bubble. If it fails, do not claim the work was submitted; show the user the failure and
+ask whether they want to repair it (for example with `sync`, `stop`, or `hard-reset`).
 
 ## Sync and conflicts
 
@@ -1026,6 +1052,42 @@ def stop_command(worker_id: str) -> None:
     print(dim("  .lockedin was left unchanged."))
 
 
+def doctor_command(project: Path) -> None:
+    """Check that this project is bound to a live, current, reachable Scientist worker."""
+    root = project.resolve() / ".lockedin"
+    binding_path = root / "config" / "binding.json"
+    try:
+        binding = json.loads(binding_path.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError("No valid .lockedin/config/binding.json in this project. Run `lockedin-scientist sync <bubble>` first.") from exc
+    required = ("server", "user", "workspace_id", "bubble")
+    if any(not binding.get(key) for key in required):
+        raise RuntimeError("The .lockedin binding is incomplete. Run `lockedin-scientist hard-reset <bubble>` to rebuild it.")
+    project = project.resolve()
+    matches = [rec for rec in load_workers().get("workers", {}).values()
+               if Path(rec.get("project", "")).resolve() == project and rec.get("bubble") == binding["bubble"]]
+    heading("Scientist doctor", str(root))
+    if not matches:
+        raise RuntimeError(f"No worker is assigned to this project. Run `lockedin-scientist sync {binding['bubble']}` from {project}.")
+    rec = max(matches, key=lambda item: item.get("started_at", 0))
+    if any(rec.get(key) != binding[key] for key in required):
+        raise RuntimeError("The assigned worker does not match this .lockedin binding. Stop it, then run `lockedin-scientist sync <bubble>`.")
+    status, pid = rec.get("status", "?"), int(rec.get("pid", 0))
+    if status != "running" or not _alive(pid):
+        detail = rec.get("last_error") or rec.get("error") or status
+        raise RuntimeError(f"Worker {rec.get('id', '?')} is not healthy ({detail}). Run `lockedin-scientist ps` for details, then sync or hard-reset this bubble.")
+    last_sync = float(rec.get("last_sync", 0) or 0)
+    if time.time() - last_sync > POLL_SECONDS * 3:
+        raise RuntimeError(f"Worker {rec.get('id', '?')} has not completed a sync recently. Run `lockedin-scientist ps` and repair it before relying on report submission.")
+    account = next((item for item in load_config().get("accounts", [])
+                    if item.get("server") == binding["server"] and item.get("user") == binding["user"]), None)
+    if not account:
+        raise RuntimeError("The account for this project is no longer authorized. Run `lockedin-scientist login --server <URL>` again.")
+    account = dict(account); account["workspace_id"] = binding["workspace_id"]
+    account_request(account, "GET", f"/api/scientist/v2/bubbles/{binding['bubble']}/manifest")
+    print(green("✓") + f" Worker {bold(rec['id'])} is healthy and can reach bubble {bold(binding['bubble'])}.")
+
+
 def _stop_and_wait(worker_id: str) -> None:
     """Stop a worker before hard-reset removes its project-local files."""
     stop_command(worker_id)
@@ -1064,6 +1126,7 @@ def _main() -> None:
     sub.add_parser("bubbles")
     sync_p = sub.add_parser("sync"); sync_p.add_argument("bubble")
     sub.add_parser("ps")
+    sub.add_parser("doctor", help="Verify this project's bound worker and server connection.")
     stop_p = sub.add_parser("stop"); stop_p.add_argument("worker_id")
     reset_p = sub.add_parser("hard-reset"); reset_p.add_argument("bubble"); reset_p.add_argument("--discard-overleaf", action="store_true")
     for vendor in VENDORS:
@@ -1079,13 +1142,16 @@ def _main() -> None:
     ol_disconnect = overleaf.add_parser("disconnect"); ol_disconnect.add_argument("--discard-local", action="store_true")
     worker_p = sub.add_parser("_worker"); worker_p.add_argument("worker_id"); worker_p.add_argument("project")
     if len(sys.argv) == 1:
+        warn_if_outdated()
         welcome()
         return
     args = parser.parse_args()
     if args.command == "_worker": _run_worker(args.worker_id, args.project); return
     if args.command == "login": login(args.server); return
+    warn_if_outdated()
     if args.command == "ps": ps_command(); return
     if args.command == "stop": stop_command(args.worker_id); return
+    if args.command == "doctor": doctor_command(Path.cwd()); return
     if args.command in VENDORS:
         if args.vendor_command == "setup": setup_vendor_command(args.command)
         return

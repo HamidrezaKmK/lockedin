@@ -6,9 +6,10 @@ import io
 import json
 import os
 import tempfile
+import time
 import unittest
 import yaml
-from contextlib import contextmanager, redirect_stdout
+from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
@@ -290,6 +291,42 @@ class ScientistProjectSyncTest(unittest.TestCase):
 
 
 class ScientistProfileAndWorkersTest(unittest.TestCase):
+    def test_doctor_requires_a_matching_live_worker_and_server_probe(self):
+        with temp_data_home(), tempfile.TemporaryDirectory() as directory, patch.object(
+                scientist_cli, "_alive", return_value=True), patch.object(
+                scientist_cli, "account_request", return_value={"files": []}) as request:
+            project = Path(directory)
+            config = project / ".lockedin" / "config"; config.mkdir(parents=True)
+            binding = {"server": ACCOUNT["server"], "user": ACCOUNT["user"],
+                       "workspace_id": ACCOUNT["workspace_id"], "bubble": "work"}
+            (config / "binding.json").write_text(json.dumps(binding))
+            scientist_cli.save_config({"accounts": [dict(ACCOUNT)]})
+            scientist_cli.save_workers({"workers": {"worker": {
+                "id": "worker", "project": str(project.resolve()), "bubble": "work",
+                "server": ACCOUNT["server"], "user": ACCOUNT["user"],
+                "workspace_id": ACCOUNT["workspace_id"], "pid": 42, "status": "running",
+                "started_at": time.time(), "last_sync": time.time(), "last_error": "",
+            }}})
+            output = io.StringIO()
+            with redirect_stdout(output): scientist_cli.doctor_command(project)
+            self.assertIn("is healthy", output.getvalue())
+            request.assert_called_once_with(dict(ACCOUNT), "GET", "/api/scientist/v2/bubbles/work/manifest")
+
+    def test_doctor_explains_when_no_worker_is_assigned(self):
+        with temp_data_home(), tempfile.TemporaryDirectory() as directory:
+            project = Path(directory); config = project / ".lockedin" / "config"; config.mkdir(parents=True)
+            (config / "binding.json").write_text(json.dumps({
+                "server": ACCOUNT["server"], "user": ACCOUNT["user"],
+                "workspace_id": ACCOUNT["workspace_id"], "bubble": "work"}))
+            with self.assertRaisesRegex(RuntimeError, "No worker is assigned"):
+                scientist_cli.doctor_command(project)
+
+    def test_outdated_warning_is_visible_without_failing_a_local_command(self):
+        output = io.StringIO()
+        with patch.object(scientist_cli, "account_request", side_effect=RuntimeError("LockedIn Scientist is out of date. Reinstall it, then retry.")):
+            with redirect_stderr(output): scientist_cli.warn_if_outdated(dict(ACCOUNT))
+        self.assertIn("Reinstall: curl -fsSL", output.getvalue())
+
     def test_overleaf_help_and_unlinked_connect_are_actionable(self):
         output = io.StringIO()
         with redirect_stdout(output): scientist_cli.overleaf_help_command()
@@ -422,7 +459,7 @@ class ScientistProfileAndWorkersTest(unittest.TestCase):
         self.assertIn("the sync worker registers it automatically", scientist_cli.SKILL_RULES)
         self.assertIn("the sync worker removes it", scientist_cli.SKILL_RULES)
         self.assertIn("config/math.yaml", scientist_cli.SKILL_RULES)
-        self.assertIn("lockedin-scientist-skill: 9", scientist_cli.SKILL_RULES)
+        self.assertIn("lockedin-scientist-skill: 10", scientist_cli.SKILL_RULES)
         self.assertIn("Outside `.lockedin/`, work on this repository normally", scientist_cli.SKILL_RULES)
         self.assertIn("manuscript changes stay local until that explicit sync", scientist_cli.SKILL_RULES)
         self.assertIn("create or edit `.tex`, `.bib`, `.sty`, `.cls`", scientist_cli.SKILL_RULES)
@@ -434,6 +471,7 @@ class ScientistProfileAndWorkersTest(unittest.TestCase):
         self.assertIn("never reply to, edit, delete, or resolve", scientist_cli.SKILL_RULES)
         self.assertIn("Direct LockedIn paths — do not search for them", scientist_cli.SKILL_RULES)
         self.assertIn("For any report-related search, search only inside `.lockedin/`", scientist_cli.SKILL_RULES)
+        self.assertIn("lockedin-scientist doctor", scientist_cli.SKILL_RULES)
 
     def test_skill_embeds_the_active_math_macro_table(self):
         skill = scientist_cli.skill_document("## Markdown\n", {"\\E": "\\mathbb{E}"})
