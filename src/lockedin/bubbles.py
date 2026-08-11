@@ -665,33 +665,58 @@ def comments_mtime(slug: str, page_slug: str) -> float:
 
 
 def _mapped_anchor_range(old_text: str, new_text: str, start: int, end: int) -> tuple[int, int] | None:
-    """Map an anchor interval through one Markdown edit.
+    """Map an anchor interval through one Markdown edit without diffing the whole document.
 
-    Equal spans shift with surrounding insertions. Replacements overlapping the review are
-    treated as intentional edits to the highlighted text, so their new span remains highlighted.
-    Insertions strictly inside the old interval extend it; insertions at either boundary remain
-    outside while still preserving the attachment.
+    Most saves have one small changed region. Finding that region is linear; only the old quote
+    (normally a few words) is compared with that region. This keeps report saves responsive even
+    for very large pages while still expanding a highlight around inserted/replaced text.
     """
     if start < 0 or end <= start or start > len(old_text):
         return None
     end = min(end, len(old_text))
-    mapped: list[tuple[int, int]] = []
-    matcher = difflib.SequenceMatcher(None, old_text, new_text, autojunk=False)
-    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
-        if tag == "insert":
-            if start < i1 < end and j2 > j1:
-                mapped.append((j1, j2))
-            continue
-        overlap_start, overlap_end = max(start, i1), min(end, i2)
-        if overlap_start >= overlap_end:
-            continue
-        if tag == "equal":
-            mapped.append((j1 + overlap_start - i1, j1 + overlap_end - i1))
-        elif tag == "replace" and j2 > j1:
-            mapped.append((j1, j2))
-    if not mapped:
+    prefix = 0
+    common = min(len(old_text), len(new_text))
+    while prefix < common and old_text[prefix] == new_text[prefix]:
+        prefix += 1
+    old_suffix = len(old_text)
+    new_suffix = len(new_text)
+    while old_suffix > prefix and new_suffix > prefix and old_text[old_suffix - 1] == new_text[new_suffix - 1]:
+        old_suffix -= 1
+        new_suffix -= 1
+
+    # The edit is wholly outside this anchor: shift only when it precedes the selection.
+    if end <= prefix:
+        return start, end
+    if start >= old_suffix:
+        shift = (new_suffix - new_suffix)  # kept explicit below for readability
+        shift = (new_suffix - prefix) - (old_suffix - prefix)
+        return start + shift, end + shift
+
+    old_quote = old_text[start:end]
+    new_middle = new_text[prefix:new_suffix]
+    if not old_quote or not new_middle:
         return None
-    return min(a for a, _ in mapped), max(b for _, b in mapped)
+
+    # A pathological full-page rewrite should still be bounded. The expected position is enough
+    # to find the changed selection, while ordinary edits use the complete changed middle.
+    context = max(len(old_quote) * 2, 256)
+    if len(new_middle) > 12000:
+        estimate = prefix + int((start - prefix) * len(new_middle) / max(1, old_suffix - prefix))
+        radius = max(2048, min(8192, len(old_quote) * 8))
+        window_start = max(prefix, estimate - radius)
+        window_end = min(new_suffix, estimate + radius + len(old_quote))
+        candidate = new_text[window_start:window_end]
+        candidate_offset = window_start
+    else:
+        candidate_offset = max(prefix - context, 0)
+        candidate_end = min(new_suffix + context, len(new_text))
+        candidate = new_text[candidate_offset:candidate_end]
+    matcher = difflib.SequenceMatcher(None, old_quote, candidate, autojunk=False)
+    matches = [block for block in matcher.get_matching_blocks() if block.size]
+    if not matches:
+        return None
+    return (candidate_offset + min(block.b for block in matches),
+            candidate_offset + max(block.b + block.size for block in matches))
 
 
 def rebase_comment_anchors(slug: str, page_slug: str, old_text: str, new_text: str) -> bool:

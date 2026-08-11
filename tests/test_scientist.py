@@ -179,6 +179,29 @@ class ScientistServerBoundaryTest(unittest.TestCase):
                 ])
         self.assertEqual(len(result["conflicts"]), 3)
 
+    def test_scientist_page_write_rebases_review_anchor(self):
+        with workspace() as (home, slug):
+            original = b"Before this is a highlight after."
+            with paths.use_root(home):
+                bubbles.ensure_pages(slug)
+            service.save_page(home, slug, "overview", original.decode())
+            start = original.decode().index("this is a highlight")
+            with paths.use_root(home):
+                thread = bubbles.create_comment(
+                    slug, "overview", "reviewer", "Keep this attached.",
+                    {"quote": "this is a highlight", "start": start,
+                     "prefix": "Before ", "suffix": " after"})
+            base = service.get_page(home, slug, "overview").encode()
+            updated = b"Before this is a NEW highlight after."
+            result = scientist_sync.apply_writes(home, slug, [{
+                "path": "reports/pages/overview.md",
+                "base_revision": scientist_sync.revision(base),
+                "content_b64": base64.b64encode(updated).decode(),
+            }])
+            self.assertEqual(result["conflicts"], [])
+            anchor = service.list_comments(home, slug, "overview")["threads"][0]["anchor"]
+            self.assertEqual(anchor["quote"], "this is a NEW highlight")
+
     def test_page_creation_is_bubble_scoped(self):
         with workspace() as (home, slug):
             other = service.create_bubble(home, "Other")

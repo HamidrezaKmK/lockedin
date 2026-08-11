@@ -154,9 +154,19 @@ def apply_writes(home: Path, slug: str, writes: list[dict]) -> dict:
                 conflicts.append({"path": rel, "reason": "refusing to replace non-empty content with an empty sync write",
                                   "revision": revision(current), "content_b64": base64.b64encode(current).decode("ascii")}); continue
             target.parent.mkdir(parents=True, exist_ok=True)
-            tmp = target.with_suffix(target.suffix + ".tmp"); tmp.write_bytes(raw); tmp.replace(target)
-            if Path(rel).parts[1] == "assets": bubbles.touch_bubble(slug)
-            applied.append({"path": rel, "revision": revision(raw)})
+            if Path(rel).parts[1] == "pages":
+                try:
+                    bubbles.save_page(slug, Path(rel).stem, raw.decode("utf-8"),
+                                      target.stat().st_mtime if target.exists() else None)
+                except (UnicodeDecodeError, bubbles.PageConflict) as exc:
+                    conflicts.append({"path": rel, "reason": str(exc),
+                                      "revision": revision(current),
+                                      "content_b64": base64.b64encode(current).decode("ascii")})
+                    continue
+            else:
+                tmp = target.with_suffix(target.suffix + ".tmp"); tmp.write_bytes(raw); tmp.replace(target)
+                bubbles.touch_bubble(slug)
+            applied.append({"path": rel, "revision": revision(target.read_bytes())})
     return {"applied": applied, "conflicts": conflicts}
 
 
