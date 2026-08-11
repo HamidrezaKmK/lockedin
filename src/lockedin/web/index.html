@@ -4220,6 +4220,9 @@
       S.baseMtime=r.page_mtime; S.lastPageMtime=r.page_mtime; S.remoteChangePending=false;
       // Only declare "synced" if nothing was typed while the request was in flight.
       if(content===S.editor.getMarkdown())markSynced(); else scheduleAutosave();
+      // The server rebases review anchors during the save; fetch those updated ranges so the
+      // highlight remains visible immediately instead of waiting for the polling interval.
+      if(S.comments&&S.comments.length)await loadComments();
       if(!opts.auto)toast("Page saved");
       fetchRefs().then(()=>updatePreview());   // pick up labels/numbers added on this save
       return true;
@@ -4416,20 +4419,36 @@
   function resolveCommentAnchors(){
     const md=S.editor&&S.editor.getMarkdown?S.editor.getMarkdown():"";
     (S.comments||[]).forEach(t=>{
-      const a=t.anchor||{}, q=String(a.quote||""); let best=-1, score=-1, pos=md.indexOf(q);
+      const a=t.anchor||{}, q=String(a.quote||""), original=Number(a.start||0);
+      let best=-1, bestEnd=-1, score=-Infinity;
+      const consider=(start,end,quality)=>{
+        if(start<0||end<=start||end>md.length)return;
+        const distance=Math.abs(start-original)/Math.max(1,md.length);
+        if(quality-distance>score){score=quality-distance;best=start;bestEnd=end;}
+      };
+      let pos=q?md.indexOf(q):-1;
       while(pos>=0){
         const prefixOK=!a.prefix||md.slice(Math.max(0,pos-a.prefix.length),pos)===a.prefix;
         const suffixOK=!a.suffix||md.slice(pos+q.length,pos+q.length+a.suffix.length)===a.suffix;
-        // A comment may move when text is inserted before it, but it must retain at least one
-        // original neighbour (or still be at its original offset). Never jump to a later copy of
-        // a deleted selection merely because it happens to contain the same next word.
-        if(pos===Number(a.start||0) || prefixOK || suffixOK){
-          const n=(prefixOK?4:0)+(suffixOK?4:0)-Math.abs(pos-Number(a.start||0))/Math.max(1,md.length);
-          if(n>score){score=n;best=pos;}
-        }
+        // Prefer the exact quote, but use the stored context to disambiguate repeated quotes.
+        if(prefixOK||suffixOK||pos===original)consider(pos,pos+q.length,(prefixOK?4:0)+(suffixOK?4:0)+2);
         pos=md.indexOf(q,pos+1);
       }
-      t._start=best; t._end=best<0?-1:best+q.length;
+      // If an insertion/replacement occurred inside the highlight, its old quote is no longer
+      // contiguous. Unchanged prefix + suffix identify the expanded range without guessing from
+      // the next matching word.
+      const prefix=String(a.prefix||""), suffix=String(a.suffix||"");
+      if(prefix&&suffix){
+        let p=md.indexOf(prefix), guard=0;
+        while(p>=0&&guard++<100){
+          const start=p+prefix.length, end=md.indexOf(suffix,start);
+          if(end>start)consider(start,end,9);
+          p=md.indexOf(prefix,p+1);
+        }
+      }
+      if(best<0&&prefix){const p=md.indexOf(prefix);if(p>=0)consider(p+prefix.length,p+prefix.length+q.length,4);}
+      if(best<0&&suffix){const p=md.indexOf(suffix);if(p>=q.length)consider(p-q.length,p,4);}
+      t._start=best; t._end=best<0?-1:bestEnd;
     });
   }
   async function loadComments(){

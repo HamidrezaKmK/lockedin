@@ -14,6 +14,7 @@ All paths resolve against the active per-user context root.
 from __future__ import annotations
 
 import json as _json
+import difflib
 import os
 import re
 import secrets
@@ -663,6 +664,66 @@ def comments_mtime(slug: str, page_slug: str) -> float:
     return path.stat().st_mtime if path.exists() else 0
 
 
+def _mapped_anchor_range(old_text: str, new_text: str, start: int, end: int) -> tuple[int, int] | None:
+    """Map an anchor interval through one Markdown edit.
+
+    Equal spans shift with surrounding insertions. Replacements overlapping the review are
+    treated as intentional edits to the highlighted text, so their new span remains highlighted.
+    Insertions strictly inside the old interval extend it; insertions at either boundary remain
+    outside while still preserving the attachment.
+    """
+    if start < 0 or end <= start or start > len(old_text):
+        return None
+    end = min(end, len(old_text))
+    mapped: list[tuple[int, int]] = []
+    matcher = difflib.SequenceMatcher(None, old_text, new_text, autojunk=False)
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "insert":
+            if start < i1 < end and j2 > j1:
+                mapped.append((j1, j2))
+            continue
+        overlap_start, overlap_end = max(start, i1), min(end, i2)
+        if overlap_start >= overlap_end:
+            continue
+        if tag == "equal":
+            mapped.append((j1 + overlap_start - i1, j1 + overlap_end - i1))
+        elif tag == "replace" and j2 > j1:
+            mapped.append((j1, j2))
+    if not mapped:
+        return None
+    return min(a for a, _ in mapped), max(b for _, b in mapped)
+
+
+def rebase_comment_anchors(slug: str, page_slug: str, old_text: str, new_text: str) -> bool:
+    """Persist review anchors after a successful page edit; return whether anything changed."""
+    path = paths.bubble_page_comments_path(slug, page_slug)
+    if not path.exists() or old_text == new_text:
+        return False
+    data = _comments(slug, page_slug)
+    changed = False
+    for thread in data.get("threads", []):
+        anchor = thread.get("anchor") or {}
+        old_quote = str(anchor.get("quote") or "")
+        old_start = int(anchor.get("start") or 0)
+        old_end = old_start + len(old_quote)
+        mapped = _mapped_anchor_range(old_text, new_text, old_start, old_end)
+        if mapped:
+            new_start, new_end = mapped
+            quote = new_text[new_start:new_end]
+            updated = {"quote": quote, "start": new_start,
+                       "prefix": new_text[max(0, new_start - 96):new_start],
+                       "suffix": new_text[new_end:new_end + 96]}
+        else:
+            updated = {"quote": "", "start": -1, "prefix": "", "suffix": ""}
+        if any(anchor.get(k) != v for k, v in updated.items()):
+            thread["anchor"] = updated
+            thread["updated_at"] = _now_iso()
+            changed = True
+    if changed:
+        _save_comments(slug, page_slug, data)
+    return changed
+
+
 def create_comment(slug: str, page_slug: str, author: str, body: str, anchor: dict) -> dict:
     body = str(body or "").strip()
     quote = str((anchor or {}).get("quote") or "")
@@ -835,7 +896,10 @@ def save_page(slug: str, page_slug: str, content: str,
         disk_mtime = path.stat().st_mtime
         if abs(disk_mtime - base_mtime) > 1e-6:
             raise PageConflict(disk_mtime)
-    _atomic_write(path, normalize_display_math(normalize_wikilinks(slug, content)))
+    old_text = path.read_text() if path.exists() else ""
+    normalized = normalize_display_math(normalize_wikilinks(slug, content))
+    _atomic_write(path, normalized)
+    rebase_comment_anchors(slug, page_slug, old_text, normalized)
     touch_bubble(slug)
     return path.stat().st_mtime
 

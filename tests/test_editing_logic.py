@@ -1057,6 +1057,45 @@ class FigureReferences(unittest.TestCase):
 
 
 class PrivateReviewComments(unittest.TestCase):
+    def test_review_anchor_rebases_through_surrounding_and_inside_edits(self):
+        with temp_home() as home:
+            slug = make_bubble(home)
+            old = "Before this is a highlight after."
+            service.save_page(home, slug, "overview", old)
+            start = old.index("this is a highlight")
+            thread = service.create_comment(home, slug, "overview", "alice", "Review", {
+                "start": start, "quote": "this is a highlight", "prefix": "Before ", "suffix": " after"})
+
+            service.save_page(home, slug, "overview", "Added before. Before this is a highlight after.")
+            shifted = service.list_comments(home, slug, "overview")["threads"][0]["anchor"]
+            self.assertEqual(shifted["quote"], "this is a highlight")
+            self.assertEqual(shifted["start"], start + len("Added before. "))
+
+            expanded_text = "Added before. Before this is a NEW addition highlight after."
+            service.save_page(home, slug, "overview", expanded_text)
+            expanded = service.list_comments(home, slug, "overview")["threads"][0]["anchor"]
+            self.assertEqual(expanded["quote"], "this is a NEW addition highlight")
+            self.assertGreater(expanded["start"], 0)
+
+            replacement = "Added before. Before this is a revised highlight after."
+            service.save_page(home, slug, "overview", replacement)
+            followed = service.list_comments(home, slug, "overview")["threads"][0]["anchor"]
+            self.assertEqual(followed["quote"], "this is a revised highlight")
+            self.assertEqual(followed["start"], replacement.index("this is a revised highlight"))
+
+    def test_review_anchor_becomes_unanchored_when_selection_is_deleted(self):
+        with temp_home() as home:
+            slug = make_bubble(home)
+            old = "Before selected material after."
+            service.save_page(home, slug, "overview", old)
+            start = old.index("selected material")
+            service.create_comment(home, slug, "overview", "alice", "Review", {
+                "start": start, "quote": "selected material", "prefix": "Before ", "suffix": " after"})
+            service.save_page(home, slug, "overview", "Before after.")
+            anchor = service.list_comments(home, slug, "overview")["threads"][0]["anchor"]
+            self.assertEqual(anchor["start"], -1)
+            self.assertEqual(anchor["quote"], "")
+
     def test_thread_lifecycle_and_author_only_message_editing(self):
         with temp_home() as home:
             slug = make_bubble(home)

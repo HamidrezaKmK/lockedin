@@ -138,6 +138,12 @@ class AestheticsConfigTests(unittest.TestCase):
         self.assertIn('alt:"Preview: "+item.name', source)
         self.assertIn('.asset-file-preview img{width:100%;height:100%;object-fit:contain', source)
 
+    def test_review_highlights_use_context_when_quote_is_expanded(self):
+        source = (Path(server.WEB_DIR) / "index.html").read_text()
+        self.assertIn("If an insertion/replacement occurred inside the highlight", source)
+        self.assertIn("const prefix=String(a.prefix||\"\"), suffix=String(a.suffix||\"\");", source)
+        self.assertIn('if(S.comments&&S.comments.length)await loadComments();', source)
+
     def test_library_card_attention_action_uses_compact_labels(self):
         source = (Path(server.WEB_DIR) / "index.html").read_text()
         self.assertIn('a.attention_flag?"Clear":"Review"', source)
