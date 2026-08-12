@@ -22,7 +22,7 @@ import webbrowser
 from pathlib import Path
 
 APP = "lockedin-scientist"
-SCIENTIST_CLIENT_VERSION = "2026.08.11.5"
+SCIENTIST_CLIENT_VERSION = "2026.08.12.1"
 POLL_SECONDS = 5
 WORKER_HISTORY_LIMIT = 10
 TERMINAL_WORKER_STATUSES = {"stopped"}
@@ -176,13 +176,21 @@ def save_workers(data: dict) -> None:
     _atomic_json(workers_path(), data, private=True)
 
 
-def request(server: str, method: str, path: str, body: dict | None = None, token: str = "", workspace: str = "", *, timeout: float = 90) -> dict:
+def header_value(value: object) -> str:
+    """A header must be one bounded line, and presence headers carry raw error text."""
+    return " ".join(str(value or "").split())[:300]
+
+
+def request(server: str, method: str, path: str, body: dict | None = None, token: str = "", workspace: str = "", *, timeout: float = 90, extra: dict | None = None) -> dict:
     data = json.dumps(body).encode() if body is not None else None
     headers = {"Content-Type": "application/json", "Accept": "application/json",
                "User-Agent": f"{APP}/{SCIENTIST_CLIENT_VERSION}",
                "X-LockedIn-Scientist-Version": SCIENTIST_CLIENT_VERSION}
     if token: headers["Authorization"] = "Bearer " + token
     if workspace: headers["X-LockedIn-Workspace"] = workspace
+    for name, value in (extra or {}).items():
+        cleaned = header_value(value)
+        if cleaned: headers[name] = cleaned
     req = urllib.request.Request(server.rstrip("/") + path, data=data, headers=headers, method=method)
     try:
         with urllib.request.urlopen(req, timeout=timeout) as response:
@@ -196,9 +204,11 @@ def request(server: str, method: str, path: str, body: dict | None = None, token
         raise RuntimeError(f"cannot reach LockedIn server: {exc.reason}") from exc
 
 
-def account_request(account: dict, method: str, path: str, body: dict | None = None, *, workspace: str = "", timeout: float = 90) -> dict:
+def account_request(account: dict, method: str, path: str, body: dict | None = None, *, workspace: str = "", timeout: float = 90, extra: dict | None = None) -> dict:
     args = (account["server"], method, path, body, account["token"], workspace or account.get("workspace_id", ""))
-    return request(*args, **({"timeout": timeout} if timeout != 90 else {}))
+    kwargs = {"extra": extra} if extra else {}
+    if timeout != 90: kwargs["timeout"] = timeout
+    return request(*args, **kwargs)
 
 
 def choose_account() -> dict:
@@ -752,6 +762,11 @@ class ProjectSync:
         self.config = self.root / "config"
         self.binding_path = self.config / "binding.json"
         self.state_path = self.config / "sync-state.json"
+        # Kept out of binding.json deliberately: that file is compared for exact equality against
+        # the expected server/workspace/bubble, so an extra key there would read as a mismatch.
+        self.identity_path = self.config / "identity.json"
+        # What the last synchronization attempt observed, reported to the server on the next one.
+        self.report = {"status": "", "error": ""}
 
     @staticmethod
     def _rev(data: bytes) -> str:
@@ -809,8 +824,32 @@ class ProjectSync:
         if ".lockedin/" not in text.splitlines():
             exclude.write_text(text.rstrip("\n") + "\n.lockedin/\n")
 
+    def worker_uid(self) -> str:
+        """A stable id for *this project directory*, minted once and kept across worker restarts.
+
+        The server monitors one row per synchronized directory. The per-run worker id would make a
+        restarted worker look like a second directory, which is precisely the distinction the
+        monitor exists to make.
+        """
+        try: return str(json.loads(self.identity_path.read_text())["worker_uid"])
+        except (OSError, json.JSONDecodeError, KeyError, TypeError): pass
+        uid = secrets.token_hex(8)
+        try:
+            self.config.mkdir(parents=True, exist_ok=True)
+            _atomic_json(self.identity_path, {"worker_uid": uid}, private=True)
+        except OSError:
+            pass
+        return uid
+
+    def _presence_headers(self) -> dict:
+        return {"X-LockedIn-Worker": self.worker_uid(),
+                "X-LockedIn-Worker-Label": header_value(self.project.name),
+                "X-LockedIn-Worker-Status": header_value(self.report.get("status", "")),
+                "X-LockedIn-Worker-Error": header_value(self.report.get("error", ""))}
+
     def _request(self, method: str, suffix: str, body: dict | None = None) -> dict:
-        return account_request(self.account, method, f"/api/scientist/v2/bubbles/{self.bubble}/{suffix}", body)
+        return account_request(self.account, method, f"/api/scientist/v2/bubbles/{self.bubble}/{suffix}", body,
+                               extra=self._presence_headers())
 
     def _read_remote(self, paths: list[str]) -> dict[str, dict]:
         result: dict[str, dict] = {}
@@ -992,11 +1031,16 @@ def _run_worker(worker_id: str, project: str) -> None:
     while not stop:
         try:
             sync.sync_once(); _update_worker(worker_id, status="running", last_sync=time.time(), last_error="")
+            sync.report = {"status": "running", "error": ""}
         except Exception as exc:
             _update_worker(worker_id, status="degraded", last_error=str(exc))
+            sync.report = {"status": "degraded", "error": str(exc)}
         for _ in range(POLL_SECONDS * 10):
             if stop: break
             time.sleep(.1)
+    # The parting synchronization doubles as a shutdown notice, so the server's monitor shows the
+    # worker as stopped straight away instead of waiting for it to time out.
+    sync.report = {"status": "stopped", "error": ""}
     try: sync.sync_once()
     except Exception: pass
     _update_worker(worker_id, status="stopped", stopped_at=time.time())

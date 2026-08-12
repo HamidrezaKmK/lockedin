@@ -69,8 +69,11 @@ def resolve_review_thread(slug, page, thread_id, actor):
 class FakeBubbleServer:
     def __init__(self, files: dict[str, bytes]):
         self.files = dict(files)
+        self.presence_headers = []
 
-    def request(self, _server, method, endpoint, body=None, token="", workspace=""):
+    def request(self, _server, method, endpoint, body=None, token="", workspace="", *, extra=None, timeout=90):
+        if extra is not None:
+            self.presence_headers.append(dict(extra))
         if endpoint.endswith("/guide"):
             return {"guide": "## Markdown\n\nUse the canonical guide.\n\n## Math\n\nUse dollar delimiters.",
                     "math_macros": {"\\bmu": "\\boldsymbol{\\mu}"}}
@@ -302,6 +305,32 @@ class ScientistProjectSyncTest(unittest.TestCase):
             self.assertIn(".lockedin/", (project / ".git" / "info" / "exclude").read_text())
             with self.assertRaises(RuntimeError):
                 scientist_cli.ProjectSync(ACCOUNT, project, "other").validate_or_initialize()
+
+    def test_a_directory_keeps_one_worker_identity_and_reports_its_health(self):
+        # The server's monitor lists one row per synchronized project directory, so the identity
+        # must outlive the worker process; a per-run id would make a restart look like a second
+        # directory syncing the same bubble.
+        files = {"reports/pages.yaml": b"pages: []\n", "reports/pages/overview.md": b"# Overview\n"}
+        fake = FakeBubbleServer(files)
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+                scientist_cli, "request", side_effect=fake.request):
+            project = Path(directory)
+            first = scientist_cli.ProjectSync(ACCOUNT, project, "work")
+            first.sync_once()
+            restarted = scientist_cli.ProjectSync(ACCOUNT, project, "work")
+            restarted.report = {"status": "degraded", "error": "server returned 409: conflict\non push"}
+            restarted.sync_once()
+
+            self.assertEqual(first.worker_uid(), restarted.worker_uid())
+            self.assertNotEqual(first.worker_uid(), "")
+            sent = fake.presence_headers
+            self.assertTrue(sent, "the sync poll must carry the worker's identity")
+            self.assertEqual({h["X-LockedIn-Worker"] for h in sent}, {first.worker_uid()})
+            self.assertEqual({h["X-LockedIn-Worker-Label"] for h in sent}, {project.name})
+            # A multi-line error would corrupt the header, so it must arrive flattened.
+            reported = [h for h in sent if h.get("X-LockedIn-Worker-Status") == "degraded"]
+            self.assertTrue(reported)
+            self.assertNotIn("\n", reported[0]["X-LockedIn-Worker-Error"])
 
     def test_missing_binding_is_an_actionable_preflight_error(self):
         with tempfile.TemporaryDirectory() as directory:

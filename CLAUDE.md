@@ -54,6 +54,12 @@ LOCKEDIN_HOME=/tmp/li_test uv run python -m unittest discover -s tests -t . -v
 - `tests/test_live_qwen.py` — runs a realistic chat through qwen and asserts the read-only
   *invariants*: a content question gets a non-empty reply with no raw `<EDIT>`/`<NEWPAGE>` tags,
   and the chat never creates/removes/mutates a page. qwen is non-deterministic, so it retries.
+- `tests/test_presence.py` — the presence registry and its HTTP surface, including that a
+  rejected (426) worker is still listed with its diagnosis.
+- `tests/presence-e2e.mjs` (`npm run test:presence-e2e`) — real Chrome against a disposable data
+  root: registers three worker directories (healthy / failing / out of date) through the ordinary
+  v2 endpoints and drives the chip, dropdown, detail, and leave path. Set `LOCKEDIN_E2E_SHOTS=<dir>`
+  to keep screenshots.
 - `tests/_fixtures.py` — builds throwaway qwen workspaces seeded with the two diffusion papers
   (copies `meta.yaml`/`summary.md`/`text.txt` from a local user, not the 50 MB `paper.pdf`).
 - `tests/setup_unittest_user.py` — (re)creates the persistent `unittest`/`unittest` fixture user
@@ -91,6 +97,7 @@ Layered; the server is thin HTTP/SSE glue over `service.py`.
 | `tagger.py` | Background ingest after upload: extract text, model metadata, and a cached summary. Fail-safe. |
 | `bubbles.py` | Bubble registry (`bubbles.yaml`) + the per-bubble **mini-wiki**: pages manifest, page CRUD, image storage, legacy-`report.md` migration, chat-session CRUD (`chats/` dir). |
 | `todos.py` | **Workspace-wide TODOs** (GitHub-issue style), stored in `todos.yaml` (`next_id` + `todos` map). Pure storage: compact integer `id`, `title`, markdown `note`, `done`. CRUD only — it does **not** import `bubbles`; reference counting, delete guard, and report-reference rewrites after id compaction live in `service.py`. Referenced from report pages as `@<id>`. |
+| `presence.py` | **Live bubble presence**, in-memory only (like auth sessions, lost on restart). Viewers keyed by **username** (tabs collapse); Scientist workers keyed by the **project directory**'s stable `worker_uid` (agents in one directory collapse; two directories on one bubble stay two rows). Computes each worker's health from what the client reported plus what the server observed. |
 | `reports.py` | `chat_stream` — a **read-only** streamed research chat grounded in the bubble's report pages + paper summaries + deep-read PDFs (bounded context, internal compaction). Also `generate_chat_title`. It does NOT edit pages. |
 | `service.py` | Orchestration; wraps non-streaming ops in `use_root`. Streaming generators manage their own root. |
 | `server.py` | FastAPI app + routes + SSE. |
@@ -156,6 +163,16 @@ data/workspaces/<workspace-id>/
 - **Summarize-once.** Every uploaded PDF is summarized once into `summary.md`; the chat reuses
   summaries to stay cheap. "Deep-read" attaches the real PDF (Claude) or `text.txt`
   (qwen/openai), now clipped to a char budget, for the conversation.
+- **Presence costs the worker no extra traffic, and is never persisted.** A Scientist worker
+  identifies itself with `X-LockedIn-Worker{,-Label,-Status,-Error}` headers riding on the manifest
+  poll it already makes every `POLL_SECONDS`; the server records it in `workspace_request_context`
+  **after** the response, so a client rejected with 426 is still listed — diagnosed as out of date
+  instead of vanishing. The identity is `worker_uid` in `.lockedin/config/identity.json`, minted
+  once per project directory and deliberately kept **out of `binding.json`** (that file is compared
+  for exact equality against `{server,user,workspace_id,bubble}`, so an extra key reads as a
+  mismatch) and stable across worker restarts. Browsers heartbeat `POST /api/bubbles/<slug>/presence`
+  every 20s, which both reports the viewer and returns the snapshot. Nothing is written to disk:
+  presence is a claim about *now*, so a restarted server correctly shows an empty bubble.
 - **Within-bubble links only.** `[[page-slug]]` links navigate between a bubble's pages; no
   cross-bubble/global wiki.
 - **TODO `@<id>` references resolve by exact digits.** Typing `@5` in any report page links

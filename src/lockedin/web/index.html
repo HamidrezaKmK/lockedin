@@ -749,6 +749,40 @@
   .score-group{width:100%;display:flex;flex-direction:column;gap:5px;margin-top:6px}
   .score-heading{font-size:11px;text-transform:uppercase;letter-spacing:0;color:var(--muted);
     border-top:1px solid var(--line);padding-top:6px}
+  /* Presence: one compact chip in the bubble title row. People and sync workers can both be
+     numerous, so the row stays a fixed width and everything else lives in the dropdown. */
+  .presence{position:relative;flex-shrink:0}
+  .presence-chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;min-height:28px;
+    border-radius:999px;border:1px solid var(--line);background:var(--panel2);color:var(--muted);
+    font-family:var(--font-ui);font-size:12px;line-height:1;cursor:pointer;
+    font-variant-numeric:tabular-nums;transition:border-color .15s,color .15s}
+  .presence-chip:hover{border-color:var(--accent);color:var(--ink)}
+  .presence-chip.trouble{border-color:var(--warn);color:var(--ink)}
+  .presence-sep{opacity:.45}
+  .presence-dot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--good)}
+  .presence-dot.degraded,.presence-dot.unresponsive{background:var(--warn)}
+  .presence-dot.dead{background:var(--bad)}
+  .presence-menu{position:absolute;right:0;top:calc(100% + 6px);z-index:40;padding:6px;
+    width:min(330px,calc(100vw - 32px));max-height:min(60vh,420px);overflow:auto;
+    background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow)}
+  .presence-group{padding:7px 8px 3px;font-size:10px;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--muted)}
+  .presence-item{width:100%;display:flex;align-items:center;gap:8px;padding:7px 8px;border:0;
+    border-radius:8px;background:none;color:var(--ink);font-family:var(--font-ui);font-size:12.5px;
+    text-align:left;cursor:pointer}
+  .presence-item:hover,.presence-item.on{background:var(--panel2)}
+  .presence-item .presence-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .presence-item .presence-note{flex:none;font-size:11px;color:var(--muted)}
+  .presence-item.dead .presence-name{color:var(--muted)}
+  .presence-avatar{width:21px;height:21px;border-radius:50%;flex:none;display:grid;place-items:center;
+    background:var(--accent);color:var(--panel);font-size:10.5px;font-weight:700;text-transform:uppercase}
+  .presence-detail{margin:1px 8px 7px;padding:8px 9px;border-radius:8px;background:var(--panel2);
+    font-size:11.5px;color:var(--muted);display:grid;grid-template-columns:auto minmax(0,1fr);gap:3px 10px}
+  .presence-detail b{color:var(--ink);font-weight:600}
+  .presence-detail .presence-reason{grid-column:1/-1;color:var(--warn);overflow-wrap:anywhere}
+  .presence-warn{margin:4px 6px 2px;padding:7px 9px;border-radius:8px;font-size:11.5px;color:var(--ink);
+    border:1px solid var(--warn);background:color-mix(in srgb,var(--warn) 13%,transparent)}
+  .presence-empty{padding:9px 8px;color:var(--muted);font-size:12px}
   .papers-menu{position:absolute;right:10px;top:42px;z-index:30;width:min(460px,calc(100vw - 32px));
     max-height:280px;overflow:auto;background:var(--panel);border:1px solid var(--line);
     border-radius:8px;box-shadow:var(--shadow);padding:8px}
@@ -1803,6 +1837,10 @@
     setBubbleFocus(false,{persist:!preserveFocus});
     S.openToken=(S.openToken||0)+1;
     stopPolling();
+    // Tell the server we left so the other viewers' chips update on their next beat rather than
+    // waiting out our heartbeat window; a closed tab still falls off by timeout.
+    if(S.bubble&&S.presenceEl)api("/api/bubbles/"+S.bubble+"/presence",{method:"DELETE"}).catch(()=>{});
+    stopPresence(); S.presenceEl=null;
     if(S.editor){ try{S.editor.destroy();}catch(e){} }
     S.editor=null; S.bubble=null; S.page=null; S.pages=[]; S.previewEl=null;
     S.chatPane=null; S.detailWrap=null; S.papersMenu=null;
@@ -3333,6 +3371,138 @@
   }
 
   // ================= BUBBLE DETAIL (Notion-like multi-page) =================
+  // ================= PRESENCE =================
+  // Who is on this bubble: people (one entry per *user*, however many tabs they have open) and
+  // lockedin-scientist workers (one entry per synchronized *project directory*, however many
+  // agents edit through it). The heartbeat both reports us and fetches everyone else.
+  const PRESENCE_MS=20000;
+  const PRESENCE_RANK={live:0,degraded:1,unresponsive:2,dead:3};
+
+  function startPresence(slug){
+    stopPresence();
+    const beat=async()=>{
+      if(S.bubble!==slug)return;
+      try{
+        const snap=await api("/api/bubbles/"+slug+"/presence",{method:"POST"});
+        if(S.bubble===slug){ S.presence=snap; renderPresence(); }
+      }catch(e){ /* ambient: a missed beat just keeps showing the last snapshot */ }
+    };
+    beat(); S.presenceTimer=setInterval(beat,PRESENCE_MS);
+  }
+
+  function stopPresence(){
+    if(S.presenceTimer){ clearInterval(S.presenceTimer); S.presenceTimer=null; }
+    S.presence=null; S.presenceOpen=false; S.presenceSelected=null;
+  }
+
+  function presenceAgo(seconds){
+    const s=Math.max(0,Math.round(seconds||0));
+    if(s<60)return s+"s ago";
+    if(s<3600)return Math.round(s/60)+"m ago";
+    return Math.round(s/3600)+"h ago";
+  }
+
+  function presenceFor(seconds){
+    const s=Math.max(0,Math.round(seconds||0));
+    if(s<60)return s+"s";
+    if(s<3600)return Math.round(s/60)+"m";
+    const h=Math.floor(s/3600);
+    return h+"h "+Math.round((s-h*3600)/60)+"m";
+  }
+
+  // The server names a worker "<user>:<directory>" so it reads unambiguously anywhere. In the
+  // list, prefixing every row with your own name is just noise — the detail keeps the full name.
+  function presenceLabel(display){
+    const prefix=(S.user||"")+":";
+    return S.user&&display.startsWith(prefix)?display.slice(prefix.length):display;
+  }
+
+  function worstWorkerState(workers){
+    return (workers||[]).reduce((worst,w)=>
+      (PRESENCE_RANK[w.state]||0)>(PRESENCE_RANK[worst]||0)?w.state:worst,"live");
+  }
+
+  function renderPresence(){
+    const host=S.presenceEl; if(!host)return;
+    host.textContent="";
+    const snap=S.presence;
+    if(!snap){ host.classList.add("hide"); return; }
+    host.classList.remove("hide");
+    const viewers=snap.viewers||[], workers=snap.workers||[];
+    const worst=worstWorkerState(workers);
+    const chip=el("button",{class:"presence-chip",title:"Who is on this bubble",
+      onclick:e=>{ e.stopPropagation(); togglePresence(); }},
+      el("span",{},"👥 "+viewers.length));
+    if(workers.length){
+      chip.append(el("span",{class:"presence-sep"},"·"),
+                  el("span",{class:"presence-dot "+worst}),
+                  el("span",{},"⚙ "+workers.length));
+    }
+    if(worst!=="live"||(snap.duplicate_workers||[]).length)chip.classList.add("trouble");
+    host.append(chip);
+    if(S.presenceOpen)host.append(buildPresenceMenu(snap));
+  }
+
+  function togglePresence(){
+    S.presenceOpen=!S.presenceOpen;
+    if(!S.presenceOpen)S.presenceSelected=null;
+    renderPresence();
+    // Registered a tick later so the click that opened the menu doesn't immediately close it.
+    if(S.presenceOpen)setTimeout(()=>document.addEventListener("click",closePresenceMenu,{once:true}),0);
+  }
+
+  function closePresenceMenu(){ S.presenceOpen=false; S.presenceSelected=null; renderPresence(); }
+
+  function selectPresence(key){
+    S.presenceSelected=S.presenceSelected===key?null:key;
+    renderPresence();
+  }
+
+  function buildPresenceMenu(snap){
+    // Clicks inside the menu must not reach the document-level close handler.
+    const menu=el("div",{class:"presence-menu",onclick:e=>e.stopPropagation()});
+    const viewers=snap.viewers||[], workers=snap.workers||[];
+    if((snap.duplicate_workers||[]).length){
+      menu.append(el("div",{class:"presence-warn"},
+        "⚠ Two directories are syncing this bubble ("+
+        snap.duplicate_workers.map(presenceLabel).join(", ")+"). Edits from both can conflict."));
+    }
+    menu.append(el("div",{class:"presence-group"},"People viewing"));
+    if(!viewers.length)menu.append(el("div",{class:"presence-empty"},"Nobody has this bubble open."));
+    viewers.forEach(v=>{
+      const key="v:"+v.user, on=S.presenceSelected===key;
+      const isMe=v.user===S.user;
+      menu.append(el("button",{class:"presence-item"+(on?" on":""),onclick:()=>selectPresence(key)},
+        el("span",{class:"presence-avatar"},(v.user||"?").slice(0,1)),
+        el("span",{class:"presence-name"},v.user+(isMe?" (you)":"")),
+        el("span",{class:"presence-note"},"online")));
+      if(on){
+        menu.append(el("div",{class:"presence-detail"},
+          el("b",{},"user"),el("span",{},v.user),
+          el("b",{},"last seen"),el("span",{},presenceAgo(v.seen_ago))));
+      }
+    });
+    menu.append(el("div",{class:"presence-group"},"Scientist workers"));
+    if(!workers.length)menu.append(el("div",{class:"presence-empty"},"No project directory is syncing this bubble."));
+    workers.forEach(w=>{
+      const key="w:"+w.worker_id, on=S.presenceSelected===key;
+      menu.append(el("button",{class:"presence-item "+w.state+(on?" on":""),onclick:()=>selectPresence(key)},
+        el("span",{class:"presence-dot "+w.state}),
+        el("span",{class:"presence-name",title:w.display},presenceLabel(w.display)),
+        el("span",{class:"presence-note"},w.state==="live"?"syncing":w.state)));
+      if(on){
+        const detail=el("div",{class:"presence-detail"},
+          el("b",{},"directory"),el("span",{},w.display),
+          el("b",{},"last sync"),el("span",{},presenceAgo(w.seen_ago)),
+          el("b",{},"running for"),el("span",{},presenceFor(w.uptime)));
+        if(w.version)detail.append(el("b",{},"client"),el("span",{},w.version));
+        if(w.reason)detail.append(el("span",{class:"presence-reason"},w.reason));
+        menu.append(detail);
+      }
+    });
+    return menu;
+  }
+
   async function openBubble(slug,{noRoute=false,page=null}={}){
     // Re-entrancy guard: if two openBubble calls race (e.g. a quick click then another nav),
     // a superseded in-flight call could still build a stale workspace/editor over the new one.
@@ -3368,6 +3538,11 @@
         onclick:()=>startBubbleRename(nameSpan,b.slug)},"✏️"));
     }
     titleRow.append(el("span",{class:"spacer"}));
+    if(b.approved){
+      S.presenceEl=el("div",{class:"presence hide"});
+      titleRow.append(S.presenceEl);
+      startPresence(slug);
+    }
     if(b.approved){
       // Preview + share controls are desktop-only: on mobile the header collapses to just the
       // bubble name (sharing/preview are done from a larger screen) to keep the page minimal.

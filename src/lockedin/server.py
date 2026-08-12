@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import quote
 
-from . import assets, auth, bubbles, landing, models, paths, service, tagger, workspaces
+from . import assets, auth, bubbles, landing, models, paths, presence, service, tagger, workspaces
 from . import scientist_sync
 
 
@@ -38,10 +38,13 @@ _LABEL_RE = re.compile(r'\\label\{([^}]+)\}')
 _CITE_RE = re.compile(r'\\cite\{([^}]+)\}')
 _REQUEST_WORKSPACE: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "lockedin_request_workspace", default=None)
+# Scientist worker requests carry their project-directory identity and the health their sync loop
+# last observed, so presence needs no extra traffic beyond the polling they already do.
+_WORKER_PATH_RE = re.compile(r"^/api/scientist/v2/bubbles/([^/]+)(?:/|$)")
 # Keep this equal to ``scientist_cli.SCIENTIST_CLIENT_VERSION``. Bump both when a Scientist
 # release needs an installed client refresh; the dependency-free installed client cannot import
 # package metadata from this server.
-SCIENTIST_CLIENT_VERSION = "2026.08.11.5"
+SCIENTIST_CLIENT_VERSION = "2026.08.12.1"
 
 
 def _build_refs(pages: "list[dict]", bibliography: "dict | None" = None) -> dict:
@@ -802,9 +805,35 @@ def build_app():
         account_home = paths.user_home(user) if user else None
         try:
             with models.use_account_home(account_home):
-                return await call_next(request)
+                response = await call_next(request)
+            # Record the worker *after* the response so a rejected client is still listed, with
+            # the rejection as its diagnosis. A client refused for being out of date otherwise
+            # disappears from the monitor at exactly the moment it needs explaining.
+            if user:
+                _record_worker(request, user, workspace_id, response.status_code)
+            return response
         finally:
             _REQUEST_WORKSPACE.reset(token)
+
+    def _record_worker(request, user: str, workspace_id: "str | None", status_code: int) -> None:
+        """Register presence for an authenticated Scientist request that names a bubble."""
+        match = _WORKER_PATH_RE.match(request.url.path)
+        worker_id = request.headers.get("X-LockedIn-Worker", "")
+        if not match or not worker_id:
+            return
+        rejected = ("outdated" if status_code == 426 else
+                    "deauthorized" if status_code in (401, 403) else "")
+        try:
+            presence.touch_worker(
+                workspace_id or active_workspace_id(user), match.group(1),
+                worker_id=worker_id, user=user,
+                label=request.headers.get("X-LockedIn-Worker-Label", ""),
+                status=request.headers.get("X-LockedIn-Worker-Status", ""),
+                error=request.headers.get("X-LockedIn-Worker-Error", ""),
+                version=request.headers.get("X-LockedIn-Scientist-Version", ""),
+                rejected=rejected)
+        except Exception:  # presence is a monitor; it must never break a sync request
+            logger.debug("Could not record Scientist worker presence.", exc_info=True)
 
     # ---- request models ----
     class Credentials(BaseModel):
@@ -1684,6 +1713,18 @@ def build_app():
     @app.get("/api/bubbles/{slug}")
     def get_bubble(slug: str, user: str = Depends(current_user)):
         return {"bubble": service.bubble_detail(home_of(user), slug)}
+
+    @app.post("/api/bubbles/{slug}/presence")
+    def bubble_presence(slug: str, user: str = Depends(current_user)):
+        """Heartbeat: mark this person as viewing the bubble and return everyone who is on it."""
+        workspace_id = active_workspace_id(user)
+        presence.touch_viewer(workspace_id, slug, user)
+        return presence.snapshot(workspace_id, slug)
+
+    @app.delete("/api/bubbles/{slug}/presence")
+    def bubble_presence_leave(slug: str, user: str = Depends(current_user)):
+        presence.drop_viewer(active_workspace_id(user), slug, user)
+        return {"ok": True}
 
     @app.patch("/api/bubbles/{slug}")
     def rename_bubble(slug: str, body: BubbleRenameIn, user: str = Depends(current_user)):
