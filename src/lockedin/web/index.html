@@ -683,9 +683,14 @@
   .review-thread summary>b,.review-msg b{font-size:11px;color:var(--accent);font-weight:700}
   .review-actions{display:flex;gap:5px;flex-wrap:wrap;padding:8px 9px;border-top:1px solid var(--line)}
   .review-actions button{font-size:11px;padding:3px 6px}.review-compose{display:flex;flex-direction:column;gap:6px;padding:8px 9px;border-top:1px solid var(--line)}
-  .review-compose textarea{min-height:58px;resize:vertical;font:inherit;font-size:12px}.review-orphan{color:var(--warn);font-size:11px;font-weight:700}
+  .review-compose textarea{min-height:58px;resize:vertical;font:inherit;font-size:12px}
+  .review-compose-actions{display:flex;gap:6px;align-items:center}.review-orphan{color:var(--warn);font-size:11px;font-weight:700}
   .review-inline-edit{display:block;width:100%;box-sizing:border-box;min-height:66px;resize:vertical;font:inherit;font-size:13px}
   ::highlight(lockedin-review){background-color:rgba(245,204,62,.24)}
+  /* The pending selection while a comment is being composed. Opening the review panel moves
+     focus to the composer, which clears the browser's own selection, so the range is painted
+     here instead to keep the reviewer's target visible. */
+  ::highlight(lockedin-review-draft){background-color:rgba(245,204,62,.38)}
   .review-render-error{margin:14px;padding:12px 14px;border:1px solid var(--danger);border-radius:8px;
     background:color-mix(in srgb,var(--danger) 12%,var(--panel));color:var(--ink);font-family:var(--font-ui)}
   .review-render-error b{display:block;color:var(--danger);margin-bottom:4px}
@@ -4045,10 +4050,11 @@
   function renderEditorCommentHighlights(){
     const view=editorView();
     if(!(window.CSS&&CSS.highlights&&window.Highlight)){return;}
-    CSS.highlights.delete("lockedin-review"); S.reviewHitTargets=[];
+    CSS.highlights.delete("lockedin-review"); CSS.highlights.delete("lockedin-review-draft"); S.reviewHitTargets=[];
     if(!view||S.viewMode==="view"){clearEditorTextColorHighlights();return;}
     const source=S.editor&&S.editor.getMarkdown?S.editor.getMarkdown():"";
     renderEditorTextColorHighlights(view,source);
+    renderEditorDraftHighlight(view,source);
     const openIds=new Set((S.comments||[]).filter(t=>t.status!=="resolved"&&t.anchor_state!=="unanchored").map(t=>String(t.id)));
     if(!openIds.size)return;
     let wrappers=[];
@@ -4063,6 +4069,17 @@
       }catch(e){}});
     });
     if(ranges.length)CSS.highlights.set("lockedin-review",new Highlight(...ranges));
+  }
+  // Keep the text a reviewer chose visible for the whole composing step. The draft range is the
+  // authoritative snapshot taken when "+" was pressed, so it stays correct after focus moves to
+  // the composer and after the review panel resizes the editor.
+  function renderEditorDraftHighlight(view,source){
+    const draft=S.commentDraftAnchor;
+    if(!draft||!(draft.end>draft.start)||!view||!view.dom)return;
+    if(source.slice(draft.start,draft.end)!==draft.quote)return;
+    const index=editorVisibleTextIndex(view.dom,source);if(!index)return;
+    const ranges=index.rangesFor(draft.start,draft.end);
+    if(ranges.length)CSS.highlights.set("lockedin-review-draft",new Highlight(...ranges));
   }
   function clearEditorTextColorHighlights(){
     (S.textColorHighlightNames||[]).forEach(name=>{try{CSS.highlights.delete(name);}catch(e){}});
@@ -4093,7 +4110,7 @@
     style.textContent=rules.join("\n");
   }
   function clearEditorCommentHighlights(){
-    S.reviewHitTargets=[];try{if(window.CSS&&CSS.highlights)CSS.highlights.delete("lockedin-review");}catch(e){}
+    S.reviewHitTargets=[];try{if(window.CSS&&CSS.highlights){CSS.highlights.delete("lockedin-review");CSS.highlights.delete("lockedin-review-draft");}}catch(e){}
     clearEditorTextColorHighlights();
   }
 
@@ -4682,6 +4699,7 @@
     }catch(error){toast(error.message);updatePreview();return;}
     if(!S.reviewOpen)toggleReview();
     S.reviewTab="open";S.commentDraftAnchor={...selection}; S.selectedComment=null; renderReview();
+    scheduleEditorCommentHighlights();
   }
   function refreshCommentSourceState(){
     const content=S.editor&&S.editor.getMarkdown?S.editor.getMarkdown():"";let byId=new Map();
@@ -4811,7 +4829,12 @@
           applyAuthoritativeReviewResponse(result,state);
         }catch(e){toast(e.message);save.disabled=false;}finally{setReviewMutationBusy(false);}
       };
-      wrap.append(el("div",{class:"review-compose"},el("b",{},"New review"),ta,save)); setTimeout(()=>ta.focus(),0);
+      // Abandoning the draft must also drop its highlight, so the editor never keeps a painted
+      // range that no longer belongs to anything.
+      const cancel=el("button",{class:"ghost small"},"Cancel");
+      cancel.onclick=()=>{S.commentDraftAnchor=null;renderReview();scheduleEditorCommentHighlights();};
+      wrap.append(el("div",{class:"review-compose"},el("b",{},"New review"),ta,
+        el("div",{class:"review-compose-actions"},save,cancel))); setTimeout(()=>ta.focus(),0);
     }
     const rows=reviewThreads(); if(!rows.length&&!S.commentDraftAnchor)wrap.append(el("div",{class:"muted",style:"padding:12px;font-size:12px"},"No "+S.reviewTab+" reviews."));
     rows.forEach(t=>wrap.append(reviewThreadNode(t)));

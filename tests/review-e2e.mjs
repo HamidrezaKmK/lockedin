@@ -193,7 +193,18 @@ async function addComment(page, exactSelection, message) {
       `selection=${JSON.stringify(selectionDiagnostic)}\n${error.message}`,
     );
   }
+  // Opening the composer moves focus off the editor, which clears the browser's own selection.
+  // The chosen text must stay visibly marked so the reviewer can still see what they are
+  // commenting on while they type.
+  await page.waitForFunction(expected => {
+    const highlight = globalThis.CSS?.highlights?.get("lockedin-review-draft");
+    return !!highlight && Array.from(highlight).some(range => range.toString() === expected);
+  }, exactSelection, { timeout: 5_000 });
   await composer.fill(message);
+  await page.waitForFunction(expected => {
+    const highlight = globalThis.CSS?.highlights?.get("lockedin-review-draft");
+    return !!highlight && Array.from(highlight).some(range => range.toString() === expected);
+  }, exactSelection, { timeout: 2_000 });
   const responsePromise = page.waitForResponse(response => {
     const url = new URL(response.url());
     return response.request().method() === "POST" && /\/comments$/.test(url.pathname);
@@ -215,6 +226,9 @@ async function addComment(page, exactSelection, message) {
       `\nVisible source contains selection: ${visibleSource.includes(exactSelection)}`,
     );
   }
+  // Once the thread exists, its own anchored highlight takes over and the draft paint must go.
+  await page.waitForFunction(() => !globalThis.CSS?.highlights?.get("lockedin-review-draft"),
+    undefined, { timeout: 5_000 });
   return response;
 }
 
@@ -435,6 +449,18 @@ async function main() {
       "an intersecting text color reached the server",
     );
     step("text colors highlight only their exact body and reject overlap before saving");
+
+    // Cancelling a draft must leave nothing painted behind.
+    await selectSource(page, exactSelection);
+    await page.getByRole("button", { name: "Add comment to selected text" }).click();
+    await page.waitForFunction(expected => {
+      const highlight = globalThis.CSS?.highlights?.get("lockedin-review-draft");
+      return !!highlight && Array.from(highlight).some(range => range.toString() === expected);
+    }, exactSelection, { timeout: 5_000 });
+    await page.getByRole("button", { name: "Cancel", exact: true }).click();
+    await page.waitForFunction(() => !globalThis.CSS?.highlights?.get("lockedin-review-draft"),
+      undefined, { timeout: 5_000 });
+    step("a cancelled comment draft drops its pending highlight");
 
     const requestStart = requests.length;
     const navigationsBefore = mainNavigations;
