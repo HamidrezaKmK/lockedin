@@ -78,6 +78,12 @@ def _files(home: Path, slug: str) -> dict[str, Path | bytes]:
                 # Chats and private review comments do not belong in an agent project.
                 if rel.parts and rel.parts[0] in {"chats", "comments"}:
                     continue
+                # Report figures are flat by contract: they are stored flat, listed flat, and
+                # served through /api/bubbles/<slug>/assets/{filename}, a single path segment that
+                # cannot match a nested path. Publishing a nested figure would hand the client a
+                # file it can never render, push back, or delete — so never export one.
+                if rel.parts[:1] == ("assets",) and len(rel.parts) != 2:
+                    continue
                 if rel.as_posix() == "_lockedin_overleaf.yaml":
                     out["config/overleaf.yaml"] = path
                     continue
@@ -130,7 +136,11 @@ def writable_path(slug: str, rel: str, *, existing_pages: bool = True) -> bool:
     if len(parts) != 3 or parts[0] != "reports":
         return False
     if parts[1] == "assets":
-        return Path(parts[2]).name == parts[2]
+        # ``.tmp`` is reserved. ``apply_writes`` stages through a temp file and ``_files`` hides
+        # that suffix from the manifest, so an asset actually named ``*.tmp`` would push
+        # successfully, stay invisible to every surface, and then be deleted locally on the next
+        # sync as "no longer on the server". Refuse it here so the client is told instead.
+        return Path(parts[2]).name == parts[2] and not parts[2].endswith(".tmp")
     if parts[1] != "pages" or not rel.endswith(".md"):
         return False
     page_slug = Path(parts[2]).stem
@@ -178,7 +188,8 @@ def apply_writes(home: Path, slug: str, writes: list[dict]) -> dict:
                                       "content_b64": base64.b64encode(current).decode("ascii")})
                     continue
             else:
-                tmp = target.with_suffix(target.suffix + ".tmp"); tmp.write_bytes(raw); tmp.replace(target)
+                # Dot-prefixed so the staging file can never collide with a real asset name.
+                tmp = target.with_name("." + target.name + ".tmp"); tmp.write_bytes(raw); tmp.replace(target)
                 bubbles.touch_bubble(slug)
             applied.append({"path": rel, "revision": revision(target.read_bytes())})
     return {"applied": applied, "conflicts": conflicts}

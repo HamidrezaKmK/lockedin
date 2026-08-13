@@ -173,6 +173,21 @@ data/workspaces/<workspace-id>/
   mismatch) and stable across worker restarts. Browsers heartbeat `POST /api/bubbles/<slug>/presence`
   every 20s, which both reports the viewer and returns the snapshot. Nothing is written to disk:
   presence is a claim about *now*, so a restarted server correctly shows an empty bubble.
+- **Report figures are flat, everywhere.** A bubble's figures live directly in
+  `REPORTS/<slug>/assets/` with no subdirectories. This is forced by the serving route
+  `/api/bubbles/{slug}/assets/{filename}` — a **single path segment**, so a nested figure can never
+  be rendered. `save_bubble_image` stores flat, `scientist_sync.writable_path` accepts only a bare
+  basename, and `scientist_sync._files` refuses to *publish* a nested figure (publishing one would
+  hand a Scientist client a file it can never display, push back, or delete). The client's
+  `ProjectSync.figure_warnings()` reports nested or non-slug-named figures instead of skipping them
+  silently — a dropped figure is invisible data loss, since `push`/`deletes` answer HTTP 200 with a
+  `conflicts` list rather than an error. `.tmp` is a reserved asset suffix: `apply_writes` stages
+  through a dot-prefixed temp file and `_files` hides that suffix, so an asset actually named
+  `*.tmp` is rejected on push rather than syncing up and then vanishing locally.
+- **Unreferenced figures are surfaced, never collected.** `bubbles.list_bubble_assets` marks each
+  file `unused` (no page links to it) and `servable`, and the Assets browser badges them. Nothing
+  deletes them automatically — a figure is routinely uploaded before the page that uses it, and
+  `delete_page` deliberately leaves figures alone.
 - **Within-bubble links only.** `[[page-slug]]` links navigate between a bubble's pages; no
   cross-bubble/global wiki.
 - **TODO `@<id>` references resolve by exact digits.** Typing `@5` in any report page links

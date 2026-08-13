@@ -10,6 +10,7 @@ import base64
 import difflib
 import json
 import os
+import re
 import secrets
 import shutil
 import signal
@@ -22,7 +23,7 @@ import webbrowser
 from pathlib import Path
 
 APP = "lockedin-scientist"
-SCIENTIST_CLIENT_VERSION = "2026.08.12.1"
+SCIENTIST_CLIENT_VERSION = "2026.08.12.2"
 POLL_SECONDS = 5
 WORKER_HISTORY_LIMIT = 10
 TERMINAL_WORKER_STATUSES = {"stopped"}
@@ -129,6 +130,17 @@ def _atomic_json(path: Path, value: dict, *, private: bool = False) -> None:
     if private:
         try: os.chmod(path, 0o600)
         except OSError: pass
+
+
+def _figure_name(filename: str) -> str:
+    """The name the website would store this figure under.
+
+    A stdlib echo of ``bubbles.save_bubble_image``: lowercase the extension, slugify the stem. The
+    server uses python-slugify, which this dependency-free client cannot import, so unicode
+    transliteration may differ — this is only ever used to *warn*, never to rename a file.
+    """
+    stem = re.sub(r"[^a-z0-9]+", "-", Path(filename).stem.lower()).strip("-")
+    return (stem or "image") + (Path(filename).suffix or ".png").lower()
 
 
 def _remove_tree(path: Path) -> None:
@@ -310,9 +322,9 @@ def bubbles_command(account: dict) -> list[dict]:
     return rows
 
 
-SKILL_VERSION = 14
+SKILL_VERSION = 15
 
-SKILL_RULES = """<!-- lockedin-scientist-skill: 14 -->
+SKILL_RULES = """<!-- lockedin-scientist-skill: 15 -->
 # LockedIn Scientist research and publication skill
 
 This project is synchronized with one LockedIn bubble. Read this file before editing.
@@ -379,6 +391,12 @@ For a report figure stored in `.lockedin/reports/assets/`, use a portable relati
 link: `![descriptive caption](assets/filename.png)`. Do not paste a browser URL, a local absolute
 path, or an `/api/...` URL. Relative `assets/` links render in LockedIn, its standalone previews,
 and public shares, while staying valid when the bubble or workspace changes.
+
+Save every figure as a file directly inside `.lockedin/reports/assets/`. A figure placed in a
+subdirectory of that folder is **not** synchronized and never reaches the website, because LockedIn
+serves figures from a single-segment URL. Name figures in lowercase with hyphens and no spaces
+(`drift-field-two-moons.png`, not `Drift Field_TwoMoons.PNG`); that is exactly the name the website
+assigns to an uploaded image, so a matching name avoids creating a duplicate figure.
 
 ## Private review feedback
 
@@ -899,6 +917,41 @@ class ProjectSync:
                 out.extend(p.relative_to(self.root).as_posix() for p in base.iterdir() if p.is_file() and not p.is_symlink())
         return sorted(out)
 
+    def unsynced_figures(self) -> list[str]:
+        """Figures that exist locally but this sync cannot carry.
+
+        Report figures are flat by contract — LockedIn serves them from a single-segment URL, so a
+        figure in a subdirectory can never be rendered, pushed, or deleted. Skipping one silently is
+        how an agent's work disappears, so the worker reports these as a degraded state.
+        """
+        base = self.root / "reports" / "assets"
+        if not base.exists():
+            return []
+        return sorted(p.relative_to(base).as_posix() for p in base.rglob("*")
+                      if p.is_file() and not p.is_symlink() and p.parent != base)
+
+    def figure_warnings(self) -> list[str]:
+        """Human-readable problems with this project's figures, worst first."""
+        base = self.root / "reports" / "assets"
+        if not base.exists():
+            return []
+        warnings = []
+        nested = self.unsynced_figures()
+        if nested:
+            warnings.append(
+                f"{len(nested)} figure(s) in subdirectories of .lockedin/reports/assets/ are NOT "
+                f"synchronized; move them directly into that folder: "
+                + ", ".join(nested[:5]) + (" …" if len(nested) > 5 else ""))
+        odd = sorted(p.name for p in base.iterdir()
+                     if p.is_file() and not p.is_symlink() and p.name != _figure_name(p.name))
+        if odd:
+            warnings.append(
+                f"{len(odd)} figure name(s) differ from what the website assigns, so uploading the "
+                f"same image there would create a duplicate: "
+                + ", ".join(f"{n} -> {_figure_name(n)}" for n in odd[:5])
+                + (" …" if len(odd) > 5 else ""))
+        return warnings
+
     def sync_once(self) -> None:
         self.validate_or_initialize()
         remote = {f["path"]: f["revision"] for f in self._request("GET", "manifest").get("files", [])}
@@ -1030,8 +1083,15 @@ def _run_worker(worker_id: str, project: str) -> None:
     _update_worker(worker_id, status="running", pid=os.getpid(), last_error="")
     while not stop:
         try:
-            sync.sync_once(); _update_worker(worker_id, status="running", last_sync=time.time(), last_error="")
-            sync.report = {"status": "running", "error": ""}
+            sync.sync_once()
+            # Figures the sync cannot carry are a real (silent) loss of an agent's work, so they
+            # degrade the worker rather than being logged and forgotten. Name-style warnings are
+            # advisory and ride along without changing the status.
+            warnings = sync.figure_warnings()
+            blocking = warnings[0] if sync.unsynced_figures() else ""
+            _update_worker(worker_id, status="degraded" if blocking else "running",
+                           last_sync=time.time(), last_error=blocking, warnings=warnings)
+            sync.report = {"status": "degraded" if blocking else "running", "error": blocking}
         except Exception as exc:
             _update_worker(worker_id, status="degraded", last_error=str(exc))
             sync.report = {"status": "degraded", "error": str(exc)}
@@ -1089,6 +1149,9 @@ def ps_command() -> None:
         print(f"  {marker} {bold(rec['id'])}  {status}  {dim('bubble:')} {rec.get('bubble', '')}")
         print(f"    {dim(rec.get('project', ''))}")
         if rec.get("last_error"): print("    " + red("error: ") + rec["last_error"])
+        for warning in rec.get("warnings", []) or []:
+            if warning != rec.get("last_error"):
+                print("    " + orange("warning: ") + warning)
         if status == "failed" and rec.get("error") == "missing .lockedin binding":
             print("    " + orange("recovery: ") +
                   f"copy any unsynced report work, then run `lockedin-scientist hard-reset {rec.get('bubble', '<bubble>')}` from this project")

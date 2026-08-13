@@ -605,8 +605,12 @@
     border-bottom:1px solid var(--line)}
   .asset-modal-header b{font-family:var(--font-ui);font-size:15px}
   .asset-modal-body{padding:14px 16px;min-height:180px;gap:8px}
-  .asset-file-row{display:grid;grid-template-columns:62px minmax(120px,1fr) auto auto auto auto;
+  .asset-file-row{display:grid;grid-template-columns:62px minmax(120px,1fr) auto auto auto auto auto;
     gap:7px;align-items:center;padding:9px 0;border-bottom:1px solid var(--line)}
+  .asset-tag{font-size:10px;letter-spacing:.05em;text-transform:uppercase;white-space:nowrap;
+    padding:2px 7px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
+  .asset-tag.blank{visibility:hidden}
+  .asset-tag.bad{border-color:var(--bad);color:var(--bad)}
   .asset-file-row:last-child{border-bottom:0}
   .asset-file-preview{display:flex;align-items:center;justify-content:center;width:62px;height:46px;
     overflow:hidden;border:1px solid var(--line);border-radius:6px;background:var(--panel2)}
@@ -3271,7 +3275,9 @@
         if(!entries.length){ list.append(el("div",{class:"muted"},"No files in this bubble yet.")); return; }
         entries.forEach(item=>{
           const url=workspaceUrl(item.url);
-          const previewable=/\.(?:apng|avif|gif|jpe?g|png|svg|webp)$/i.test(item.name);
+          // An unservable (nested) file has no working URL, so don't render a broken thumbnail
+          // next to the badge that already explains why.
+          const previewable=item.servable!==false&&/\.(?:apng|avif|gif|jpe?g|png|svg|webp)$/i.test(item.name);
           const preview=previewable
             ?el("a",{class:"asset-file-preview",href:url,target:"_blank",rel:"noopener",title:"Open preview: "+item.name,
                 onclick:e=>e.stopPropagation()},el("img",{src:url,alt:"Preview: "+item.name,loading:"lazy"}))
@@ -3279,7 +3285,19 @@
           const row=el("div",{class:"asset-file-row"},
             preview,
             el("span",{class:"asset-file-name truncate",title:item.name},item.name),
-            el("span",{class:"muted asset-file-size",style:"font-size:12px"},formatFileSize(item.size)),
+            el("span",{class:"muted asset-file-size",style:"font-size:12px"},formatFileSize(item.size)));
+          // Flagged, never auto-removed: a figure is often uploaded before the page that uses it.
+          // The cell is always present so the row grid keeps its columns aligned.
+          if(item.servable===false){
+            row.append(el("span",{class:"asset-tag bad",
+              title:"Figures must sit directly in the bubble's assets folder. This one is in a "
+                   +"subfolder, so it cannot be displayed or synchronized — move it up or delete it."},
+              "not displayable"));
+          }else{
+            row.append(el("span",{class:"asset-tag"+(item.unused?"":" blank"),
+              title:"No page in this bubble links to this file."},"unused"));
+          }
+          row.append(
             el("a",{href:url,target:"_blank",rel:"noopener",onclick:e=>e.stopPropagation()},el("button",{class:"ghost small"},"Open")),
             el("a",{href:url,download:item.name,onclick:e=>e.stopPropagation()},el("button",{class:"ghost small"},"⇩ Download")));
           row.append(el("button",{class:"danger small",onclick:async()=>{

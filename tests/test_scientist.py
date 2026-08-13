@@ -213,6 +213,74 @@ class ScientistServerBoundaryTest(unittest.TestCase):
                 ])
         self.assertEqual(len(result["conflicts"]), 3)
 
+    def test_a_report_figure_round_trips_as_binary(self):
+        # The suite previously only asserted which asset paths are *rejected*; nothing proved a
+        # legitimate figure survives the base64 round trip intact.
+        png = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\xff\xfe\x01binary\x00payload"
+        with workspace() as (home, slug):
+            with paths.use_root(home):
+                result = scientist_sync.apply_writes(home, slug, [
+                    {"path": "reports/assets/drift-field.png",
+                     "base_revision": scientist_sync.revision(b""),
+                     "content_b64": base64.b64encode(png).decode()}])
+                self.assertEqual(result["conflicts"], [])
+                stored = paths.bubble_assets_dir(slug) / "drift-field.png"
+                self.assertEqual(stored.read_bytes(), png)
+                names = {item["path"] for item in scientist_sync.manifest(home, slug)["files"]}
+                self.assertIn("reports/assets/drift-field.png", names)
+                # No staging file may be left behind, and it must not shadow a real asset name.
+                self.assertEqual([p.name for p in paths.bubble_assets_dir(slug).iterdir()],
+                                 ["drift-field.png"])
+
+    def test_a_nested_figure_is_never_published_because_it_could_never_be_served(self):
+        # Figures are served from /api/bubbles/<slug>/assets/{filename}, a single path segment, so
+        # a nested figure can never render. Publishing one would hand clients an unusable file they
+        # also cannot push back or delete.
+        with workspace() as (home, slug):
+            with paths.use_root(home):
+                nested = paths.bubble_assets_dir(slug) / "plots" / "figure.png"
+                nested.parent.mkdir(parents=True, exist_ok=True)
+                nested.write_bytes(b"figure")
+                flat = paths.bubble_assets_dir(slug) / "figure.png"
+                flat.write_bytes(b"figure")
+                names = {item["path"] for item in scientist_sync.manifest(home, slug)["files"]}
+        self.assertIn("reports/assets/figure.png", names)
+        self.assertNotIn("reports/assets/plots/figure.png", names)
+
+    def test_an_asset_named_tmp_is_refused_instead_of_syncing_then_vanishing(self):
+        # ".tmp" is hidden from the manifest, so accepting such a push would store a file no
+        # surface can see, which the next sync then deletes locally as "gone from the server".
+        with workspace() as (home, slug):
+            with paths.use_root(home):
+                result = scientist_sync.apply_writes(home, slug, [
+                    {"path": "reports/assets/figure.tmp",
+                     "base_revision": scientist_sync.revision(b""),
+                     "content_b64": base64.b64encode(b"figure").decode()}])
+                self.assertEqual(len(result["conflicts"]), 1)
+                self.assertFalse((paths.bubble_assets_dir(slug) / "figure.tmp").exists())
+
+    def test_unreferenced_and_nested_figures_are_flagged_for_the_owner(self):
+        with workspace() as (home, slug):
+            with paths.use_root(home):
+                bubbles.ensure_pages(slug)
+                adir = paths.bubble_assets_dir(slug); adir.mkdir(parents=True, exist_ok=True)
+                (adir / "used.png").write_bytes(b"a")
+                (adir / "used-by-editor.png").write_bytes(b"b")
+                (adir / "stale.png").write_bytes(b"c")
+                (adir / "plots").mkdir()
+                (adir / "plots" / "buried.png").write_bytes(b"d")
+                page = paths.bubble_page_path(slug, bubbles.manifest(slug)["home"])
+                page.write_text(
+                    "![one](assets/used.png)\n\n"
+                    # the editor's own link style, complete with its workspace query string
+                    "![two](/api/bubbles/%s/assets/used-by-editor.png?workspace=ws1)\n" % slug)
+                listed = {item["name"]: item for item in bubbles.list_bubble_assets(slug)}
+        self.assertFalse(listed["used.png"]["unused"])
+        self.assertFalse(listed["used-by-editor.png"]["unused"], "editor-style links must count")
+        self.assertTrue(listed["stale.png"]["unused"])
+        self.assertFalse(listed["plots/buried.png"]["servable"])
+        self.assertTrue(listed["used.png"]["servable"])
+
     def test_scientist_page_write_preserves_inline_review_marker(self):
         with workspace() as (home, slug):
             original = b"Before this is a highlight after."
@@ -401,6 +469,29 @@ class ScientistProjectSyncTest(unittest.TestCase):
             self.assertEqual(fake.files["reports/pages/new-page.md"], b"# New\n")
             page.unlink(); sync.sync_once()
             self.assertNotIn("reports/pages/new-page.md", fake.files)
+
+    def test_a_figure_the_sync_cannot_carry_is_reported_rather_than_dropped(self):
+        files = {"reports/pages/overview.md": b"# Overview\n"}
+        fake = FakeBubbleServer(files)
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+                scientist_cli, "request", side_effect=fake.request):
+            sync = scientist_cli.ProjectSync(ACCOUNT, Path(directory), "work")
+            sync.sync_once()
+            assets_dir = sync.root / "reports" / "assets"
+            (assets_dir / "plots").mkdir(parents=True, exist_ok=True)
+            (assets_dir / "plots" / "buried.png").write_bytes(b"figure")
+            (assets_dir / "Drift Field.PNG").write_bytes(b"figure")
+            sync.sync_once()
+
+            # Neither reaches the server, but the worker must say so instead of failing silently.
+            self.assertNotIn("reports/assets/plots/buried.png", fake.files)
+            self.assertEqual(sync.unsynced_figures(), ["plots/buried.png"])
+            warnings = sync.figure_warnings()
+            self.assertTrue(any("plots/buried.png" in w and "NOT" in w for w in warnings), warnings)
+            self.assertTrue(any("drift-field.png" in w for w in warnings),
+                            f"a non-slug name should suggest the website's name: {warnings}")
+            # The odd-name figure is only advisory, so it must still synchronize.
+            self.assertEqual(fake.files["reports/assets/Drift Field.PNG"], b"figure")
 
     def test_page_deleted_on_server_is_removed_locally_without_becoming_a_new_page(self):
         files = {"reports/pages/overview.md": b"# Overview\n",

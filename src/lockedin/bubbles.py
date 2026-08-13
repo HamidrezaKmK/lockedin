@@ -25,7 +25,7 @@ from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import quote, unquote, urlparse
 
 import yaml
 from slugify import slugify
@@ -1655,26 +1655,61 @@ def list_bubble_images(slug: str) -> list[str]:
     return sorted(f"/api/bubbles/{slug}/assets/{p.name}" for p in adir.iterdir() if p.is_file())
 
 
+_ASSET_REF_RE = re.compile(r"assets/([^)\s\"'?#]+)")
+
+
+def referenced_assets(slug: str) -> set[str]:
+    """Every asset filename some page of this bubble points at.
+
+    Covers both figure link styles — the portable ``assets/<name>`` a Scientist client writes and
+    the ``/api/bubbles/<slug>/assets/<name>?workspace=…`` the editor inserts — by matching on the
+    ``assets/`` segment and keeping the basename.
+    """
+    used: set[str] = set()
+    for entry in manifest(slug).get("pages", []):
+        path = paths.bubble_page_path(slug, entry.get("page_slug", ""))
+        if not path.is_file():
+            continue
+        used.update(Path(unquote(match)).name for match in _ASSET_REF_RE.findall(path.read_text()))
+    return used
+
+
 def list_bubble_assets(slug: str) -> list[dict]:
-    """Return file metadata for the bubble's private assets directory."""
+    """Return file metadata for the bubble's private assets directory.
+
+    ``unused`` flags a file no page references. Nothing collects those automatically — a figure is
+    often staged before the page that uses it — so this only makes them findable. ``servable`` is
+    false for a nested file: figures are served from a single-segment URL, so anything below the
+    top level cannot be rendered and should be moved up or deleted.
+    """
     adir = paths.bubble_assets_dir(slug)
     if not adir.exists():
         return []
+    used = referenced_assets(slug)
     out = []
-    for path in adir.iterdir():
+    for path in sorted(adir.rglob("*")):
         if not path.is_file():
             continue
-        out.append({"name": path.name, "size": path.stat().st_size,
-                    "url": f"/api/bubbles/{slug}/assets/{path.name}"})
+        rel = path.relative_to(adir).as_posix()
+        out.append({"name": rel, "size": path.stat().st_size,
+                    "url": f"/api/bubbles/{slug}/assets/{quote(rel)}",
+                    "servable": path.parent == adir,
+                    "unused": path.name not in used})
     return sorted(out, key=lambda item: item["name"].lower())
 
 
 def delete_bubble_asset(slug: str, filename: str) -> bool:
-    """Remove one file from a bubble's assets directory, never a directory/path traversal."""
-    safe = Path(filename).name
-    if safe != filename or not safe:
+    """Remove one file from a bubble's assets directory, never a directory/path traversal.
+
+    A nested path is accepted so a manually-placed figure the listing surfaces as unservable can
+    still be cleaned up, but only after resolving it and proving it stays inside the assets dir.
+    """
+    if not filename or Path(filename).is_absolute():
         return False
-    path = paths.bubble_assets_dir(slug) / safe
+    adir = paths.bubble_assets_dir(slug)
+    path = (adir / filename).resolve()
+    if not path.is_relative_to(adir.resolve()) or path == adir.resolve():
+        return False
     if not path.is_file():
         return False
     path.unlink()

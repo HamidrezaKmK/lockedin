@@ -133,10 +133,12 @@ class AestheticsConfigTests(unittest.TestCase):
 
     def test_bubble_assets_modal_previews_images_and_gifs(self):
         source = (Path(server.WEB_DIR) / "index.html").read_text()
-        self.assertIn('const previewable=/\\.(?:apng|avif|gif|jpe?g|png|svg|webp)$/i.test(item.name);', source)
+        self.assertIn('/\\.(?:apng|avif|gif|jpe?g|png|svg|webp)$/i.test(item.name)', source)
         self.assertIn('class:"asset-file-preview"', source)
         self.assertIn('alt:"Preview: "+item.name', source)
         self.assertIn('.asset-file-preview img{width:100%;height:100%;object-fit:contain', source)
+        # A nested figure has no servable URL, so it must not attempt a (broken) thumbnail.
+        self.assertIn('const previewable=item.servable!==false&&', source)
 
     def test_review_comments_use_server_owned_markers_and_dom_body_ranges(self):
         source = (Path(server.WEB_DIR) / "index.html").read_text()
