@@ -140,6 +140,26 @@ class AestheticsConfigTests(unittest.TestCase):
         # A nested figure has no servable URL, so it must not attempt a (broken) thumbnail.
         self.assertIn('const previewable=item.servable!==false&&', source)
 
+    def test_every_rendered_surface_loads_the_one_figure_viewer(self):
+        # The SPA and the server-rendered preview/share page are separate codebases; browser logic
+        # duplicated across them has drifted in this repo before, so both must load the same file.
+        viewer = (Path(server.WEB_DIR) / "lightbox.js").read_text()
+        self.assertIn("window.LockedInLightbox", viewer)
+        for name in ("watch:", "open:", "close:"):
+            self.assertIn(name, viewer)
+
+        spa = (Path(server.WEB_DIR) / "index.html").read_text()
+        self.assertIn('<script src="/lightbox.js"></script>', spa)
+        # #previewWrap is the rendered pane in both Split and Read modes.
+        self.assertIn('window.LockedInLightbox.watch("#previewWrap")', spa)
+
+        html = server._render_preview_html(
+            name="Figures", page="overview", all_pages=[], slug="figures",
+            content="![shot](assets/a.png)",
+            link_base="/share/tok", asset_base="/share/tok/assets", show_back=False)
+        self.assertIn('<script src="/lightbox.js"></script>', html)
+        self.assertIn('window.LockedInLightbox.watch("#content")', html)
+
     def test_review_comments_use_server_owned_markers_and_dom_body_ranges(self):
         source = (Path(server.WEB_DIR) / "index.html").read_text()
         self.assertIn("function parseCommentWrappers(value)", source)

@@ -569,6 +569,11 @@ blockquote p{{margin:5px 0}}
 <div id="content"></div>
 <footer class="page-credit">Made with 💜 + 🤖 by a PhD student</footer>
 <div id="copied">🔗 Link copied</div>
+<script src="/lightbox.js"></script>
+<script>
+// Tap any figure to open it full-screen, zoom, and pan — the same viewer the app itself uses.
+if(window.LockedInLightbox) window.LockedInLightbox.watch("#content");
+</script>
 <script>
 (function(){{
   // Standalone owner previews and public shares intentionally stay restrained: they only
@@ -1131,6 +1136,13 @@ def build_app():
         # updates land immediately (it can still 304 when unchanged). Without this,
         # FileResponse sets no Cache-Control and browsers may serve a stale SPA.
         return FileResponse(WEB_DIR / "index.html", headers={"Cache-Control": "no-cache"})
+
+    @app.get("/lightbox.js")
+    def lightbox_js():
+        # Deliberately unauthenticated: public share pages load the same figure viewer as the SPA,
+        # and serving one file to both is what keeps them from drifting apart.
+        return FileResponse(WEB_DIR / "lightbox.js", media_type="application/javascript",
+                            headers={"Cache-Control": "no-cache"})
 
     @app.get("/api/landing")
     def get_landing():

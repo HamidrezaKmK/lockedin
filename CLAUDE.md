@@ -188,6 +188,13 @@ data/workspaces/<workspace-id>/
   file `unused` (no page links to it) and `servable`, and the Assets browser badges them. Nothing
   deletes them automatically — a figure is routinely uploaded before the page that uses it, and
   `delete_page` deliberately leaves figures alone.
+- **One figure viewer, served to every rendered surface.** `web/lightbox.js` (route `/lightbox.js`,
+  unauthenticated so public shares can load it) implements the full-screen click-to-zoom/pan viewer.
+  The SPA loads it and calls `LockedInLightbox.watch("#previewWrap")` (covers Split and Read); the
+  server-rendered preview/share page calls `watch("#content")`. It is one file precisely because the
+  SPA and `_render_preview_html` are separate codebases whose duplicated browser logic has drifted
+  before — don't reimplement it in either. `watch()` is delegated from `document`, so re-rendering a
+  page never needs re-binding, and a figure wrapped in a link keeps its link instead of zooming.
 - **Within-bubble links only.** `[[page-slug]]` links navigate between a bubble's pages; no
   cross-bubble/global wiki.
 - **TODO `@<id>` references resolve by exact digits.** Typing `@5` in any report page links

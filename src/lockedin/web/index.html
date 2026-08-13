@@ -16,6 +16,9 @@
 <link rel="stylesheet" href="https://uicdn.toast.com/editor/latest/toastui-editor.min.css">
 <link rel="stylesheet" href="https://uicdn.toast.com/editor/latest/theme/toastui-editor-dark.min.css">
 <script src="https://uicdn.toast.com/editor/latest/toastui-editor-all.min.js"></script>
+<!-- Full-screen figure viewer, served from the same file the share/preview pages load so the
+     two surfaces cannot drift apart. -->
+<script src="/lightbox.js"></script>
 <style>
   :root{
     --radius:12px; --vvh:100vh;
@@ -1991,6 +1994,9 @@
     workspaceUrl("/api/bubbles/"+S.bubble+"/preview/"+(S.page||S.home||"overview")),"_blank"); };
 
   async function boot(){
+    // Click any figure in the rendered pane (Split and Read) to open it full-screen. Delegated
+    // once here, so re-rendering a page never needs to re-bind.
+    if(window.LockedInLightbox)window.LockedInLightbox.watch("#previewWrap");
     const savedWorkspace=localStorage.getItem(WORKSPACE_STORAGE_KEY);
     if(savedWorkspace)S.workspaceId=savedWorkspace;
     let me;
