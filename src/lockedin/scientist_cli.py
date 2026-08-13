@@ -942,13 +942,19 @@ class ProjectSync:
                 f"{len(nested)} figure(s) in subdirectories of .lockedin/reports/assets/ are NOT "
                 f"synchronized; move them directly into that folder: "
                 + ", ".join(nested[:5]) + (" …" if len(nested) > 5 else ""))
+        # Only *unsynchronized* figures are worth mentioning. Once a figure has synced, pages link
+        # to it by name, so renaming it would break those links — which is exactly why the server
+        # does not normalize names on push either. Nagging about a working figure the owner must
+        # not touch is noise, so this stays limited to files that are still free to rename.
+        tracked = set(self._state().get("files", {}))
         odd = sorted(p.name for p in base.iterdir()
-                     if p.is_file() and not p.is_symlink() and p.name != _figure_name(p.name))
+                     if p.is_file() and not p.is_symlink() and p.name != _figure_name(p.name)
+                     and f"reports/assets/{p.name}" not in tracked)
         if odd:
             warnings.append(
-                f"{len(odd)} figure name(s) differ from what the website assigns, so uploading the "
-                f"same image there would create a duplicate: "
-                + ", ".join(f"{n} -> {_figure_name(n)}" for n in odd[:5])
+                f"{len(odd)} new figure name(s) differ from what the website assigns; renaming them "
+                f"before they are referenced avoids a duplicate if the same file is ever uploaded "
+                f"there: " + ", ".join(f"{n} -> {_figure_name(n)}" for n in odd[:5])
                 + (" …" if len(odd) > 5 else ""))
         return warnings
 

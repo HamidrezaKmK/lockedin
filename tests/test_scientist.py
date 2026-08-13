@@ -481,17 +481,29 @@ class ScientistProjectSyncTest(unittest.TestCase):
             (assets_dir / "plots").mkdir(parents=True, exist_ok=True)
             (assets_dir / "plots" / "buried.png").write_bytes(b"figure")
             (assets_dir / "Drift Field.PNG").write_bytes(b"figure")
+
+            # Before it syncs, the odd name is still free to change, so say so.
+            self.assertTrue(any("drift-field.png" in w for w in sync.figure_warnings()),
+                            f"a not-yet-synced odd name should suggest the website's name: "
+                            f"{sync.figure_warnings()}")
             sync.sync_once()
 
-            # Neither reaches the server, but the worker must say so instead of failing silently.
+            # The nested figure never reaches the server, and the worker must say so rather than
+            # failing silently.
             self.assertNotIn("reports/assets/plots/buried.png", fake.files)
             self.assertEqual(sync.unsynced_figures(), ["plots/buried.png"])
-            warnings = sync.figure_warnings()
-            self.assertTrue(any("plots/buried.png" in w and "NOT" in w for w in warnings), warnings)
-            self.assertTrue(any("drift-field.png" in w for w in warnings),
-                            f"a non-slug name should suggest the website's name: {warnings}")
+            self.assertTrue(any("plots/buried.png" in w and "NOT" in w for w in sync.figure_warnings()))
             # The odd-name figure is only advisory, so it must still synchronize.
             self.assertEqual(fake.files["reports/assets/Drift Field.PNG"], b"figure")
+
+            # Once it has synced, pages link to it by name and renaming would break them, so the
+            # advice stops. Repeating it forever would be nagging about something the owner must
+            # not act on.
+            sync.sync_once()
+            self.assertFalse(any("Drift Field.PNG" in w for w in sync.figure_warnings()),
+                             "a synchronized figure must not keep raising a naming warning")
+            # The unsynchronizable nested figure is still worth repeating: it is still losing work.
+            self.assertEqual(sync.unsynced_figures(), ["plots/buried.png"])
 
     def test_page_deleted_on_server_is_removed_locally_without_becoming_a_new_page(self):
         files = {"reports/pages/overview.md": b"# Overview\n",
