@@ -1996,7 +1996,9 @@
   async function boot(){
     // Click any figure in the rendered pane (Split and Read) to open it full-screen. Delegated
     // once here, so re-rendering a page never needs to re-bind.
-    if(window.LockedInLightbox)window.LockedInLightbox.watch("#previewWrap");
+    // A figure's caption is its Markdown alt text, so pass the workspace macros as a getter —
+    // they load asynchronously and can change in Settings.
+    if(window.LockedInLightbox)window.LockedInLightbox.watch("#previewWrap",{macros:()=>S.mathMacros});
     const savedWorkspace=localStorage.getItem(WORKSPACE_STORAGE_KEY);
     if(savedWorkspace)S.workspaceId=savedWorkspace;
     let me;

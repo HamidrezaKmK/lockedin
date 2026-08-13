@@ -148,17 +148,21 @@ class AestheticsConfigTests(unittest.TestCase):
         for name in ("watch:", "open:", "close:"):
             self.assertIn(name, viewer)
 
+        # A caption is the figure's Markdown alt text, so the viewer needs each surface's macros
+        # to render the math it carries instead of showing raw $…$.
+        self.assertIn("katex.renderToString", viewer)
+
         spa = (Path(server.WEB_DIR) / "index.html").read_text()
         self.assertIn('<script src="/lightbox.js"></script>', spa)
         # #previewWrap is the rendered pane in both Split and Read modes.
-        self.assertIn('window.LockedInLightbox.watch("#previewWrap")', spa)
+        self.assertIn('window.LockedInLightbox.watch("#previewWrap",{macros:()=>S.mathMacros})', spa)
 
         html = server._render_preview_html(
             name="Figures", page="overview", all_pages=[], slug="figures",
             content="![shot](assets/a.png)",
             link_base="/share/tok", asset_base="/share/tok/assets", show_back=False)
         self.assertIn('<script src="/lightbox.js"></script>', html)
-        self.assertIn('window.LockedInLightbox.watch("#content")', html)
+        self.assertIn('window.LockedInLightbox.watch("#content",{macros:_macros})', html)
 
     def test_review_comments_use_server_owned_markers_and_dom_body_ranges(self):
         source = (Path(server.WEB_DIR) / "index.html").read_text()

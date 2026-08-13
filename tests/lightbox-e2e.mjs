@@ -95,6 +95,7 @@ const state = page => page.evaluate(() => {
     y: parts ? parts[5] : null,
     zoomLabel: document.querySelector(".li-lb-zoom")?.textContent || "",
     caption: document.querySelector(".li-lb-cap")?.textContent || "",
+    captionKatex: document.querySelectorAll(".li-lb-cap .katex").length,
     bodyLocked: document.body.style.overflow === "hidden",
   };
 });
@@ -108,7 +109,12 @@ async function exerciseViewer(page, surface) {
   let s = await state(page);
   assert.ok(s.open, `${surface}: clicking a figure must open the viewer`);
   assert.equal(s.bodyLocked, true, `${surface}: the page behind must not scroll`);
-  assert.equal(s.caption, "Experiment rollout", `${surface}: the alt text should caption the figure`);
+  assert.match(s.caption, /^Reward/, `${surface}: the alt text should caption the figure`);
+  // The caption is Markdown alt text, so its math must render rather than showing raw $…$.
+  assert.ok(s.captionKatex > 0, `${surface}: caption math should render via KaTeX: ${s.caption}`);
+  assert.ok(!s.caption.includes("$"), `${surface}: raw math delimiters leaked: ${s.caption}`);
+  assert.ok(s.caption.includes("\u03c4") || s.caption.includes("Q"),
+    `${surface}: rendered math should contain its symbols: ${s.caption}`);
   assert.ok(Math.abs(s.scale - 1) < 0.01, `${surface}: it should open fitted, got ${s.scale}`);
   await shoot(page, `${surface}-open`);
 
@@ -187,7 +193,7 @@ async function main() {
     const current = await (await context.request.fetch(`${baseUrl}/api/bubbles/${slug}/pages/${home}`)).json();
     await context.request.fetch(`${baseUrl}/api/bubbles/${slug}/pages/${home}`, {
       method: "PUT",
-      data: { content: `# Figures\n\n![Experiment rollout](assets/rollout.png)\n`,
+      data: { content: `# Figures\n\n![Reward $\\frac{1}{\\tau_R}\\nabla_a Q^\\pi(s,a)$ over training](assets/rollout.png)\n`,
               base_mtime: current.mtime ?? null },
     });
 

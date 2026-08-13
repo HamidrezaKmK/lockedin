@@ -571,10 +571,6 @@ blockquote p{{margin:5px 0}}
 <div id="copied">🔗 Link copied</div>
 <script src="/lightbox.js"></script>
 <script>
-// Tap any figure to open it full-screen, zoom, and pan — the same viewer the app itself uses.
-if(window.LockedInLightbox) window.LockedInLightbox.watch("#content");
-</script>
-<script>
 (function(){{
   // Standalone owner previews and public shares intentionally stay restrained: they only
   // offer the universal Dark/Light pair, independent of the workspace's editor theme choices.
@@ -602,6 +598,9 @@ if(window.LockedInLightbox) window.LockedInLightbox.watch("#content");
 (function(){{
   const store=[], captionStore=[]; let s={repr(md)};
   const _macros={json.dumps(macros or {})};
+  // Tap a figure to open it full-screen. The viewer captions with the image's Markdown alt text,
+  // so hand it this page's macros to render any math the caption carries.
+  if(window.LockedInLightbox) window.LockedInLightbox.watch("#content",{{macros:_macros}});
   const _theoStore={json.dumps(theo_store)};
   const _figRefs={json.dumps(fig_map)};
   let _nextFigure={int(fig_start)};

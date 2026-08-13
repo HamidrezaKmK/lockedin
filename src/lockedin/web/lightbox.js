@@ -38,13 +38,14 @@
     '.li-lb-zoom{pointer-events:auto;color:#aab4c6;font-size:12px;font-variant-numeric:tabular-nums;',
     '  padding:0 6px;min-width:46px;text-align:center}',
     '.li-lb-cap{position:absolute;left:0;right:0;bottom:0;padding:12px 16px calc(12px + env(safe-area-inset-bottom));',
-    '  color:#dfe5ef;font-size:13px;line-height:1.45;text-align:center;pointer-events:none;',
+    '  color:#eef2f8;font-size:14.5px;line-height:1.5;text-align:center;pointer-events:none;',
     '  background:linear-gradient(to top,rgba(8,10,16,.85),transparent)}',
-    /* Clear of the toolbar row, so it reads as a transient tip rather than another control. */
-    '.li-lb-hint{position:absolute;left:50%;top:62px;transform:translateX(-50%);color:#c8d0de;',
+    /* Sits with the caption, never near the controls: a transient tip, not another button. */
+    '.li-lb-hint{position:absolute;left:50%;bottom:58px;transform:translateX(-50%);color:#c8d0de;',
     '  font-size:12px;padding:6px 12px;border-radius:999px;background:rgba(20,24,34,.8);',
     '  border:1px solid rgba(255,255,255,.14);opacity:0;transition:opacity .3s;pointer-events:none}',
     '.li-lb-hint.show{opacity:1}',
+    '.li-lb-cap .katex{font-size:1.18em;color:inherit}',
     '@media(max-width:700px){.li-lb-img{max-width:100vw;max-height:82vh}}',
     /* A figure is a control on these surfaces, so say so on hover. */
     '#previewWrap img,#content img{cursor:zoom-in}',
@@ -141,7 +142,7 @@
     img.style.transform = "";
     img.src = src;
     img.alt = alt || "";
-    cap.textContent = alt || "";
+    setCaption(alt);
     overlay.classList.add("on");
     // Lock the page behind the overlay without losing the reader's place.
     scrollY = window.scrollY || 0;
@@ -259,9 +260,50 @@
     });
   }
 
+  /* A figure's caption is its Markdown alt text, so it arrives with math still in source form
+   * ($…$). Render it the way the page itself would, using the surface's own macros. */
+  var macrosSource = null;
+  var MATH = /\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|\$([^$\n]+?)\$|\\\(([\s\S]+?)\\\)/g;
+
+  function escapeHtml(text) {
+    return text.replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  function currentMacros() {
+    try {
+      var m = typeof macrosSource === "function" ? macrosSource() : macrosSource;
+      return m || {};
+    } catch (_) { return {}; }
+  }
+
+  function setCaption(alt) {
+    alt = alt || "";
+    cap.textContent = alt;                      // the safe default, and the fallback below
+    if (!alt || typeof katex === "undefined" || !MATH.test(alt)) return;
+    MATH.lastIndex = 0;
+    var macros = currentMacros(), html = "", last = 0, match, ok = true;
+    while ((match = MATH.exec(alt))) {
+      var display = match[1] !== undefined || match[2] !== undefined;
+      var src = match[1] !== undefined ? match[1]
+              : match[2] !== undefined ? match[2]
+              : match[3] !== undefined ? match[3] : match[4];
+      html += escapeHtml(alt.slice(last, match.index));
+      try {
+        // Non-source text is escaped above; KaTeX emits its own safe markup for the math.
+        html += katex.renderToString(src, { displayMode: false, macros: macros, throwOnError: true });
+      } catch (_) { ok = false; break; }        // malformed math: keep the readable raw caption
+      last = match.index + match[0].length;
+    }
+    if (!ok) return;
+    cap.innerHTML = html + escapeHtml(alt.slice(last));
+  }
+
   var watched = new Set();
 
-  function watch(selector) {
+  function watch(selector, options) {
+    if (options && options.macros !== undefined) macrosSource = options.macros;
     if (watched.has(selector)) return;
     watched.add(selector);
     document.addEventListener("click", function (e) {
