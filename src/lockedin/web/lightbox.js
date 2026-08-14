@@ -46,6 +46,9 @@
     '  border:1px solid rgba(255,255,255,.14);opacity:0;transition:opacity .3s;pointer-events:none}',
     '.li-lb-hint.show{opacity:1}',
     '.li-lb-cap .katex{font-size:1.18em;color:inherit}',
+    /* The caption is cloned from the page, where its colours assume a light background. */
+    '.li-lb-cap *{color:inherit}.li-lb-cap .figure-number{font-weight:600}',
+    '.li-lb-cap a{color:#9dc0ff}',
     '@media(max-width:700px){.li-lb-img{max-width:100vw;max-height:82vh}}',
     /* A figure is a control on these surfaces, so say so on hover. */
     '#previewWrap img,#content img{cursor:zoom-in}',
@@ -135,14 +138,14 @@
     baseH = r.height / scale;
   }
 
-  function open(src, alt) {
+  function open(src, alt, captionHtml) {
     build();
     scale = 1; tx = 0; ty = 0;
     img.classList.remove("smooth");
     img.style.transform = "";
     img.src = src;
-    img.alt = alt || "";
-    setCaption(alt);
+    img.alt = stripLabels(alt);
+    setCaption(alt, captionHtml);
     overlay.classList.add("on");
     // Lock the page behind the overlay without losing the reader's place.
     scrollY = window.scrollY || 0;
@@ -278,8 +281,17 @@
     } catch (_) { return {}; }
   }
 
-  function setCaption(alt) {
-    alt = alt || "";
+  /* \label{fig:key} is a cross-reference anchor, not prose: the rendered figcaption already
+   * strips it (both in the SPA and in _render_preview_html), so the viewer must too. */
+  function stripLabels(text) {
+    return String(text || "").replace(/\\label\{[^}]*\}/g, "").replace(/\s{2,}/g, " ").trim();
+  }
+
+  function setCaption(alt, captionHtml) {
+    // The surface already typeset this figure's caption — numbering, math, labels resolved.
+    // Reusing it beats re-deriving one from the alt text, which is why open() is handed it.
+    if (captionHtml) { cap.innerHTML = captionHtml; return; }
+    alt = stripLabels(alt);
     cap.textContent = alt;                      // the safe default, and the fallback below
     if (!alt || typeof katex === "undefined" || !MATH.test(alt)) return;
     MATH.lastIndex = 0;
@@ -313,7 +325,10 @@
       // A linked figure keeps its link; only bare figures open the viewer.
       if (target.closest("a")) return;
       e.preventDefault();
-      open(target.currentSrc || target.src, target.getAttribute("alt") || "");
+      var figure = target.closest("figure");
+      var figcaption = figure && figure.querySelector("figcaption");
+      open(target.currentSrc || target.src, target.getAttribute("alt") || "",
+           figcaption ? figcaption.innerHTML : "");
     });
   }
 
