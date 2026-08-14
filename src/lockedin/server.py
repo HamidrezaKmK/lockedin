@@ -1140,8 +1140,10 @@ def build_app():
     def lightbox_js():
         # Deliberately unauthenticated: public share pages load the same figure viewer as the SPA,
         # and serving one file to both is what keeps them from drifting apart.
+        # no-store, not no-cache: this file also travels through the public tunnel, where a
+        # revalidating cache can still hand back yesterday's viewer. It is 15 KB.
         return FileResponse(WEB_DIR / "lightbox.js", media_type="application/javascript",
-                            headers={"Cache-Control": "no-cache"})
+                            headers={"Cache-Control": "no-store"})
 
     @app.get("/api/landing")
     def get_landing():
