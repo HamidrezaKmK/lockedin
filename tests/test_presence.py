@@ -103,6 +103,16 @@ class Registry(unittest.TestCase):
         self.assertEqual(presence.snapshot("ws", "d", now=2000.0)["workers"][0]["state"], "dead")
         self.assertEqual(presence.snapshot("ws", "d", now=2000.0 + presence.WORKER_GRAVE + 1)["workers"], [])
 
+    def test_a_worker_that_dies_without_saying_so_is_still_forgotten(self):
+        # The parting "stopped" notice is best-effort: a killed worker, a dropped network, or a
+        # failing final sync never sends one. Such a worker must still age out instead of sitting
+        # in the list forever with its last error frozen on it.
+        presence.touch_worker("ws", "d", worker_id="u", user="alice", label="t",
+                              status="degraded", error="server returned 409: conflict", now=1000.0)
+        stale = presence.snapshot("ws", "d", now=1000.0 + presence.WORKER_TTL + 1)["workers"][0]
+        self.assertEqual(stale["state"], "unresponsive")
+        self.assertEqual(presence.snapshot("ws", "d", now=1000.0 + presence.WORKER_GRAVE + 1)["workers"], [])
+
     def test_a_reported_sync_error_shows_as_degraded_with_its_reason(self):
         presence.touch_worker("ws", "d", worker_id="u", user="alice", label="t",
                               status="degraded", error="server returned 409: conflict")

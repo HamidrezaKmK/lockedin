@@ -25,8 +25,10 @@ import time
 # A viewer heartbeats roughly every 20s; a worker's sync loop polls every 5s.
 VIEWER_TTL = 70.0
 WORKER_TTL = 25.0
-# A worker that dies stays listed, greyed out, for this long. Silently dropping it would make
-# "this sync just died" indistinguishable from "there was never a worker here".
+# A worker that dies stays listed, greyed out, for this long — dropping it the instant it stopped
+# would make "this sync just died" indistinguishable from "there was never a worker here". It is
+# also the hard bound on silence: a worker unheard from for this long is forgotten whether or not
+# it managed to say goodbye.
 WORKER_GRAVE = 600.0
 # Presence is bounded by real people and real directories, but the maps are keyed by values that
 # arrive on requests, so cap them rather than trusting that.
@@ -120,7 +122,10 @@ def _worker_rows(key: tuple[str, str], now: float) -> list[dict]:
     rows = []
     for worker_id, rec in list(workers.items()):
         state, reason = _health(rec, now)
-        if state == "dead" and now - rec["last_seen"] > WORKER_GRAVE:
+        # Silence this long is death, whatever the worker last claimed about itself. Pruning only
+        # the workers that *announced* their death would strand every one that was killed, lost its
+        # network, or whose parting notice never arrived — frozen in the list with its final error.
+        if now - rec["last_seen"] > WORKER_GRAVE:
             del workers[worker_id]
             continue
         rows.append({"worker_id": worker_id, "user": rec["user"], "label": rec.get("label", ""),
