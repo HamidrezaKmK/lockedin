@@ -119,7 +119,12 @@ class AestheticsConfigTests(unittest.TestCase):
         # The prefix is built once and applied to every navigation.
         self.assertIn('function routePrefix(){ return S.workspaceId?"w/"'
                       '+encodeURIComponent(S.workspaceId)+"/":""; }', source)
-        self.assertIn('function pushRoute(hash){ history.pushState(null,"",routeHref(hash)); }', source)
+        self.assertIn('function pushRoute(hash){ history.pushState(null,"",routeHref(hash)); '
+                      '_appliedHash=location.hash; }', source)
+        # A route that arrives without a workspace is rewritten in place, on every entry point:
+        # a reload, back/forward, and an in-page hash assignment (which fires only hashchange).
+        self.assertIn('else if(S.workspaceId) history.replaceState(null,"",routeHref(h));', source)
+        self.assertIn('window.addEventListener("hashchange",routeChanged);', source)
         # The URL is parsed back out ahead of every other route, and before /api/me is asked.
         self.assertIn('const wm=h.match(/^w\\/([^/]*)(?:\\/(.*))?$/);', source)
         self.assertIn('const routed=(location.hash.match(/^#w\\/([^/]*)/)||[])[1];', source)

@@ -157,6 +157,15 @@ async function main() {
     assert.match(sp.hash, /^#w\/[^/]+\/bubbles$/, `a bare route should gain its workspace: ${sp.hash}`);
     step("a legacy route without a workspace still resolves and is upgraded in place");
 
+    // A bare route reached *without* a reload must be upgraded too: assigning location.hash fires
+    // hashchange, not a page load, so boot() never sees it.
+    await plain.evaluate(slug => { location.hash = "#bubble/" + slug; }, slugA);
+    await plain.waitForTimeout(800);
+    const sn = await state(plain);
+    assert.match(sn.hash, new RegExp(`^#w/[^/]+/bubble/${slugA}$`),
+      `an in-page bare route should be upgraded, got ${sn.hash}`);
+    step("a bare route navigated to in-page is upgraded as well");
+
     // --- a stale workspace in the URL falls back instead of bricking the tab ---
     const stale = await context.newPage();
     stale.on("pageerror", e => { throw e; });

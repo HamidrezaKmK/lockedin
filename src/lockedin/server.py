@@ -409,8 +409,11 @@ def _render_preview_html(*, name: str, page: str, all_pages: list, content: str,
     # navigating between pages inside it builds history, so history.back() would just walk those
     # preview pages. Close the tab (refocusing the editor tab); if the tab can't self-close
     # (e.g. opened/refreshed directly, not via script), fall back to the editor's SPA route.
+    # SPA routes carry their workspace (`#w/<id>/bubble/<slug>`); a bare one would drop the tab
+    # into whichever workspace the browser last remembered.
+    back_route = f"/#w/{quote(workspace_id, safe='')}/bubble/{slug}" if workspace_id else f"/#bubble/{slug}"
     back_js = (f"window.close();"
-               f"setTimeout(function(){{location.href='/#bubble/{slug}'}},120)")
+               f"setTimeout(function(){{location.href='{back_route}'}},120)")
     back_btn = (f'<button id="back-btn" onclick="{back_js}">← Back to editor</button>'
                 if show_back else "")
     return f"""<!DOCTYPE html>

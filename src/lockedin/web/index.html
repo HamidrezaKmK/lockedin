@@ -1206,7 +1206,8 @@
     const full=(routePrefix()+(hash||"")).replace(/\/$/,"");
     return full?"#"+full:"#";
   }
-  function pushRoute(hash){ history.pushState(null,"",routeHref(hash)); }
+  let _appliedHash=null;
+  function pushRoute(hash){ history.pushState(null,"",routeHref(hash)); _appliedHash=location.hash; }
   /** Move this tab to another workspace without routing; the caller owns the destination. */
   function adoptWorkspace(id){
     if(!id||id===S.workspaceId)return;
@@ -1221,6 +1222,12 @@
     let h=location.hash.replace(/^#/,"");
     const wm=h.match(/^w\/([^/]*)(?:\/(.*))?$/);
     if(wm){ adoptWorkspace(decodeURIComponent(wm[1]||"")); h=wm[2]||""; }
+    // Anything that arrives without a workspace — an old bookmark, a link from the preview tab,
+    // a hand-typed route — is upgraded in place, so a prefix-less URL never survives being
+    // visited. Normalizing here rather than in boot() covers in-page navigation too, since
+    // assigning location.hash fires hashchange without reloading the app.
+    else if(S.workspaceId) history.replaceState(null,"",routeHref(h));
+    _appliedHash=location.hash;
     if(!h||h==="assets"){switchView("assets",{noRoute:true});return;}
     if(h==="home"){switchView("home",{noRoute:true});return;}
     if(h==="bubbles"){switchView("bubbles",{noRoute:true});return;}
@@ -1236,7 +1243,11 @@
     if(m){openBubble(m[1],{noRoute:true,page:m[2]||null});return;}
     switchView("assets",{noRoute:true});
   }
-  window.onpopstate=()=>applyHash();
+  // Back/forward fires popstate, while a link or a script assigning location.hash fires only
+  // hashchange — and both fire together for a hash-only history step, hence the guard.
+  function routeChanged(){ if(location.hash!==_appliedHash)applyHash(); }
+  window.onpopstate=routeChanged;
+  window.addEventListener("hashchange",routeChanged);
 
   // The SPA is a fixed 100vh layout — every view scrolls inside its own container, so the
   // *document* itself should never scroll. A focused editor on a long page can nonetheless
@@ -2037,11 +2048,9 @@
     applyTheme(localStorage.getItem("li_theme")||"dark");
     refreshAccountButton();
     applySideCollapsed(localStorage.getItem("li_side")==="1");
+    // applyHash writes the workspace into the URL if it arrived without one, so a tab that opened
+    // on a bare route stops depending on what other tabs have switched to since.
     renderModelTabs(); refreshHealth(); applyHash();
-    // A tab that opened without a workspace in its URL gets one written in now, so its next
-    // refresh no longer depends on what other tabs have switched to since.
-    if(S.workspaceId&&!/^#w\//.test(location.hash))
-      history.replaceState(null,"",routeHref(location.hash.replace(/^#/,"")));
     const deviceCode=new URLSearchParams(location.search).get("scientist_device");
     if(deviceCode){
       try{
