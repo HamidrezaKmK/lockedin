@@ -195,6 +195,17 @@ data/workspaces/<workspace-id>/
   SPA and `_render_preview_html` are separate codebases whose duplicated browser logic has drifted
   before — don't reimplement it in either. `watch()` is delegated from `document`, so re-rendering a
   page never needs re-binding, and a figure wrapped in a link keeps its link instead of zooming.
+- **Every SPA route carries its workspace.** The hash is `#w/<workspace_id>/<route>` —
+  `#w/<ws>/bubble/<slug>/<page>`, `#w/<ws>/asset/<id>`, `#w/<ws>/bubbles`, and bare `#w/<ws>` for the
+  library. `routePrefix`/`routeHref` build it and `pushRoute` applies it to every navigation;
+  `applyHash` strips it before matching anything else. The selection is still mirrored into
+  `localStorage` (`li_workspace`), but only as the default for a tab that opens *without* one:
+  localStorage is shared by every tab, so a tab refreshed after another switched workspaces used to
+  reload into the wrong workspace and 404 on its own bubble. The URL is the only per-tab memory a
+  refresh survives, so it wins over storage — including in `boot()`, which must resolve it *before*
+  the first `/api/me` so that request is asked in the right workspace. A prefix-less route still
+  works (it means "whatever this tab has") and is upgraded in place; a workspace the user cannot
+  resolve falls back to Personal and is dropped from the URL rather than bricking the tab.
 - **Within-bubble links only.** `[[page-slug]]` links navigate between a bubble's pages; no
   cross-bubble/global wiki.
 - **TODO `@<id>` references resolve by exact digits.** Typing `@5` in any report page links

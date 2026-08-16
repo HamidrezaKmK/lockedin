@@ -111,7 +111,19 @@ class AestheticsConfigTests(unittest.TestCase):
         self.assertIn('const savedWorkspace=localStorage.getItem(WORKSPACE_STORAGE_KEY);', source)
         self.assertIn('localStorage.setItem(WORKSPACE_STORAGE_KEY,id);', source)
         self.assertIn('localStorage.removeItem(WORKSPACE_STORAGE_KEY);', source)
-        self.assertIn('if(!savedWorkspace || (e.status!==403&&e.status!==404))return;', source)
+        self.assertIn('if(!S.workspaceId || (e.status!==403&&e.status!==404))return;', source)
+
+    def test_every_route_carries_its_workspace_so_two_tabs_can_differ(self):
+        """localStorage is shared by every tab, so it cannot be what a refresh reads."""
+        source = (Path(server.WEB_DIR) / "index.html").read_text()
+        # The prefix is built once and applied to every navigation.
+        self.assertIn('function routePrefix(){ return S.workspaceId?"w/"'
+                      '+encodeURIComponent(S.workspaceId)+"/":""; }', source)
+        self.assertIn('function pushRoute(hash){ history.pushState(null,"",routeHref(hash)); }', source)
+        # The URL is parsed back out ahead of every other route, and before /api/me is asked.
+        self.assertIn('const wm=h.match(/^w\\/([^/]*)(?:\\/(.*))?$/);', source)
+        self.assertIn('const routed=(location.hash.match(/^#w\\/([^/]*)/)||[])[1];', source)
+        self.assertIn('S.workspaceId=(routed?decodeURIComponent(routed):savedWorkspace)||null;', source)
 
     def test_library_defaults_to_the_requires_attention_filter(self):
         source = (Path(server.WEB_DIR) / "index.html").read_text()
@@ -226,7 +238,8 @@ class AestheticsConfigTests(unittest.TestCase):
         self.assertIn('rel:"noopener"', source)
         # workspaceAssetRoute keeps the active workspace in the hash, so the new tab opens the
         # asset in the same workspace rather than falling back to Personal.
-        self.assertIn('"#w/"+encodeURIComponent(S.workspaceId)+"/asset/"', source)
+        self.assertIn('function workspaceAssetRoute(pdfId){ return routeHref('
+                      '"asset/"+encodeURIComponent(pdfId)); }', source)
 
     def test_bubbles_view_has_a_reversible_archive_filter(self):
         source = (Path(server.WEB_DIR) / "index.html").read_text()

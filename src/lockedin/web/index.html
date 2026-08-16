@@ -1196,9 +1196,31 @@
   window.addEventListener("resize",syncMobileFocusExit);
 
   // ---------- hash routing ----------
-  function pushRoute(hash){history.pushState(null,"",hash?"#"+hash:"#");}
+  // Every route carries the workspace it belongs to: `#w/<workspace>/bubble/<slug>/<page>`.
+  // Two tabs on two workspaces are the reason — the selection used to live only in localStorage,
+  // which is shared by every tab, so refreshing the older tab loaded it against the workspace the
+  // newer one had switched to and the bubble came back 404. The URL is the only per-tab memory a
+  // refresh survives. Routes without the prefix still work and mean "whatever this tab has".
+  function routePrefix(){ return S.workspaceId?"w/"+encodeURIComponent(S.workspaceId)+"/":""; }
+  function routeHref(hash){
+    const full=(routePrefix()+(hash||"")).replace(/\/$/,"");
+    return full?"#"+full:"#";
+  }
+  function pushRoute(hash){ history.pushState(null,"",routeHref(hash)); }
+  /** Move this tab to another workspace without routing; the caller owns the destination. */
+  function adoptWorkspace(id){
+    if(!id||id===S.workspaceId)return;
+    S.workspaceId=id;
+    // Still remembered, but now only as the default for a tab that opens without a workspace.
+    try{localStorage.setItem(WORKSPACE_STORAGE_KEY,id);}catch(e){}
+    S.bubble=null; S.page=null; S.pages=[]; S.chat=[]; S.todos=[]; S.todosById={};
+    refreshAccountButton();
+    api("/api/settings/math").then(m=>{S.mathMacros=m.macros||{};}).catch(()=>{});
+  }
   function applyHash(){
-    const h=location.hash.replace(/^#/,"");
+    let h=location.hash.replace(/^#/,"");
+    const wm=h.match(/^w\/([^/]*)(?:\/(.*))?$/);
+    if(wm){ adoptWorkspace(decodeURIComponent(wm[1]||"")); h=wm[2]||""; }
     if(!h||h==="assets"){switchView("assets",{noRoute:true});return;}
     if(h==="home"){switchView("home",{noRoute:true});return;}
     if(h==="bubbles"){switchView("bubbles",{noRoute:true});return;}
@@ -1208,13 +1230,6 @@
     if(h==="migrate"){viewMigratePapers({noRoute:true});return;}
     const tm=h.match(/^todos\/(\d+)$/);
     if(tm){viewTodo(+tm[1]);return;}
-    const wam=h.match(/^w\/([^/]+)\/asset\/([^/]+)$/);
-    if(wam){
-      S.workspaceId=decodeURIComponent(wam[1]);
-      refreshAccountButton();
-      openAssetById(decodeURIComponent(wam[2]),{noRoute:true});
-      return;
-    }
     const am=h.match(/^asset\/([^/]+)$/);
     if(am){openAssetById(decodeURIComponent(am[1]),{noRoute:true});return;}
     const m=h.match(/^bubble\/([^/]+)(?:\/([^/]+))?$/);
@@ -1792,11 +1807,7 @@
     if(!S.workspaceId)return path;
     return path+(path.includes("?")?"&":"?")+"workspace="+encodeURIComponent(S.workspaceId);
   }
-  function workspaceAssetRoute(pdfId){
-    return S.workspaceId
-      ? "#w/"+encodeURIComponent(S.workspaceId)+"/asset/"+encodeURIComponent(pdfId)
-      : "#asset/"+encodeURIComponent(pdfId);
-  }
+  function workspaceAssetRoute(pdfId){ return routeHref("asset/"+encodeURIComponent(pdfId)); }
 
   // Every main-screen render owns a monotonically increasing version. Async requests from a
   // screen that has since been replaced can finish, but they are no longer allowed to repaint it.
@@ -1999,16 +2010,22 @@
     // A figure's caption is its Markdown alt text, so pass the workspace macros as a getter —
     // they load asynchronously and can change in Settings.
     if(window.LockedInLightbox)window.LockedInLightbox.watch("#previewWrap",{macros:()=>S.mathMacros});
+    // The URL wins over the remembered selection: it is this tab's own, while localStorage is
+    // shared with every other tab. /api/me must already be asked in the right workspace, so this
+    // has to be resolved before the first request rather than later in applyHash().
+    const routed=(location.hash.match(/^#w\/([^/]*)/)||[])[1];
     const savedWorkspace=localStorage.getItem(WORKSPACE_STORAGE_KEY);
-    if(savedWorkspace)S.workspaceId=savedWorkspace;
+    S.workspaceId=(routed?decodeURIComponent(routed):savedWorkspace)||null;
     let me;
     try{ me=await api("/api/me"); }
     catch(e){
-      // Membership can change while a tab is closed. Fall back to Personal instead of leaving
-      // the app unusable because a browser-local workspace selection became stale.
-      if(!savedWorkspace || (e.status!==403&&e.status!==404))return;
+      // Membership can change while a tab is closed, and a routed workspace can be a stale link.
+      // Fall back to Personal instead of leaving the app unusable, dropping the workspace from
+      // the URL too so the retry — and any later refresh — is not sent straight back to it.
+      if(!S.workspaceId || (e.status!==403&&e.status!==404))return;
       localStorage.removeItem(WORKSPACE_STORAGE_KEY);
       S.workspaceId=null;
+      if(routed!==undefined)history.replaceState(null,"","#"+location.hash.replace(/^#w\/[^/]*\/?/,""));
       try{ me=await api("/api/me"); }catch(_){ return; }
     }
     S.user=me.user; S.model=me.model; S.premium=!!me.premium;
@@ -2021,6 +2038,10 @@
     refreshAccountButton();
     applySideCollapsed(localStorage.getItem("li_side")==="1");
     renderModelTabs(); refreshHealth(); applyHash();
+    // A tab that opened without a workspace in its URL gets one written in now, so its next
+    // refresh no longer depends on what other tabs have switched to since.
+    if(S.workspaceId&&!/^#w\//.test(location.hash))
+      history.replaceState(null,"",routeHref(location.hash.replace(/^#/,"")));
     const deviceCode=new URLSearchParams(location.search).get("scientist_device");
     if(deviceCode){
       try{
