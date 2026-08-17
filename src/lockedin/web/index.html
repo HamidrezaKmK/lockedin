@@ -1799,7 +1799,7 @@
     sessionId:null, sessionTitle:null,
     todos:[], todosById:{}, todoFilter:"open", bubbleFilter:"active",
     chatCollapsed:false,  // persisted in li_chat
-    pollTimer:null, lastPageMtime:null, lastManifestMtime:null,
+    pollTimer:null, lastPageMtime:null, lastManifestMtime:null, lastAssetsMtime:null,
     baseMtime:null, autosaveTimer:null, saving:false, syncState:"synced", applyingRemote:false,
     previewEl:null, remoteChangePending:false, papersMenu:null, chatPane:null,
     detailWrap:null,
@@ -3841,6 +3841,18 @@
         {name:"redo",tooltip:"Redo (Ctrl+Shift+Z)",el:histBtn("↷","Redo",true)}
       ]],
       hooks:{ addImageBlobHook:(blob,cb)=>uploadImage(S.bubble,blob,cb) },
+      // Toast UI's own preview/WYSIWYG render `assets/<name>` relative to the site root, so
+      // every figure 404s there (the server log shows the bare `/assets/…` bursts). Resolve the
+      // portable report syntax against this bubble, like renderMarkdown does for our panes.
+      customHTMLRenderer:{
+        image(node,context){
+          const result=context.origin(), src=String(node.destination||"");
+          if(result&&result.attributes&&/^assets\//.test(src)&&S.bubble)
+            result.attributes.src=workspaceUrl("/api/bubbles/"+encodeURIComponent(S.bubble)
+              +"/assets/"+encodeURIComponent(src.slice("assets/".length)));
+          return result;
+        }
+      },
     });
     installReferenceAutocomplete(host);
     installEditorCommentHighlights(host);
@@ -5191,7 +5203,7 @@
   function stopPolling(){
     if(S.pollTimer){ clearInterval(S.pollTimer); S.pollTimer=null; }
     clearTimeout(S.autosaveTimer); S.autosaveTimer=null;
-    S.lastPageMtime=null; S.lastCommentsMtime=null; S.lastManifestMtime=null; S.remoteChangePending=false;
+    S.lastPageMtime=null; S.lastCommentsMtime=null; S.lastManifestMtime=null; S.lastAssetsMtime=null; S.remoteChangePending=false;
     S.baseMtime=null; S.saving=false; S.syncState="synced";
   }
   async function pollSync(){
@@ -5220,6 +5232,11 @@
         }
       }
       if(S.lastCommentsMtime!==null&&r.comments_mtime!==S.lastCommentsMtime) loadComments();
+      // A figure arriving, changing, or vanishing alters no page bytes, so it gets its own
+      // signal. Re-render with fresh img nodes: a figure that 404'd (referenced before it was
+      // uploaded) is retried, and a replaced figure is re-fetched instead of reused.
+      if(S.lastAssetsMtime!==null&&r.assets_mtime!==S.lastAssetsMtime) updatePreview({restartGifs:true});
+      S.lastAssetsMtime=r.assets_mtime;
       S.lastCommentsMtime=r.comments_mtime;
       S.lastPageMtime=r.page_mtime;
     }catch(e){}

@@ -91,6 +91,15 @@ class AestheticsConfigTests(unittest.TestCase):
         self.assertIn('"Cache-Control": "private, no-cache"', source)
         self.assertNotIn('"Cache-Control": "private, no-store"', source)
 
+    def test_open_readers_watch_the_assets_signal_and_retry_with_fresh_img_nodes(self):
+        # restartGifs:true is what forces fresh <img> nodes — the resource-reuse path would put
+        # the same broken element straight back.
+        source = (Path(server.WEB_DIR) / "index.html").read_text()
+        self.assertIn('if(S.lastAssetsMtime!==null&&r.assets_mtime!==S.lastAssetsMtime) '
+                      'updatePreview({restartGifs:true});', source)
+        self.assertIn('S.lastAssetsMtime=r.assets_mtime;', source)
+        self.assertIn('S.lastAssetsMtime=null;', source)
+
     def test_preview_reverse_sync_uses_source_offsets(self):
         source = (Path(server.WEB_DIR) / "index.html").read_text()
         self.assertIn("function withSourceMarkers(md)", source)

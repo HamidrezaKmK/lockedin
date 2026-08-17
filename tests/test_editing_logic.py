@@ -606,6 +606,28 @@ class DisplayMathOpenerNormalization(unittest.TestCase):
         self.assertIsNone(self.unclosed_widget_line(stored))
         self.assertIn("## Later section", stored)
 
+    def test_poll_reports_figure_changes_so_open_readers_can_heal(self):
+        """A page routinely references a figure before the figure is uploaded — it renders as a
+        broken image, and the upload changes nothing about the page itself, so the mtimes the
+        poller watched could never trigger a re-render. The poll must carry an assets signal
+        that moves on upload, replace, and delete."""
+        from lockedin import service
+        with temp_home() as home:
+            slug = make_bubble(home)
+            with paths.use_root(home):
+                bubbles.ensure_pages(slug)
+            first = service.page_poll(home, slug, "overview")
+            self.assertIn("assets_mtime", first)
+            with paths.use_root(home):
+                bubbles.save_bubble_image(slug, "figure.png", b"\x89PNG\r\n\x1a\npayload")
+            after_upload = service.page_poll(home, slug, "overview")
+            self.assertNotEqual(after_upload["assets_mtime"], first["assets_mtime"])
+            self.assertEqual(after_upload["page_mtime"], first["page_mtime"])
+            with paths.use_root(home):
+                bubbles.delete_bubble_asset(slug, "figure.png")
+            after_delete = service.page_poll(home, slug, "overview")
+            self.assertNotEqual(after_delete["assets_mtime"], after_upload["assets_mtime"])
+
     def test_saving_identical_content_leaves_the_mtime_alone(self):
         """Every open browser polls the page mtime, and a Scientist worker whose local copy
         normalizes to the stored content pushes on every 5s cycle. If a byte-identical save

@@ -441,8 +441,14 @@ def page_poll(home: Path, slug: str, page_slug: str) -> dict:
         comments_mtime = bubbles.comments_mtime(slug, page_slug)
         manifest_mtime = manifest_path.stat().st_mtime if manifest_path.exists() else 0
         pages = bubbles.list_pages(slug) if manifest_path.exists() else []
+        # The assets *directory* mtime moves on any figure upload, delete, or replace. Open
+        # readers watch it: a page routinely references a figure before the figure exists (it
+        # renders broken), and nothing about the page itself changes when the figure then
+        # arrives — without this signal the broken image would sit there until a manual reload.
+        assets_dir = paths.bubble_assets_dir(slug)
+        assets_mtime = assets_dir.stat().st_mtime if assets_dir.exists() else 0
     return {"page_mtime": page_mtime, "comments_mtime": comments_mtime,
-            "manifest_mtime": manifest_mtime, "pages": pages}
+            "manifest_mtime": manifest_mtime, "assets_mtime": assets_mtime, "pages": pages}
 
 
 def list_comments(home: Path, slug: str, page_slug: str) -> dict:
