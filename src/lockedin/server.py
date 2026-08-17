@@ -44,7 +44,7 @@ _WORKER_PATH_RE = re.compile(r"^/api/scientist/v2/bubbles/([^/]+)(?:/|$)")
 # Keep this equal to ``scientist_cli.SCIENTIST_CLIENT_VERSION``. Bump both when a Scientist
 # release needs an installed client refresh; the dependency-free installed client cannot import
 # package metadata from this server.
-SCIENTIST_CLIENT_VERSION = "2026.08.12.2"
+SCIENTIST_CLIENT_VERSION = "2026.08.17.1"
 
 
 def _build_refs(pages: "list[dict]", bibliography: "dict | None" = None) -> dict:
@@ -2093,10 +2093,13 @@ def build_app():
         p = service.bubble_asset_path(home_of(user), slug, safe)
         if not p.exists():
             raise HTTPException(status_code=404, detail="No such image.")
-        # These assets belong to an authenticated user's private workspace.  Never let a CDN
-        # cache a response keyed only by URL: it can be stale and can bypass the auth boundary.
+        # These assets belong to an authenticated user's private workspace. `private` keeps every
+        # shared cache (the tunnel included) out of the loop, and `no-cache` forces the browser to
+        # revalidate with us — an authenticated request — before every use. What it deliberately
+        # permits is the 304: `no-store` made figures un-cacheable outright, so each page
+        # re-render re-downloaded all of them and the reading view visibly flashed.
         return FileResponse(p, headers={"Content-Disposition": "inline",
-                                        "Cache-Control": "private, no-store"})
+                                        "Cache-Control": "private, no-cache"})
 
     # ---- chat sessions ----
     @app.get("/api/bubbles/{slug}/chats")

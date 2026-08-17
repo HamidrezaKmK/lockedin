@@ -606,6 +606,28 @@ class DisplayMathOpenerNormalization(unittest.TestCase):
         self.assertIsNone(self.unclosed_widget_line(stored))
         self.assertIn("## Later section", stored)
 
+    def test_saving_identical_content_leaves_the_mtime_alone(self):
+        """Every open browser polls the page mtime, and a Scientist worker whose local copy
+        normalizes to the stored content pushes on every 5s cycle. If a byte-identical save
+        rewrote the file, all of them would re-render an unchanged page forever (the reading
+        view visibly jittered). A save that changes nothing must change nothing."""
+        with temp_home() as home:
+            slug = make_bubble(home)
+            with paths.use_root(home):
+                bubbles.save_page(slug, "overview", "# Overview\n\nSteady text. [[overview]]\n")
+                page_path = paths.bubble_page_path(slug, "overview")
+                before = page_path.stat().st_mtime_ns
+                stored = bubbles.get_page(slug, "overview")
+                # Same stored content, and a pre-normalization form of it, both no-op.
+                mtime = bubbles.save_page(slug, "overview", stored)
+                bubbles.save_page(slug, "overview", stored.replace("[[overview]]", "[[bogus/overview]]"))
+                self.assertEqual(page_path.stat().st_mtime_ns, before)
+                self.assertEqual(mtime, page_path.stat().st_mtime)
+                # A real edit still writes (and still normalizes).
+                bubbles.save_page(slug, "overview", stored + "\nMore.\n")
+                self.assertNotEqual(page_path.stat().st_mtime_ns, before)
+                self.assertIn("More.", bubbles.get_page(slug, "overview"))
+
 
 class PreviewMathRendering(unittest.TestCase):
     """Guard: preview/share pages stash math BEFORE marked.js, mirroring the editor side

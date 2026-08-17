@@ -83,8 +83,13 @@ class AestheticsConfigTests(unittest.TestCase):
         self.assertIn("setTimeout(()=>updatePreview({restartGifs:true}),150);", source)
 
     def test_authenticated_bubble_assets_are_never_cdn_cached(self):
+        # `private` keeps shared caches (the tunnel included) out; `no-cache` makes the browser
+        # revalidate — an authenticated request — before every use. Deliberately NOT `no-store`:
+        # that made figures un-cacheable outright, so every page re-render re-downloaded all of
+        # them and the reading view visibly flashed.
         source = (Path(server.__file__).read_text())
-        self.assertIn('"Cache-Control": "private, no-store"', source)
+        self.assertIn('"Cache-Control": "private, no-cache"', source)
+        self.assertNotIn('"Cache-Control": "private, no-store"', source)
 
     def test_preview_reverse_sync_uses_source_offsets(self):
         source = (Path(server.WEB_DIR) / "index.html").read_text()

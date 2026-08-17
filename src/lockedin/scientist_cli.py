@@ -23,7 +23,7 @@ import webbrowser
 from pathlib import Path
 
 APP = "lockedin-scientist"
-SCIENTIST_CLIENT_VERSION = "2026.08.12.2"
+SCIENTIST_CLIENT_VERSION = "2026.08.17.1"
 POLL_SECONDS = 5
 WORKER_HISTORY_LIMIT = 10
 TERMINAL_WORKER_STATUSES = {"stopped"}
@@ -1019,7 +1019,13 @@ class ProjectSync:
                     self._conflict(rel, b"", raw, base64.b64decode(item["content_b64"])); self._write_remote(item)
         if writes:
             result = self._request("POST", "push", {"writes": writes})
-            for item in result.get("applied", []): tracked[item["path"]] = {"revision": item["revision"]}
+            for item in result.get("applied", []):
+                # The server may store a normalized form of a pushed page (wikilinks, display
+                # math) and hands the stored bytes back when it does. Adopt them: keeping the
+                # pre-normalized local copy would read as "locally changed" on every later cycle
+                # and re-push an already-synchronized page forever.
+                if item.get("content_b64"): self._write_remote(item)
+                tracked[item["path"]] = {"revision": item["revision"]}
             for item in result.get("conflicts", []):
                 rel = item["path"]; local = self._local(rel).read_bytes() if self._local(rel).exists() else b""
                 if item.get("content_b64"):

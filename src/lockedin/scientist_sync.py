@@ -191,7 +191,14 @@ def apply_writes(home: Path, slug: str, writes: list[dict]) -> dict:
                 # Dot-prefixed so the staging file can never collide with a real asset name.
                 tmp = target.with_name("." + target.name + ".tmp"); tmp.write_bytes(raw); tmp.replace(target)
                 bubbles.touch_bubble(slug)
-            applied.append({"path": rel, "revision": revision(target.read_bytes())})
+            stored = target.read_bytes()
+            entry = {"path": rel, "revision": revision(stored)}
+            if stored != raw:
+                # save_page normalized the content (wikilinks, display math). Hand the stored
+                # bytes back so the client can adopt them: a client left holding its pre-normalized
+                # copy sees "local changed" forever and re-pushes on every cycle.
+                entry["content_b64"] = base64.b64encode(stored).decode("ascii")
+            applied.append(entry)
     return {"applied": applied, "conflicts": conflicts}
 
 

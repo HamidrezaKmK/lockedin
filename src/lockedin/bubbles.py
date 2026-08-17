@@ -1476,9 +1476,12 @@ def save_page_state(slug: str, page_slug: str, content: str,
         normalized, data, comments_changed = _reconcile_comments(normalized, data)
         if comments_changed:
             _write_page_and_comments(slug, page_slug, normalized, data)
-        else:
+        elif not (path.exists() and path.read_text(encoding="utf-8") == normalized):
             _atomic_write(path, normalized)
             touch_bubble(slug)
+        # else: byte-identical — leave the mtime alone. Every open browser polls it, and a
+        # Scientist worker whose local copy normalizes to the current content re-pushes on every
+        # cycle; rewriting here would make all of them re-render an unchanged page 24/7.
         return _review_result(slug, page_slug, normalized, data)
 
 

@@ -67,9 +67,13 @@ def resolve_review_thread(slug, page, thread_id, actor):
 
 
 class FakeBubbleServer:
-    def __init__(self, files: dict[str, bytes]):
+    def __init__(self, files: dict[str, bytes], normalize=None):
         self.files = dict(files)
         self.presence_headers = []
+        # Mirrors bubbles.save_page: the real server may store a normalized form of a pushed
+        # page and hands the stored bytes back in the applied item when it does.
+        self.normalize = normalize or (lambda raw: raw)
+        self.push_calls = 0
 
     def request(self, _server, method, endpoint, body=None, token="", workspace="", *, extra=None, timeout=90):
         if extra is not None:
@@ -86,6 +90,7 @@ class FakeBubbleServer:
                                "content_b64": base64.b64encode(self.files[path]).decode()}
                               for path in body["paths"] if path in self.files]}
         if endpoint.endswith("/push"):
+            self.push_calls += 1
             applied, conflicts = [], []
             for write in body["writes"]:
                 path, current = write["path"], self.files.get(write["path"], b"")
@@ -94,8 +99,12 @@ class FakeBubbleServer:
                                       "content_b64": base64.b64encode(current).decode()})
                 else:
                     raw = base64.b64decode(write["content_b64"])
-                    self.files[path] = raw
-                    applied.append({"path": path, "revision": scientist_sync.revision(raw)})
+                    stored = self.normalize(raw) if path.startswith("reports/pages/") else raw
+                    self.files[path] = stored
+                    entry = {"path": path, "revision": scientist_sync.revision(stored)}
+                    if stored != raw:
+                        entry["content_b64"] = base64.b64encode(stored).decode()
+                    applied.append(entry)
             return {"applied": applied, "conflicts": conflicts}
         if endpoint.endswith("/deletes"):
             applied, conflicts = [], []
@@ -231,6 +240,34 @@ class ScientistServerBoundaryTest(unittest.TestCase):
                 # No staging file may be left behind, and it must not shadow a real asset name.
                 self.assertEqual([p.name for p in paths.bubble_assets_dir(slug).iterdir()],
                                  ["drift-field.png"])
+
+    def test_a_normalizing_page_push_returns_the_stored_bytes_and_identical_saves_keep_the_mtime(self):
+        # save_page normalizes pushed pages (wikilinks, display math). The client must be handed
+        # the stored bytes, or its local pre-normalized copy reads as "changed" and re-pushes on
+        # every 5s cycle — and each of those saves used to bump the page mtime, making every open
+        # browser re-render an unchanged page (the reading view visibly jittered).
+        with workspace() as (home, slug):
+            with paths.use_root(home):
+                page_rel = "reports/pages/overview.md"
+                current = paths.bubble_page_path(slug, "overview").read_bytes()
+                pushed = b"# Overview\n\nSee [[bogus/overview]].\n"
+                result = scientist_sync.apply_writes(home, slug, [
+                    {"path": page_rel, "base_revision": scientist_sync.revision(current),
+                     "content_b64": base64.b64encode(pushed).decode()}])
+                self.assertEqual(result["conflicts"], [])
+                item = result["applied"][0]
+                stored = paths.bubble_page_path(slug, "overview").read_bytes()
+                self.assertIn(b"[[overview]]", stored)   # the invented prefix was normalized away
+                self.assertEqual(base64.b64decode(item["content_b64"]), stored)
+                self.assertEqual(item["revision"], scientist_sync.revision(stored))
+                # Re-pushing the stored bytes is a no-op: no content_b64, and the mtime holds.
+                before = paths.bubble_page_path(slug, "overview").stat().st_mtime_ns
+                again = scientist_sync.apply_writes(home, slug, [
+                    {"path": page_rel, "base_revision": item["revision"],
+                     "content_b64": base64.b64encode(stored).decode()}])
+                self.assertEqual(again["conflicts"], [])
+                self.assertNotIn("content_b64", again["applied"][0])
+                self.assertEqual(paths.bubble_page_path(slug, "overview").stat().st_mtime_ns, before)
 
     def test_a_nested_figure_is_never_published_because_it_could_never_be_served(self):
         # Figures are served from /api/bubbles/<slug>/assets/{filename}, a single path segment, so
@@ -469,6 +506,25 @@ class ScientistProjectSyncTest(unittest.TestCase):
             self.assertEqual(fake.files["reports/pages/new-page.md"], b"# New\n")
             page.unlink(); sync.sync_once()
             self.assertNotIn("reports/pages/new-page.md", fake.files)
+
+    def test_client_adopts_server_normalized_pages_instead_of_repushing_forever(self):
+        # The server stores a normalized form of pushed pages. A client that kept its own copy
+        # saw "local changed" on every later cycle and re-pushed an already-synchronized page
+        # every 5 seconds, forever — bumping the page mtime each time and making every open
+        # browser re-render (the reading view jittered until the worker was stopped).
+        normalize = lambda raw: raw.replace(b"[[bogus/overview]]", b"[[overview]]")
+        fake = FakeBubbleServer({"reports/pages/overview.md": b"# Overview\n"}, normalize=normalize)
+        with tempfile.TemporaryDirectory() as directory, patch.object(scientist_cli, "request", side_effect=fake.request):
+            sync = scientist_cli.ProjectSync(ACCOUNT, Path(directory), "work")
+            sync.sync_once()
+            page = sync.root / "reports" / "pages" / "overview.md"
+            page.write_bytes(b"# Overview\n\nSee [[bogus/overview]].\n")
+            sync.sync_once()
+            self.assertEqual(fake.files["reports/pages/overview.md"], b"# Overview\n\nSee [[overview]].\n")
+            self.assertEqual(page.read_bytes(), b"# Overview\n\nSee [[overview]].\n")
+            pushes = fake.push_calls
+            sync.sync_once(); sync.sync_once()
+            self.assertEqual(fake.push_calls, pushes, "a synchronized page must not be re-pushed")
 
     def test_a_figure_the_sync_cannot_carry_is_reported_rather_than_dropped(self):
         files = {"reports/pages/overview.md": b"# Overview\n"}
