@@ -138,6 +138,15 @@ data/workspaces/<workspace-id>/
   each `[[X]]` has any invented `prefix/` stripped, then resolves by slug, else by page **title**
   (case-insensitive), to the real slug. This is why the model is told to link by plain title —
   it can't guess server-assigned slugs, so it writes `[[Exact Title]]` and the save fixes it.
+- **A byte-identical save must not move the page mtime, and normalization must round-trip to the
+  Scientist client.** Every open browser polls `page_mtime` every 5s and re-renders on change, and
+  a worker whose local copy differs from the stored bytes re-pushes every cycle. Two rules keep
+  that stable: `save_page_state` skips the write when the normalized content equals what's on disk,
+  and `scientist_sync.apply_writes` returns the stored bytes (`content_b64` in the applied item)
+  whenever normalization changed a pushed page — the client adopts them so its copy converges.
+  Breaking either re-creates the 24/7 re-push/re-render loop that made reading views jitter.
+  Figures are served `private, no-cache` (revalidate through auth, 304 when unchanged) — never
+  `no-store`, which forced a full re-download of every figure on each re-render.
 - **Bubbles are created explicitly.** New bubbles are approved immediately and materialize their
   report pages on first use. The approval flag remains a compatibility and write-safety boundary
   for legacy or externally created records.
