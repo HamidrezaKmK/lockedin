@@ -57,8 +57,9 @@ LOCKEDIN_HOME=/tmp/li_test uv run python -m unittest discover -s tests -t . -v
 - `tests/test_presence.py` — the presence registry and its HTTP surface, including that a
   rejected (426) worker is still listed with its diagnosis.
 - `tests/presence-e2e.mjs` (`npm run test:presence-e2e`) — real Chrome against a disposable data
-  root: registers three worker directories (healthy / failing / out of date) through the ordinary
-  v2 endpoints and drives the chip, dropdown, detail, and leave path. Set `LOCKEDIN_E2E_SHOTS=<dir>`
+  root: registers four worker directories (healthy / failing / out of date / cleanly stopped)
+  through the ordinary v2 endpoints and drives the chip, dropdown, detail, and leave path,
+  including that the clean stop is hidden. Set `LOCKEDIN_E2E_SHOTS=<dir>`
   to keep screenshots.
 - `tests/_fixtures.py` — builds throwaway qwen workspaces seeded with the two diffusion papers
   (copies `meta.yaml`/`summary.md`/`text.txt` from a local user, not the 50 MB `paper.pdf`).
@@ -181,7 +182,11 @@ data/workspaces/<workspace-id>/
   for exact equality against `{server,user,workspace_id,bubble}`, so an extra key reads as a
   mismatch) and stable across worker restarts. Browsers heartbeat `POST /api/bubbles/<slug>/presence`
   every 20s, which both reports the viewer and returns the snapshot. Nothing is written to disk:
-  presence is a claim about *now*, so a restarted server correctly shows an empty bubble.
+  presence is a claim about *now*, so a restarted server correctly shows an empty bubble. Each
+  worker row carries an `attention` flag (dead by failure or rejection, vs a clean "stopped"): the
+  UI hides attention-free graves from the chip count and the menu, and the multi-directory sync
+  situation renders as a small muted note (`presence-dupnote`), not a warning box — don't
+  re-escalate either; routine endings and legitimate dual syncs are not alarms.
 - **Report figures are flat, everywhere.** A bubble's figures live directly in
   `REPORTS/<slug>/assets/` with no subdirectories. This is forced by the serving route
   `/api/bubbles/{slug}/assets/{filename}` — a **single path segment**, so a nested figure can never

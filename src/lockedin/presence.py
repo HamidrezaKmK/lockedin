@@ -130,6 +130,12 @@ def _worker_rows(key: tuple[str, str], now: float) -> list[dict]:
             continue
         rows.append({"worker_id": worker_id, "user": rec["user"], "label": rec.get("label", ""),
                      "state": state, "reason": reason, "version": rec.get("version", ""),
+                     # A death can be routine (the worker announced "stopped") or a failure (it
+                     # failed, or the server refused it). The UI hides routine graves and keeps
+                     # failures visible, so each row says which kind it is rather than making
+                     # clients parse the reason string.
+                     "attention": state == "dead" and (bool(rec.get("rejected"))
+                                                      or rec.get("status") == "failed"),
                      "seen_ago": round(now - rec["last_seen"], 1),
                      "uptime": round(now - rec["first_seen"], 1)})
     if not workers:

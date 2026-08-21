@@ -787,8 +787,7 @@
     font-size:11.5px;color:var(--muted);display:grid;grid-template-columns:auto minmax(0,1fr);gap:3px 10px}
   .presence-detail b{color:var(--ink);font-weight:600}
   .presence-detail .presence-reason{grid-column:1/-1;color:var(--warn);overflow-wrap:anywhere}
-  .presence-warn{margin:4px 6px 2px;padding:7px 9px;border-radius:8px;font-size:11.5px;color:var(--ink);
-    border:1px solid var(--warn);background:color-mix(in srgb,var(--warn) 13%,transparent)}
+  .presence-dupnote{margin:5px 8px 1px;font-size:11px;color:var(--muted)}
   .presence-empty{padding:9px 8px;color:var(--muted);font-size:12px}
   .papers-menu{position:absolute;right:10px;top:42px;z-index:30;width:min(460px,calc(100vw - 32px));
     max-height:280px;overflow:auto;background:var(--panel);border:1px solid var(--line);
@@ -3478,13 +3477,19 @@
       (PRESENCE_RANK[w.state]||0)>(PRESENCE_RANK[worst]||0)?w.state:worst,"live");
   }
 
+  // A cleanly stopped worker's grave row is history, not a problem — the chip and the menu both
+  // skip it. Deaths that need attention (a failure, or a server rejection) stay listed.
+  function visibleWorkers(snap){
+    return (snap.workers||[]).filter(w=>w.state!=="dead"||w.attention);
+  }
+
   function renderPresence(){
     const host=S.presenceEl; if(!host)return;
     host.textContent="";
     const snap=S.presence;
     if(!snap){ host.classList.add("hide"); return; }
     host.classList.remove("hide");
-    const viewers=snap.viewers||[], workers=snap.workers||[];
+    const viewers=snap.viewers||[], workers=visibleWorkers(snap);
     const worst=worstWorkerState(workers);
     const chip=el("button",{class:"presence-chip",title:"Who is on this bubble",
       onclick:e=>{ e.stopPropagation(); togglePresence(); }},
@@ -3494,7 +3499,7 @@
                   el("span",{class:"presence-dot "+worst}),
                   el("span",{},"⚙ "+workers.length));
     }
-    if(worst!=="live"||(snap.duplicate_workers||[]).length)chip.classList.add("trouble");
+    if(worst!=="live")chip.classList.add("trouble");
     host.append(chip);
     if(S.presenceOpen)host.append(buildPresenceMenu(snap));
   }
@@ -3517,11 +3522,11 @@
   function buildPresenceMenu(snap){
     // Clicks inside the menu must not reach the document-level close handler.
     const menu=el("div",{class:"presence-menu",onclick:e=>e.stopPropagation()});
-    const viewers=snap.viewers||[], workers=snap.workers||[];
+    const viewers=snap.viewers||[], workers=visibleWorkers(snap);
     if((snap.duplicate_workers||[]).length){
-      menu.append(el("div",{class:"presence-warn"},
-        "⚠ Two directories are syncing this bubble ("+
-        snap.duplicate_workers.map(presenceLabel).join(", ")+"). Edits from both can conflict."));
+      menu.append(el("div",{class:"presence-dupnote",
+        title:"Edits from "+snap.duplicate_workers.map(presenceLabel).join(" and ")+" can conflict."},
+        snap.duplicate_workers.length+" directories are syncing this bubble"));
     }
     menu.append(el("div",{class:"presence-group"},"People viewing"));
     if(!viewers.length)menu.append(el("div",{class:"presence-empty"},"Nobody has this bubble open."));

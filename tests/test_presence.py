@@ -113,6 +113,24 @@ class Registry(unittest.TestCase):
         self.assertEqual(stale["state"], "unresponsive")
         self.assertEqual(presence.snapshot("ws", "d", now=1000.0 + presence.WORKER_GRAVE + 1)["workers"], [])
 
+    def test_only_a_failed_death_asks_for_attention(self):
+        # The web UI hides the graves of workers that ended cleanly and shows only deaths that
+        # mean something is off: a reported failure or a server rejection. The flag is computed
+        # here so no client has to parse reason strings.
+        presence.touch_worker("ws", "d", worker_id="u1", user="alice", label="finished",
+                              status="stopped")
+        presence.touch_worker("ws", "d", worker_id="u2", user="alice", label="broken",
+                              status="failed", error="disk full")
+        presence.touch_worker("ws", "d", worker_id="u3", user="alice", label="stale",
+                              rejected="outdated")
+        presence.touch_worker("ws", "d", worker_id="u4", user="alice", label="healthy",
+                              status="running")
+        rows = {r["label"]: r for r in presence.snapshot("ws", "d")["workers"]}
+        self.assertEqual((rows["finished"]["state"], rows["finished"]["attention"]), ("dead", False))
+        self.assertEqual((rows["broken"]["state"], rows["broken"]["attention"]), ("dead", True))
+        self.assertEqual((rows["stale"]["state"], rows["stale"]["attention"]), ("dead", True))
+        self.assertEqual((rows["healthy"]["state"], rows["healthy"]["attention"]), ("live", False))
+
     def test_a_reported_sync_error_shows_as_degraded_with_its_reason(self):
         presence.touch_worker("ws", "d", worker_id="u", user="alice", label="t",
                               status="degraded", error="server returned 409: conflict")

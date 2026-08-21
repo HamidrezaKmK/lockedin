@@ -152,7 +152,11 @@ async function main() {
         error: "server returned 409: conflict on reports/pages/overview.md" }), 200);
     assert.equal(await workerPoll(context.request, baseUrl, token, slug,
       { id: "uid-stale", label: "old-clone" }, { version: "2020.01.01.1" }), 426);
-    step("registered three workers, one of them rejected as out of date");
+    // A fourth directory that announced a clean stop: its grave is history, not a problem,
+    // and must not clutter the chip or the menu.
+    assert.equal(await workerPoll(context.request, baseUrl, token, slug,
+      { id: "uid-done", label: "finished-run", status: "stopped" }), 200);
+    step("registered four workers: one rejected as out of date, one cleanly stopped");
 
     const page = await context.newPage();
     page.on("pageerror", error => { throw error; });
@@ -165,7 +169,8 @@ async function main() {
     const chip = page.locator(".presence .presence-chip");
     await chip.waitFor({ state: "visible", timeout: 10_000 });
     assert.match(await chip.innerText(), /👥 1/, "the chip must count the viewer");
-    assert.match(await chip.innerText(), /⚙ 3/, "the chip must count every worker directory");
+    assert.match(await chip.innerText(), /⚙ 3/,
+      "the chip must count every worker directory except the cleanly stopped grave");
     assert.ok(await chip.evaluate(node => node.classList.contains("trouble")),
       "an unhealthy worker must be visible on the collapsed chip");
     await shoot(page, "presence-chip");
@@ -176,11 +181,15 @@ async function main() {
     await menu.waitFor({ state: "visible", timeout: 2_000 });
     const menuText = await menu.innerText();
     for (const expected of [username, "thesis-repo", "side-notes", "old-clone",
-                            "Two directories are syncing this bubble"]) {
+                            "2 directories are syncing this bubble"]) {
       assert.ok(menuText.includes(expected), `dropdown is missing ${expected}:\n${menuText}`);
     }
+    assert.ok(!menuText.includes("finished-run"),
+      `a cleanly stopped worker must not be listed:\n${menuText}`);
+    assert.equal(await menu.locator(".presence-dupnote").count(), 1,
+      "the duplicate note must be the small one-liner, not a warning box");
     await shoot(page, "presence-menu");
-    step("the dropdown lists people, every worker directory, and the duplicate warning");
+    step("the dropdown lists the workers that matter and the small duplicate note");
 
     // A failing worker's reason is one click away, not buried in a log.
     await page.locator(".presence-item", { hasText: "side-notes" }).click();
