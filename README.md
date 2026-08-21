@@ -2,7 +2,7 @@
 
 > A research assistant for grad students.
 
-**lockedin** is a FastAPI application designed to help you keep up with research. You can upload papers, extract summaries, group them into "bubbles", maintain TODOs, math-aware Markdown reports, and chat with a switchable LLM backend, plus a Slackbot plugin that helps you keep track with your ideas and papers on your phone even when you cannot open up your laptop.
+**lockedin** is a FastAPI application designed to help you keep up with research. You can upload papers, extract summaries, group them into "bubbles", maintain TODOs and math-aware Markdown reports (with a switchable LLM backend that summarizes your uploads), plus a Slackbot plugin that helps you keep track with your ideas and papers on your phone even when you cannot open up your laptop.
 
 By default, the deployment is private and local-only (`127.0.0.1`). For web access, keep it bound to localhost and expose it through an HTTPS tunnel (e.g., Cloudflare Tunnel). Public exposure requires application-layer hardening (see [Security](#-security)).
 
@@ -14,7 +14,6 @@ By default, the deployment is private and local-only (`127.0.0.1`). For web acce
 - **🏷️ Bubble Organization:** Group uploaded documents into contextual topic bubbles, with per-paper relevance scores.
 - **📝 Markdown Reports:** Create multi-page Markdown reports featuring internal links, figures, KaTeX math support, and live previews.
 - **✅ TODO Manager:** GitHub-issue-style task items. Reference a TODO in any report page using `@id` (creates a clickable link). Notes support math/markdown. TODOs can only be deleted once all `@id` references are removed. Manage via web or Slack bot.
-- **💬 Research Chat:** Read-only chat grounded in your report pages and paper summaries.
 - **🤖 Switchable LLMs:** Easily switch between local models (Qwen via Ollama) and cloud models (OpenAI, Claude, Gemini).
 - **🔌 Optional Integrations:**
   - Slack bot (via Socket Mode)
@@ -286,7 +285,7 @@ hero:
   kicker: "private research workspace"
   title_accent: "locked"
   title_rest: "in"
-  lede: "A calm command center for papers, math notes, topic wikis, research chat, and TODOs."
+  lede: "A calm command center for papers, math notes, topic wikis, and TODOs."
   copy: "Upload PDFs, organize them into bubbles, write reports, and keep model-powered help close."
   points:
     - title: "Paper-first"
@@ -310,7 +309,7 @@ auth:
 
 workflow:
   title: "From paper pile to working theory"
-  intro: "Collect sources, shape topic clusters, write technical notes, then chat/share/track."
+  intro: "Collect sources, shape topic clusters, write technical notes, then share and track."
   steps:
     - number: "01"
       title: "Upload papers"

@@ -4,7 +4,7 @@ The deterministic tests build throwaway workspaces under ``paths.use_root`` and 
 real user data or the network. The live qwen test seeds a temp workspace with the diffusion
 PDFs copied from local data (the ``unittest`` user created by ``setup_unittest_user.py``, or
 ``sth`` as a fallback) — it copies only ``meta.yaml``/``summary.md``/``text.txt`` (not the
-50 MB ``paper.pdf``), since chat grounding uses cached summaries.
+50 MB ``paper.pdf``), since the tests only need the cached summaries.
 """
 from __future__ import annotations
 
@@ -54,7 +54,7 @@ def set_qwen(home: Path, model: str = "qwen2.5:7b-instruct") -> None:
 def seed_diffusion_workspace(home: Path, source_user: str) -> list[str]:
     """Copy the diffusion PDFs' metadata/summaries into ``home``, create+approve the bubble.
 
-    Copies only meta.yaml/summary.md/text.txt (chat uses summaries, not the raw PDF). Returns
+    Copies only meta.yaml/summary.md/text.txt (no raw PDF needed). Returns
     the list of pdf_ids seeded. Caller must have created ``home`` (e.g. via auth/ensure_dirs).
     """
     src_assets = REPO_DATA_USERS / source_user / "ASSETS"

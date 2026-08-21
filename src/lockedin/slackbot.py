@@ -1,4 +1,4 @@
-"""Minimal Slack bot for lockedin — per-user auth, PDF uploads, and model Q&A.
+"""Minimal Slack bot for lockedin — per-user auth and asset management (no chat).
 
 Launch: lockedin slackbot
 Env vars: SLACK_BOT_TOKEN, SLACK_APP_TOKEN
@@ -30,8 +30,7 @@ _HELP = (
     "• `list` — show all bubbles\n"
     "• `todos` — list your open TODOs and add / edit / complete / remove them\n"
     "• Attach a PDF — uploads it to your Library queue\n"
-    "• Send a PDF link — downloads it into your Library queue\n"
-    "• Anything else — asks your configured model about your active bubble"
+    "• Send a PDF link — downloads it into your Library queue"
 )
 
 # Per-Slack-user runtime state. The Slack→lockedin account link itself is persisted by the
@@ -149,127 +148,13 @@ def _sole_url(text: str) -> str | None:
     """If the whole message is a single link, return it — else None.
 
     Slack renders bare links as ``<https://x>`` or ``<https://x|label>``, so unwrap that
-    form too. Mirrors the web chat's bare-link → PDF-attach behavior.
+    form too. A bare PDF link is treated as an upload request.
     """
     t = text.strip()
     m = re.fullmatch(r"<(https?://[^>|]+)(?:\|[^>]*)?>", t)
     if m:
         return m.group(1)
     return t if re.fullmatch(r"https?://\S+", t) else None
-
-
-def _ask_model(http: httpx.Client, slug: str, question: str) -> str:
-    r = http.post(f"{URL}/api/slack/ask", json={"slug": slug, "question": question})
-    r.raise_for_status()
-    return (r.json().get("answer") or "").strip()
-
-
-def _news_list(http: httpx.Client, say) -> None:
-    """List every retrieved news item, grouped by bubble, with the reason it's relevant."""
-    try:
-        r = http.get(f"{URL}/api/news")
-        if r.status_code == 403:
-            say("📰 News isn't enabled for your account — it's a premium feature.")
-            return
-        r.raise_for_status()
-        data = r.json()
-    except Exception as e:
-        say(f"Couldn't load news: {e}")
-        return
-    items = data.get("items") or []
-    if not items:
-        say("📰 No news yet. Send `crawl` to search for new papers.")
-        return
-    names = {b["slug"]: b["name"] for b in (data.get("bubbles") or [])}
-    groups: dict[str, list[dict]] = {}
-    for it in items:
-        groups.setdefault(it.get("bubble_slug") or "", []).append(it)
-    blocks = []
-    for slug in sorted(groups, key=lambda s: (s == "", (names.get(s, s) or "").lower())):
-        label = (names.get(slug, slug) if slug else "Other / unmatched")
-        lines = [f"*🫧 {label}*"]
-        for it in groups[slug]:
-            title = it.get("title") or it.get("url") or "(untitled)"
-            url = it.get("url") or ""
-            line = f"• <{url}|{title}>" if url else f"• {title}"
-            if it.get("reason"):
-                line += f" — {it['reason']}"
-            meta = " · ".join(x for x in (it.get("source"), it.get("published")) if x)
-            if meta:
-                line += f"  _({meta})_"
-            lines.append(line)
-        blocks.append("\n".join(lines))
-    say(f"📰 *{len(items)} news item(s):*\n\n" + "\n\n".join(blocks))
-
-
-def _news_crawl(http: httpx.Client, say, *, since: str | None = None,
-                until: str | None = None, message: str = "") -> None:
-    """Run one crawl turn (server-side Claude Code agent) and report the papers it found.
-
-    First turn: ``message=""`` + a ``since``/``until`` range. Follow-ups: ``message=<steer text>``
-    (the range is fixed by the open session, so it's omitted on resume)."""
-    say("🔎 Working… this can take a minute or two." if not message else f"💬 _{message}_ …")
-    found: list[dict] = []
-    done: dict | None = None
-    body: dict = {"message": message}
-    if since:
-        body["since"] = since
-    if until:
-        body["until"] = until
-    try:
-        with http.stream("POST", f"{URL}/api/news/chat", json=body,
-                         timeout=httpx.Timeout(600.0)) as r:
-            if r.status_code == 403:
-                say("News isn't enabled for your account — it's a premium feature.")
-                return
-            if r.status_code == 503:
-                say("The news crawler is currently disabled by the operator.")
-                return
-            r.raise_for_status()
-            for line in r.iter_lines():
-                if not line or not line.startswith("data:"):
-                    continue
-                try:
-                    ev = json.loads(line[5:].strip())
-                except Exception:
-                    continue
-                t = ev.get("type")
-                if t == "item":
-                    found.append(ev["item"])
-                elif t == "done":
-                    done = ev
-                elif t == "error":
-                    say(f"Crawl error: {ev.get('detail')}")
-                    return
-    except Exception as e:
-        say(f"Crawl failed: {e}")
-        return
-
-    d = done or {}
-    if d.get("accepted"):
-        say(d.get("text") or "✅ Saved.")
-        return
-    if not found:
-        stopped = d.get("stopped")
-        say("Done — found no new papers in range" +
-            (f" (stopped: {stopped}; send `continue` to keep going)." if stopped else "."))
-        return
-    lines = [f"*🔎 Found {len(found)} new paper(s):*"]
-    for it in found:
-        title = it.get("title") or it.get("url") or "(untitled)"
-        url = it.get("url") or ""
-        head = f"• <{url}|{title}>" if url else f"• {title}"
-        if it.get("reason"):
-            head += f" — {it['reason']}"
-        lines.append(head)
-    tail = "\n\nSend `continue` for more, a refinement to steer, `accept` to save, or `stop` to leave."
-    if d.get("stopped") in ("timeout", "max_turns"):
-        tail += " _(stopped early — there may be more.)_"
-    if d.get("cost_usd"):
-        tail += f" _(~${d['cost_usd']:.4f} this turn)_"
-    say("\n".join(lines) + tail)
-
-
 # ── todos: a minimal add/edit/done/remove wizard (done items are managed in the web app) ──────
 _TODO_MENU = ("Reply `add`, `done <id>`, `edit <id>`, `remove <id>`, or `exit`. "
               "_(Reopen or browse completed TODOs in the web app.)_")
@@ -503,7 +388,7 @@ def handle(event: dict, say) -> None:
                     return
                 say(f"Upload failed: {e}")
             return
-        # reachable but not a PDF → fall through to normal Q&A handling
+        # reachable but not a PDF → fall through to the help reply at the bottom
 
     # ── waiting for bubble number selection ───────────────────────────────────
     if uid in _selecting:
@@ -517,61 +402,11 @@ def handle(event: dict, say) -> None:
             if 0 <= idx < len(bubbles):
                 _active_bubble[uid] = bubbles[idx]
                 del _selecting[uid]
-                say(f"Active bubble: *{bubbles[idx]['name']}*. Ask me anything!")
+                say(f"Active bubble: *{bubbles[idx]['name']}*.")
             else:
                 say(f"Please enter a number between 1 and {len(bubbles)}, or `cancel`.")
         except ValueError:
             say(f"Please enter a number (1–{len(bubbles)}), or `cancel`.")
-        return
-
-    # ── crawl wizard: collect the from/to date range, then run ────────────────
-    if False:  # retired feature; retained temporarily only to avoid disrupting old running workers
-        flow = _news_flow[uid]
-        if _CANCEL_RE.match(text):
-            del _news_flow[uid]
-            say("Crawl cancelled.")
-            return
-        is_ok, is_date = _CONFIRM_RE.match(text), _DATE_RE.match(text)
-        if flow["stage"] == "from":
-            if is_date:
-                flow["since"] = text.strip()
-            elif not is_ok:
-                say(f"Reply with a date like `2026-06-01`, or `ok` to keep `{flow['since']}`. "
-                    "`cancel` to abort.")
-                return
-            flow["stage"] = "to"
-            say(f"From = `{flow['since']}` ✅\nNow the *to* date? Default `{flow['until']}` (today). "
-                "Reply with a date, or `ok` to keep it.")
-            return
-        # stage == "to"
-        if is_date:
-            flow["until"] = text.strip()
-        elif not is_ok:
-            say(f"Reply with a date like `2026-06-03`, or `ok` to keep `{flow['until']}`.")
-            return
-        since, until = flow["since"], flow["until"]
-        del _news_flow[uid]
-        say(f"Crawling `{since}` → `{until}` …")
-        _news_crawl(http, say, since=since, until=until)
-        _news_steer.add(uid)
-        return
-
-    # ── crawl steering: free-text follow-ups drive the open crawl session ─────
-    if False:
-        if _STEER_STOP_RE.match(text):
-            _news_steer.discard(uid)
-            say("Left the crawl. Your session stays open — send `crawl` to resume, or use the web app.")
-            return
-        if _STEER_ACCEPT_RE.match(text):
-            try:
-                res = http.post(f"{URL}/api/news/accept")
-                res.raise_for_status()
-                say(f"✅ Saved — moved your date pointer to `{res.json().get('pointer', 'today')}`.")
-            except Exception as e:
-                say(f"Couldn't save: {e}")
-            _news_steer.discard(uid)
-            return
-        _news_crawl(http, say, message=text)
         return
 
     # ── todos wizard: drive add/edit/done/remove sub-stages ───────────────────
@@ -614,63 +449,14 @@ def handle(event: dict, say) -> None:
         ))
         return
 
-    # ── news: list retrieved items + why they're relevant (premium) ───────────
-    if False:
-        _news_list(http, say)
-        return
-
-    # ── crawl: start the date-range wizard (or resume an open session) ────────
-    if False:
-        try:
-            r = http.get(f"{URL}/api/news/status")
-            if r.status_code == 403:
-                say("News isn't enabled for your account — it's a premium feature.")
-                return
-            r.raise_for_status()
-            st = r.json()
-        except Exception as e:
-            say(f"Couldn't start crawl: {e}")
-            return
-        sess = st.get("session")
-        if sess and sess.get("running"):
-            _news_steer.add(uid)
-            say("A crawl is already running for your account — give it a moment, then send a "
-                "follow-up to steer it (or `stop` to leave).")
-            return
-        if sess:
-            _news_steer.add(uid)
-            say("You have an open crawl session. Send `continue` for more, a refinement to steer "
-                "(e.g. `focus on diffusion`), `accept` to save & advance your date pointer, or `stop`.")
-            return
-        _news_flow[uid] = {"stage": "from", "since": st.get("default_since", ""),
-                           "until": st.get("today", "")}
-        say(f"🔎 *Crawl setup.* From which date should I look?\n"
-            f"Default: `{_news_flow[uid]['since']}`.\n"
-            "Reply with a date (`YYYY-MM-DD`), or `ok` to keep it. `cancel` to abort.")
-        return
-
     # ── help ──────────────────────────────────────────────────────────────────
     if re.match(r"^help$", text, re.IGNORECASE):
         say(_HELP)
         return
 
-    # ── question to active bubble ─────────────────────────────────────────────
+    # ── anything else → help (the bot has no chat; it only manages assets) ────
     if text:
-        bubble = _active_bubble.get(uid)
-        if not bubble:
-            say("I don't have an active bubble for questions yet. Here are your options:\n\n" + _HELP)
-            return
-        say(f"_(asking your configured model about *{bubble['name']}*…)_")
-        try:
-            answer = _ask_model(http, bubble["slug"], text)
-            say(answer or "No answer returned.")
-        except Exception as e:
-            # A stale login (e.g. the server restarted, wiping its in-memory sessions) surfaces
-            # as a 401 here — prompt a re-login instead of a confusing model error.
-            if _is_unauthorized(e):
-                _ask_reauth(uid, say)
-                return
-            say(f"Model error: {e}")
+        say("I didn't recognize that. Here's what I can do:\n\n" + _HELP)
 
 
 def run(*, slack_bot_token: str, slack_app_token: str) -> None:

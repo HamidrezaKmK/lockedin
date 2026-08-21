@@ -177,6 +177,8 @@ class ScientistServerBoundaryTest(unittest.TestCase):
                 assets.save_summary(detached, "detached summary")
                 bubbles.add_pdf_to_bubble(slug, attached)
                 report = paths.bubble_dir(slug)
+                # Legacy: pre-removal servers stored chat sessions here; old workspaces may
+                # still carry the directory and it must never reach an agent project.
                 (report / "chats").mkdir(); (report / "chats" / "private.md").write_text("private")
                 names = {item["path"] for item in scientist_sync.manifest(home, slug)["files"]}
         self.assertIn(f"assets/{attached}/paper.pdf", names)

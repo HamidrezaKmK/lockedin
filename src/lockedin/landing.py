@@ -32,7 +32,7 @@ DEFAULT_LANDING: dict[str, Any] = {
     },
     "workflow": {
         "title": "Paper pile to working theory",
-        "intro": "Collect sources, shape topic clusters, write technical notes, then chat/share/track.",
+        "intro": "Collect sources, shape topic clusters, write technical notes, then share and track.",
         "steps": [
             {"number": "01", "title": "Bubble", "text": "Create a theme or idea you would like to research on"},
             {"number": "02", "title": "Library", "text": "Enrich the context of that research bubble with papers and use AI-assisted summaries"},

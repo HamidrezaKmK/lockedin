@@ -2,8 +2,8 @@
 
 The "ultimate research assistant for grad students": upload papers → group into **idea
 bubbles** (topic tags) → maintain Notion-like multi-page Markdown reports per bubble (you write
-them), alongside a **read-only** research chat that knows your reports + papers, with a
-switchable LLM backend (local Qwen / OpenAI / Claude / Gemini).
+them). A switchable LLM backend (local Qwen / OpenAI / Claude / Gemini) exists **only** to
+summarize uploaded PDFs — there is no AI chat anywhere in the product.
 
 It is a prototype, local-first FastAPI app. Patterns were lifted from the sibling `../ocd`
 project (contextvar per-user roots, PBKDF2 auth, OpenAI-compatible model layer, single
@@ -37,23 +37,15 @@ Stdlib `unittest` (no pytest dependency). Two layers under `tests/`:
 # Deterministic regression suite — no network, no LLM, runs anywhere in <1s.
 LOCKEDIN_HOME=/tmp/li_test uv run python -m unittest tests.test_editing_logic -v
 
-# Live integration — drives the REAL qwen model. Auto-skips if Ollama is down or the
-# diffusion PDFs aren't seeded locally. Provision the fixture user first:
-uv run python -m tests.setup_unittest_user        # creates user unittest/unittest (qwen)
-uv run python -m unittest tests.test_live_qwen -v
-
 # Everything:
 LOCKEDIN_HOME=/tmp/li_test uv run python -m unittest discover -s tests -t . -v
 ```
 
-- `tests/test_editing_logic.py` — the canonical regression guard. Replaces `models.stream_chat`
-  with a canned response so the read-only chat + save pipeline is pinned exactly: the chat
-  returns prose only (never an edit/new-page proposal), stray `<EDIT>`/`<NEWPAGE>` tags are
-  scrubbed from display, the chat never writes a page, `normalize_wikilinks` on save, math
-  normalization, chat-title cleanup. Every bug we've hit has a test here — extend it.
-- `tests/test_live_qwen.py` — runs a realistic chat through qwen and asserts the read-only
-  *invariants*: a content question gets a non-empty reply with no raw `<EDIT>`/`<NEWPAGE>` tags,
-  and the chat never creates/removes/mutates a page. qwen is non-deterministic, so it retries.
+- `tests/test_editing_logic.py` — the canonical regression guard: `normalize_wikilinks` on
+  save, display-math normalization + mtime stability, save-conflict detection, TODOs,
+  citations, figures, review comments, asset summarization (`models.complete` canned), and
+  `ChatSurfaceStaysRemoved` — pins that the deleted research chat (routes, backend machinery,
+  frontend pane) does not creep back. Every bug we've hit has a test here — extend it.
 - `tests/test_presence.py` — the presence registry and its HTTP surface, including that a
   rejected (426) worker is still listed with its diagnosis.
 - `tests/presence-e2e.mjs` (`npm run test:presence-e2e`) — real Chrome against a disposable data
@@ -65,7 +57,7 @@ LOCKEDIN_HOME=/tmp/li_test uv run python -m unittest discover -s tests -t . -v
   (copies `meta.yaml`/`summary.md`/`text.txt` from a local user, not the 50 MB `paper.pdf`).
 - `tests/setup_unittest_user.py` — (re)creates the persistent `unittest`/`unittest` fixture user
   in `data/users/`, qwen-backed, with the diffusion bubble + a seeded overview. Idempotent.
-  Log in as it to repro by hand.
+  Log in as it to repro by hand. (The live qwen chat test it once fed was removed with the chat.)
 
 You can still smoke-test the HTTP layer with FastAPI's `TestClient` against a throwaway home.
 The session cookie is now `Secure` by default, so any auth flow must use an **HTTPS base URL**
@@ -77,31 +69,30 @@ from lockedin import server; c=TestClient(server.build_app(), base_url='https://
 ```
 
 **When to run / extend the tests (policy for agents):** after any change that touches the
-chat/save pipeline (`reports.chat_stream`, `bubbles.save_page`/wikilinks, `models.stream_chat`)
+save pipeline (`bubbles.save_page`/wikilinks) or asset ingestion (`tagger`, `models.complete`),
 or any change the user flags as **major** — or whenever the user explicitly asks. Add a
 deterministic test in `test_editing_logic.py` for the specific behavior first (it's the
-reproducible guard), then run the live qwen test to confirm the real model still behaves. A
-change is "major" if it alters a documented design decision, the SSE event shape, or how pages
-are saved/linked.
+reproducible guard). A change is "major" if it alters a documented design decision or how
+pages are saved/linked.
 
 ## Architecture
 
-Layered; the server is thin HTTP/SSE glue over `service.py`.
+Layered; the server is thin HTTP glue over `service.py`.
 
 | Module | Responsibility |
 |--------|----------------|
 | `paths.py` | All filesystem paths. A `contextvars` root pushed with `paths.use_root(home)` selects the active workspace for research content; account-registry paths resolve against the base root. |
 | `auth.py` | PBKDF2-HMAC-SHA256, `accounts.yaml`, in-memory sessions (lost on restart). New accounts are approved immediately; the first is also admin and premium. `set_password`/`rename_user` back the account-settings endpoint; `is_admin`/`set_approved`/`delete_user` enforce administration rules; `MIN_PASSWORD_LEN=4`. |
 | `sharing.py` | Global (base-root) `share_index.yaml` mapping an unlisted token → `{workspace_id, slug}` for the public `/share/<token>` routes (which run with no session). |
-| `models.py` | **One active model per account** (`qwen`/`openai`/`claude`/`gemini`). Credentials remain account-private even in shared workspaces. `stream_chat`/`complete`/`attach_pdf`/`health_check` use OpenAI-compatible providers (qwen via Ollama, OpenAI, Gemini) or Anthropic's SDK (Claude). |
+| `models.py` | **One active model per account** (`qwen`/`openai`/`claude`/`gemini`). Credentials remain account-private even in shared workspaces. Its only consumer is asset ingestion: `complete` (built on `stream_chat`) and `health_check`, via OpenAI-compatible providers (qwen via Ollama, OpenAI, Gemini) or Anthropic's SDK (Claude). |
 | `assets.py` | PDF storage: `ASSETS/<pdf_id>/{paper.pdf,text.txt,summary.md,meta.yaml}`. Atomic writes. |
 | `tagger.py` | Background ingest after upload: extract text, model metadata, and a cached summary. Fail-safe. |
-| `bubbles.py` | Bubble registry (`bubbles.yaml`) + the per-bubble **mini-wiki**: pages manifest, page CRUD, image storage, legacy-`report.md` migration, chat-session CRUD (`chats/` dir). |
+| `bubbles.py` | Bubble registry (`bubbles.yaml`) + the per-bubble **mini-wiki**: pages manifest, page CRUD, image storage, legacy-`report.md` migration. |
 | `todos.py` | **Workspace-wide TODOs** (GitHub-issue style), stored in `todos.yaml` (`next_id` + `todos` map). Pure storage: compact integer `id`, `title`, markdown `note`, `done`. CRUD only — it does **not** import `bubbles`; reference counting, delete guard, and report-reference rewrites after id compaction live in `service.py`. Referenced from report pages as `@<id>`. |
 | `presence.py` | **Live bubble presence**, in-memory only (like auth sessions, lost on restart). Viewers keyed by **username** (tabs collapse); Scientist workers keyed by the **project directory**'s stable `worker_uid` (agents in one directory collapse; two directories on one bubble stay two rows). Computes each worker's health from what the client reported plus what the server observed. |
-| `reports.py` | `chat_stream` — a **read-only** streamed research chat grounded in the bubble's report pages + paper summaries + deep-read PDFs (bounded context, internal compaction). Also `generate_chat_title`. It does NOT edit pages. |
-| `service.py` | Orchestration; wraps non-streaming ops in `use_root`. Streaming generators manage their own root. |
-| `server.py` | FastAPI app + routes + SSE. |
+| `reports.py` | The in-app usage guide (`APP_USAGE_GUIDE_SECTIONS` + `guide_section`), served by `/api/help`, the Scientist guide endpoint, and `lockedin editguide`. Nothing else lives here. |
+| `service.py` | Orchestration; wraps ops in `use_root`. |
+| `server.py` | FastAPI app + routes. |
 | `web/index.html` | The entire SPA — vanilla JS IIFE, no build step, CDN deps. |
 
 ### Runtime data layout (all git-ignored under `data/`)
@@ -117,7 +108,6 @@ data/workspaces/<workspace-id>/
     pages.yaml                      # { home: <page_slug>, pages: [{page_slug,title}] }
     pages/<page-slug>.md
     assets/<figure>.png
-    chats/<session_id>.json         # persisted chat sessions
   bubbles.yaml                      # {slug: {name, approved, instructions, created_at, share_active, share_token}}
   todos.yaml                        # {next_id, todos:{<id>:{id,title,note,done,created_at}}} — workspace-wide TODOs
 ```
@@ -127,14 +117,14 @@ data/workspaces/<workspace-id>/
 - **Markdown is the source of truth.** The frontend uses Toast UI Editor (CDN) but persists
   `.md`. The user writes/edits the reports themselves (in the editor or via the synchronized
   Scientist client). Don't switch to a JSON/block model.
-- **The chat is READ-ONLY — no AI writes to pages.** The earlier `<EDIT>`/`<NEWPAGE>` tag
-  contract, section splicing, diff-accept overlay, and `generate_template` were all **removed**:
-  they were too unreliable with small local models. `chat_stream` now only discusses. It assembles
-  a bounded context — every report page (current page in full, others within a char budget), a
-  summary of every tagged paper, and the full text of any deep-read PDFs — and compacts the
-  conversation internally (`models.compact_chat`) once it grows long. The `done` event carries
-  only `full_response` and `chat_text`. If you reintroduce AI editing, do it as a separate,
-  explicitly-gated path; don't smuggle it back into the chat. (`git log` has the old machinery.)
+- **There is no AI chat — the model only summarizes assets.** The product went through two
+  retreats: first the AI page-editing contract (`<EDIT>`/`<NEWPAGE>`) was removed as unreliable,
+  then the read-only research chat itself (pane, SSE endpoint, sessions, deep-read, Slack Q&A)
+  was deleted as unused clutter. The single remaining model call path is asset ingestion:
+  `tagger` → `models.complete` → provider (plus `models.health_check` for doctor/settings).
+  If you ever reintroduce chat or AI editing, do it as a new, explicitly-gated feature — and
+  note legacy workspaces may still carry orphaned `REPORTS/<slug>/chats/` dirs, which the
+  Scientist sync must keep excluding. (`git log` has all the old machinery.)
 - **Wikilink targets are normalized on save.** `bubbles.save_page` runs `normalize_wikilinks`:
   each `[[X]]` has any invented `prefix/` stripped, then resolves by slug, else by page **title**
   (case-insensitive), to the real slug. This is why the model is told to link by plain title —
@@ -170,9 +160,8 @@ data/workspaces/<workspace-id>/
 - **Account changes go through `service.update_account`.** Requires the current password; a
   username change updates the account record and active sessions. Research content is
   workspace-owned, while provider configuration remains under the account's private directory.
-- **Summarize-once.** Every uploaded PDF is summarized once into `summary.md`; the chat reuses
-  summaries to stay cheap. "Deep-read" attaches the real PDF (Claude) or `text.txt`
-  (qwen/openai), now clipped to a char budget, for the conversation.
+- **Summarize-once.** Every uploaded PDF is summarized once into `summary.md` during ingest;
+  nothing re-reads the model afterwards except an explicit per-asset "resummarize".
 - **Presence costs the worker no extra traffic, and is never persisted.** A Scientist worker
   identifies itself with `X-LockedIn-Worker{,-Label,-Status,-Error}` headers riding on the manifest
   poll it already makes every `POLL_SECONDS`; the server records it in `workspace_request_context`
@@ -238,19 +227,10 @@ data/workspaces/<workspace-id>/
 - **`server.py` must NOT use `from __future__ import annotations`.** FastAPI resolves the
   Pydantic body models that are defined *inside* `build_app()`; stringized annotations make it
   treat request bodies as query params (→ 422). Other modules use the future import freely.
-- **SSE runs in a worker thread, not Starlette's threadpool.** `_stream()` in `server.py` runs
-  the chat generator in a dedicated `threading.Thread` feeding a `queue.Queue`. This keeps the
-  workspace `contextvars` root consistent for the generator's whole life — Starlette could
-  otherwise resume a sync generator on a different pool thread and lose the context. `chat_stream`
-  therefore wraps its whole body in `with paths.use_root(home):` so the context survives `yield`s.
-- **SSE event shape:** `{"type":"delta","text":...}`, `{"type":"done", ...}`, `{"type":"error","detail":...}`.
-  The `done` event from `/chat` additionally carries `full_response` (raw output, pushed to chat
-  history) and `chat_text` (cleaned prose for display). The frontend `streamPost()` parses
-  `data:` lines.
-- **Chat session persistence.** Sessions are stored as JSON in `REPORTS/<slug>/chats/`.
-  `bubbles.{list,get,save,delete}_chat_session` manage them. Auto-saved client-side after each
-  assistant reply. The session dropdown above the chat lets you switch between or delete sessions.
-  Session ID format: `YYYYMMDDHHMMSS-<4hex>` (sorts by creation time).
+- **No streaming endpoints remain.** The SSE worker-thread machinery (`_stream`/`_sse`) left
+  with the chat. If a streamed endpoint ever returns, remember why it existed: a sync generator
+  must not be resumed on a different threadpool thread or it loses the workspace `contextvars`
+  root — run it in a dedicated thread feeding a queue.
 - **Claude auth:** the Claude model uses an Anthropic API key stored in the account's model
   settings. Browser-pasted Claude OAuth/subscription tokens are not supported.
 - **Gemini** uses Google's OpenAI-compatible endpoint (`generativelanguage.googleapis.com/v1beta/openai/`).

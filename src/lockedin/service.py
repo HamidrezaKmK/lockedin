@@ -1,8 +1,6 @@
 """Shared service layer — the single place the server calls into.
 
-Non-streaming operations are wrapped in ``paths.use_root(home)`` here so the server stays
-pure HTTP glue. Streaming generators (chat / generate / edit) manage their own root context
-internally (they must keep it open across yields), so those are thin pass-throughs.
+Operations are wrapped in ``paths.use_root(home)`` here so the server stays pure HTTP glue.
 """
 from __future__ import annotations
 
@@ -12,7 +10,7 @@ from pathlib import Path
 
 import yaml
 
-from . import assets, auth, bubbles, models, paths, reports, sharing, tagger, todos, workspaces
+from . import assets, auth, bubbles, models, paths, sharing, tagger, todos, workspaces
 
 
 def ensure_workspace(home: Path) -> None:
@@ -634,34 +632,6 @@ def bubble_text_asset(home: Path, slug: str, filename: str) -> str:
         return bubbles.read_bubble_text_asset(slug, filename)
 
 
-# ---- streaming (generators manage their own root) ----
-def chat(home: Path, slug: str, page_slug: str, messages: list[dict], page_context: str = "",
-         deep_read_ids: list[str] | None = None):
-    return reports.chat_stream(home, slug, page_slug, messages, page_context, deep_read_ids)
-
-
-# ---- chat sessions ----
-def list_chat_sessions(home: Path, slug: str) -> list[dict]:
-    with paths.use_root(home):
-        return bubbles.list_chat_sessions(slug)
-
-
-def get_chat_session(home: Path, slug: str, session_id: str) -> dict | None:
-    with paths.use_root(home):
-        return bubbles.get_chat_session(slug, session_id)
-
-
-def save_chat_session(home: Path, slug: str, session_id: str, title: str,
-                      messages: list[dict]) -> None:
-    with paths.use_root(home):
-        bubbles.save_chat_session(slug, session_id, title, messages)
-
-
-def delete_chat_session(home: Path, slug: str, session_id: str) -> bool:
-    with paths.use_root(home):
-        return bubbles.delete_chat_session(slug, session_id)
-
-
 # ---- model settings ----
 def get_model_config(home: Path) -> dict:
     return models.load_config(home)
@@ -673,10 +643,6 @@ def save_model_config(home: Path, cfg: dict) -> dict:
 
 def set_active_provider(home: Path, provider: str) -> dict:
     return models.set_active_provider(home, provider)
-
-
-def generate_chat_title(home: Path, messages: list[dict]) -> str:
-    return reports.generate_chat_title(home, messages)
 
 
 def model_health(home: Path, *, live: bool = False) -> dict:

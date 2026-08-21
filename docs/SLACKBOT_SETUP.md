@@ -93,7 +93,4 @@ For those persistent links, the web server and Slack bot must share
 | `select` (or `switch`) | Lists your bubbles, reply with a number to set the active one |
 | `list` | Lists your bubbles |
 | `help` | Shows the command list |
-| anything else | Your configured model answers using your **active** bubble's content (`select` one first) |
-
-If the active model is Qwen, Ollama must be running locally:
-`ollama serve && ollama pull qwen2.5:7b-instruct`
+| anything else | Shows the command list — the bot has no chat, it only manages assets |

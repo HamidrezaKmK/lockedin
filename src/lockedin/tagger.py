@@ -1,6 +1,6 @@
 """Background ingest pipeline: extract text, metadata, and a paper summary.
 
-Runs after every upload (via FastAPI BackgroundTasks). The summary is cached so chat and
+Runs after every upload (via FastAPI BackgroundTasks). The summary is cached so the asset
 report generation stay low-latency (read-once, reuse).
 
 The whole pipeline is fail-safe: any error is logged and leaves the asset usable (it just

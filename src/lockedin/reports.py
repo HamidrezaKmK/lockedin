@@ -1,28 +1,11 @@
-"""Streamed research chat (read-only) + chat-title helper.
+"""The in-app usage guide.
 
-The web app no longer writes to report pages with the model — that proved too unreliable with
-small local models. Editing is done by the user directly in the Markdown editor or through the
-synchronized Scientist client. What remains here is:
-
-* ``chat_stream`` — a knowledgeable, READ-ONLY research assistant grounded in the bubble's report
-  pages, every tagged paper's summary, and the full text of any "deep-read" papers. It never
-  edits anything; it just discusses. Context is bounded and the conversation is compacted
-  internally so it fits a local model's window.
-* ``generate_chat_title`` — a short, cute session name for the sidebar.
-
-Each public generator yields SSE-ready dicts::
-
-    {"type": "delta", "text": "..."}                         # incremental model output
-    {"type": "done",  "full_response": "...", "chat_text": "..."}
-    {"type": "error", "detail": "..."}
+There is no AI chat in the product any more — the model layer exists solely to summarize
+uploaded PDFs (see ``tagger``). This module is the single source of truth for the user-facing
+usage guide: ``APP_USAGE_GUIDE_SECTIONS`` renders in the web app's help modal, and
+``guide_section`` feeds the Scientist skill and the ``lockedin editguide`` CLI.
 """
 from __future__ import annotations
-
-import re
-from pathlib import Path
-from typing import Iterator, Optional
-
-from . import assets, bubbles, models, paths
 
 APP_USAGE_GUIDE_SECTIONS = [
     {
@@ -73,7 +56,7 @@ You cannot delete your own account.
 Every account has a private **Personal** workspace. It opens automatically when you sign in and
 is the safe home for your individual research. You can also create or join shared workspaces.
 The active workspace controls everything research-related: Library papers, Bubbles, report pages
-and figures, TODOs, chat history, citations, and math macros. The top-right workspace switcher
+and figures, TODOs, citations, and math macros. The top-right workspace switcher
 shows the active workspace name; use it to switch before opening any of those views.
 
 Personal workspaces stay private and cannot be shared, transferred, or deleted independently.
@@ -91,7 +74,7 @@ Open **🗂️ Workspace** in the sidebar to manage the active workspace.
 - A workspace must always retain at least one admin. Personal workspaces have one fixed member.
 
 Editors can change research content. Admins additionally manage membership and workspace
-lifecycle. Switching workspaces immediately changes the Library, TODOs, Bubbles, and chat you
+lifecycle. Switching workspaces immediately changes the Library, TODOs, and Bubbles you
 see; unsaved report edits must be saved or discarded first.
 
 ## Shared math macros
@@ -102,7 +85,7 @@ same definitions. Add or edit a macro there before using it in report math.
 """,
     },
     {
-        "title": "Models & Chat",
+        "title": "Models",
         "content": """\
 ## Switching the active model
 
@@ -122,19 +105,9 @@ sign-ups from consuming the server's local compute by default.
 
 The coloured dot next to the active model updates when a health-check runs.
 
-## Research chat
-
-The chat sidebar (right pane, inside any bubble) is a **read-only** assistant: it
-discusses your reports and papers but cannot edit pages. It knows:
-- The full text of every page in the current bubble
-- A summary of every tagged paper
-- The full text of any PDF you attach via deep-read
-
-**Deep-read** — use the 📎 dropdown at the bottom of the chat to attach specific PDFs.
-With Claude the actual PDF is sent; with other models the extracted text is used.
-
-**Sessions** — chat history is saved automatically. The session dropdown at the top of the
-chat pane lets you switch between or delete saved conversations.
+The model's only job is asset ingestion: when you upload a PDF it extracts metadata,
+suggests tags, and writes the one-time summary shown on the asset page. There is no AI
+chat in the app — reports are written by you, in the editor or through the Scientist client.
 
 """,
     },
@@ -144,7 +117,7 @@ chat pane lets you switch between or delete saved conversations.
 ## What is a bubble?
 
 A **bubble** is a topic group. Each bubble has a name, a multi-page Markdown wiki,
-attached papers, and a read-only research chat sidebar. Bubbles created in the app are
+and attached papers. Bubbles created in the app are
 available immediately.
 
 ## Creating
@@ -312,19 +285,16 @@ You only need to log in again if you change your lockedin username or password.
 ## What it can do
 
 - **`workspaces`** or **`switch workspace`** — list and select the active workspace
-- **`select`** — choose the active bubble for questions
+- **`select`** — choose the active bubble
 - **`list`** — show your bubbles
-- **Ask a question** — the bot answers using your active bubble's reports and paper summaries
 - **Attach a PDF** — uploads it to your Library queue
 - **Send a PDF link** — fetches and uploads the paper when the link resolves to a PDF
 - **`todos`** — list, add, edit, complete, or remove open TODOs
 
 The Slackbot has an active workspace before it has an active bubble. Switching workspaces clears
-the active bubble and TODO flow, so uploads, TODOs, questions, and bubble selection always stay
-inside the workspace you chose. It follows the same account, premium, and workspace access rules
-as the website.
-Questions use your configured model. Qwen from Slack also requires premium; otherwise configure
-OpenAI, Claude, or Gemini with your own API key in the web settings.
+the active bubble and TODO flow, so uploads, TODOs, and bubble selection always stay inside the
+workspace you chose. It follows the same account, premium, and workspace access rules as the
+website. The bot has no chat — it manages assets and TODOs only.
 """,
     },
     {
@@ -404,7 +374,7 @@ its normal permissions. A concurrent website edit restores the server copy and l
 local copy and a patch in `config/conflicts/`.
 
 Only pages and report assets inside the selected **approved** bubble can be written back.
-Credentials, sessions, chat history, TODOs, bubble settings, PDFs, and paper summaries are never
+Credentials, sessions, TODOs, bubble settings, PDFs, and paper summaries are never
 writable by Scientist.
 
 ### Review feedback and health
@@ -534,16 +504,15 @@ insert table, text colour, **≡ center selected text**, insert link, the page v
 in read-only previews and public shares; hidden page tabs stay out of the way until you use
 **☷**, then appear right-aligned in the tab bar.
 
-Use **⛶** in the page controls to enter a focused workspace that hides the navigation and chat;
+Use **⛶** in the page controls to enter a focused workspace that hides the navigation;
 click it again to exit.
 
 ### On mobile
 
 The bubble page is streamlined to the essentials: page tabs, the editor toolbar, and the view
 dropdown. Switch between **👁 Read** and **✏️ Edit** right from that dropdown. A small
-**↗** link in the top-right corner opens the read-only preview of the current page. Papers and
-the research chat live behind the floating **📚** and **💬** buttons. (Sharing is done from a
-larger screen.)
+**↗** link in the top-right corner opens the read-only preview of the current page. Papers
+live behind the floating **📚** button. (Sharing is done from a larger screen.)
 
 ---
 
@@ -746,8 +715,6 @@ Type `@` in the editor to open the TODO autocomplete menu.
     },
 ]
 
-# Backwards-compat alias used by the /api/help endpoint
-APP_USAGE_GUIDE = "\n\n".join(s["content"] for s in APP_USAGE_GUIDE_SECTIONS)
 
 
 def guide_section(title: str) -> str:
@@ -756,264 +723,3 @@ def guide_section(title: str) -> str:
     project-local Scientist skill."""
     return next((s["content"] for s in APP_USAGE_GUIDE_SECTIONS if s["title"] == title), "")
 
-# A SHORT, model-safe summary for the chat system prompt — facts only, no fenced code blocks.
-APP_USAGE_BRIEF = (
-    "ABOUT THIS APP (use these facts to answer usage questions):\n"
-    "- Reports are multi-page Markdown wikis, one per bubble; the editor is on the left, a "
-    "live preview on the right. The user writes the reports themselves.\n"
-    "- In Settings → Aesthetics, users choose which themes appear in their top-bar cycle. Those "
-    "owner previews and public share links offer only Dark and Light; the landing page is "
-    "always Dark.\n"
-    "- Math: $...$ inline, $$...$$ display. Number a display equation by putting \\label{name} "
-    "inside its $$ block, then reference it with \\eqref{name} (renders as its number). Equation "
-    "and theorem (\\thmref) numbers/refs are bubble-wide — they work across pages and inside math.\n"
-    "- The editor has autocomplete menus: type \\cite{ for attached-asset BibTeX keys, \\eqref{ "
-    "for equation labels, \\thmref{ for theorem/definition labels, and @ for TODO ids.\n"
-    "- Assets can store optional BibTeX. BibTeX keys must be unique; report pages can only cite "
-    "keys from assets attached to that bubble. Asset cards with BibTeX show a ✓ BibTeX badge, "
-    "and the Assets page can filter by search text plus bubble.\n"
-    "- Link to another page in the same bubble by its title in double brackets, e.g. [[Overview]].\n"
-    "- The sync icon beside Insert link saves the current page; the eye beside it hides/shows "
-    "the current page in previews and shares; the chat pane can be collapsed; the magnifier "
-    "opens a full-page preview.\n"
-    "- This chat is read-only: it discusses but cannot edit pages. Deep-read attaches a paper's "
-    "full text to the conversation.\n"
-    "- Click 🔗 Share in a bubble's header to publish an unlisted read-only link (a 📋 Copy-link "
-    "button then appears); headings on the shared page have 🔗 anchors for section links.\n"
-    "- Go to ⚙️ Settings → Account to change your username or password, or to log out.\n"
-    "For the complete step-by-step guide, tell the user to click the Help button in the top bar."
-)
-
-CHAT_SYSTEM = """\
-You are a knowledgeable research assistant embedded in a grad student's bubble. You discuss
-the papers and the user's report notes: answer questions, explain the math, summarize, compare
-papers, surface open questions, and help the user think.
-
-This is a READ-ONLY conversation. You CANNOT edit the report and have no tools to do so. Never
-claim you changed a page and never emit XML-ish edit tags. If the user wants text for a page,
-draft it in your reply and remind them to paste it into the editor themselves.
-
-You are given the full text of this bubble's report pages, a summary of every tagged paper, and —
-when the user attaches them — the full text of specific "deep-read" papers. Ground every claim in
-that material; if the answer isn't there, say so rather than inventing. Cite papers by title.
-
-RESPONSE STYLE
-Be concise: 1-4 sentences or a short bullet list by default. Skip preamble. Don't restate the
-question. Only write at length when explicitly asked. For math use LaTeX with ONLY $...$ (inline)
-and $$...$$ (display) delimiters — NEVER \\( \\) or \\[ \\].
-
-APP REFERENCE
-If the user asks how to use the website, editor, buttons, or a feature, answer from the facts
-below. Do NOT show a fenced code block of these instructions — explain in prose.
-""" + APP_USAGE_BRIEF
-
-# Defensive scrub: a small local model may still echo a stray <EDIT>/<NEWPAGE> tag despite the
-# read-only prompt. Strip any such tag from displayed text so raw XML never shows in chat.
-_STRAY_TAGS_RE = re.compile(r'</?(?:EDIT|NEWPAGE)\b[^>]*>', re.IGNORECASE)
-
-# Math delimiter normalization. The frontend renders $...$ / $$...$$ reliably; models (qwen
-# especially) often emit \( \) / \[ \] despite the prompt. Convert them so math always renders.
-_DISPLAY_MATH_RE = re.compile(r'\\\[(.+?)\\\]', re.DOTALL)
-_INLINE_MATH_RE = re.compile(r'\\\((.+?)\\\)', re.DOTALL)
-
-
-def _normalize_math(text: str) -> str:
-    """Rewrite ``\\(..\\)`` → ``$..$`` and ``\\[..\\]`` → ``$$..$$`` (the only forms we render)."""
-    text = _DISPLAY_MATH_RE.sub(lambda m: f"$${m.group(1).strip()}$$", text)
-    text = _INLINE_MATH_RE.sub(lambda m: f"${m.group(1).strip()}$", text)
-    return text
-
-
-# --------------------------------------------------------------------------- #
-# Context budgeting — keep the assembled prompt within a local model's window
-# --------------------------------------------------------------------------- #
-_REPORT_CTX_BUDGET = 16000   # chars for report pages injected into the system prompt
-_DEEPREAD_BUDGET = 14000     # chars of a single deep-read paper's full text (qwen/openai path)
-_COMPACT_AT = 16             # compact the conversation when it exceeds this many messages
-
-
-def _clip(text: str, budget: int, label: str = "content") -> str:
-    text = text or ""
-    if len(text) <= budget:
-        return text
-    return text[:budget] + f"\n\n…[{label} truncated — {len(text) - budget} more chars omitted]…"
-
-
-def _report_context(slug: str, page_slug: str, cur_content: str, cur_title: str) -> str:
-    """All report pages, current one in full first, others within the remaining char budget."""
-    cur_block = f"===== PAGE: {cur_title} (currently open) =====\n{cur_content.strip()}"
-    blocks = [cur_block]
-    remaining = _REPORT_CTX_BUDGET - len(cur_block)
-    for p in bubbles.list_pages(slug):
-        if p["page_slug"] == page_slug:
-            continue
-        c = bubbles.get_page(slug, p["page_slug"]).strip()
-        if not c:
-            continue
-        block = f"===== PAGE: {p['title']} =====\n{c}"
-        if len(block) > remaining:
-            block = _clip(block, max(remaining, 500), "page")
-        blocks.append(block)
-        remaining -= len(block)
-        if remaining <= 0:
-            break
-    return "\n\n".join(blocks) or "(no report pages yet)"
-
-
-def bubble_paper_context(slug: str, *, include_paths: bool = False,
-                         summary_budget: int | None = None) -> str:
-    """Paper context for one bubble only, sorted by relevance.
-
-    This is the shared source for web chat and scientist sessions. It deliberately starts from
-    ``bubbles.pdfs_for_bubble`` so unrelated assets in the user's global ASSETS directory never
-    enter the generated context.
-    """
-    pdfs = bubbles.pdfs_for_bubble(slug)
-    if not pdfs:
-        return "(no PDFs tagged yet)"
-    lines: list[str] = []
-    current_score: int | None = None
-    for meta in pdfs:
-        score = int(meta.get("bubble_score", 5))
-        if score != current_score:
-            if lines:
-                lines.append("")
-            lines.append(f"## Relevance {score}")
-            current_score = score
-        pdf_id = meta.get("pdf_id", "")
-        title = meta.get("title") or meta.get("filename") or pdf_id
-        lines.append("")
-        lines.append(f"### [Relevance {score}] {title}")
-        lines.append(f"- Asset id: `{pdf_id}`")
-        if include_paths and pdf_id:
-            adir = paths.asset_dir(pdf_id)
-            lines.append(f"- Allowed summary path: `{adir / 'summary.md'}`")
-            lines.append(f"- Allowed text path: `{adir / 'text.txt'}`")
-            lines.append(f"- Allowed PDF path: `{adir / 'paper.pdf'}`")
-        bib_keys = assets.bibtex_keys(meta.get("bibliography", ""))
-        if bib_keys:
-            lines.append(f"- BibTeX keys: {', '.join(bib_keys)}")
-        summary = assets.get_summary(pdf_id) if pdf_id else ""
-        if summary_budget is not None:
-            summary = _clip(summary, summary_budget, "paper summary")
-        lines.append(summary or "(no summary)")
-    return "\n".join(lines)
-
-
-# --------------------------------------------------------------------------- #
-# Read-only research chat
-# --------------------------------------------------------------------------- #
-def chat_stream(home: Path, slug: str, page_slug: str, messages: list[dict],
-                page_context: str = "", deep_read_ids: Optional[list[str]] = None) -> Iterator[dict]:
-    """Stream a read-only research-assistant reply grounded in the bubble's reports + papers.
-
-    The model only discusses — it never edits a page. The ``done`` event carries
-    ``full_response`` (raw output, pushed to chat history) and ``chat_text`` (cleaned prose).
-
-    Context assembly (bounded so it fits a local model's window):
-    * every report page — current page in full, others within ``_REPORT_CTX_BUDGET``;
-    * a summary of every tagged paper;
-    * the full text of each deep-read PDF (Claude gets the PDF; others get clipped text);
-    * the conversation itself, compacted via ``models.compact_chat`` once it grows past
-      ``_COMPACT_AT`` turns.
-    """
-    with paths.use_root(home):
-        name = bubbles.slug_to_name(slug)
-        all_pages = bubbles.list_pages(slug)
-        cur_content = page_context or bubbles.get_page(slug, page_slug)
-        cur_title = next((p["title"] for p in all_pages if p["page_slug"] == page_slug), page_slug)
-
-        report_ctx = _report_context(slug, page_slug, cur_content, cur_title)
-
-        summaries = bubble_paper_context(slug)
-
-        system = (
-            f"{CHAT_SYSTEM}\n\nIdea bubble: **{name}** — the user is currently viewing the page "
-            f"**{cur_title}**.\n\n"
-            f"REPORT PAGES (the user's living notes; quote/cite them, never reproduce the "
-            f"`===== PAGE =====` markers):\n{report_ctx}\n\n"
-            f"PAPER SUMMARIES:\n{summaries}")
-
-        # Conversation, compacted internally when long so the window isn't blown.
-        convo = list(messages)
-        if len(convo) > _COMPACT_AT:
-            try:
-                convo = models.compact_chat(home, convo)
-            except Exception:  # noqa: BLE001 — compaction is best-effort
-                pass
-
-        # Deep-read: attach the (budgeted) full text / PDF of each selected paper.
-        for pid in (deep_read_ids or []):
-            try:
-                convo = models.attach_pdf(
-                    home, convo, assets.pdf_path(pid),
-                    fallback_text=_clip(assets.get_text(pid), _DEEPREAD_BUDGET, "paper text"),
-                    label=assets.load_meta(pid).get("title", pid))
-            except Exception:  # noqa: BLE001
-                continue
-
-        acc: list[str] = []
-        try:
-            for chunk in models.stream_chat(home, convo, system=system, temperature=0.4):
-                acc.append(chunk)
-                yield {"type": "delta", "text": chunk}
-        except Exception as e:  # noqa: BLE001
-            yield {"type": "error", "detail": str(e)}
-            return
-
-        full = _normalize_math("".join(acc))
-        yield {"type": "done", "full_response": full,
-               "chat_text": _STRAY_TAGS_RE.sub("", full).strip()}
-
-
-# --------------------------------------------------------------------------- #
-# Chat session titles — short, cute, model-generated names for the sidebar
-# --------------------------------------------------------------------------- #
-_TITLE_SYSTEM = (
-    "You name a chat conversation for a sidebar list. Reply with ONLY the title: a short, cute, "
-    "descriptive name of 2-5 words in Title Case. You may begin with a single fitting emoji. "
-    "No surrounding quotes, no trailing punctuation, no explanation — just the title."
-)
-
-
-def _clean_title(raw: str, fallback: str) -> str:
-    """First non-empty line of the model output, stripped of wrapping quotes / markdown /
-    trailing punctuation (iteratively, since these can nest), and capped."""
-    line = next((ln.strip() for ln in (raw or "").splitlines() if ln.strip()), "")
-    for _ in range(4):
-        before = line
-        line = line.strip(" \t\"'`*_").strip()     # wrapping quotes / emphasis / backticks
-        line = re.sub(r"^[#>\-\s]+", "", line)      # leading heading/bullet marks
-        line = re.sub(r"[.!:;,]+$", "", line).strip()
-        if line == before:
-            break
-    return line[:48] or fallback
-
-
-def generate_chat_title(home: Path, messages: list[dict]) -> str:
-    """A short, cute title for a chat session, grounded in its first couple of turns.
-
-    Cheap, single non-streaming call on the active model. Falls back to a trimmed first user
-    message if the model is unavailable or returns nothing usable.
-    """
-    parts: list[str] = []
-    for m in messages:
-        content = m.get("content")
-        if not isinstance(content, str):
-            content = "[attachment]"
-        if m.get("role") in ("user", "assistant"):
-            parts.append(f"{m['role']}: {content}")
-        if len(parts) >= 3:
-            break
-    convo = "\n".join(parts)[:1500]
-    first_user = next((m.get("content") for m in messages
-                       if m.get("role") == "user" and isinstance(m.get("content"), str)), "")
-    fallback = (first_user or "New Chat").strip()[:40] or "New Chat"
-    if not convo.strip():
-        return fallback
-    try:
-        raw = models.complete(home, [{"role": "user", "content": f"Conversation:\n{convo}\n\nTitle:"}],
-                              system=_TITLE_SYSTEM, temperature=0.7)
-    except Exception:  # noqa: BLE001 — title is cosmetic; never fail the chat over it
-        return fallback
-    return _clean_title(raw, fallback)

@@ -1,8 +1,8 @@
 """Model layer — one *global active model* chosen by the user.
 
 Unlike a per-role setup, lockedin uses a single active provider at a time (switched from the
-top bar). Every task — tagging, summarizing, chat, report generation, edits — goes through
-the same active model. Four providers are supported:
+top bar). The model's only job is asset ingestion — tagging, metadata, and the one-time PDF
+summary — and everything goes through the same active model. Four providers are supported:
 
   qwen    local Ollama via its OpenAI-compatible API (premium; runs on the server)
   openai  OpenAI API (needs api_key)
@@ -23,7 +23,6 @@ separately and adapted per provider (OpenAI: a system message; Anthropic: the ``
 """
 from __future__ import annotations
 
-import base64
 import copy
 import contextlib
 import contextvars
@@ -168,11 +167,6 @@ def get_active_config(home: Path) -> ActiveModelConfig:
     )
 
 
-def supports_pdf(home: Path) -> bool:
-    """True if the active provider can ingest the actual PDF file as context."""
-    return get_active_config(home).active == "claude"
-
-
 # --------------------------------------------------------------------------- #
 # System/message helpers
 # --------------------------------------------------------------------------- #
@@ -191,47 +185,6 @@ def _split_system(messages: list[dict], system: Optional[str]) -> tuple[str, lis
 # --------------------------------------------------------------------------- #
 # Deep-read: attach a PDF (or its text) to the last user turn
 # --------------------------------------------------------------------------- #
-def attach_pdf(home: Path, messages: list[dict], pdf_path: Path,
-               fallback_text: str = "", label: str = "") -> list[dict]:
-    """Return a copy of ``messages`` with a PDF attached to the final user message.
-
-    For ``claude`` the actual PDF is attached as a base64 document block. For ``qwen`` and
-    ``openai`` we append the extracted text (``fallback_text``) — robust across models that
-    don't accept PDFs over the chat API.
-    """
-    msgs = copy.deepcopy(messages)
-    # find last user message; if none, append one
-    idx = next((i for i in range(len(msgs) - 1, -1, -1) if msgs[i].get("role") == "user"), None)
-    if idx is None:
-        msgs.append({"role": "user", "content": ""})
-        idx = len(msgs) - 1
-
-    if get_active_config(home).active == "claude" and pdf_path.exists():
-        data = base64.standard_b64encode(pdf_path.read_bytes()).decode("ascii")
-        existing = msgs[idx].get("content", "")
-        parts: list[dict] = []
-        if isinstance(existing, list):
-            parts = existing
-        elif existing:
-            parts = [{"type": "text", "text": existing}]
-        parts.insert(0, {
-            "type": "document",
-            "source": {"type": "base64", "media_type": "application/pdf", "data": data},
-            "title": label or pdf_path.parent.name,
-        })
-        msgs[idx]["content"] = parts
-    else:
-        text = fallback_text.strip()
-        if text:
-            header = f"\n\n--- Full text of attached PDF ({label or 'document'}) ---\n"
-            existing = msgs[idx].get("content", "")
-            if isinstance(existing, str):
-                msgs[idx]["content"] = existing + header + text
-            else:
-                existing.append({"type": "text", "text": header + text})
-    return msgs
-
-
 # --------------------------------------------------------------------------- #
 # Inference
 # --------------------------------------------------------------------------- #
@@ -295,38 +248,6 @@ def complete(home: Path, messages: list[dict], system: Optional[str] = None,
     """Non-streaming completion (tagging, summarizing, etc.)."""
     return "".join(stream_chat(home, messages, system=system, temperature=temperature,
                                claude_token=claude_token))
-
-
-_COMPACT_KEEP = 8  # number of most-recent messages to preserve verbatim
-
-
-def compact_chat(home: Path, messages: list[dict], *, claude_token: str = "") -> list[dict]:
-    """Summarize older messages when a conversation grows long.
-
-    Keeps the last ``_COMPACT_KEEP`` messages verbatim and replaces everything
-    before them with a compact summary so the model retains context without
-    consuming the entire context window.
-    """
-    if len(messages) <= _COMPACT_KEEP + 2:
-        return messages
-    old = messages[:-_COMPACT_KEEP]
-    recent = messages[-_COMPACT_KEEP:]
-    text = "\n".join(
-        f"{m['role'].upper()}: {m.get('content', '') if isinstance(m.get('content'), str) else '[attachment]'}"
-        for m in old
-    )
-    summary = complete(
-        home,
-        [{"role": "user", "content":
-          f"Summarize this conversation compactly. Preserve all key facts, decisions, proposed edits, page names, and any context needed to continue the discussion:\n\n{text}"}],
-        system="You summarize conversations. Be concise but complete. Keep technical details, file names, and decisions.",
-        claude_token=claude_token,
-    )
-    return [
-        {"role": "user", "content": f"[Summary of earlier conversation]\n{summary}"},
-        {"role": "assistant", "content": "Understood — I have the full context from our earlier conversation."},
-        *recent,
-    ]
 
 
 def health_check(home: Path, *, claude_token: str = "", live: bool = False) -> dict:

@@ -75,7 +75,7 @@ def _files(home: Path, slug: str) -> dict[str, Path | bytes]:
                 if not path.is_file() or path.name.endswith(".tmp"):
                     continue
                 rel = path.relative_to(report)
-                # Chats and private review comments do not belong in an agent project.
+                # Private review comments (and legacy chats/ dirs) do not belong in an agent project.
                 if rel.parts and rel.parts[0] in {"chats", "comments"}:
                     continue
                 # Report figures are flat by contract: they are stored flat, listed flat, and

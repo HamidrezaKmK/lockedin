@@ -3,21 +3,14 @@
 All real work goes through :mod:`lockedin.service`; this module is HTTP + auth glue. Each
 request operates on the logged-in user's workspace (``data/users/<user>/``).
 
-Streaming endpoints (chat / generate / edit) run the model in a dedicated worker thread and
-hand events back over a queue — the same pattern ocd uses. This keeps the per-user path
-context (a contextvar) consistent for the whole generator, including the final save, which
-would otherwise be at risk if Starlette resumed the generator on a different threadpool worker.
-
 Launch with ``lockedin serve``.
 """
 import contextvars
 import json
 import logging
 import os
-import queue
 import re
 import secrets
-import threading
 import time
 from html import escape
 from pathlib import Path
@@ -748,10 +741,6 @@ _SCIENTIST_DEVICES: dict[str, dict] = {}
 SECURE_COOKIES = os.environ.get("LOCKEDIN_INSECURE_COOKIE", "") not in ("1", "true", "yes")
 
 
-def _sse(obj: dict) -> str:
-    return f"data: {json.dumps(obj)}\n\n"
-
-
 def _warn_slow_mutation(kind: str, started: float, slug: str, page: str) -> None:
     elapsed_ms = (time.perf_counter() - started) * 1000
     if elapsed_ms > 250:
@@ -762,7 +751,7 @@ def build_app():
     from fastapi import (BackgroundTasks, Cookie, Depends, FastAPI, File, Form,
                          Header, HTTPException, UploadFile)
     from fastapi.middleware.cors import CORSMiddleware
-    from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+    from fastapi.responses import FileResponse, JSONResponse
     from pydantic import BaseModel
 
     app = FastAPI(title="lockedin — research assistant")
@@ -860,10 +849,6 @@ def build_app():
 
     class PremiumIn(BaseModel):
         premium: bool
-
-    class SlackAskIn(BaseModel):
-        slug: str
-        question: str
 
     class ShareIn(BaseModel):
         active: bool
@@ -963,17 +948,6 @@ def build_app():
         if base_mtime is None:
             raise HTTPException(status_code=428,
                                 detail="base_mtime is required for review mutations on an existing page.")
-
-    class ChatIn(BaseModel):
-        messages: list[dict]
-        page: str
-        page_context: str = ""
-        deep_read_ids: list[str] = []
-
-    class SaveSessionIn(BaseModel):
-        session_id: str
-        title: str
-        messages: list[dict]
 
     class ModelConfigIn(BaseModel):
         config: dict
@@ -1106,30 +1080,6 @@ def build_app():
             raise HTTPException(status_code=503, detail="Slack linking is not configured.")
         if not secret or not secrets.compare_digest(secret, expected):
             raise HTTPException(status_code=403, detail="Invalid Slack secret.")
-
-    def _stream(generator_factory):
-        """Run a dict-yielding generator in a worker thread; forward events as SSE."""
-        def gen():
-            q: queue.Queue = queue.Queue()
-
-            def worker():
-                try:
-                    for ev in generator_factory():
-                        q.put(ev)
-                except Exception as e:  # noqa: BLE001
-                    q.put({"type": "error", "detail": str(e)})
-                finally:
-                    q.put(None)
-
-            threading.Thread(target=worker, daemon=True).start()
-            while True:
-                ev = q.get()
-                if ev is None:
-                    break
-                yield _sse(ev)
-
-        return StreamingResponse(gen(), media_type="text/event-stream",
-                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
     # ---- static ----
     @app.get("/")
@@ -1467,22 +1417,6 @@ def build_app():
             return service.save_aesthetics_config(home_of(user), body.themes)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
-
-    @app.post("/api/slack/ask")
-    def slack_ask(body: SlackAskIn, user: str = Depends(current_user)):
-        """Plain-text Slack Q&A using the logged-in user's configured model and entitlements."""
-        home = home_of(user)
-        detail = service.bubble_detail(home, body.slug)
-        pages = detail.get("pages") or []
-        page = detail.get("home") or (pages[0]["page_slug"] if pages else "overview")
-        messages = [{"role": "user", "content": body.question}]
-        answer = ""
-        for ev in service.chat(home, body.slug, page, messages):
-            if ev.get("type") == "error":
-                raise HTTPException(status_code=400, detail=ev.get("detail") or "Chat failed.")
-            if ev.get("type") == "done":
-                answer = ev.get("chat_text") or ev.get("full_response") or answer
-        return {"answer": answer.strip()}
 
     # ---- assets ----
     @app.get("/api/assets")
@@ -2100,44 +2034,6 @@ def build_app():
         # re-render re-downloaded all of them and the reading view visibly flashed.
         return FileResponse(p, headers={"Content-Disposition": "inline",
                                         "Cache-Control": "private, no-cache"})
-
-    # ---- chat sessions ----
-    @app.get("/api/bubbles/{slug}/chats")
-    def list_chats(slug: str, user: str = Depends(current_user)):
-        return {"sessions": service.list_chat_sessions(home_of(user), slug)}
-
-    @app.get("/api/bubbles/{slug}/chats/{session_id}")
-    def get_chat(slug: str, session_id: str, user: str = Depends(current_user)):
-        s = service.get_chat_session(home_of(user), slug, session_id)
-        if s is None:
-            raise HTTPException(status_code=404, detail="Session not found.")
-        return {"session": s}
-
-    @app.put("/api/bubbles/{slug}/chats/{session_id}")
-    def save_chat(slug: str, session_id: str, body: SaveSessionIn,
-                  user: str = Depends(current_user)):
-        service.save_chat_session(home_of(user), slug, session_id, body.title, body.messages)
-        return {"ok": True}
-
-    @app.delete("/api/bubbles/{slug}/chats/{session_id}")
-    def del_chat(slug: str, session_id: str, user: str = Depends(current_user)):
-        service.delete_chat_session(home_of(user), slug, session_id)
-        return {"ok": True}
-
-    # ---- chat title (short, cute, model-generated) ----
-    class ChatTitleIn(BaseModel):
-        messages: list[dict]
-
-    @app.post("/api/bubbles/{slug}/chats/title")
-    def chat_title(slug: str, body: ChatTitleIn, user: str = Depends(current_user)):
-        return {"title": service.generate_chat_title(home_of(user), body.messages)}
-
-    # ---- streamed: read-only research chat ----
-    @app.post("/api/bubbles/{slug}/chat")
-    def bubble_chat(slug: str, body: ChatIn, user: str = Depends(current_user)):
-        home = home_of(user)
-        return _stream(lambda: service.chat(home, slug, body.page, body.messages,
-                                            body.page_context, body.deep_read_ids))
 
     return app
 

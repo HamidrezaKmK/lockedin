@@ -34,7 +34,7 @@
   :root,body.theme-dark{
     --bg:#0d1018; --panel:#161b25; --panel2:#1c2230; --line:#252d3d;
     --ink:#e8ecf4; --muted:#8a94a8; --accent:#9b80ff; --accent2:#4dd9b8;
-    --warn:#f5c842; --bad:#ff6b6b; --good:#4ade80; --assistant-bg:#13202b;
+    --warn:#f5c842; --bad:#ff6b6b; --good:#4ade80;
     --ref-accent:#b59cff;
     --text-color-1:#b59cff; --text-color-2:#4dd9b8; --text-color-3:#f2c94c; --text-color-4:#ff7aa2; --text-color-5:#8bd3ff;
     --shadow-sm:0 1px 6px rgba(0,0,0,.4); --shadow:0 6px 24px rgba(0,0,0,.55);
@@ -42,7 +42,7 @@
   body.theme-light{
     --bg:#eaf0f7; --panel:#fbfdff; --panel2:#d8e2ef; --line:#9eafc3;
     --ink:#111b2d; --muted:#3f5067; --accent:#4338ca; --accent2:#0b6b63;
-    --warn:#92400e; --bad:#b91c36; --good:#166534; --assistant-bg:#e2e9ff;
+    --warn:#92400e; --bad:#b91c36; --good:#166534;
     --ref-accent:#4338ca;
     --text-color-1:#4338ca; --text-color-2:#0b6b63; --text-color-3:#92400e; --text-color-4:#86198f; --text-color-5:#075985;
     --shadow-sm:0 1px 5px rgba(17,27,45,.14); --shadow:0 10px 30px rgba(17,27,45,.2);
@@ -74,7 +74,7 @@
   body.theme-pink{
     --bg:#f6e9f2; --panel:#fff8fc; --panel2:#efd5e6; --line:#cc9dbb;
     --ink:#42102f; --muted:#81506d; --accent:#b51f70; --accent2:#087f78;
-    --warn:#9a5b08; --bad:#bd185d; --good:#08765e; --assistant-bg:#f2dcec;
+    --warn:#9a5b08; --bad:#bd185d; --good:#08765e;
     --ref-accent:var(--accent2);
     --text-color-1:#b51f70; --text-color-2:#8f287f; --text-color-3:#087f78; --text-color-4:#b64c38; --text-color-5:#643b9d;
     --shadow-sm:0 1px 6px rgba(66,16,47,.14); --shadow:0 10px 30px rgba(66,16,47,.2);
@@ -82,7 +82,7 @@
   body.theme-techno{
     --bg:#07100b; --panel:#0e1b13; --panel2:#162b1c; --line:#315d3d;
     --ink:#e0f4e3; --muted:#9cc5a4; --accent:#4bd16e; --accent2:#8ce6a1;
-    --warn:#d4d96c; --bad:#ff6680; --good:#4bd16e; --assistant-bg:#10261a;
+    --warn:#d4d96c; --bad:#ff6680; --good:#4bd16e;
     --ref-accent:var(--accent2);
     --text-color-1:#4bd16e; --text-color-2:#8ce6a1; --text-color-3:#d4d96c; --text-color-4:#67d5aa; --text-color-5:#9ecfa9;
     --shadow-sm:0 1px 6px rgba(0,0,0,.36); --shadow:0 10px 30px rgba(0,0,0,.5);
@@ -90,7 +90,7 @@
   body.theme-pearl{
     --bg:#f1eee8; --panel:#fffaf2; --panel2:#e4ddd1; --line:#c9bbab;
     --ink:#36312d; --muted:#70645b; --accent:#a84216; --accent2:#bf592a;
-    --warn:#9c501d; --bad:#a92d25; --good:#55743a; --assistant-bg:#f5e6d9;
+    --warn:#9c501d; --bad:#a92d25; --good:#55743a;
     --ref-accent:var(--accent2);
     --text-color-1:#a84216; --text-color-2:#bf592a; --text-color-3:#95651e; --text-color-4:#756052; --text-color-5:#833416;
     --shadow-sm:0 1px 6px rgba(54,49,45,.12); --shadow:0 10px 30px rgba(54,49,45,.17);
@@ -349,7 +349,6 @@
   #app.bubble-focus #main.detailmode{padding:0}
   #app.bubble-focus #detail{grid-template-columns:minmax(0,1fr);gap:0}
   #app.bubble-focus .pane{border:0;border-radius:0}
-  #app.bubble-focus .chat-pane,#app.bubble-focus .focus-hide{display:none!important}
   .navbtn{display:block;width:100%;text-align:left;border:none;background:transparent;
           padding:10px 12px;border-radius:8px;color:var(--muted);margin-bottom:2px;
           font-size:13px;font-weight:600;letter-spacing:.01em;transition:color .15s,background .15s}
@@ -435,7 +434,7 @@
   @media (prefers-reduced-motion:reduce){.loading-spinner,.skeleton-card{animation:none}}
 
   /* bubble detail */
-  #detail{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(0,1fr);gap:16px;flex:1;
+  #detail{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;flex:1;
           min-height:0;min-width:0}
   .pane{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
         display:flex;flex-direction:column;min-height:0;min-width:0;overflow:hidden;overflow:clip}
@@ -461,14 +460,14 @@
   .preview figure img{display:block;margin:0 auto}
   .preview figcaption{margin:.55em auto 0;max-width:92%;font-family:var(--font-reading);font-size:.9em;
     font-style:italic;line-height:1.45;color:var(--muted)}
-  /* tables + blockquotes — shared by the preview pane and chat messages */
-  .preview table,.msg table{display:block;width:max-content;max-width:100%;overflow-x:auto;
+  /* tables + blockquotes in the preview pane */
+  .preview table{display:block;width:max-content;max-width:100%;overflow-x:auto;
         border-collapse:collapse;margin:8px 0;font-size:13px}
-  .preview th,.preview td,.msg th,.msg td{border:1px solid var(--line);padding:5px 9px;text-align:left}
-  .preview thead th,.msg thead th{background:var(--panel2)}
-  .preview blockquote,.msg blockquote{margin:8px 0;padding:4px 12px;border-left:3px solid var(--accent);
+  .preview th,.preview td{border:1px solid var(--line);padding:5px 9px;text-align:left}
+  .preview thead th{background:var(--panel2)}
+  .preview blockquote{margin:8px 0;padding:4px 12px;border-left:3px solid var(--accent);
         color:var(--muted);background:var(--panel2);border-radius:0 6px 6px 0}
-  .preview blockquote p,.msg blockquote p{margin:4px 0}
+  .preview blockquote p{margin:4px 0}
   /* Wide display-math scrolls inside its block instead of stretching the pane. */
   .katex-display{overflow-x:auto;overflow-y:hidden;max-width:100%}
   /* A numbered equation's \tag{} is KaTeX-positioned absolute at right:0, so a wide equation
@@ -535,14 +534,6 @@
   .math-env.proof .math-env-title{letter-spacing:.12em;opacity:.85}
   .math-env .math-env-qed{text-align:right;margin-top:.5em;color:var(--env);opacity:.6;font-size:1.15em;line-height:1}
 
-  /* chat */
-  #chatlog{display:flex;flex-direction:column;gap:10px;min-width:0}
-  .msg{padding:9px 11px;border-radius:10px;max-width:95%;min-width:0;overflow-wrap:anywhere;word-break:break-word}
-  .msg pre{overflow:auto;max-width:100%}
-  .msg img{max-width:100%;height:auto}
-  .msg .katex-display{overflow-x:auto;overflow-y:hidden}
-  .msg.user{align-self:flex-end;background:var(--panel2)}
-  .msg.assistant{align-self:flex-start;background:var(--assistant-bg);border:1px solid var(--line)}
   .synced{font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid var(--good);color:var(--good)}
   .synced.stale{border-color:var(--warn);color:var(--warn)}
   .synced.saving{border-color:var(--warn);color:var(--warn);opacity:.7}
@@ -637,9 +628,6 @@
   .create-dialog-footer{border-top:1px solid var(--line);justify-content:flex-end}
   .create-dialog-footer button{min-width:88px}
 
-  /* chat pane collapse */
-  #detail.chat-collapsed{grid-template-columns:1fr}
-  #detail.chat-collapsed>.pane:last-child{display:none!important}
   /* preview-pane toggle is handled via S.previewEl.classList.toggle("hide") */
 
   /* page tabs + editor host */
@@ -729,24 +717,8 @@
     background:rgba(124,156,255,.12);padding:0 4px;border-radius:4px}
   .scopebar{display:flex;gap:6px;align-items:center;padding:6px 10px;border-top:1px solid var(--line)}
   .scopebar select{width:auto;max-width:230px}
-  .sessionbar{display:flex;gap:6px;align-items:center;padding:5px 10px;
-              border-bottom:1px solid var(--line);flex:0 0 auto}
-  .sessionbar select{flex:1;font-size:12px}
-  /* deep-read pill selector */
-  .drwrap{padding:8px 10px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:6px;flex:0 0 auto}
-  .drpills{display:flex;flex-wrap:wrap;gap:5px;min-height:0}
-  .drpill{display:inline-flex;align-items:center;gap:5px;background:var(--panel2);
-           border:1px solid var(--accent2);border-radius:999px;padding:2px 9px;font-size:12px;color:var(--accent2)}
-  .drpill .x{opacity:.6;cursor:pointer} .drpill .x:hover{opacity:1;color:var(--bad)}
-  .drrow{display:flex;gap:6px;align-items:center}
-  .drrow select{flex:1;font-size:12px}
-  /* sessions management panel */
-  .sessions-panel{border-bottom:1px solid var(--line);flex:0 0 auto;max-height:180px;overflow-y:auto}
-  .session-row{display:flex;align-items:center;gap:6px;padding:5px 10px;border-top:1px solid var(--line);font-size:12px}
-  .session-row:first-child{border-top:none}
-  .session-row .session-title{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink)}
   /* "Papers in this bubble": papers render as wrapped, pressable pills (same look as the
-     chat's deep-read pills) — each links to the PDF; a remove ✕ only appears in edit mode. */
+     each links to the PDF; a remove ✕ only appears in edit mode. */
   .bubble-pdf-list{display:flex;flex-wrap:wrap;gap:5px}
   .paperchip{display:inline-flex;align-items:center;gap:5px;max-width:220px;
              background:var(--panel2);border:1px solid var(--accent2);border-radius:999px;
@@ -854,7 +826,7 @@
     /* A bubble is an editor workspace, not a document page: keep the app frame fixed and let
        the editor/preview own scrolling. This removes Safari's extra page-level scroll handle. */
     #app.detail-open{height:var(--vvh);min-height:var(--vvh);overflow:hidden}
-    /* The Papers/Chat controls are intentionally floating controls. Do not reserve page space
+    /* The Papers controls are intentionally floating controls. Do not reserve page space
        for them: that would shrink the bubble field and make the controls look detached. */
     #app.detail-open #main.detailmode{height:100%;overflow:hidden;padding:12px 10px 0}
     #app.detail-open #detail{display:flex;flex:1;min-height:0}
@@ -880,7 +852,7 @@
     #detail{display:block;min-height:0}
     .pane{height:auto;min-height:0}
     #detail>.editor-pane{height:calc(var(--vvh) - 154px - env(safe-area-inset-top));min-height:min(380px, calc(var(--vvh) - 154px))}
-    #detail>.chat-pane,.desktop-only-tool{display:none!important}
+    .desktop-only-tool{display:none!important}
     /* On phones, page creation and editor-mode switching belong in the full workspace, not the
        compact reader header. Keep page tabs and the Focus control only. */
     .mobile-workspace-control{display:none!important}
@@ -912,11 +884,6 @@
     .mobile-sheet-body{overflow:auto;min-height:0;display:flex;flex-direction:column}
     .mobile-sheet-body>.pane{height:calc(var(--vvh) - 90px);min-height:0;border:none;border-radius:0;background:transparent}
     .mobile-sheet-body>.bd{padding:12px;overflow:auto}
-    .mobile-sheet-body .chat-pane{display:flex!important}
-    .mobile-sheet-body .chat-titlebar{display:none!important}
-    .mobile-sheet-body .chat-pane:not(.chat-controls-open) .sessionbar,
-    .mobile-sheet-body .chat-pane:not(.chat-controls-open) .sessions-panel,
-    .mobile-sheet-body .chat-pane:not(.chat-controls-open) .drwrap{display:none!important}
     #modelCfg{position:fixed;top:calc(58px + env(safe-area-inset-top));left:12px;right:12px;
       width:auto;max-width:none;max-height:calc(var(--vvh) - 82px);border-radius:14px}
     /* single-column cards. minmax(0,1fr) (not 1fr) forces the track minimum to 0 so a card's
@@ -1011,7 +978,7 @@
       <section class="landing-section" aria-labelledby="workflow-title">
         <div class="landing-section-head">
           <h2 id="workflow-title">Paper pile to working theory</h2>
-          <p>Collect sources, shape topic clusters, write technical notes, then chat/share/track.</p>
+          <p>Collect sources, shape topic clusters, write technical notes, then share and track.</p>
         </div>
         <div class="workflow-grid">
           <div class="workflow-step"><span class="workflow-num">01</span><b>Bubble</b><span>Create a theme or idea you would like to research on</span></div>
@@ -1213,7 +1180,7 @@
     S.workspaceId=id;
     // Still remembered, but now only as the default for a tab that opens without a workspace.
     try{localStorage.setItem(WORKSPACE_STORAGE_KEY,id);}catch(e){}
-    S.bubble=null; S.page=null; S.pages=[]; S.chat=[]; S.todos=[]; S.todosById={};
+    S.bubble=null; S.page=null; S.pages=[]; S.todos=[]; S.todosById={};
     refreshAccountButton();
     api("/api/settings/math").then(m=>{S.mathMacros=m.macros||{};}).catch(()=>{});
   }
@@ -1343,29 +1310,6 @@
   }
 
   // SSE over POST; returns AbortController. onEvent({type,...}).
-  function streamPost(path, body, onEvent){
-    const ac = new AbortController();
-    (async()=>{
-      const r = await fetch(path,{method:"POST",credentials:"include",signal:ac.signal,
-        headers:{"Content-Type":"application/json","X-LockedIn-Workspace":S.workspaceId||""},body:JSON.stringify(body)});
-      const reader=r.body.getReader(); const dec=new TextDecoder(); let buf="";
-      while(true){
-        const {value,done}=await reader.read(); if(done)break;
-        buf+=dec.decode(value,{stream:true});
-        let i; while((i=buf.indexOf("\n\n"))>=0){
-          const line=buf.slice(0,i).trim(); buf=buf.slice(i+2);
-          if(line.startsWith("data:")){ try{ onEvent(JSON.parse(line.slice(5).trim())); }catch(e){} }
-        }
-      }
-    })().catch(e=>{ if(e.name!=="AbortError") onEvent({type:"error",detail:e.message}); });
-    return ac;
-  }
-
-  // ---------- markdown + math ----------
-  // opts.refs (bubble-wide reference registry from /api/bubbles/<slug>/refs) + opts.pageSlug make
-  // equation/theorem numbers and \eqref/\thmref resolve ACROSS pages; without them numbering is
-  // self-contained to this content (chat, TODO notes, summaries, the help guide). Mirrors the
-  // server's _build_refs/_preprocess_* so the live editor preview matches the standalone pages.
   function commentSourceLocation(source,index){
     const before=String(source||"").slice(0,Math.max(0,index)), lines=before.split("\n");
     return {line:lines.length,column:Array.from(lines[lines.length-1]).length+1};
@@ -1793,15 +1737,12 @@
   const WORKSPACE_STORAGE_KEY="li_workspace";
   const S = { user:null, model:null, premium:false, premiumRequestedAt:"", admin:false,
     workspaceId:null, personalWorkspaceId:null, workspaces:[],
-    mathMacros:{}, refs:null, view:"assets", bubble:null, chat:[],
+    mathMacros:{}, refs:null, view:"assets", bubble:null,
     editor:null, page:null, pages:[], home:null, bubbleInstr:"", bubbleAssets:[],
-    sessionId:null, sessionTitle:null,
     todos:[], todosById:{}, todoFilter:"open", bubbleFilter:"active",
-    chatCollapsed:false,  // persisted in li_chat
     pollTimer:null, lastPageMtime:null, lastManifestMtime:null, lastAssetsMtime:null,
     baseMtime:null, autosaveTimer:null, saving:false, syncState:"synced", applyingRemote:false,
-    previewEl:null, remoteChangePending:false, papersMenu:null, chatPane:null,
-    detailWrap:null,
+    previewEl:null, remoteChangePending:false, papersMenu:null,
     comments:[], reviewOpen:false, reviewTab:"open", selectedComment:null, lastCommentsMtime:null,
     reviewSelection:null, reviewHitTargets:[], reviewMarkupError:null, reviewHighlightFrame:null,reviewMutationObserver:null,
     reviewMutating:false,reviewMutationEpoch:0,reviewCommentsLoaded:false,
@@ -1871,8 +1812,8 @@
     stopPresence(); S.presenceEl=null;
     if(S.editor){ try{S.editor.destroy();}catch(e){} }
     S.editor=null; S.bubble=null; S.page=null; S.pages=[]; S.previewEl=null;
-    S.chatPane=null; S.detailWrap=null; S.papersMenu=null;
-    S.remoteChangePending=false; S.sessionId=null; S.sessionTitle=null;
+    S.papersMenu=null;
+    S.remoteChangePending=false;
     if(S.reviewMutationObserver){S.reviewMutationObserver.disconnect();S.reviewMutationObserver=null;}
     S.comments=[];S.reviewSelection=null;S.reviewHitTargets=[];S.reviewMarkupError=null;S.commentDraftAnchor=null;S.reviewMutating=false;S.reviewCommentsLoaded=false;
     try{ if(window.CSS&&CSS.highlights)CSS.highlights.delete("lockedin-review"); }catch(e){}
@@ -1950,7 +1891,7 @@
     const old=S.workspaceId; S.workspaceId=id;
     try{
       const math=await api("/api/settings/math"); S.mathMacros=math.macros||{};
-      S.bubble=null; S.page=null; S.pages=[]; S.chat=[]; S.todos=[]; S.todosById={};
+      S.bubble=null; S.page=null; S.pages=[]; S.todos=[]; S.todosById={};
       localStorage.setItem(WORKSPACE_STORAGE_KEY,id);
       refreshAccountButton(); $("#accountMenu").classList.add("hide"); switchView("assets");
       toast("Switched workspace");
@@ -2086,8 +2027,7 @@
   async function setActive(k){
     try{ const r=await api("/api/settings/model/active",{method:"PUT",body:JSON.stringify({active:k})});
       S.model=r.config; S.verifiedActive=null; renderModelTabs(); if(S.view==="settings")viewSettings({checkHealth:false});
-      scheduleLiveHealth(k); toast("Testing model: "+k);
-      const badge=$("#chatModelBadge"); if(badge)badge.textContent=k; }
+      scheduleLiveHealth(k); toast("Testing model: "+k); }
     catch(e){ toast(e.message); }
   }
   function openCfg(k){
@@ -3571,9 +3511,9 @@
     leaveBubbleWorkspace({preserveFocus:true});
     const token=S.openToken=(S.openToken||0)+1;
     if(!noRoute)pushRoute("bubble/"+slug);
-    S.bubble=slug; S.refs=null; S.chat=[]; S.page=null; S.pages=[]; S.sessionId=null; S.sessionTitle=null;
+    S.bubble=slug; S.refs=null; S.page=null; S.pages=[];
     S.selectedComment=null;S.reviewSelection=null;S.reviewHitTargets=[];S.reviewMarkupError=null;S.commentDraftAnchor=null;S.reviewMutating=false;S.reviewMutationEpoch=(S.reviewMutationEpoch||0)+1;S.reviewCommentsLoaded=false;
-    S.previewEl=null; S.remoteChangePending=false; S.papersMenu=null; S.chatPane=null; S.detailWrap=null;
+    S.previewEl=null; S.remoteChangePending=false; S.papersMenu=null;
     S.baseMtime=null; S.saving=false; S.syncState="synced";
     S.shareActive=false; S.shareToken=""; S.editingTitles=false; S.nameInput=null; S.showHiddenPages=false;
     const {m,version}=beginMainRender({detail:true});
@@ -3620,17 +3560,13 @@
     }
     m.append(titleRow);
 
-    S.chatCollapsed = localStorage.getItem("li_chat")==="1";
     const wrap=el("div",{id:"detail"});
-    if(S.chatCollapsed) wrap.classList.add("chat-collapsed");
-    const left=el("div",{class:"pane editor-pane"}), right=el("div",{class:"pane chat-pane"});
-    S.detailWrap=wrap; S.chatPane=right;
-    wrap.append(left,right); m.append(wrap);
+    const left=el("div",{class:"pane editor-pane"});
+    wrap.append(left); m.append(wrap);
 
     if(!b.approved){ buildApprovalPane(left,b); }
     else { buildWorkspace(left,b); }
-    buildChatPane(right,b);
-    if(b.approved) buildMobileBubbleTools(m,b,wrap,right);
+    if(b.approved) buildMobileBubbleTools(m,b);
     // Focus mode is a per-tab workspace preference. Restore it after the bubble UI exists so
     // refreshing the current bubble keeps the same focused page instead of returning to chrome.
     if(b.approved&&sessionStorage.getItem("li_bubble_focus")==="1"){
@@ -3707,36 +3643,17 @@
     return sheet;
   }
 
-  function buildMobileBubbleTools(main,b,wrap,chatPane){
+  function buildMobileBubbleTools(main,b){
     const papersSheet=buildMobileSheet("Papers");
     const papersBody=el("div",{class:"bd"});
     papersSheet._body.append(papersBody);
     renderBubblePdfs(papersBody,b);
-
-    const chatSheet=buildMobileSheet("Chat");
-    const controlsBtn=el("button",{class:"ghost small",title:"Chat history and deep-read papers",
-      onclick:()=>{
-        chatPane.classList.toggle("chat-controls-open");
-        controlsBtn.textContent=chatPane.classList.contains("chat-controls-open")?"✕ Controls":"☰ Controls";
-      }},"☰ Controls");
-    chatSheet._header.insertBefore(controlsBtn,chatSheet._header.lastChild);
-    chatSheet._onClose=()=>{ if(chatPane.parentElement!==wrap) wrap.append(chatPane); };
-    const openPapers=()=>{ chatSheet._close(); papersSheet._open(); };
-    const openChat=()=>{
-      papersSheet._close();
-      chatPane.classList.remove("chat-controls-open");
-      controlsBtn.textContent="☰ Controls";
-      chatSheet._body.append(chatPane);
-      chatSheet._open();
-      const input=document.getElementById("chatInput");
-      if(input) setTimeout(()=>input.focus({preventScroll:true}),120);
-    };
+    const openPapers=()=>{ papersSheet._open(); };
 
     const actions=el("div",{class:"mobile-bubble-actions"},
       el("button",{class:"primary small",title:"Papers",onclick:openPapers},"📚"),
-      el("button",{class:"primary small",title:b.overleaf_url?"Open Overleaf":"Link Overleaf",onclick:()=>b.overleaf_url?window.open(b.overleaf_url,"_blank","noopener"):openOverleafModal(b)},"🍃"),
-      el("button",{class:"primary small",title:"Chat",onclick:openChat},"💬"));
-    main.append(actions,papersSheet,chatSheet);
+      el("button",{class:"primary small",title:b.overleaf_url?"Open Overleaf":"Link Overleaf",onclick:()=>b.overleaf_url?window.open(b.overleaf_url,"_blank","noopener"):openOverleafModal(b)},"🍃"));
+    main.append(actions,papersSheet);
   }
 
   // Render the "Papers in this bubble" strip. The route carries the selected workspace, so the
@@ -4582,9 +4499,6 @@
     controls.append(el("button",{class:"small ghost",id:"bubbleFocusToggle",
       title:"Enter focused workspace", "aria-label":"Enter focused workspace",
       onclick:()=>setBubbleFocus(!S.bubbleFocus)},"⛶"));
-    // chat-pane toggle
-    controls.append(el("button",{class:"small ghost desktop-only-tool focus-hide",title:S.chatCollapsed?"Show chat":"Hide chat",
-      onclick:toggleChat},S.chatCollapsed?"💬 >":"💬 <"));
     refreshPageVisibilityTool();
     refreshHiddenPagesTool();
   }
@@ -5251,12 +5165,6 @@
     S.pollTimer=setInterval(pollSync,5000);
   }
 
-  function toggleChat(){
-    const d=document.getElementById("detail"); if(!d)return;
-    S.chatCollapsed=d.classList.toggle("chat-collapsed");
-    localStorage.setItem("li_chat",S.chatCollapsed?"1":"0");
-    refreshTabs();
-  }
   // Per-bubble view mode, remembered across page refreshes (localStorage). Falls back to the
   // reading view for unknown/legacy values or when storage is unavailable.
   function loadViewMode(slug){
@@ -5285,483 +5193,6 @@
     refreshTabs();
     scrollContentTop();
   }
-  // ---- read-only research chat pane ----
-  function buildChatPane(right,b){
-    right.append(el("div",{class:"hd chat-titlebar"}, el("b",{},"Chat"),
-      el("span",{class:"muted",style:"font-size:12px",id:"chatModelBadge"},S.model.active),
-      el("span",{class:"spacer"}),
-      el("span",{class:"muted",style:"font-size:11px",title:"This chat discusses your reports and papers but never edits pages."},"💬 read-only")));
-
-    // Session selector + management
-    const sessionSel=el("select",{id:"sessionSel"});
-    sessionSel.append(el("option",{value:""},"✏️ New chat"));
-    const sessCnt=el("span",{id:"sessCnt",class:"muted",style:"font-size:11px;white-space:nowrap"});
-    const sessionsPanel=el("div",{id:"sessionsPanel",class:"sessions-panel hide"});
-    const manageBtn=el("button",{class:"ghost small",title:"Manage all sessions",
-      onclick:()=>sessionsPanel.classList.toggle("hide")},"📋");
-    const sessionBar=el("div",{class:"sessionbar"},sessionSel,sessCnt,
-      el("span",{class:"spacer"}), manageBtn,
-      el("button",{class:"ghost small",style:"opacity:.5",title:"Delete this session",
-        onclick:async()=>{
-          if(!S.sessionId)return;
-          if(!confirm("Delete this chat session?"))return;
-          await api("/api/bubbles/"+S.bubble+"/chats/"+S.sessionId,{method:"DELETE"});
-          S.sessionId=null; S.sessionTitle=null; S.chat=[]; chatlog.innerHTML="";
-          await refreshSessionList(sessionSel); toast("Session deleted");
-        }},"🗑"));
-    right.append(sessionBar, sessionsPanel);
-
-    sessionSel.onchange=async()=>{
-      const id=sessionSel.value;
-      if(!id){ S.sessionId=null; S.sessionTitle=null; S.chat=[]; chatlog.innerHTML=""; return; }
-      const r=await api("/api/bubbles/"+S.bubble+"/chats/"+id);
-      S.sessionId=id; S.sessionTitle=r.session.title||null; S.chat=r.session.messages||[];
-      chatlog.innerHTML="";
-      S.chat.forEach(m=>pushMsg(chatlog,m.role,m.content));
-      chatlog.parentElement.scrollTop=1e9;
-    };
-
-    // Load session list asynchronously
-    refreshSessionList(sessionSel);
-
-    const log=el("div",{class:"bd"}); const chatlog=el("div",{id:"chatlog"}); log.append(chatlog);
-    right.append(log);
-
-    // deep-read pill selector
-    right._deepIds=[];
-    const drWrap=el("div",{class:"drwrap"});
-    const pills=el("div",{class:"drpills"});
-    const drRow=el("div",{class:"drrow"});
-    const drSel=el("select"); drSel.append(el("option",{value:""},"📎 Add paper to deep-read…"));
-    const refreshDrSel=()=>{
-      drSel.innerHTML=""; drSel.append(el("option",{value:""},"📎 Add paper to deep-read…"));
-      (b.assets||[]).filter(a=>!right._deepIds.includes(a.pdf_id))
-        .forEach(a=>drSel.append(el("option",{value:a.pdf_id},
-          "R"+(a.bubble_score||5)+" · "+(a.title||a.pdf_id))));
-    };
-    const addPill=(a)=>{
-      const pill=el("span",{class:"drpill"},"R"+(a.bubble_score||5)+" · "+(a.title||a.pdf_id),
-        el("span",{class:"x",onclick:()=>{ right._deepIds=right._deepIds.filter(id=>id!==a.pdf_id);
-          pill.remove(); refreshDrSel(); }},"✕"));
-      pills.append(pill);
-    };
-    drSel.onchange=()=>{ const pid=drSel.value; if(!pid)return;
-      const a=(b.assets||[]).find(x=>x.pdf_id===pid); if(!a)return;
-      right._deepIds.push(pid); addPill(a); refreshDrSel(); drSel.value=""; };
-    if((b.assets||[]).length){ refreshDrSel(); drRow.append(drSel); drWrap.append(drRow,pills); right.append(drWrap); }
-
-    const input=el("textarea",{rows:"2",id:"chatInput",
-      placeholder:"Ask anything, or ask me to rewrite a section…"});
-    const send=el("button",{class:"primary small",onclick:()=>sendChat(chatlog,input,right)},"Send");
-    input.onkeydown=e=>{ if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendChat(chatlog,input,right);} };
-    right.append(el("div",{class:"hd"},input,send));
-  }
-
-  async function refreshSessionList(sel){
-    if(!S.bubble)return;
-    try{
-      const r=await api("/api/bubbles/"+S.bubble+"/chats");
-      const cur=sel.value;
-      while(sel.options.length>1)sel.remove(1);
-      r.sessions.forEach(s=>sel.append(el("option",{value:s.id},s.title.slice(0,50)+(s.title.length>50?"…":""))));
-      if([...sel.options].some(o=>o.value===cur))sel.value=cur;
-
-      // Update count badge
-      const cnt=document.getElementById("sessCnt");
-      if(cnt)cnt.textContent=r.sessions.length?`(${r.sessions.length} saved)`:"";
-
-      // Rebuild management panel
-      const panel=document.getElementById("sessionsPanel");
-      if(!panel)return;
-      panel.innerHTML="";
-      if(!r.sessions.length){
-        panel.append(el("div",{style:"padding:8px 10px;font-size:12px;color:var(--muted)"},"No saved sessions."));
-        return;
-      }
-      r.sessions.forEach(s=>{
-        const chatlog=document.getElementById("chatlog");
-        const row=el("div",{class:"session-row"},
-          el("span",{class:"session-title",title:s.title},s.title),
-          el("button",{class:"ghost small",title:"Delete",onclick:async()=>{
-            if(!confirm("Delete '"+s.title.slice(0,40)+"'?"))return;
-            await api("/api/bubbles/"+S.bubble+"/chats/"+s.id,{method:"DELETE"});
-            if(S.sessionId===s.id){ S.sessionId=null; S.sessionTitle=null; S.chat=[]; if(chatlog)chatlog.innerHTML=""; }
-            await refreshSessionList(sel); toast("Session deleted");
-          }},"🗑"));
-        panel.append(row);
-      });
-    }catch(e){}
-  }
-
-  function fallbackTitle(){
-    return (S.chat.find(m=>m.role==="user")?.content||"New Chat").slice(0,40)||"New Chat";
-  }
-  async function fetchChatTitle(){
-    // Ask the model for a short, cute name based on the conversation so far.
-    try{
-      const r=await api("/api/bubbles/"+S.bubble+"/chats/title",
-        {method:"POST",body:JSON.stringify({messages:S.chat})});
-      return (r.title||"").trim()||fallbackTitle();
-    }catch(e){ return fallbackTitle(); }
-  }
-  async function autoSave(chatlog){
-    if(!S.bubble||!S.chat.length)return;
-    if(!S.sessionId){
-      const d=new Date().toISOString().slice(0,19).replace(/[-:T]/g,'').slice(0,14);
-      S.sessionId=d+"-"+Math.random().toString(36).slice(2,6);
-    }
-    // Generate the cute title once per session, then reuse it on later saves.
-    if(!S.sessionTitle) S.sessionTitle=await fetchChatTitle();
-    try{ await api("/api/bubbles/"+S.bubble+"/chats/"+S.sessionId,
-      {method:"PUT",body:JSON.stringify({session_id:S.sessionId,title:S.sessionTitle,messages:S.chat})});
-      // update the dropdown without losing current selection
-      const sel=document.getElementById("sessionSel");
-      if(sel) await refreshSessionList(sel);
-    }catch(e){}
-  }
-
-  function pushMsg(chatlog,role,text){
-    const m=el("div",{class:"msg "+role}); m.innerHTML=renderMarkdown(text);
-    chatlog.append(m); chatlog.parentElement.scrollTop=1e9; return m;
-  }
-
-  // Hide raw <EDIT>/<NEWPAGE> XML during streaming; show subtle badges
-  async function sendChat(chatlog,input,right){
-    const text=input.value.trim(); if(!text)return; input.value="";
-    S.chat.push({role:"user",content:text}); pushMsg(chatlog,"user",text);
-    const page_context=S.editor?S.editor.getMarkdown():"";
-    const deep=right._deepIds||[];
-    const node=pushMsg(chatlog,"assistant",""); let acc="";
-    streamPost("/api/bubbles/"+S.bubble+"/chat",
-      {messages:S.chat,page:S.page,page_context,deep_read_ids:deep},
-      ev=>{
-        if(ev.type==="delta"){
-          acc+=ev.text;
-          node.innerHTML=renderMarkdown(acc);
-          chatlog.parentElement.scrollTop=1e9;
-        } else if(ev.type==="done"){
-          S.chat.push({role:"assistant",content:ev.full_response||acc});
-          node.innerHTML=renderMarkdown(ev.chat_text||acc);
-          autoSave(chatlog);
-        } else if(ev.type==="error"){
-          node.innerHTML=renderMarkdown("⚠ "+ev.detail);
-        }
-      });
-  }
-
-  // ================= NEWS (premium) =================
-  async function refreshNewsCount(){
-    try{ const s=await api("/api/news/status"); $("#newsCount").textContent=s.new_count?`(${s.new_count})`:""; }
-    catch(e){}
-  }
-  function newsCard(it){
-    const c=el("div",{class:"acard"});
-    c.append(el("h4",{style:"margin:0 0 4px"},it.title||it.url||"(untitled)"));
-    const meta=[it.source,it.published].filter(Boolean).join(" • ");
-    if(meta)c.append(el("div",{class:"muted",style:"font-size:12px"},meta));
-    if(it.reason)c.append(el("div",{style:"font-size:13px;margin-top:6px"},it.reason));
-    c.append(el("div",{class:"row",style:"margin-top:10px;gap:8px"},
-      it.url?el("a",{href:it.url,target:"_blank",rel:"noopener"},el("button",{class:"small"},"Open ↗")):null,
-      el("span",{class:"spacer"}),
-      el("button",{class:"ghost small",onclick:async()=>{
-        try{ await api("/api/news/"+it.id+"/dismiss",{method:"POST"});
-          toast("Dismissed"); refreshNewsCount(); c.remove(); pruneEmptyNewsGroups(); updateNewsTitle(); }
-        catch(e){ toast("Error: "+e.message); }
-      }},"Dismiss")));
-    return c;
-  }
-  function updateNewsTitle(){
-    if(!S.newsTitle)return;
-    const n=S.newsFeed?S.newsFeed.querySelectorAll(".acard").length:0;
-    S.newsTitle.textContent="Archive ("+n+")";
-  }
-  // drop a bubble's heading + grid once its last paper is gone (zero ≠ shown)
-  function pruneEmptyNewsGroups(){
-    Object.keys(S.newsGroups||{}).forEach(slug=>{
-      const grid=S.newsGroups[slug];
-      if(grid && !grid.querySelector(".acard")){
-        const h=grid.previousElementSibling; if(h)h.remove(); grid.remove(); delete S.newsGroups[slug];
-      }
-    });
-  }
-  // ---- top section: the paper feed (grouped by bubble; supports live inserts) ----
-  function renderNewsFeed(feed, r){
-    feed.innerHTML=""; S.newsFeed=feed; S.newsGroups={};
-    S.newsBubbleNames={}; (r.bubbles||[]).forEach(b=>S.newsBubbleNames[b.slug]=b.name);
-    const items=r.items||[];
-    S.newsEmpty=el("div",{class:"muted"},
-      "No papers yet. Start a crawl below — found papers appear here, grouped by bubble.");
-    if(!items.length){ feed.append(S.newsEmpty); return; }
-    const groups={}; items.forEach(it=>{ const k=it.bubble_slug||""; (groups[k]=groups[k]||[]).push(it); });
-    Object.keys(groups).sort((a,b)=> a===""?1 : b===""?-1 :
-      (S.newsBubbleNames[a]||a).localeCompare(S.newsBubbleNames[b]||b))
-      .forEach(slug=>{ const grid=_newsGroupGrid(slug); groups[slug].forEach(it=>grid.append(newsCard(it))); });
-  }
-  function _newsGroupGrid(slug){
-    if(S.newsGroups[slug]) return S.newsGroups[slug];
-    if(S.newsEmpty){ S.newsEmpty.remove(); S.newsEmpty=null; }
-    const label=slug?(S.newsBubbleNames[slug]||slug):"Other / unmatched";
-    const grid=el("div",{class:"grid"});
-    S.newsFeed.append(el("h3",{class:"section-title",style:"font-size:15px;margin:14px 0 8px"},"🫧 "+label), grid);
-    S.newsGroups[slug]=grid; return grid;
-  }
-  function newsFeedInsert(it){ _newsGroupGrid(it.bubble_slug||"").prepend(newsCard(it)); updateNewsTitle(); }
-
-  // tear down any in-page crawl stream/poller (the server crawl keeps running + persisting)
-  function stopNewsLive(){
-    if(S.newsAbort){ try{S.newsAbort.abort();}catch(e){} S.newsAbort=null; }
-    if(S.newsPoll){ clearTimeout(S.newsPoll); S.newsPoll=null; }
-    S.newsStreaming=false; S.newsBusy=false;
-  }
-  async function viewNews(){
-    stopNewsLive();
-    const {m,version}=beginMainRender(); S._nf=0; S.newsBusy=false;
-    const title=el("h2",{class:"section-title",style:"margin:0"},"📰 News"); S.newsTitle=title;
-    m.append(el("div",{class:"row"}, title,
-      el("span",{class:"spacer"}),
-      el("button",{class:"ghost small",onclick:openNewsHistory},"🕘 History"),
-      el("button",{class:"ghost small",onclick:openNewsSettings},"⚙ Instructions")));
-    const feed=el("div",{style:"max-height:42vh;overflow:auto;border:1px solid var(--line);"+
-      "border-radius:10px;padding:10px 12px;margin-top:10px"});
-    const chatWrap=el("div",{class:"col",style:"margin-top:12px;border:1px solid var(--line);"+
-      "border-radius:10px;padding:10px 12px;gap:8px"});
-    const loading=viewLoading("Loading news…",3);
-    m.append(feed, chatWrap, loading);
-    let r={items:[],bubbles:[]}, st={};
-    try{ r=await api("/api/news"); }catch(e){}
-    if(!isCurrentRender(version))return;
-    try{ st=await api("/api/news/status"); }catch(e){}
-    if(!isCurrentRender(version))return;
-    loading.remove();
-    renderNewsFeed(feed, r);
-    updateNewsTitle();
-    buildNewsChat(chatWrap, st);
-  }
-
-  // render one transcript entry; "activity" = a muted step line, else a normal chat bubble
-  function pushNewsMsg(log, role, text){
-    if(role==="activity"){
-      const d=el("div",{class:"muted",style:"font-size:12px;font-style:italic;margin:1px 0"},text);
-      log.append(d); log.parentElement.scrollTop=1e9; return d;
-    }
-    return pushMsg(log, role, text);
-  }
-  function newsSend(chatlog, message, opts, onActive){
-    if(S.newsBusy)return;
-    if(message)pushMsg(chatlog,"user",message);
-    S.newsBusy=true; S.newsStreaming=true;
-    let node=null, acc="";                 // current assistant bubble; reset after each step
-    S.newsAbort=streamPost("/api/news/chat", {message:message||"", ...(opts||{})}, ev=>{
-      if(ev.type==="activity"){ pushNewsMsg(chatlog,"activity",ev.text); node=null; acc=""; }
-      else if(ev.type==="delta"){
-        if(!node){ node=pushMsg(chatlog,"assistant",""); acc=""; }
-        acc+=ev.text; node.innerHTML=renderMarkdown(acc); chatlog.parentElement.scrollTop=1e9;
-      }
-      else if(ev.type==="item"){
-        newsFeedInsert(ev.item);
-        pushNewsMsg(chatlog,"activity","➕ added: "+(ev.item.title||ev.item.url||"")); node=null; acc="";
-        S._nf=(S._nf||0)+1; if(S.newsFoundLabel)S.newsFoundLabel.textContent="+"+S._nf+" found";
-        refreshNewsCount();
-      }
-      else if(ev.type==="done"){
-        S.newsBusy=false; S.newsStreaming=false; S.newsAbort=null;
-        let summary="";
-        if(ev.text) summary=ev.text;
-        else if(ev.stopped==="timeout") summary="⏱ Stopped (timed out) — found "+ev.added+
-          " this turn; there may be more. Type “continue” or hit ▶ Continue.";
-        else if(ev.stopped==="max_turns") summary="⏱ Hit the step limit — found "+ev.added+
-          "; there may be more. Type “continue”.";
-        if(summary)pushMsg(chatlog,"assistant",summary);
-        if(!ev.accepted && (ev.tokens||ev.cost_usd))
-          pushNewsMsg(chatlog,"activity","≈ "+(ev.tokens||0).toLocaleString()+" tokens · ~$"+
-            (ev.cost_usd||0).toFixed(4)+" this turn");
-        refreshNewsCount();
-        if(ev.accepted){ onActive&&onActive(false,0,0); }
-        else { onActive&&onActive(true, ev.cost_usd||0, ev.tokens||0); }
-      }
-      else if(ev.type==="error"){ S.newsBusy=false; S.newsStreaming=false; S.newsAbort=null;
-        pushMsg(chatlog,"assistant","⚠ "+ev.detail); }
-    });
-  }
-
-  async function buildNewsChat(wrap, st){
-    wrap.innerHTML="";
-    const sess=st.session||null; let active=!!sess;
-    // a crawl is running server-side but this page isn't the one streaming it → reconnect by polling
-    let reconnecting=active && !!sess.running && !S.newsStreaming;
-    let sessionCost=active?(sess.cost_usd||0):0;
-    let sessionTokens=active?(sess.tokens||0):0;
-    let models=[]; try{ models=(await api("/api/news/models")).models||[]; }catch(e){}
-    const estById={}; const modelSel=el("select",{style:"width:auto"});
-    models.forEach(mo=>{ estById[mo.id]=mo.est_usd; modelSel.append(el("option",{value:mo.id},mo.label)); });
-    if(active&&sess.model)modelSel.value=sess.model;
-    const est=el("span",{class:"muted",style:"font-size:12px"});
-    const since=el("input",{type:"date",style:"width:auto"});
-    const until=el("input",{type:"date",style:"width:auto"});
-    since.value=(active?sess.since:st.default_since)||""; until.value=(active?sess.until:st.today)||"";
-    const found=el("span",{class:"muted",style:"font-size:12px"}); S.newsFoundLabel=found;
-    if(S._nf)found.textContent="+"+S._nf+" found";
-    wrap.append(el("div",{class:"row",style:"flex-wrap:wrap;gap:8px;align-items:center"},
-      el("span",{class:"muted",style:"font-size:12px"},"Model"),modelSel,est,
-      el("span",{class:"muted",style:"font-size:12px;margin-left:6px"},"Range"),since,
-      el("span",{class:"muted",style:"font-size:12px"},"→"),until,
-      el("span",{class:"spacer"}),found));
-    const scroller=el("div",{style:"min-height:200px;max-height:34vh;overflow:auto;"+
-      "border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:8px 0"});
-    const chatlog=el("div",{class:"col",style:"gap:8px"}); scroller.append(chatlog); wrap.append(scroller);
-    if(active&&(sess.messages||[]).length) sess.messages.forEach(mm=>pushNewsMsg(chatlog,mm.role,mm.text));
-    else if(!active) pushMsg(chatlog,"assistant","Hit **🚀 Go!** to crawl using your saved "+
-      "instructions — I’ll stream papers into the feed above as I find them. Then say "+
-      "**continue** for more, steer me (e.g. *“focus on diffusion”*), or **✓ I’m happy** to "+
-      "save and move your date pointer. (You can also type guidance before starting.)");
-    const ta=el("textarea",{rows:"2",style:"flex:1"});
-    const send=()=>{ const t=ta.value.trim(); if(!t)return; ta.value="";
-      newsSend(chatlog,t, active?{}:{model:modelSel.value,since:since.value,until:until.value}, onActive); };
-    ta.onkeydown=e=>{ if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send();} };
-    wrap.append(el("div",{class:"row",style:"gap:8px;align-items:flex-end"},ta,
-      el("button",{class:"primary",onclick:send},"Send")));
-    const go=el("button",{class:"primary",onclick:()=>{ if(S.newsBusy)return;
-      newsSend(chatlog,"",{model:modelSel.value,since:since.value,until:until.value},onActive); }},"🚀 Go!");
-    const cont=el("button",{class:"small",onclick:()=>newsSend(chatlog,"continue",{},onActive)},"▶ Continue");
-    const happy=el("button",{class:"small",onclick:async()=>{ if(S.newsBusy)return;
-      try{ const res=await api("/api/news/accept",{method:"POST"});
-        pushMsg(chatlog,"assistant","Saved — moved your date pointer to "+(res.pointer||"today")+" ✓");
-        toast("Saved & advanced"); onActive(false,0,0); refreshNewsCount(); }
-      catch(e){ toast("Error: "+e.message); } }},"✓ I'm happy");
-    const discard=el("button",{class:"ghost small",onclick:async()=>{ if(S.newsStreaming)return;
-      if(!confirm("Discard this crawl batch? Papers found this session are removed; the date pointer stays put."))return;
-      try{ await api("/api/news/discard",{method:"POST"}); toast("Discarded"); viewNews(); }
-      catch(e){ toast("Error: "+e.message); } }},"✕ Discard");
-    const idleHint=el("span",{class:"muted",style:"font-size:12px"},
-      "Uses your saved instructions — no need to type. Or add guidance above first.");
-    const spinner=el("span",{class:"muted",style:"font-size:12px;font-style:italic"},
-      "⏳ crawl in progress… (you can leave this page — it keeps running)");
-    const actions=el("div",{class:"row",style:"gap:8px;align-items:center"}); wrap.append(actions);
-    function refreshControls(){
-      modelSel.disabled=active; since.disabled=active; until.disabled=active;
-      ta.disabled=reconnecting;
-      est.textContent = active
-        ? (modelSel.value+" · $"+sessionCost.toFixed(2)+" · "+sessionTokens.toLocaleString()+" tok so far")
-        : (estById[modelSel.value]!=null?("~$"+estById[modelSel.value].toFixed(2)+"/turn"):"");
-      ta.placeholder = reconnecting?"Crawling… please wait"
-        : (active?"Reply… (e.g. “continue”, “focus on diffusion”)":"Optional guidance, then 🚀 Go! (or Send)");
-      actions.innerHTML="";
-      if(reconnecting) actions.append(spinner, el("span",{class:"spacer"}), discard);
-      else if(active) actions.append(cont,happy,el("span",{class:"spacer"}),discard);
-      else actions.append(go, idleHint);
-    }
-    function onActive(isActive, costDelta, tokensDelta){ active=isActive; reconnecting=false;
-      sessionCost+=(costDelta||0); sessionTokens+=(tokensDelta||0);
-      if(!isActive){ sessionCost=0; sessionTokens=0; } refreshControls(); }
-    refreshControls();
-
-    // reconnect: poll for new transcript lines + items until the running turn ends
-    if(reconnecting){
-      S.newsBusy=true;
-      let shown=(sess.messages||[]).length;
-      const poll=async()=>{
-        if(S.view!=="news"){ return; }
-        let s=null; try{ s=(await api("/api/news/status")).session; }catch(e){}
-        try{ const rr=await api("/api/news"); renderNewsFeed(S.newsFeed, rr); updateNewsTitle(); }catch(e){}
-        if(!s || !s.running){ viewNews(); return; }   // finished → rebuild shows final state + controls
-        const msgs=s.messages||[];
-        for(let i=shown;i<msgs.length;i++) pushNewsMsg(chatlog,msgs[i].role,msgs[i].text);
-        shown=msgs.length;
-        S.newsPoll=setTimeout(poll,4000);
-      };
-      S.newsPoll=setTimeout(poll,3000);
-    }
-  }
-  async function openNewsHistory(){
-    let list; try{ list=(await api("/api/news/chats")).chats||[]; }
-    catch(e){ toast("Error: "+e.message); return; }
-    const overlay=el("div",{class:"overlay"}); const close=()=>overlay.remove();
-    const box=el("div",{class:"diffbox col",
-      style:"width:min(640px,95vw);padding:18px;gap:10px;max-height:88vh;overflow:auto"});
-    function showList(){
-      box.innerHTML="";
-      box.append(el("div",{class:"row"},el("b",{},"🕘 Past crawls"),el("span",{class:"spacer"}),
-        el("button",{class:"ghost small",onclick:close},"✕")));
-      if(!list.length){ box.append(el("div",{class:"muted",style:"font-size:12px"},
-        "No past crawls yet. Conversations are saved here when you Save or Discard a crawl.")); return; }
-      list.forEach(s=>{
-        const meta=`${(s.created_at||"").slice(0,10)} · ${s.model||""} · ${s.n_items||0} paper(s)`;
-        const info=el("div",{class:"col",style:"flex:1;gap:2px;cursor:pointer;min-width:0",
-          onclick:()=>showOne(s.id)},
-          el("div",{class:"truncate"},s.title||"Crawl"),
-          el("div",{class:"muted",style:"font-size:11px"},meta));
-        const del=el("button",{class:"ghost small",title:"Delete",onclick:async()=>{
-          if(!confirm("Delete this saved crawl chat?"))return;
-          try{ await api("/api/news/chats/"+s.id,{method:"DELETE"});
-            list=list.filter(x=>x.id!==s.id); showList(); }catch(e){ toast("Error: "+e.message); } }},"🗑");
-        box.append(el("div",{class:"row",style:"align-items:center;gap:8px;border-top:1px solid var(--line);padding-top:8px"},
-          info, el("button",{class:"small",onclick:()=>showOne(s.id)},"View"), del));
-      });
-    }
-    async function showOne(id){
-      let rec; try{ rec=(await api("/api/news/chats/"+id)).chat; }
-      catch(e){ toast("Error: "+e.message); return; }
-      box.innerHTML="";
-      box.append(el("div",{class:"row"},el("button",{class:"ghost small",onclick:showList},"← Back"),
-        el("span",{class:"spacer"}),el("button",{class:"ghost small",onclick:close},"✕")));
-      box.append(el("div",{class:"muted",style:"font-size:12px"},
-        `${rec.title||"Crawl"} · ${(rec.created_at||"").slice(0,10)} · ${rec.model||""} · `+
-        `range ${rec.since||"?"}→${rec.until||"?"} · ${rec.n_items||0} paper(s) · `+
-        `~$${(rec.cost_usd||0).toFixed(4)} · ${(rec.tokens||0).toLocaleString()} tok`));
-      const log=el("div",{class:"col",style:"gap:8px;max-height:62vh;overflow:auto"});
-      (rec.messages||[]).forEach(mm=>pushNewsMsg(log,mm.role,mm.text||""));
-      box.append(log);
-    }
-    showList(); overlay.append(box);
-    overlay.onclick=e=>{ if(e.target===overlay)close(); }; document.body.append(overlay);
-  }
-  async function openNewsSettings(){
-    let list; try{ list=(await api("/api/news/instructions")).instructions||[]; }
-    catch(e){ toast("Error: "+e.message); return; }
-    const data=list.map(i=>({id:i.id,text:i.text,enabled:i.enabled!==false}));
-    const overlay=el("div",{class:"overlay"});
-    const close=()=>overlay.remove();
-    const rows=el("div",{class:"col",style:"gap:8px"});
-    function renderRows(){
-      rows.innerHTML="";
-      data.forEach((it,idx)=>{
-        const cb=el("input",{type:"checkbox",style:"width:auto;flex:0 0 auto;margin:0"}); cb.checked=it.enabled!==false;
-        cb.onchange=()=>{ it.enabled=cb.checked; };
-        const txt=el("input",{value:it.text||"",placeholder:"monitor …",style:"flex:1"});
-        txt.oninput=()=>{ it.text=txt.value; };
-        const del=el("button",{class:"ghost small",title:"Remove",
-          onclick:()=>{ data.splice(idx,1); renderRows(); }},"🗑");
-        rows.append(el("div",{class:"row",style:"align-items:center;gap:8px"},cb,txt,del));
-      });
-      if(!data.length)rows.append(el("div",{class:"muted",style:"font-size:12px"},"No instructions yet."));
-    }
-    renderRows();
-    const box=el("div",{class:"diffbox col",
-      style:"width:min(560px,95vw);padding:18px;gap:10px;max-height:88vh;overflow:auto"},
-      el("div",{class:"row"},el("b",{},"📰 News instructions"),el("span",{class:"spacer"}),
-        el("button",{class:"ghost small",onclick:close},"✕")),
-      el("div",{class:"muted",style:"font-size:12px"},
-        "Plain-English things to monitor — e.g. “monitor arXiv cs.LG for diffusion papers” or "+
-        "“watch <person>’s blog”. These are just text; the date range for a crawl is set in the "+
-        "chat (it defaults to your last saved point → today)."),
-      rows,
-      el("div",{class:"row",style:"margin-top:4px"},
-        el("button",{class:"ghost small",
-          onclick:()=>{ data.push({text:"",enabled:true}); renderRows(); }},"+ Add instruction"),
-        el("span",{class:"spacer"}),
-        el("button",{class:"primary",onclick:async()=>{
-          const payload=data.map(it=>({id:it.id,text:(it.text||"").trim(),
-            enabled:it.enabled!==false}))
-            .filter(it=>it.text);
-          try{ await api("/api/news/instructions",{method:"PUT",body:JSON.stringify({instructions:payload})});
-            toast("Saved"); close(); }
-          catch(e){ toast("Error: "+e.message); }
-        }},"Save")));
-    overlay.append(box);
-    overlay.onclick=e=>{ if(e.target===overlay)close(); };
-    document.body.append(overlay);
-  }
-
   // go
   loadLandingContent();
   boot();

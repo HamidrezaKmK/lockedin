@@ -120,10 +120,6 @@ def bubble_assets_dir(slug: str) -> Path:
     return bubble_dir(slug) / "assets"
 
 
-def bubble_chats_dir(slug: str) -> Path:
-    return bubble_dir(slug) / "chats"
-
-
 def bubble_comments_dir(slug: str) -> Path:
     """Private review-thread metadata, kept separate from report Markdown."""
     return bubble_dir(slug) / "comments"
