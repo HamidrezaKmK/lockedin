@@ -10,7 +10,7 @@ dependencies = [
     "pyyaml",
     "pydantic>=2",
     "openai>=1.0",        # Ollama (OpenAI-compatible) + OpenAI
-    "anthropic>=0.25",    # Claude (native streaming + PDF documents)
+    "anthropic>=0.25",    # Claude (native streaming)
     "pypdf>=4.0",         # pure-Python PDF text extraction
     "python-slugify",     # "Generative Modeling" -> "generative-modeling"
     "typer",

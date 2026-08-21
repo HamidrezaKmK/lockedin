@@ -6,7 +6,6 @@ Optional: LOCKEDIN_URL
 """
 from __future__ import annotations
 
-import json
 import logging
 import os  # used inside run() for env reads
 import re

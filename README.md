@@ -10,7 +10,7 @@ By default, the deployment is private and local-only (`127.0.0.1`). For web acce
 
 ## ✨ Features
 
-- **📄 Paper Management:** Upload papers, extract text, generate one-time summaries, and cache report context.
+- **📄 Paper Management:** Upload papers, extract text, and generate one-time summaries.
 - **🏷️ Bubble Organization:** Group uploaded documents into contextual topic bubbles, with per-paper relevance scores.
 - **📝 Markdown Reports:** Create multi-page Markdown reports featuring internal links, figures, KaTeX math support, and live previews.
 - **✅ TODO Manager:** GitHub-issue-style task items. Reference a TODO in any report page using `@id` (creates a clickable link). Notes support math/markdown. TODOs can only be deleted once all `@id` references are removed. Manage via web or Slack bot.
@@ -286,7 +286,7 @@ hero:
   title_accent: "locked"
   title_rest: "in"
   lede: "A calm command center for papers, math notes, topic wikis, and TODOs."
-  copy: "Upload PDFs, organize them into bubbles, write reports, and keep model-powered help close."
+  copy: "Upload PDFs, organize them into bubbles, write reports, and share them."
   points:
     - title: "Paper-first"
       text: "Keep PDFs, tags, notes, summaries, and BibTeX together."
