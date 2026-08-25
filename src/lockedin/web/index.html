@@ -1644,18 +1644,28 @@
     // Keep a stable offset into the original Markdown at each structural block. Comments survive
     // marked.js without altering its parsing; bindPreviewSourceOffsets consumes them after render.
     const lines=String(md||"").match(/.*(?:\n|$)/g)||[];
-    let out="", offset=0, afterBlank=true, inFence=false;
+    let out="", offset=0, afterBlank=true, inFence=false, inQuote=false;
     for(const line of lines){
       if(!line)continue;
       const text=line.replace(/\n$/,""), trimmed=text.trim();
       const fence=/^\s*(`{3,}|~{3,})/.test(text);
+      // A marker is an HTML comment, and an HTML block is NOT a lazy continuation of a quote: a
+      // comment emitted between two `>` lines closes the blockquote, so the next `>` opens a
+      // fresh one and a ten-line quote renders as ten separate quote boxes. Only the first line
+      // of a quote is marked — that comment lands outside the block, where it is harmless — and
+      // every line until the blank that ends the quote is left alone.
+      const quoted=/^\s*>/.test(text), quoteStart=quoted&&!inQuote;
       // Math delimiters are deliberately not structural triggers: marking both opening and
       // closing $$ lines would inject a comment into the TeX passed to KaTeX. Display math still
       // receives a marker through the blank line that starts its block.
-      const structural=/^\s*(#{1,6}\s|[-+*]\s+|\d+[.)]\s+|>\s?)/.test(text);
-      if(!inFence && trimmed && (afterBlank||structural)) out+=`<!--li-src:${offset}-->\n`;
+      const structural=quoteStart||/^\s*(#{1,6}\s|[-+*]\s+|\d+[.)]\s+)/.test(text);
+      if(!inFence && trimmed && !(inQuote&&!quoteStart) && (afterBlank||structural))
+        out+=`<!--li-src:${offset}-->\n`;
       out+=line;
       if(fence)inFence=!inFence;
+      // A non-blank unquoted line after a `>` line is a lazy continuation of the same quote, so
+      // the quote only ends at a blank line.
+      inQuote=trimmed?(quoted||inQuote):false;
       afterBlank=!trimmed || fence;
       offset+=line.length;
     }

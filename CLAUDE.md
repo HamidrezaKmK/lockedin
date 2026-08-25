@@ -48,6 +48,11 @@ LOCKEDIN_HOME=/tmp/li_test uv run python -m unittest discover -s tests -t . -v
   frontend pane) does not creep back. Every bug we've hit has a test here — extend it.
 - `tests/test_presence.py` — the presence registry and its HTTP surface, including that a
   rejected (426) worker is still listed with its diagnosis.
+- `tests/source-markers.mjs` (`npm run test:source-markers`) — pins where the preview's
+  `<!--li-src:N-->` offset markers may be injected. A marker is an HTML comment, and an HTML
+  block does not lazily continue a blockquote, so a marker between two `>` lines closes the
+  quote and the next `>` opens a new one — which rendered one quote as one box per line. Only a
+  quote's first line is marked; headings and list items keep theirs.
 - `tests/presence-e2e.mjs` (`npm run test:presence-e2e`) — real Chrome against a disposable data
   root: registers four worker directories (healthy / failing / out of date / cleanly stopped)
   through the ordinary v2 endpoints and drives the chip, dropdown, detail, and leave path,

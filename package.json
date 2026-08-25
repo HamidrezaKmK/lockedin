@@ -5,7 +5,8 @@
     "test:review-e2e": "node tests/review-e2e.mjs",
     "test:presence-e2e": "node tests/presence-e2e.mjs",
     "test:lightbox-e2e": "node tests/lightbox-e2e.mjs",
-    "test:workspace-route-e2e": "node tests/workspace-route-e2e.mjs"
+    "test:workspace-route-e2e": "node tests/workspace-route-e2e.mjs",
+    "test:source-markers": "node tests/source-markers.mjs"
   },
   "devDependencies": {
     "playwright-core": "^1.62.1"
