@@ -1313,6 +1313,54 @@
     const before=String(source||"").slice(0,Math.max(0,index)), lines=before.split("\n");
     return {line:lines.length,column:Array.from(lines[lines.length-1]).length+1};
   }
+  // Markdown code spans and fenced blocks, as [start,end) source ranges. This exists only to
+  // decide whether markup that *fails* to parse is documentation rather than a broken wrapper,
+  // so it is computed lazily and never runs on the happy path. Mirrors _markdown_code_regions
+  // in bubbles.py — the two must agree or the editor and the server disagree about a save.
+  function markdownCodeRegions(source){
+    const text=String(source||""), regions=[], plain=[];
+    const lines=text.match(/[^\n]*\n?/g)||[];
+    let offset=0, fenceStart=-1, fenceChar="", fenceLen=0, plainFrom=0;
+    for(const line of lines){
+      if(!line)continue;
+      const end=offset+line.length, bare=line.replace(/\n$/,"");
+      if(fenceStart<0){
+        const opener=/^ {0,3}(`{3,}|~{3,})/.exec(bare);
+        if(opener){ fenceStart=offset; fenceChar=opener[1][0]; fenceLen=opener[1].length;
+                    plain.push([plainFrom,offset]); }
+      }else{
+        // A closing fence is a line of nothing but at least as many of the same fence character.
+        const closing=bare.trim();
+        if(closing.length>=fenceLen&&closing.split("").every(ch=>ch===fenceChar)){
+          regions.push([fenceStart,end]); fenceStart=-1; plainFrom=end;
+        }
+      }
+      offset=end;
+    }
+    if(fenceStart>=0)regions.push([fenceStart,text.length]);   // unclosed fence runs to the end
+    else plain.push([plainFrom,text.length]);
+    // Inline spans: a run of N backticks opens one, the next run of exactly N closes it.
+    plain.forEach(range=>{
+      const seg=text.slice(range[0],range[1]), runs=[];
+      for(let i=0;i<seg.length;i++){
+        if(seg[i]!=="`")continue;
+        let j=i; while(j<seg.length&&seg[j]==="`")j++;
+        runs.push([i,j]); i=j-1;
+      }
+      let k=0;
+      while(k<runs.length){
+        const width=runs[k][1]-runs[k][0]; let m=k+1;
+        while(m<runs.length&&runs[m][1]-runs[m][0]!==width)m++;
+        if(m>=runs.length)break;
+        regions.push([range[0]+runs[k][0],range[0]+runs[m][1]]); k=m+1;
+      }
+    });
+    return regions;
+  }
+  function markupIsDocumentation(source,index,cache){
+    if(!cache.regions)cache.regions=markdownCodeRegions(source);
+    return cache.regions.some(range=>index>=range[0]&&index<range[1]);
+  }
   function commentMarkupError(source,index,code,message,id){
     const at=commentSourceLocation(source,index), error=new Error(message+" (line "+at.line+", column "+at.column+")");
     error.name="CommentMarkupError"; error.index=index; error.line=at.line; error.column=at.column;
@@ -1327,27 +1375,40 @@
   // comment may never contain another comment wrapper.
   function parseCommentWrappers(value){
     const source=String(value||""), token="\\comment{", wrappers=[], ids=new Set(); let cursor=0;
+    // Markup that fails to parse inside a code span or fence is documentation, not a broken
+    // wrapper: the app's own editing guide shows `\comment{<comment-id>}{...}` that way, and a
+    // report page explaining the syntax has to stay saveable. A *well-formed* wrapper is still a
+    // wrapper wherever it sits, so no existing comment changes meaning, and a genuine typo in
+    // prose still reports its line and column.
+    const cache={};
     while(cursor<source.length){
       const open=source.indexOf(token,cursor); if(open<0)break;
       if(commentCharIsEscaped(source,open)){cursor=open+token.length;continue;}
-      const idStart=open+token.length, idEnd=source.indexOf("}",idStart);
-      if(idEnd<0)throw commentMarkupError(source,open,"unclosed_comment_id","The comment ID is missing its closing brace.");
-      const id=source.slice(idStart,idEnd);
-      if(!/^[A-Za-z0-9_-]+$/.test(id))throw commentMarkupError(source,idStart,"invalid_comment_id","Comment IDs may contain only letters, numbers, hyphens, and underscores.",id);
-      if(source[idEnd+1]!=="{")throw commentMarkupError(source,idEnd+1,"missing_comment_body","The comment wrapper is missing its body.",id);
-      if(ids.has(id))throw commentMarkupError(source,open,"duplicate_comment","A comment ID may appear only once on a page.",id);
-      const bodyStart=idEnd+2; let depth=1, i=bodyStart, slashRun=0;
-      for(;i<source.length;i++){
-        const escaped=slashRun%2===1;
-        if(source.startsWith(token,i)&&!escaped)
-          throw commentMarkupError(source,i,"intersecting_comments","Comments cannot overlap, contain, or intersect another comment.",id);
-        if(!escaped&&source[i]==="{")depth++;
-        else if(!escaped&&source[i]==="}"&&--depth===0)break;
-        slashRun=source[i]==="\\"?slashRun+1:0;
+      try{
+        const idStart=open+token.length, idEnd=source.indexOf("}",idStart);
+        if(idEnd<0)throw commentMarkupError(source,open,"unclosed_comment_id","The comment ID is missing its closing brace.");
+        const id=source.slice(idStart,idEnd);
+        if(!/^[A-Za-z0-9_-]+$/.test(id))throw commentMarkupError(source,idStart,"invalid_comment_id","Comment IDs may contain only letters, numbers, hyphens, and underscores.",id);
+        if(source[idEnd+1]!=="{")throw commentMarkupError(source,idEnd+1,"missing_comment_body","The comment wrapper is missing its body.",id);
+        if(ids.has(id))throw commentMarkupError(source,open,"duplicate_comment","A comment ID may appear only once on a page.",id);
+        const bodyStart=idEnd+2; let depth=1, i=bodyStart, slashRun=0;
+        for(;i<source.length;i++){
+          const escaped=slashRun%2===1;
+          if(source.startsWith(token,i)&&!escaped&&!markupIsDocumentation(source,i,cache))
+            throw commentMarkupError(source,i,"intersecting_comments","Comments cannot overlap, contain, or intersect another comment.",id);
+          if(!escaped&&source[i]==="{")depth++;
+          else if(!escaped&&source[i]==="}"&&--depth===0)break;
+          slashRun=source[i]==="\\"?slashRun+1:0;
+        }
+        if(depth!==0)throw commentMarkupError(source,open,"unclosed_comment","The comment wrapper is missing its closing brace.",id);
+        ids.add(id); wrappers.push({id,openStart:open,idStart,idEnd,bodyStart,bodyEnd:i,closeEnd:i+1,body:source.slice(bodyStart,i)});
+        cursor=i+1;
+      }catch(error){
+        if(error&&error.name==="CommentMarkupError"&&markupIsDocumentation(source,open,cache)){
+          cursor=open+token.length; continue;
+        }
+        throw error;
       }
-      if(depth!==0)throw commentMarkupError(source,open,"unclosed_comment","The comment wrapper is missing its closing brace.",id);
-      ids.add(id); wrappers.push({id,openStart:open,idStart,idEnd,bodyStart,bodyEnd:i,closeEnd:i+1,body:source.slice(bodyStart,i)});
-      cursor=i+1;
     }
     return wrappers;
   }
@@ -1373,33 +1434,41 @@
   // makes every displayed color range unambiguous while adjacent ranges remain valid.
   function parseTextColorWrappers(value){
     const source=String(value||""),token="\\textcolor{",wrappers=[];let cursor=0;
+    const cache={};   // same documentation rule as parseCommentWrappers
     while(cursor<source.length){
       const open=source.indexOf(token,cursor);if(open<0)break;
       if(commentCharIsEscaped(source,open)){cursor=open+token.length;continue;}
-      const colorStart=open+token.length;let colorEnd=colorStart;
-      while(colorEnd<source.length&&source[colorEnd]!=="}"){
-        if(source[colorEnd]==="{"&&!commentCharIsEscaped(source,colorEnd))
-          throw textColorMarkupError(source,colorEnd,"invalid_textcolor","Text colors cannot contain braces.");
-        colorEnd++;
+      try{
+        const colorStart=open+token.length;let colorEnd=colorStart;
+        while(colorEnd<source.length&&source[colorEnd]!=="}"){
+          if(source[colorEnd]==="{"&&!commentCharIsEscaped(source,colorEnd))
+            throw textColorMarkupError(source,colorEnd,"invalid_textcolor","Text colors cannot contain braces.");
+          colorEnd++;
+        }
+        if(colorEnd>=source.length)throw textColorMarkupError(source,open,"unclosed_textcolor","The text color is missing its closing brace.");
+        const color=source.slice(colorStart,colorEnd);
+        if(!/^(?:#[0-9a-fA-F]{3}(?:[0-9a-fA-F]{3})?|[A-Za-z][A-Za-z0-9-]{0,63})$/.test(color))
+          throw textColorMarkupError(source,colorStart,"invalid_textcolor","Use a hex value or a CSS color name in \\textcolor.",color);
+        const bodyOpen=colorEnd+1;
+        if(source[bodyOpen]!=="{")throw textColorMarkupError(source,bodyOpen,"missing_textcolor_body","The text-color wrapper is missing its body.",color);
+        const bodyStart=bodyOpen+1;let depth=1,i=bodyStart,slashRun=0;
+        for(;i<source.length;i++){
+          const escaped=slashRun%2===1;
+          if(source.startsWith(token,i)&&!escaped&&!markupIsDocumentation(source,i,cache))
+            throw textColorMarkupError(source,i,"intersecting_textcolors","Text colors cannot overlap, contain, or intersect another text color.",color);
+          if(!escaped&&source[i]==="{")depth++;
+          else if(!escaped&&source[i]==="}"&&--depth===0)break;
+          slashRun=source[i]==="\\"?slashRun+1:0;
+        }
+        if(depth!==0)throw textColorMarkupError(source,open,"unclosed_textcolor","The text-color wrapper is missing its closing brace.",color);
+        wrappers.push({color,openStart:open,bodyStart,bodyEnd:i,closeEnd:i+1,body:source.slice(bodyStart,i)});
+        cursor=i+1;
+      }catch(error){
+        if(error&&error.name==="TextColorMarkupError"&&markupIsDocumentation(source,open,cache)){
+          cursor=open+token.length; continue;
+        }
+        throw error;
       }
-      if(colorEnd>=source.length)throw textColorMarkupError(source,open,"unclosed_textcolor","The text color is missing its closing brace.");
-      const color=source.slice(colorStart,colorEnd);
-      if(!/^(?:#[0-9a-fA-F]{3}(?:[0-9a-fA-F]{3})?|[A-Za-z][A-Za-z0-9-]{0,63})$/.test(color))
-        throw textColorMarkupError(source,colorStart,"invalid_textcolor","Use a hex value or a CSS color name in \\textcolor.",color);
-      const bodyOpen=colorEnd+1;
-      if(source[bodyOpen]!=="{")throw textColorMarkupError(source,bodyOpen,"missing_textcolor_body","The text-color wrapper is missing its body.",color);
-      const bodyStart=bodyOpen+1;let depth=1,i=bodyStart,slashRun=0;
-      for(;i<source.length;i++){
-        const escaped=slashRun%2===1;
-        if(source.startsWith(token,i)&&!escaped)
-          throw textColorMarkupError(source,i,"intersecting_textcolors","Text colors cannot overlap, contain, or intersect another text color.",color);
-        if(!escaped&&source[i]==="{")depth++;
-        else if(!escaped&&source[i]==="}"&&--depth===0)break;
-        slashRun=source[i]==="\\"?slashRun+1:0;
-      }
-      if(depth!==0)throw textColorMarkupError(source,open,"unclosed_textcolor","The text-color wrapper is missing its closing brace.",color);
-      wrappers.push({color,openStart:open,bodyStart,bodyEnd:i,closeEnd:i+1,body:source.slice(bodyStart,i)});
-      cursor=i+1;
     }
     return wrappers;
   }

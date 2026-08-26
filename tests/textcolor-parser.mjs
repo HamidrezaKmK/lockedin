@@ -41,4 +41,21 @@ for (const [markup, code] of [
   );
 }
 
+// Same documentation rule as the review parser: unparseable colors inside code are examples.
+for (const documented of [
+  "Colored text uses `" + String.raw`\textcolor{<color>}{text}` + "`.",
+  "```\n" + String.raw`\textcolor{<color>}{text}` + "\n```",
+]) {
+  assert.equal(context.parseTextColorWrappers(documented).length, 0,
+    `documented syntax must not parse as a color wrapper:\n${documented}`);
+}
+assert.deepEqual(
+  Array.from(context.parseTextColorWrappers("```\n" + String.raw`\textcolor{red}{code}` + "\n```"),
+             wrapper => wrapper.color),
+  ["red"],
+  "a valid color wrapper inside a fence must still render",
+);
+assert.throws(() => context.parseTextColorWrappers(String.raw`\textcolor{<bad>}{x}`),
+  error => error.code === "invalid_textcolor");
+
 console.log("Browser text-color parser parity fixtures passed.");

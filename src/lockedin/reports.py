@@ -127,18 +127,18 @@ New bubbles are created explicitly from the Bubbles view.
 
 ## Renaming & deleting
 
-Rename a bubble from its detail view via **🏷️ Edit titles** in the view dropdown (the same mode
+Rename a bubble from its detail view via **🏷️ Edit titles** in the **⋮** menu (the same mode
 that renames its pages). The 🗑 icon on a bubble card deletes the bubble **and all its wiki pages**.
 
 ## Page tabs
 
 Each bubble has a mini-wiki. The tabs at the top of the editor list all pages.
 
-- **+ Page** — create a new page
+- **+** at the left of the tab row — create a new page
 - Click a tab to switch pages (the current page auto-saves first)
 - Drag a tab to reorder pages; page order controls wiki navigation and bubble-wide numbering
 - **✕** on a tab deletes that page (the overview page cannot be deleted)
-- Pick **🏷️ Edit titles** in the view dropdown to rename pages (and the bubble itself)
+- Pick **🏷️ Edit titles** in the **⋮** menu to rename pages (and the bubble itself)
 
 The eye icon beside **Insert link** in the editor toolbar hides or shows the current page in
 read-only previews and public shares. Hidden pages are omitted from the tab bar by default.
@@ -147,7 +147,7 @@ separate right-aligned group until you hide them again.
 
 ## Quick-add a paper
 
-Open **📚 Papers** in the page controls to see the bubble's attached papers and a **Quick add
+Open **📚 Papers** in the **⋮** menu to see the bubble's attached papers and a **Quick add
 paper** form. Paste a PDF URL, provide a title, and optionally paste BibTeX. Quick add fetches
 the PDF as a new asset, attaches it directly to the current bubble at relevance 5, and saves the
 BibTeX when valid. You can edit or add BibTeX later from the asset detail page.
@@ -498,7 +498,7 @@ bubble a damaged local directory belongs to.
         "content": """\
 ## The editor
 
-Open any bubble and use the view dropdown in the toolbar:
+Open any bubble and pick a view from the **⋮** menu in the page toolbar:
 - **◧ Split** — editor left, live preview right
 - **✏️ Edit** — plain Markdown editor
 - **👁 Read** — rendered reading view (default)
@@ -514,15 +514,17 @@ insert table, text colour, **≡ center selected text**, insert link, the page v
 in read-only previews and public shares; hidden page tabs stay out of the way until you use
 **☷**, then appear right-aligned in the tab bar.
 
-Use **⛶** in the page controls to enter a focused workspace that hides the navigation;
-click it again to exit.
+The page toolbar itself stays short: **+** at the far left, the page tabs, then **⋮** and
+**⛶**. Everything else for the bubble — the view modes, Edit titles, 📚 Papers, 📁 Assets, the
+Overleaf link, and preview/sharing — lives in **⋮**. Use **⛶** to enter a focused workspace that
+hides the navigation; click it again to exit.
 
 ### On mobile
 
-The bubble page is streamlined to the essentials: page tabs, the editor toolbar, and the view
-dropdown. Switch between **👁 Read** and **✏️ Edit** right from that dropdown. A small
-**↗** link in the top-right corner opens the read-only preview of the current page. Papers
-live behind the floating **📚** button. (Sharing is done from a larger screen.)
+The bubble page is the same one control surface, sized for a phone: page tabs, the editor
+toolbar, **+**, and **⋮**. Everything above is reachable from that menu, including switching
+between **👁 Read** and **✏️ Edit**. A small **↗** link in the top-right corner opens the
+read-only preview of the current page.
 
 ---
 

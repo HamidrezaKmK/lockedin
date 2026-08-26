@@ -28,7 +28,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
-from lockedin import assets, bubbles, models, paths, server, service, tagger
+from lockedin import assets, bubbles, models, paths, reports, server, service, tagger
 
 from tests._fixtures import make_bubble
 
@@ -1589,6 +1589,61 @@ class ChatSurfaceStaysRemoved(unittest.TestCase):
         for marker in ("buildChatPane", "sendChat", "chatlog", "deep-read", "chat-pane",
                        "refreshNewsCount", "streamPost"):
             self.assertNotIn(marker, src, marker)
+
+
+class DocumentedMarkupInCodeIsNotMarkup(unittest.TestCase):
+    """Review/color syntax shown inside code is an example, not a broken wrapper.
+
+    The in-app guide documents `\\comment{<comment-id>}{...}`, which made two of its tabs render
+    an "Invalid comment markup" banner instead of their content, and made any report page that
+    explained the syntax impossible to save.
+    """
+
+    def test_documented_syntax_inside_code_parses_as_text(self):
+        for source in (
+            "Wrap a review in `\\comment{<comment-id>}{...}` like so.",
+            "```\n\\comment{<comment-id>}{body}\n```",
+            "~~~md\n\\comment{not valid}{body}\n~~~",
+            "Colors use `\\textcolor{<color>}{text}`.",
+            "```\n\\textcolor{<color>}{text}\n```",
+        ):
+            self.assertEqual(bubbles.parse_comment_wrappers(source), [], source)
+            self.assertEqual(bubbles.parse_textcolor_wrappers(source), [], source)
+
+    def test_a_well_formed_wrapper_inside_code_still_anchors(self):
+        """Commenting on a code block must keep working — no stored page may change meaning."""
+        spans = bubbles.parse_comment_wrappers("```\n\\comment{ok}{code}\n```")
+        self.assertEqual([span.thread_id for span in spans], ["ok"])
+        colors = bubbles.parse_textcolor_wrappers("```\n\\textcolor{red}{code}\n```")
+        self.assertEqual([span.color for span in colors], ["red"])
+
+    def test_broken_markup_in_prose_still_reports_its_position(self):
+        with self.assertRaises(bubbles.ReviewMarkupError) as caught:
+            bubbles.parse_comment_wrappers("a \\comment{not valid}{body}")
+        self.assertEqual(caught.exception.code, "invalid_comment_id")
+        with self.assertRaises(bubbles.TextColorMarkupError) as caught:
+            bubbles.parse_textcolor_wrappers("a \\textcolor{<bad>}{x}")
+        self.assertEqual(caught.exception.code, "invalid_textcolor")
+
+    def test_every_guide_section_renders(self):
+        """The whole guide goes through the report pipeline, so it must parse as report source."""
+        for section in reports.APP_USAGE_GUIDE_SECTIONS:
+            content = section["content"]
+            bubbles.parse_comment_wrappers(content)
+            bubbles.parse_textcolor_wrappers(content)
+
+    def test_a_page_documenting_the_syntax_can_be_saved(self):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+                os.environ, {"LOCKEDIN_HOME": directory}):
+            with TestClient(server.build_app(), base_url="https://testserver") as client:
+                self.assertEqual(client.post(
+                    "/api/signup", json={"username": "docs", "password": "testpass"}).status_code, 200)
+                slug = client.post("/api/bubbles", json={"name": "Docs"}).json()["slug"]
+                page = client.post(f"/api/bubbles/{slug}/pages", json={"title": "How to review"}).json()["page_slug"]
+                body = "Reviews are stored as `\\comment{<comment-id>}{...}` in the Markdown."
+                saved = client.put(f"/api/bubbles/{slug}/pages/{page}", json={"content": body})
+                self.assertEqual(saved.status_code, 200, saved.text)
+                self.assertEqual(saved.json()["content"], body)
 
 
 if __name__ == "__main__":

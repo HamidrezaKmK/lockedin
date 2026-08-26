@@ -714,6 +714,7 @@ def _save_comments(slug: str, page_slug: str, data: dict) -> float:
 _COMMENT_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 _COMMENT_COMMAND = "\\comment"
 _TEXTCOLOR_COMMAND = "\\textcolor"
+_FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
 _TEXTCOLOR_VALUE_RE = re.compile(r"^(?:#[0-9A-Fa-f]{3}(?:[0-9A-Fa-f]{3})?|[A-Za-z][A-Za-z0-9-]{0,63})$")
 
 
@@ -792,6 +793,78 @@ def _is_escaped(content: str, offset: int) -> bool:
     return bool(backslashes % 2)
 
 
+def _markdown_code_regions(content: str) -> list[tuple[int, int]]:
+    """Markdown code spans and fenced blocks, as ``[start, end)`` source ranges.
+
+    This exists only to decide whether markup that *fails* to parse is documentation rather than
+    a broken wrapper, so callers compute it lazily and never on the happy path. Mirrors
+    ``markdownCodeRegions`` in web/index.html — the two must agree, or the editor and the server
+    disagree about whether a page can be saved.
+    """
+    regions: list[tuple[int, int]] = []
+    plain: list[tuple[int, int]] = []
+    offset = fence_start = plain_from = 0
+    fence_start = -1
+    fence_char, fence_len = "", 0
+    for line in content.splitlines(keepends=True):
+        end = offset + len(line)
+        bare = line.rstrip("\n")
+        if fence_start < 0:
+            opener = _FENCE_RE.match(bare)
+            if opener:
+                fence_start, fence_char, fence_len = offset, opener.group(1)[0], len(opener.group(1))
+                plain.append((plain_from, offset))
+        else:
+            # A closing fence is a line of nothing but at least as many of the same character.
+            closing = bare.strip()
+            if len(closing) >= fence_len and set(closing) == {fence_char}:
+                regions.append((fence_start, end))
+                fence_start, plain_from = -1, end
+        offset = end
+    if fence_start >= 0:
+        regions.append((fence_start, len(content)))   # an unclosed fence runs to the end
+    else:
+        plain.append((plain_from, len(content)))
+    # Inline spans: a run of N backticks opens one, the next run of exactly N closes it.
+    for begin, stop in plain:
+        segment = content[begin:stop]
+        runs: list[tuple[int, int]] = []
+        i = 0
+        while i < len(segment):
+            if segment[i] == "`":
+                j = i
+                while j < len(segment) and segment[j] == "`":
+                    j += 1
+                runs.append((i, j))
+                i = j
+            else:
+                i += 1
+        k = 0
+        while k < len(runs):
+            width = runs[k][1] - runs[k][0]
+            m = k + 1
+            while m < len(runs) and runs[m][1] - runs[m][0] != width:
+                m += 1
+            if m >= len(runs):
+                break
+            regions.append((begin + runs[k][0], begin + runs[m][1]))
+            k = m + 1
+    return regions
+
+
+class _DocumentationCheck:
+    """Lazily answers "does this markup sit inside code?" for one source string."""
+
+    def __init__(self, content: str) -> None:
+        self._content = content
+        self._regions: "list[tuple[int, int]] | None" = None
+
+    def __call__(self, index: int) -> bool:
+        if self._regions is None:
+            self._regions = _markdown_code_regions(self._content)
+        return any(start <= index < end for start, end in self._regions)
+
+
 def parse_comment_wrappers(content: str) -> list[CommentSpan]:
     """Parse review wrappers in one linear pass.
 
@@ -803,6 +876,12 @@ def parse_comment_wrappers(content: str) -> list[CommentSpan]:
     seen: set[str] = set()
     pos = 0
     size = len(content)
+    # Markup that fails to parse inside a code span or fence is documentation, not a broken
+    # wrapper: the app's own editing guide shows `\comment{<comment-id>}{...}` that way, and a
+    # report page explaining the syntax has to stay saveable. A *well-formed* wrapper is still a
+    # wrapper wherever it sits, so no existing comment changes meaning, and a genuine typo in
+    # prose still reports its line and column.
+    documented = _DocumentationCheck(content)
     while pos < size:
         start = content.find(_COMMENT_COMMAND, pos)
         if start < 0:
@@ -815,50 +894,56 @@ def parse_comment_wrappers(content: str) -> list[CommentSpan]:
         if arg >= size or content[arg] != "{":
             pos = arg
             continue
-        id_start = arg + 1
-        i = id_start
-        while i < size and content[i] != "}":
-            if content[i] == "{" and not _is_escaped(content, i):
-                raise ReviewMarkupError("invalid_comment_id", "Comment IDs cannot contain braces.",
-                                        content, i)
-            i += 1
-        if i >= size:
-            raise ReviewMarkupError("unclosed_comment_id", "The comment ID is missing its closing brace.",
-                                    content, start)
-        thread_id = content[id_start:i]
-        if not _COMMENT_ID_RE.fullmatch(thread_id):
-            raise ReviewMarkupError(
-                "invalid_comment_id",
-                "Comment IDs may contain only letters, numbers, hyphens, and underscores.",
-                content, id_start, thread_id=thread_id)
-        if thread_id in seen:
-            raise ReviewMarkupError("duplicate_comment", "A comment ID may appear only once on a page.",
-                                    content, start, thread_id=thread_id)
-        body_open = i + 1
-        if body_open >= size or content[body_open] != "{":
-            raise ReviewMarkupError("missing_comment_body", "The comment wrapper is missing its body.",
-                                    content, body_open, thread_id=thread_id)
-        body_start = body_open + 1
-        depth = 1
-        i = body_start
-        while i < size:
-            if (content.startswith(_COMMENT_COMMAND + "{", i)
-                    and not _is_escaped(content, i)):
+        try:
+            id_start = arg + 1
+            i = id_start
+            while i < size and content[i] != "}":
+                if content[i] == "{" and not _is_escaped(content, i):
+                    raise ReviewMarkupError("invalid_comment_id", "Comment IDs cannot contain braces.",
+                                            content, i)
+                i += 1
+            if i >= size:
+                raise ReviewMarkupError("unclosed_comment_id", "The comment ID is missing its closing brace.",
+                                        content, start)
+            thread_id = content[id_start:i]
+            if not _COMMENT_ID_RE.fullmatch(thread_id):
                 raise ReviewMarkupError(
-                    "intersecting_comments",
-                    "Comments cannot overlap, contain, or intersect another comment.",
-                    content, i, thread_id=thread_id)
-            char = content[i]
-            if char == "{" and not _is_escaped(content, i):
-                depth += 1
-            elif char == "}" and not _is_escaped(content, i):
-                depth -= 1
-                if depth == 0:
-                    break
-            i += 1
-        if depth:
-            raise ReviewMarkupError("unclosed_comment", "The comment wrapper is missing its closing brace.",
-                                    content, start, thread_id=thread_id)
+                    "invalid_comment_id",
+                    "Comment IDs may contain only letters, numbers, hyphens, and underscores.",
+                    content, id_start, thread_id=thread_id)
+            if thread_id in seen:
+                raise ReviewMarkupError("duplicate_comment", "A comment ID may appear only once on a page.",
+                                        content, start, thread_id=thread_id)
+            body_open = i + 1
+            if body_open >= size or content[body_open] != "{":
+                raise ReviewMarkupError("missing_comment_body", "The comment wrapper is missing its body.",
+                                        content, body_open, thread_id=thread_id)
+            body_start = body_open + 1
+            depth = 1
+            i = body_start
+            while i < size:
+                if (content.startswith(_COMMENT_COMMAND + "{", i)
+                        and not _is_escaped(content, i) and not documented(i)):
+                    raise ReviewMarkupError(
+                        "intersecting_comments",
+                        "Comments cannot overlap, contain, or intersect another comment.",
+                        content, i, thread_id=thread_id)
+                char = content[i]
+                if char == "{" and not _is_escaped(content, i):
+                    depth += 1
+                elif char == "}" and not _is_escaped(content, i):
+                    depth -= 1
+                    if depth == 0:
+                        break
+                i += 1
+            if depth:
+                raise ReviewMarkupError("unclosed_comment", "The comment wrapper is missing its closing brace.",
+                                        content, start, thread_id=thread_id)
+        except ReviewMarkupError:
+            if documented(start):
+                pos = start + len(_COMMENT_COMMAND)
+                continue
+            raise
         seen.add(thread_id)
         spans.append(CommentSpan(thread_id=thread_id, open_start=start, body_start=body_start,
                                  body_end=i, close_end=i + 1))
@@ -876,6 +961,7 @@ def parse_textcolor_wrappers(content: str) -> list[TextColorSpan]:
     spans: list[TextColorSpan] = []
     pos = 0
     size = len(content)
+    documented = _DocumentationCheck(content)   # same rule as parse_comment_wrappers
     while pos < size:
         start = content.find(_TEXTCOLOR_COMMAND, pos)
         if start < 0:
@@ -888,46 +974,52 @@ def parse_textcolor_wrappers(content: str) -> list[TextColorSpan]:
         if arg >= size or content[arg] != "{":
             pos = arg
             continue
-        color_start = arg + 1
-        i = color_start
-        while i < size and content[i] != "}":
-            if content[i] == "{" and not _is_escaped(content, i):
-                raise TextColorMarkupError("invalid_textcolor", "Text colors cannot contain braces.",
-                                           content, i)
-            i += 1
-        if i >= size:
-            raise TextColorMarkupError("unclosed_textcolor", "The text color is missing its closing brace.",
-                                       content, start)
-        color = content[color_start:i]
-        if not _TEXTCOLOR_VALUE_RE.fullmatch(color):
-            raise TextColorMarkupError(
-                "invalid_textcolor", "Use a hex value or a CSS color name in \\textcolor.",
-                content, color_start, color=color)
-        body_open = i + 1
-        if body_open >= size or content[body_open] != "{":
-            raise TextColorMarkupError("missing_textcolor_body", "The text-color wrapper is missing its body.",
-                                       content, body_open, color=color)
-        body_start = body_open + 1
-        depth = 1
-        i = body_start
-        while i < size:
-            if (content.startswith(_TEXTCOLOR_COMMAND + "{", i)
-                    and not _is_escaped(content, i)):
+        try:
+            color_start = arg + 1
+            i = color_start
+            while i < size and content[i] != "}":
+                if content[i] == "{" and not _is_escaped(content, i):
+                    raise TextColorMarkupError("invalid_textcolor", "Text colors cannot contain braces.",
+                                               content, i)
+                i += 1
+            if i >= size:
+                raise TextColorMarkupError("unclosed_textcolor", "The text color is missing its closing brace.",
+                                           content, start)
+            color = content[color_start:i]
+            if not _TEXTCOLOR_VALUE_RE.fullmatch(color):
                 raise TextColorMarkupError(
-                    "intersecting_textcolors",
-                    "Text colors cannot overlap, contain, or intersect another text color.",
-                    content, i, color=color)
-            char = content[i]
-            if char == "{" and not _is_escaped(content, i):
-                depth += 1
-            elif char == "}" and not _is_escaped(content, i):
-                depth -= 1
-                if depth == 0:
-                    break
-            i += 1
-        if depth:
-            raise TextColorMarkupError("unclosed_textcolor", "The text-color wrapper is missing its closing brace.",
-                                       content, start, color=color)
+                    "invalid_textcolor", "Use a hex value or a CSS color name in \\textcolor.",
+                    content, color_start, color=color)
+            body_open = i + 1
+            if body_open >= size or content[body_open] != "{":
+                raise TextColorMarkupError("missing_textcolor_body", "The text-color wrapper is missing its body.",
+                                           content, body_open, color=color)
+            body_start = body_open + 1
+            depth = 1
+            i = body_start
+            while i < size:
+                if (content.startswith(_TEXTCOLOR_COMMAND + "{", i)
+                        and not _is_escaped(content, i) and not documented(i)):
+                    raise TextColorMarkupError(
+                        "intersecting_textcolors",
+                        "Text colors cannot overlap, contain, or intersect another text color.",
+                        content, i, color=color)
+                char = content[i]
+                if char == "{" and not _is_escaped(content, i):
+                    depth += 1
+                elif char == "}" and not _is_escaped(content, i):
+                    depth -= 1
+                    if depth == 0:
+                        break
+                i += 1
+            if depth:
+                raise TextColorMarkupError("unclosed_textcolor", "The text-color wrapper is missing its closing brace.",
+                                           content, start, color=color)
+        except TextColorMarkupError:
+            if documented(start):
+                pos = start + len(_TEXTCOLOR_COMMAND)
+                continue
+            raise
         spans.append(TextColorSpan(color=color, open_start=start, body_start=body_start,
                                    body_end=i, close_end=i + 1))
         pos = i + 1

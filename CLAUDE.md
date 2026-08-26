@@ -207,6 +207,21 @@ data/workspaces/<workspace-id>/
   file `unused` (no page links to it) and `servable`, and the Assets browser badges them. Nothing
   deletes them automatically — a figure is routinely uploaded before the page that uses it, and
   `delete_page` deliberately leaves figures alone.
+- **Markup that cannot parse inside code is documentation, not an error.** The review
+  (`\comment{id}{…}`) and text-colour (`\textcolor{c}{…}`) parsers exist twice —
+  `parseCommentWrappers`/`parseTextColorWrappers` in `web/index.html` and
+  `parse_comment_wrappers`/`parse_textcolor_wrappers` in `bubbles.py` — and both apply the same
+  rule: if a token *fails to parse* and it begins inside a Markdown code span or fenced block,
+  it is literal text and scanning continues. A **well-formed** wrapper is still a wrapper
+  wherever it sits, so commenting on a code block keeps working and no stored page changes
+  meaning; and broken markup in prose still raises with its line and column. Without this the
+  in-app guide, which documents `\comment{<comment-id>}{…}` and renders through the very same
+  pipeline as a report page, showed an error banner instead of two of its tabs — and no report
+  page could explain the syntax and still be saved. The code-region scan
+  (`markdownCodeRegions` / `_markdown_code_regions`) must stay identical in both languages, and
+  runs lazily so the happy path never pays for it. `tests/review-parser.mjs` and
+  `tests/textcolor-parser.mjs` pin the browser half; `DocumentedMarkupInCodeIsNotMarkup` in
+  `tests/test_editing_logic.py` pins the server half and that every guide section parses.
 - **One control surface for a bubble's tools, on every screen size.** Papers, the bubble's assets,
   the Overleaf link, preview/sharing, the Split/Edit/Read modes and Edit titles all live in the
   page toolbar's `⋮` menu (`buildBubbleToolsMenu`); the row itself keeps only `+` (page creation,
