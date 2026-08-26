@@ -157,12 +157,18 @@ async function main() {
     const steps = await dialog.locator(".setup-step").count();
     assert.equal(steps, 4, "the dialog must walk through all four steps");
     const stepText = (await dialog.locator(".setup-step").allInnerTexts()).join("\n").toLowerCase();
-    for (const expected of ["terminal", "run this there", "assistant", "walk away"]) {
+    for (const expected of ["terminal", "run this there", "assistant", "troubleshoot"]) {
       assert.ok(stepText.includes(expected), `step list is missing ${expected}:\n${stepText}`);
     }
     await shoot(page, "setup-dialog");
     assert.equal(await dialog.locator(".setup-refresh").innerText(), "↻",
       "the fresh-link control is a circular arrow, not a second kind of link");
+    // The controls act on the snippet, so they live beside it.
+    assert.equal(await dialog.locator(".setup-run .setup-snippet").count(), 1);
+    assert.equal(await dialog.locator(".setup-run button").count(), 2,
+      "Copy and the fresh-link control belong next to the link box");
+    assert.equal(await dialog.locator(".create-dialog-footer").count(), 0,
+      "with the controls moved up, the footer has nothing left to hold");
     step("the dialog mints a link and warns what it is");
 
     await dialog.locator(".help-tab", { hasText: "Windows" }).click();
@@ -186,7 +192,7 @@ async function main() {
 
     await dialog.locator("button", { hasText: /^Copy$/ }).click();
     await page.waitForFunction(
-      () => /Copied/.test([...document.querySelectorAll(".create-dialog-footer button")]
+      () => /Copied/.test([...document.querySelectorAll(".setup-run button")]
         .map(node => node.textContent).join(" ")), null, { timeout: 5_000 });
     assert.equal(await page.evaluate(() => navigator.clipboard.readText()), unix,
       "the copied text must be the snippet itself");
