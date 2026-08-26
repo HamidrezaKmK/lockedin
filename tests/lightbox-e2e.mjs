@@ -207,11 +207,10 @@ async function main() {
     await page.locator("#previewWrap").waitFor({ state: "visible", timeout: 15_000 });
     await exerciseViewer(page, "split");
 
-    await page.selectOption("#viewModeSelect", "view").catch(async () => {
-      // The selector has no stable id in every build; fall back to the visible <select>.
-      const select = page.locator("select").filter({ hasText: "Read" }).first();
-      await select.selectOption({ label: "👁 Read" });
-    });
+    // The view modes live in the toolbar's ⋮ menu now — there is no <select> to pick from.
+    await page.locator(".ptab-controls .toolmenu-btn").click();
+    await page.locator(".toolmenu-item", { hasText: "Read" }).click();
+    await page.locator("#editorHost.mode-view").waitFor({ state: "attached", timeout: 5_000 });
     await page.waitForTimeout(600);
     await exerciseViewer(page, "read");
 

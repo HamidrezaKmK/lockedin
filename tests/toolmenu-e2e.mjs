@@ -1,12 +1,15 @@
 #!/usr/bin/env node
 /**
- * Real-browser regression for the bubble title row's ⋮ tools menu.
+ * Real-browser regression for the bubble workspace's ⋮ tools menu.
  *
- * Assets, Overleaf and preview/sharing used to be three separate button groups crowding the
- * title row; they now live behind one ⋮ button. This drives that menu against a disposable data
- * root: the row carries no loose tool buttons, the dropdown groups the three areas, toggling the
- * public link rewrites the menu in place (and lights the trigger's dot), and clicking outside
- * closes it. Nothing under the repository's real data/ directory is read or changed.
+ * Assets, Overleaf, preview/sharing, Papers, the view modes and Edit titles were once six
+ * separate controls spread over two rows — several of them hidden on phones, which reached
+ * Papers and Overleaf through floating pill buttons instead. They now live behind one ⋮ button
+ * in the page toolbar, on every screen size. This drives that against a disposable data root:
+ * the toolbar carries only `+`, ⋮ and ⛶, the dropdown groups every area, switching view mode
+ * from it works, Papers opens as a popup, toggling the public link rewrites the menu in place,
+ * clicking outside closes it, and the whole thing still works at phone width.
+ * Nothing under the repository's real data/ directory is read or changed.
  *
  * Screenshots land in LOCKEDIN_E2E_SHOTS when set, for eyeballing the visual result.
  */
@@ -113,29 +116,67 @@ async function main() {
     page.on("pageerror", error => { throw error; });
     await page.goto(`${baseUrl}/#bubble/${slug}`, { waitUntil: "domcontentloaded" });
 
-    const trigger = page.locator(".bubble-title .toolmenu-btn");
+    const trigger = page.locator(".ptab-controls .toolmenu-btn");
     await trigger.waitFor({ state: "visible", timeout: 10_000 });
-    // The whole point of the collapse: the title row holds the chip and the ⋮, nothing else.
-    const rowText = await page.locator(".bubble-title").innerText();
-    for (const gone of ["Assets", "Overleaf", "Preview", "Sharing", "Open link"]) {
-      assert.ok(!rowText.includes(gone), `"${gone}" must not sit loose in the title row:\n${rowText}`);
+    // The whole point of the collapse: the toolbar is `+`, the tabs, then ⋮ and ⛶.
+    const rowText = await page.locator("#ptabs").innerText();
+    for (const gone of ["Assets", "Overleaf", "Papers", "Preview", "Sharing", "Split", "Read"]) {
+      assert.ok(!rowText.includes(gone), `"${gone}" must not sit loose in the toolbar:\n${rowText}`);
     }
+    assert.equal(await page.locator(".ptab-new").innerText(), "+", "page creation is a bare +");
+    assert.equal(await page.locator("#ptabs > *").count(), 3,
+      "the toolbar row is exactly: + , the tab list, the right-hand controls");
+    assert.equal(await page.locator(".ptab-controls > *").count(), 2,
+      "the right-hand controls are exactly ⋮ and ⛶");
+    assert.ok(await page.locator("#ptabs > *").first().evaluate(n => n.classList.contains("ptab-new")),
+      "page creation must be the leftmost thing in the row");
     assert.equal(await page.locator(".toolmenu-panel").count(), 0, "the menu starts closed");
     await shoot(page, "toolmenu-collapsed");
-    step("the title row carries one ⋮ button and no loose tool buttons");
+    step("the toolbar carries +, the tabs, then ⋮ and ⛶");
 
     await trigger.click();
     const panel = page.locator(".toolmenu-panel");
     await panel.waitFor({ state: "visible", timeout: 2_000 });
     // The group headings are uppercased by CSS, so compare case-insensitively throughout.
     const closed = (await panel.innerText()).toLowerCase();
-    for (const expected of ["overleaf", "link a project", "sharing", "preview page",
-                            "public link", "off", "files", "bubble assets"]) {
+    for (const expected of ["view", "split", "edit", "read", "edit titles",
+                            "this bubble", "papers", "assets",
+                            "overleaf", "link a project", "sharing", "preview page",
+                            "public link", "off"]) {
       assert.ok(closed.includes(expected), `the menu is missing ${expected}:\n${closed}`);
     }
     assert.ok(!closed.includes("open shared page"), `an unshared bubble has no public link:\n${closed}`);
     await shoot(page, "toolmenu-open");
-    step("the dropdown groups Overleaf, sharing and files");
+    step("the dropdown groups view modes, this bubble, Overleaf and sharing");
+
+    // A view mode picked from the menu applies, and shows as the active row next time.
+    const host = page.locator("#editorHost");
+    await page.locator(".toolmenu-item", { hasText: "Split" }).click();
+    await panel.waitFor({ state: "detached", timeout: 2_000 });
+    assert.ok(await host.evaluate(n => n.classList.contains("mode-split")),
+      "picking Split must switch the workspace to split view");
+    await trigger.click();
+    await panel.waitFor({ state: "visible", timeout: 2_000 });
+    const active = page.locator(".toolmenu-item.on");
+    assert.equal(await active.count(), 1, "exactly one view mode is marked active");
+    assert.match(await active.innerText(), /Split/, "the active row must be the current mode");
+    step("view modes switch from the menu and the current one is marked");
+
+    // Papers is a popup on the assets modal's frame, not an anchored dropdown.
+    await page.locator(".toolmenu-item", { hasText: "Papers" }).click();
+    // A hidden #helpModal also carries .overlay, so address this dialog by its label.
+    const papersOverlay = page.getByRole("dialog", { name: "Papers in this bubble" });
+    const papers = papersOverlay.locator(".papers-modal-body");
+    await papers.waitFor({ state: "visible", timeout: 5_000 });
+    assert.match(await papersOverlay.locator(".asset-modal-header").innerText(), /Papers/,
+      "the popup must announce itself as Papers");
+    await shoot(page, "toolmenu-papers");
+    await papersOverlay.click({ position: { x: 5, y: 5 } });
+    await papers.waitFor({ state: "detached", timeout: 2_000 });
+    step("Papers opens as a popup and closes on the backdrop");
+
+    await trigger.click();
+    await panel.waitFor({ state: "visible", timeout: 2_000 });
 
     // Toggling sharing rewrites the open menu in place and lights the trigger's dot.
     await page.locator(".toolmenu-item", { hasText: "Public link" }).click();
@@ -155,6 +196,28 @@ async function main() {
     assert.ok(!(await trigger.evaluate(node => node.classList.contains("on"))),
       "closing the menu must un-press the trigger");
     step("clicking outside closes the dropdown");
+
+    // A phone gets the same one control surface, and none of the retired floating buttons.
+    await page.setViewportSize({ width: 390, height: 800 });
+    await page.reload({ waitUntil: "domcontentloaded" });
+    const phoneTrigger = page.locator(".ptab-controls .toolmenu-btn");
+    await phoneTrigger.waitFor({ state: "visible", timeout: 10_000 });
+    assert.ok(await page.locator(".ptab-new").isVisible(), "a phone must be able to add a page");
+    assert.equal(await page.locator(".mobile-bubble-actions").count(), 0,
+      "the floating mobile pill buttons must be gone");
+    await phoneTrigger.click();
+    await panel.waitFor({ state: "visible", timeout: 2_000 });
+    const phoneMenu = (await panel.innerText()).toLowerCase();
+    for (const expected of ["read", "papers", "overleaf", "public link"]) {
+      assert.ok(phoneMenu.includes(expected), `the phone menu is missing ${expected}:\n${phoneMenu}`);
+    }
+    const clipped = await panel.evaluate(node => {
+      const box = node.getBoundingClientRect();
+      return box.right > window.innerWidth + 1 || box.left < -1 || box.width < 100;
+    });
+    assert.ok(!clipped, "the panel must fit within a phone viewport");
+    await shoot(page, "toolmenu-phone");
+    step("the same menu works at phone width, with no floating buttons left");
 
     process.stdout.write("toolmenu-e2e: all bubble tool-menu checks passed\n");
   } finally {

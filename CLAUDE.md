@@ -58,10 +58,12 @@ LOCKEDIN_HOME=/tmp/li_test uv run python -m unittest discover -s tests -t . -v
   through the ordinary v2 endpoints and drives the chip, dropdown, detail, and leave path,
   including that the clean stop is hidden. Set `LOCKEDIN_E2E_SHOTS=<dir>`
   to keep screenshots.
-- `tests/toolmenu-e2e.mjs` (`npm run test:toolmenu-e2e`) — real Chrome: the bubble title row
-  carries only the presence chip and the `⋮` tools button, the dropdown groups Overleaf /
-  sharing / files, toggling the public link rewrites the open menu in place and lights the
-  trigger's dot, and an outside click closes it. Honors `LOCKEDIN_E2E_SHOTS` too.
+- `tests/toolmenu-e2e.mjs` (`npm run test:toolmenu-e2e`) — real Chrome: the page toolbar carries
+  only `+`, the tab list, `⋮` and `⛶`; the dropdown groups view modes / this bubble / Overleaf /
+  sharing; a view mode picked from it applies and is marked active; Papers opens as a popup and
+  closes on its backdrop; toggling the public link rewrites the open menu in place and lights the
+  trigger's dot; an outside click closes it; and the whole thing still works at 390×800 with no
+  floating mobile buttons left. Honors `LOCKEDIN_E2E_SHOTS` too.
 - `tests/_fixtures.py` — builds throwaway qwen workspaces seeded with the two diffusion papers
   (copies `meta.yaml`/`summary.md`/`text.txt` from a local user, not the 50 MB `paper.pdf`).
 - `tests/setup_unittest_user.py` — (re)creates the persistent `unittest`/`unittest` fixture user
@@ -205,6 +207,17 @@ data/workspaces/<workspace-id>/
   file `unused` (no page links to it) and `servable`, and the Assets browser badges them. Nothing
   deletes them automatically — a figure is routinely uploaded before the page that uses it, and
   `delete_page` deliberately leaves figures alone.
+- **One control surface for a bubble's tools, on every screen size.** Papers, the bubble's assets,
+  the Overleaf link, preview/sharing, the Split/Edit/Read modes and Edit titles all live in the
+  page toolbar's `⋮` menu (`buildBubbleToolsMenu`); the row itself keeps only `+` (page creation,
+  far left, deliberately outside the scrolling tab list) and `⛶`. There is no phone-specific
+  variant — the retired `.mobile-workspace-control` / `.desktop-only-tool` / floating
+  `.mobile-bubble-actions` split left phones unable to create a page or switch view mode at all.
+  The menu host is built **once per bubble** in `openBubble` (into `S.toolsMenu`) and re-homed by
+  `refreshTabs`, which rebuilds that row on every page switch and every 5s poll — building it
+  there instead would drop an open panel, and is how the old papers dropdown ended up a stale
+  detached node. Its panel hangs inside `.pane`, which is `overflow:clip`, so it must keep a
+  `max-height`.
 - **One figure viewer, served to every rendered surface.** `web/lightbox.js` (route `/lightbox.js`,
   unauthenticated so public shares can load it) implements the full-screen click-to-zoom/pan viewer.
   The SPA loads it and calls `LockedInLightbox.watch("#previewWrap")` (covers Split and Read); the

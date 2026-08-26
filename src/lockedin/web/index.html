@@ -580,8 +580,11 @@
   .toolmenu-live{display:none;position:absolute;top:-1px;right:-1px;width:8px;height:8px;
     border-radius:50%;background:var(--good);border:2px solid var(--bg)}
   .toolmenu.sharing .toolmenu-live{display:block}
+  /* The panel now hangs inside .pane, which is overflow:clip — bound its height so a short
+     screen scrolls the menu instead of silently cutting it off. */
   .toolmenu-panel{position:absolute;right:0;top:calc(100% + 6px);z-index:40;padding:6px;
-    width:min(252px,calc(100vw - 32px));background:var(--panel);border:1px solid var(--line);
+    width:min(252px,calc(100vw - 32px));max-height:min(62vh,440px);overflow:auto;
+    background:var(--panel);border:1px solid var(--line);
     border-radius:10px;box-shadow:var(--shadow)}
   .toolmenu-group{padding:8px 8px 3px;font-size:10px;letter-spacing:.08em;text-transform:uppercase;
     color:var(--muted)}
@@ -590,6 +593,9 @@
     border-radius:8px;background:none;color:var(--ink);font-family:var(--font-ui);font-size:12.5px;
     text-align:left;cursor:pointer}
   .toolmenu-item:hover{background:var(--panel2)}
+  .toolmenu-item.on{color:var(--accent)}
+  .toolmenu-check{flex:none;font-size:11px;color:var(--accent)}
+  .toolmenu-sep{height:1px;margin:5px 8px;background:var(--line)}
   .toolmenu-item[disabled]{opacity:.55;cursor:default}
   .toolmenu-icon{flex:none;width:17px;display:inline-flex;align-items:center;justify-content:center;
     font-size:13px}
@@ -663,6 +669,8 @@
   .ptab-group{display:flex;gap:4px;align-items:center;min-width:0}
   .ptab-group.hidden-tabs{margin-left:auto;padding-left:8px;border-left:1px solid var(--line);opacity:.76}
   .ptab-controls{display:flex;gap:8px;align-items:center;flex:0 0 auto;white-space:nowrap}
+  /* Page creation sits outside the scrolling tab list, so it stays reachable at any tab count. */
+  .ptab-new{flex:0 0 auto;padding:4px 11px;font-size:15px;line-height:1.15}
   .ptab{padding:4px 10px;border-radius:7px 7px 0 0;border:1px solid var(--line);
         background:var(--panel2);cursor:pointer;font-size:13px;display:flex;gap:6px;align-items:center;
         max-width:280px}
@@ -783,16 +791,14 @@
   .presence-detail .presence-reason{grid-column:1/-1;color:var(--warn);overflow-wrap:anywhere}
   .presence-dupnote{margin:5px 8px 1px;font-size:11px;color:var(--muted)}
   .presence-empty{padding:9px 8px;color:var(--muted);font-size:12px}
-  .papers-menu{position:absolute;right:10px;top:42px;z-index:30;width:min(460px,calc(100vw - 32px));
-    max-height:280px;overflow:auto;background:var(--panel);border:1px solid var(--line);
-    border-radius:8px;box-shadow:var(--shadow);padding:8px}
-  .papers-menu .bubble-pdf-list{display:block}
-  .papers-menu .score-group{margin-top:4px}
-  .papers-menu .score-heading{padding-top:5px;margin-bottom:4px}
-  .papers-menu .paper-row{display:flex;align-items:center;gap:5px;margin:3px 0}
-  .papers-menu .paperchip{display:flex;max-width:none;margin:0;border-radius:7px;flex:1;min-width:0}
-  .papers-menu .paper-relevance{display:flex;align-items:center;gap:2px;flex:0 0 auto}
-  .papers-menu .paper-relevance button{min-height:24px;padding:1px 6px;font-size:14px;line-height:1}
+  /* The papers popup reuses the assets modal's frame; only the row shapes differ. */
+  .papers-modal-body .bubble-pdf-list{display:block}
+  .papers-modal-body .score-group{margin-top:4px}
+  .papers-modal-body .score-heading{padding-top:5px;margin-bottom:4px}
+  .papers-modal-body .paper-row{display:flex;align-items:center;gap:5px;margin:3px 0}
+  .papers-modal-body .paperchip{display:flex;max-width:none;margin:0;border-radius:7px;flex:1;min-width:0}
+  .papers-modal-body .paper-relevance{display:flex;align-items:center;gap:2px;flex:0 0 auto}
+  .papers-modal-body .paper-relevance button{min-height:26px;padding:2px 8px;font-size:14px;line-height:1}
   .quick-add-paper{margin-top:10px;padding-top:10px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:7px}
   .quick-add-paper b{font-family:var(--font-ui);font-size:12px}
   .quick-add-paper input,.quick-add-paper textarea{padding:7px 9px;font-size:12px}
@@ -813,7 +819,6 @@
   .membership-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto auto;gap:6px;
     align-items:center;border:1px solid var(--line);border-radius:8px;padding:7px 8px;background:var(--panel2)}
   .membership-row .score{font-variant-numeric:tabular-nums;color:var(--muted);white-space:nowrap}
-  .mobile-bubble-actions,.mobile-sheet{display:none}
 
   /* ── Mobile ── */
   @media (max-width:700px){
@@ -826,7 +831,6 @@
        otherwise let a too-wide child shift content left and clip the left edge) without
        turning the body into a vertical scroll container the way overflow-x:hidden would. */
     html,body{height:auto;overflow-y:visible;overflow-x:clip}
-    body.mobile-sheet-open{overflow:hidden}
     #app{height:auto;min-height:var(--vvh);overflow:visible;grid-template-columns:0 minmax(0,1fr)!important}
     /* keep the topbar pinned while the page scrolls */
     #topbar{position:sticky;top:0;z-index:25;padding:calc(8px + env(safe-area-inset-top)) 10px 8px;gap:6px}
@@ -867,45 +871,18 @@
     #app.bubble-focus .ptabs,#app.bubble-focus #editorWrap{display:none!important}
     #app.bubble-focus #editorHost{display:block;position:absolute;inset:0;height:auto;overflow:hidden}
     #app.bubble-focus #previewWrap{display:block!important;position:absolute;inset:0;height:auto;box-sizing:border-box;overflow:auto;padding:22px 18px calc(76px + env(safe-area-inset-bottom))}
-    #app.bubble-focus .mobile-bubble-actions{display:none}
     .mobile-focus-exit{display:block;position:fixed;right:14px;bottom:calc(env(safe-area-inset-bottom) + 14px);z-index:46;
       min-height:38px;padding:7px 12px;border-radius:999px;background:color-mix(in srgb,var(--panel) 88%,transparent);
       box-shadow:0 5px 20px rgba(0,0,0,.35);font-size:12px}
     #detail{display:block;min-height:0}
     .pane{height:auto;min-height:0}
     #detail>.editor-pane{height:calc(var(--vvh) - 154px - env(safe-area-inset-top));min-height:min(380px, calc(var(--vvh) - 154px))}
-    .desktop-only-tool{display:none!important}
-    /* On phones, page creation and editor-mode switching belong in the full workspace, not the
-       compact reader header. Keep page tabs and the Focus control only. */
-    .mobile-workspace-control{display:none!important}
     #previewArrow{display:none!important}
     .mobile-only{display:inline-flex;align-items:center}
-    /* Mobile respects the chosen view mode (the Split/Edit/Read selector is visible here now).
+    /* Mobile respects the chosen view mode, picked from the ⋮ menu like everywhere else.
        Panes stack vertically; the .mode-view/.mode-edit rules above hide whichever pane isn't
        wanted, and split shows both — editor above preview. */
     #editorHost{flex-direction:column}
-    .mobile-bubble-actions{position:fixed;left:14px;right:14px;bottom:calc(env(safe-area-inset-bottom) + 16px);
-      display:flex;justify-content:space-between;gap:12px;z-index:45;pointer-events:none}
-    .mobile-bubble-actions button{pointer-events:auto;border-radius:999px;padding:12px 18px;
-      min-height:48px;font-size:13px;font-weight:600;
-      box-shadow:0 8px 32px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.06)}
-    .mobile-sheet{display:block;position:fixed;inset:0;z-index:70;pointer-events:none}
-    .mobile-sheet.open{pointer-events:auto}
-    .mobile-sheet-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.52);opacity:0;
-      transition:opacity .2s ease;backdrop-filter:blur(2px)}
-    .mobile-sheet.open .mobile-sheet-backdrop{opacity:1}
-    .mobile-sheet-panel{position:absolute;left:0;right:0;bottom:0;max-height:calc(var(--vvh) - 12px);
-      background:var(--panel);border:1px solid var(--line);border-bottom:none;border-radius:18px 18px 0 0;
-      display:flex;flex-direction:column;transform:translateY(100%);transition:transform .22s cubic-bezier(.32,.72,0,1);
-      padding-bottom:env(safe-area-inset-bottom)}
-    .mobile-sheet-panel::before{content:'';display:block;width:36px;height:4px;border-radius:2px;
-      background:var(--line);margin:10px auto 0;flex-shrink:0}
-    .mobile-sheet.open .mobile-sheet-panel{transform:translateY(0)}
-    .mobile-sheet-hd{padding:12px 14px 10px;border-bottom:1px solid var(--line);
-      display:flex;align-items:center;gap:8px;font-weight:600}
-    .mobile-sheet-body{overflow:auto;min-height:0;display:flex;flex-direction:column}
-    .mobile-sheet-body>.pane{height:calc(var(--vvh) - 90px);min-height:0;border:none;border-radius:0;background:transparent}
-    .mobile-sheet-body>.bd{padding:12px;overflow:auto}
     #modelCfg{position:fixed;top:calc(58px + env(safe-area-inset-top));left:12px;right:12px;
       width:auto;max-width:none;max-height:calc(var(--vvh) - 82px);border-radius:14px}
     /* single-column cards. minmax(0,1fr) (not 1fr) forces the track minimum to 0 so a card's
@@ -1774,7 +1751,7 @@
     todos:[], todosById:{}, todoFilter:"open", bubbleFilter:"active",
     pollTimer:null, lastPageMtime:null, lastManifestMtime:null, lastAssetsMtime:null,
     baseMtime:null, autosaveTimer:null, saving:false, syncState:"synced", applyingRemote:false,
-    previewEl:null, remoteChangePending:false, papersMenu:null,
+    previewEl:null, remoteChangePending:false, toolsMenu:null,
     comments:[], reviewOpen:false, reviewTab:"open", selectedComment:null, lastCommentsMtime:null,
     reviewSelection:null, reviewHitTargets:[], reviewMarkupError:null, reviewHighlightFrame:null,reviewMutationObserver:null,
     reviewMutating:false,reviewMutationEpoch:0,reviewCommentsLoaded:false,
@@ -1844,7 +1821,7 @@
     stopPresence(); S.presenceEl=null;
     if(S.editor){ try{S.editor.destroy();}catch(e){} }
     S.editor=null; S.bubble=null; S.page=null; S.pages=[]; S.previewEl=null;
-    S.papersMenu=null;
+    S.toolsMenu=null;
     S.remoteChangePending=false;
     if(S.reviewMutationObserver){S.reviewMutationObserver.disconnect();S.reviewMutationObserver=null;}
     S.comments=[];S.reviewSelection=null;S.reviewHitTargets=[];S.reviewMarkupError=null;S.commentDraftAnchor=null;S.reviewMutating=false;S.reviewCommentsLoaded=false;
@@ -1932,7 +1909,6 @@
   document.addEventListener("click",e=>{
     const wrap=document.querySelector(".account-quick");
     if(wrap&&!wrap.contains(e.target)) $("#accountMenu").classList.add("hide");
-    if(S.papersMenu&&!e.target.closest(".papers-menu")&&!e.target.closest("[data-papers-toggle]")) closePapersMenu();
   });
   // ---------- help modal (multi-section) ----------
   let _helpSections=null;
@@ -3268,6 +3244,32 @@
     return (n/(1024*1024)).toFixed(1)+" MB";
   }
 
+  // Papers used to live in a cramped dropdown anchored to the toolbar, whose position was
+  // hardcoded against that row's height. It is a popup now, matching the assets browser it sits
+  // beside in the ⋮ menu; renderBubblePdfs does the rendering for both this and nothing else.
+  function openBubblePapers(slug){
+    const overlay=el("div",{class:"overlay",role:"dialog","aria-modal":"true","aria-label":"Papers in this bubble"});
+    const box=el("div",{class:"diffbox col",style:"width:min(760px,94vw);max-height:82vh;padding:0;overflow:hidden;gap:0"});
+    const body=el("div",{class:"diffbody asset-modal-body papers-modal-body col"});
+    const close=()=>overlay.remove();
+    box.append(
+      el("div",{class:"asset-modal-header"},el("b",{},"📚 Papers in this bubble"),
+        el("span",{class:"spacer"}),el("button",{class:"ghost small",title:"Close",onclick:close},"✕")),
+      body);
+    overlay.append(box); overlay.onclick=e=>{if(e.target===overlay)close();}; document.body.append(overlay);
+    body.append(el("div",{class:"muted"},"Loading papers…"));
+    // Re-fetched rather than read from S.bubbleAssets: relevance can be changed from the asset
+    // editor or by another tab between opens.
+    api("/api/bubbles/"+encodeURIComponent(slug)).then(r=>{
+      if(!overlay.isConnected)return;
+      S.bubbleAssets=(r.bubble||{}).assets||[];
+      renderBubblePdfs(body,{slug,assets:S.bubbleAssets});
+    }).catch(e=>{
+      if(!overlay.isConnected)return;
+      body.innerHTML=""; body.append(el("div",{class:"err"},"Could not load papers: "+e.message));
+    });
+  }
+
   function openBubbleAssets(slug){
     const overlay=el("div",{class:"overlay",role:"dialog","aria-modal":"true","aria-label":"Bubble assets"});
     const box=el("div",{class:"diffbox col",style:"width:min(760px,94vw);max-height:82vh;padding:0;overflow:hidden;gap:0"});
@@ -3360,7 +3362,7 @@
   // One ⋮ menu for everything the bubble's title row used to spell out in buttons: the Overleaf
   // link, the read-only preview and public share link, and the assets browser.
   function buildBubbleToolsMenu(slug,b){
-    const host=el("div",{class:"toolmenu desktop-only-tool"});
+    const host=el("div",{class:"toolmenu"});
     const btn=el("button",{class:"toolmenu-btn",title:"Bubble tools","aria-label":"Bubble tools",
       "aria-haspopup":"menu"},
       el("span",{class:"toolmenu-glyph"},"\u22ee"),
@@ -3376,10 +3378,11 @@
     host.append(btn);
 
     function item(icon,label,opts){
-      const row=el("button",{class:"toolmenu-item",title:opts.title||""},
+      const row=el("button",{class:"toolmenu-item"+(opts.on?" on":""),title:opts.title||""},
         el("span",{class:"toolmenu-icon"},icon),
         el("span",{class:"toolmenu-label"},label));
       if(opts.note)row.append(el("span",{class:"toolmenu-note"+(opts.noteOn?" on":"")},opts.note));
+      if(opts.on)row.append(el("span",{class:"toolmenu-check"},"\u2713"));
       row.onclick=e=>{ e.stopPropagation(); if(!opts.keepOpen)close(); opts.run(row); };
       return row;
     }
@@ -3388,6 +3391,30 @@
 
     function buildPanel(){
       const menu=el("div",{class:"toolmenu-panel",role:"menu",onclick:e=>e.stopPropagation()});
+      // View first: it is the control reached for most, and on a phone it is reachable nowhere
+      // else — the toolbar select this replaced was hidden on narrow screens.
+      menu.append(el("div",{class:"toolmenu-group"},"View"));
+      [["split","\u25e7","Split"],["edit","\u270f\ufe0f","Edit"],["view","\ud83d\udc41","Read"]].forEach(([mode,icon,label])=>{
+        menu.append(item(icon,label,{on:mode===S.viewMode&&!S.editingTitles,
+          title:"Show this page as "+label.toLowerCase(),
+          run:async()=>{
+            // Renaming is a mode you are *in*; leaving it for a view mode saves the edits first.
+            if(S.editingTitles) await toggleEditTitles();
+            setViewMode(mode);
+          }}));
+      });
+      menu.append(el("div",{class:"toolmenu-sep"}));
+      // Renaming pages and the bubble used to hide inside the view picker as a fourth "mode".
+      menu.append(item("\ud83c\udff7\ufe0f","Edit titles",
+        {on:S.editingTitles,
+         title:S.editingTitles?"Save the page and bubble names":"Rename pages and this bubble",
+         run:()=>toggleEditTitles()}));
+      menu.append(el("div",{class:"toolmenu-group"},"This bubble"));
+      menu.append(item("\ud83d\udcda","Papers",
+        {title:"Papers attached to this bubble",run:()=>openBubblePapers(slug)}));
+      menu.append(item("\ud83d\udcc1","Assets",
+        {title:"Browse, upload, or download this bubble\u2019s files",
+         run:()=>openBubbleAssets(slug)}));
       menu.append(el("div",{class:"toolmenu-group"},"Overleaf"));
       menu.append(item(overleafMark(),b.overleaf_url?"Open project":"Link a project",
         {title:b.overleaf_url?"Open this bubble\u2019s Overleaf project"
@@ -3420,10 +3447,6 @@
         menu.append(item("\u2197","Open shared page",
           {title:"Open the shared page in a new tab",
            run:()=>window.open(shareUrl(),"_blank","noopener")}));
-      menu.append(el("div",{class:"toolmenu-group"},"Files"));
-      menu.append(item("\ud83d\udcc1","Bubble assets",
-        {title:"Browse, upload, or download this bubble\u2019s files",
-         run:()=>openBubbleAssets(slug)}));
       return menu;
     }
     // Toggling the public link changes which rows exist, so an open menu rebuilds in place.
@@ -3583,7 +3606,7 @@
     if(!noRoute)pushRoute("bubble/"+slug);
     S.bubble=slug; S.refs=null; S.page=null; S.pages=[];
     S.selectedComment=null;S.reviewSelection=null;S.reviewHitTargets=[];S.reviewMarkupError=null;S.commentDraftAnchor=null;S.reviewMutating=false;S.reviewMutationEpoch=(S.reviewMutationEpoch||0)+1;S.reviewCommentsLoaded=false;
-    S.previewEl=null; S.remoteChangePending=false; S.papersMenu=null;
+    S.previewEl=null; S.remoteChangePending=false; S.toolsMenu=null;
     S.baseMtime=null; S.saving=false; S.syncState="synced";
     S.shareActive=false; S.shareToken=""; S.editingTitles=false; S.nameInput=null; S.showHiddenPages=false;
     const {m,version}=beginMainRender({detail:true});
@@ -3614,11 +3637,10 @@
       titleRow.append(S.presenceEl);
       startPresence(slug);
     }
-    if(b.approved){
-      // The tools are desktop-only: on mobile the header collapses to just the bubble name and
-      // buildMobileBubbleTools covers the same ground in a sheet.
-      titleRow.append(buildBubbleToolsMenu(slug,b));
-    }
+    // Built here, but homed in the page toolbar by refreshTabs: it needs the bubble detail (the
+    // Overleaf link), which that function does not have, and rebuilding it every refresh would
+    // drop an open panel.
+    if(b.approved) S.toolsMenu=buildBubbleToolsMenu(slug,b);
     m.append(titleRow);
 
     const wrap=el("div",{id:"detail"});
@@ -3627,7 +3649,6 @@
 
     if(!b.approved){ buildApprovalPane(left,b); }
     else { buildWorkspace(left,b); }
-    if(b.approved) buildMobileBubbleTools(m,b);
     // Focus mode is a per-tab workspace preference. Restore it after the bubble UI exists so
     // refreshing the current bubble keeps the same focused page instead of returning to chrome.
     if(b.approved&&sessionStorage.getItem("li_bubble_focus")==="1"){
@@ -3682,49 +3703,13 @@
     S.previewEl.addEventListener("dblclick",syncPreviewToSource);
   }
 
-  function buildMobileSheet(title){
-    const sheet=el("div",{class:"mobile-sheet"});
-    const body=el("div",{class:"mobile-sheet-body"});
-    const close=()=>{
-      sheet.classList.remove("open");
-      document.body.classList.remove("mobile-sheet-open");
-      if(sheet._onClose) sheet._onClose();
-    };
-    sheet.append(
-      el("div",{class:"mobile-sheet-backdrop",onclick:close}),
-      el("div",{class:"mobile-sheet-panel"},
-        sheet._header=el("div",{class:"mobile-sheet-hd"},el("b",{},title),el("span",{class:"spacer"}),
-          el("button",{class:"ghost small",onclick:close},"✕")),
-        body));
-    sheet._body=body; sheet._close=close;
-    sheet._open=()=>{
-      sheet.classList.add("open");
-      document.body.classList.add("mobile-sheet-open");
-    };
-    return sheet;
-  }
-
-  function buildMobileBubbleTools(main,b){
-    const papersSheet=buildMobileSheet("Papers");
-    const papersBody=el("div",{class:"bd"});
-    papersSheet._body.append(papersBody);
-    renderBubblePdfs(papersBody,b);
-    const openPapers=()=>{ papersSheet._open(); };
-
-    const actions=el("div",{class:"mobile-bubble-actions"},
-      el("button",{class:"primary small",title:"Papers",onclick:openPapers},"📚"),
-      el("button",{class:"primary small",title:b.overleaf_url?"Open Overleaf":"Link Overleaf",onclick:()=>b.overleaf_url?window.open(b.overleaf_url,"_blank","noopener"):openOverleafModal(b)},"🍃"));
-    main.append(actions,papersSheet);
-  }
-
   // Render the "Papers in this bubble" strip. The route carries the selected workspace, so the
   // full editor can safely open in a new tab without falling back to Personal.
   function renderBubblePdfs(container, b){
     if(!Array.isArray(b.assets)) b.assets=[];
+    // No heading of its own: the popup that hosts this already has one, and printing a second
+    // "Papers in this bubble" right under it read as a mistake.
     container.innerHTML="";
-    container.append(el("div",{class:"row",style:"align-items:center;gap:6px"},
-      el("b",{},"Papers in this bubble"),el("span",{class:"spacer"})));
-
     const list=el("div",{class:"bubble-pdf-list"});
     for(let score=5;score>=1;score--){
       const group=(b.assets||[]).filter(a=>Number(a.bubble_score||5)===score);
@@ -4534,54 +4519,22 @@
     });
     tabScroll.append(visibleTabs);
     if(S.showHiddenPages&&hiddenTabs.childElementCount)tabScroll.append(hiddenTabs);
+    // Outside the horizontally scrolling list on purpose: inside it, a long enough set of tabs
+    // scrolls page creation off-screen and out of reach.
+    if(!S.editingTitles) tabs.prepend(el("button",{type:"button",class:"small ghost ptab-new",
+      title:"New page","aria-label":"New page",onclick:newPage},"+"));
     // Keep page creation outside the horizontally scrolling tab list.  Once a bubble has
     // enough tabs, a button in that list can be clipped/off-screen and become unreachable.
-    if(!S.editingTitles) controls.append(el("button",{type:"button",class:"small ghost mobile-workspace-control",onclick:newPage},"+ Page"));
-    const papersBtn=el("button",{class:"small ghost desktop-only-tool","data-papers-toggle":"1",title:"Papers in this bubble",
-      onclick:(e)=>{ e.stopPropagation(); togglePapersMenu(controls); }},"📚 Papers");
-    controls.append(papersBtn);
-    // view-mode selector — also the home of "Edit titles" (folded in as a 4th option). Visible on
-    // mobile too, so phones can switch between Read and Edit. Selecting "Edit titles" enters
-    // rename mode (page titles + bubble name); picking any real view mode while renaming saves
-    // those edits first, then switches. Enter inside a title input also saves (see toggleEditTitles).
-    const vm=el("select",{class:"small ghost mobile-workspace-control",title:"Page view mode",
-      style:"width:auto;padding:4px 8px"+(S.editingTitles?";color:var(--accent);border-color:var(--accent)":"")});
-    [["split","◧ Split"],["edit","✏️ Edit"],["view","👁 Read"],["edittitles","🏷️ Edit titles"]].forEach(([v,lbl])=>{
-      const o=el("option",{value:v},lbl);
-      if(v==="edittitles" ? S.editingTitles : (v===S.viewMode && !S.editingTitles)) o.selected=true;
-      vm.append(o); });
-    vm.onchange=async()=>{
-      const v=vm.value;
-      if(v==="edittitles"){ if(!S.editingTitles) toggleEditTitles(); return; }
-      if(S.editingTitles) await toggleEditTitles();   // persist the in-progress title edits first
-      setViewMode(v);
-    };
-    controls.append(vm);
+    // Papers, the view modes and Edit titles all live in the ⋮ menu now. What is left flanks the
+    // tabs: page creation at the far left, then the menu and the focus toggle at the far right.
+    // The ⋮ host is built once per bubble and re-homed here, because this row is rebuilt on every
+    // page switch and every poll — rebuilding the menu would drop an open panel.
+    if(S.toolsMenu) controls.append(S.toolsMenu);
     controls.append(el("button",{class:"small ghost",id:"bubbleFocusToggle",
       title:"Enter focused workspace", "aria-label":"Enter focused workspace",
       onclick:()=>setBubbleFocus(!S.bubbleFocus)},"⛶"));
     refreshPageVisibilityTool();
     refreshHiddenPagesTool();
-  }
-  function closePapersMenu(){
-    if(S.papersMenu){ S.papersMenu.remove(); S.papersMenu=null; }
-  }
-  async function togglePapersMenu(anchor){
-    if(S.papersMenu){ closePapersMenu(); return; }
-    const menu=el("div",{class:"papers-menu"});
-    anchor.style.position=anchor.style.position||"relative";
-    anchor.append(menu);
-    S.papersMenu=menu;
-    menu.append(el("div",{class:"muted",style:"padding:4px"},"Loading papers…"));
-    const slug=S.bubble;
-    try{
-      const detail=(await api("/api/bubbles/"+slug)).bubble;
-      if(S.papersMenu!==menu||S.bubble!==slug)return;
-      S.bubbleAssets=detail.assets||[];
-      renderBubblePdfs(menu,{slug,assets:S.bubbleAssets});
-    }catch(e){
-      if(S.papersMenu===menu)menu.textContent="Could not load papers: "+e.message;
-    }
   }
   function pageVisibilityIcon(){
     const span=document.createElement("span");
@@ -5237,7 +5190,6 @@
   }
   async function setViewMode(mode){
     const host=$("#editorHost"); if(!host||!S.editor)return;
-    closePapersMenu();
     // entering pure reading view from an editing mode -> persist first
     if(mode==="view" && S.viewMode!=="view") await savePage();
     S.viewMode=mode;

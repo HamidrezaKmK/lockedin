@@ -113,11 +113,28 @@ class AestheticsConfigTests(unittest.TestCase):
         self.assertIn("#app.bubble-focus #previewWrap{display:block!important;position:absolute;inset:0", source)
         self.assertIn('id:"mobileFocusExit"', source)
 
-    def test_mobile_hides_workspace_controls_but_not_desktop_controls(self):
+    def test_the_bubble_toolbar_is_one_control_surface_on_every_screen(self):
+        """Papers, the view modes and Edit titles live in the \u22ee menu, which phones get too.
+
+        A phone previously could not create a page or change view mode at all (both controls were
+        display:none) and reached Papers/Overleaf only through floating pill buttons. Those two
+        surfaces are gone; if either class comes back, so has the split.
+        """
         source = (Path(server.WEB_DIR) / "index.html").read_text()
-        self.assertIn(".mobile-workspace-control{display:none!important}", source)
-        self.assertIn('class:"small ghost mobile-workspace-control",onclick:newPage', source)
-        self.assertIn('class:"small ghost mobile-workspace-control",title:"Page view mode"', source)
+        for retired in (".mobile-workspace-control", ".desktop-only-tool",
+                        ".mobile-bubble-actions", ".mobile-sheet", "buildMobileBubbleTools",
+                        "papers-menu", "data-papers-toggle"):
+            self.assertNotIn(retired, source, f"{retired} should have been removed")
+        # The row: page creation at the far left, then the tabs, then the menu and focus toggle.
+        self.assertIn('class:"small ghost ptab-new"', source)
+        self.assertIn("if(S.toolsMenu) controls.append(S.toolsMenu);", source)
+        self.assertIn('id:"bubbleFocusToggle"', source)
+        # The menu is built once per bubble and re-homed by refreshTabs, which rebuilds that row
+        # on every page switch and every poll — rebuilding it there would drop an open panel.
+        self.assertIn("S.toolsMenu=buildBubbleToolsMenu(slug,b);", source)
+        # Papers is a popup on the assets modal's frame, not an anchored dropdown.
+        self.assertIn("function openBubblePapers(slug)", source)
+        self.assertIn('class:"diffbody asset-modal-body papers-modal-body col"', source)
 
     def test_browser_restores_a_valid_workspace_and_recovers_from_stale_storage(self):
         source = (Path(server.WEB_DIR) / "index.html").read_text()
