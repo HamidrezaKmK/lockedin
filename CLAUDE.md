@@ -58,6 +58,10 @@ LOCKEDIN_HOME=/tmp/li_test uv run python -m unittest discover -s tests -t . -v
   through the ordinary v2 endpoints and drives the chip, dropdown, detail, and leave path,
   including that the clean stop is hidden. Set `LOCKEDIN_E2E_SHOTS=<dir>`
   to keep screenshots.
+- `tests/toolmenu-e2e.mjs` (`npm run test:toolmenu-e2e`) — real Chrome: the bubble title row
+  carries only the presence chip and the `⋮` tools button, the dropdown groups Overleaf /
+  sharing / files, toggling the public link rewrites the open menu in place and lights the
+  trigger's dot, and an outside click closes it. Honors `LOCKEDIN_E2E_SHOTS` too.
 - `tests/_fixtures.py` — builds throwaway qwen workspaces seeded with the two diffusion papers
   (copies `meta.yaml`/`summary.md`/`text.txt` from a local user, not the 50 MB `paper.pdf`).
 - `tests/setup_unittest_user.py` — (re)creates the persistent `unittest`/`unittest` fixture user

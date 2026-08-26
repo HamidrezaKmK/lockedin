@@ -566,16 +566,39 @@
     cursor:pointer;padding:0;background:var(--swatch)}
   .color-swatch:hover{border-color:var(--ink);transform:translateY(-1px)}
   .small{font-size:12px;padding:5px 9px}
-  /* Bubble-header actions are presented as paired controls: one visual boundary per related
-     action, with a subtle divider for the secondary action. */
-  .bubble-tool-group{display:inline-flex;align-items:stretch;overflow:hidden;border:1px solid var(--line);
-    border-radius:9px;background:var(--panel2);box-shadow:0 1px 0 color-mix(in srgb,var(--panel) 70%,transparent)}
-  .bubble-tool-group button{border:0!important;border-radius:0;background:transparent!important;min-height:34px}
-  .bubble-tool-group button:hover{background:color-mix(in srgb,var(--accent) 10%,var(--panel))!important}
-  .bubble-tool-group .bubble-tool-secondary{padding-left:8px;padding-right:8px;border-left:1px solid var(--line)!important;color:var(--muted)}
-  .bubble-tool-group .bubble-tool-secondary:hover{color:var(--ink)}
   .overleaf-mark{display:block;width:16px;height:16px;object-fit:contain;flex:0 0 auto}
-  .overleaf-label{display:inline-flex;align-items:center;gap:6px;font-weight:650}
+  /* Bubble tools: Assets, Overleaf and preview/sharing used to be three button groups in the
+     title row, which crowded it and shoved the bubble name around. They collapse into one ⋮
+     button whose dropdown reuses the presence menu's visual language. */
+  .toolmenu{position:relative;flex-shrink:0}
+  .toolmenu-btn{position:relative;display:inline-flex;align-items:center;justify-content:center;
+    width:28px;height:28px;padding:0;border-radius:999px;border:1px solid var(--line);
+    background:var(--panel2);color:var(--muted);cursor:pointer;transition:border-color .15s,color .15s}
+  .toolmenu-btn:hover,.toolmenu-btn.on{border-color:var(--accent);color:var(--ink)}
+  .toolmenu-glyph{font-size:17px;line-height:1}
+  /* Whether the public link is live is the one bit of state worth seeing without opening the menu. */
+  .toolmenu-live{display:none;position:absolute;top:-1px;right:-1px;width:8px;height:8px;
+    border-radius:50%;background:var(--good);border:2px solid var(--bg)}
+  .toolmenu.sharing .toolmenu-live{display:block}
+  .toolmenu-panel{position:absolute;right:0;top:calc(100% + 6px);z-index:40;padding:6px;
+    width:min(252px,calc(100vw - 32px));background:var(--panel);border:1px solid var(--line);
+    border-radius:10px;box-shadow:var(--shadow)}
+  .toolmenu-group{padding:8px 8px 3px;font-size:10px;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--muted)}
+  .toolmenu-group:first-child{padding-top:3px}
+  .toolmenu-item{width:100%;display:flex;align-items:center;gap:9px;padding:7px 8px;border:0;
+    border-radius:8px;background:none;color:var(--ink);font-family:var(--font-ui);font-size:12.5px;
+    text-align:left;cursor:pointer}
+  .toolmenu-item:hover{background:var(--panel2)}
+  .toolmenu-item[disabled]{opacity:.55;cursor:default}
+  .toolmenu-icon{flex:none;width:17px;display:inline-flex;align-items:center;justify-content:center;
+    font-size:13px}
+  .toolmenu-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .toolmenu-note{flex:none;padding:2px 7px;border:1px solid var(--line);border-radius:999px;
+    font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;line-height:1;color:var(--muted)}
+  .toolmenu-note.on{color:var(--good);border-color:color-mix(in srgb,var(--good) 45%,var(--line))}
+  .toolmenu-dot{width:8px;height:8px;border-radius:50%;background:var(--muted);opacity:.45}
+  .toolmenu-dot.on{background:var(--good);opacity:1}
   h2.section-title{margin:0 0 18px;font-family:var(--font-ui);font-weight:700;
     letter-spacing:-.02em;font-size:20px}
   .spacer{flex:1}
@@ -3317,34 +3340,6 @@
     overlay.append(box); overlay.onclick=e=>{if(e.target===overlay)close();}; document.body.append(overlay); render();
   }
 
-  function buildShareControls(slug,onShareState){
-    const wrap=el("span",{class:"bubble-tool-group",title:"Public sharing controls"});
-    const btn=el("button",{class:"ghost small"});
-    const copy=el("button",{class:"ghost small",title:"Open the shared page in a new tab",
-      style:"opacity:.8"},"↗ Open link");
-    function render(){
-      btn.textContent=S.shareActive?"🟢 Sharing":"🔗 Share";
-      btn.title=S.shareActive?"Public link is live — click to stop sharing"
-                             :"Make this bubble viewable via an unlisted link";
-      btn.classList.toggle("primary",false);
-      copy.classList.toggle("hide",!S.shareActive);
-      if(onShareState)onShareState(S.shareActive);
-    }
-    btn.onclick=async()=>{
-      btn.disabled=true;
-      try{
-        const r=await api("/api/bubbles/"+slug+"/share",
-          {method:"POST",body:JSON.stringify({active:!S.shareActive})});
-        S.shareActive=r.share_active; S.shareToken=r.share_token; render();
-        toast(S.shareActive?"Sharing on — anyone with the link can view":"Sharing off");
-      }catch(e){ toast(e.message); } finally{ btn.disabled=false; }
-    };
-    copy.onclick=()=>window.open(shareUrl(),"_blank","noopener");
-    copy.classList.add("bubble-tool-secondary");
-    wrap.append(btn,copy); render();
-    return wrap;
-  }
-
   function openOverleafModal(b){
     const overlay=el("div",{class:"overlay",role:"dialog","aria-modal":"true","aria-label":"Link Overleaf project"});
     const box=el("div",{class:"diffbox create-dialog"});
@@ -3362,16 +3357,82 @@
     overlay.append(box);overlay.onclick=e=>{if(e.target===overlay)overlay.remove();};document.body.append(overlay);setTimeout(()=>input.focus(),0);
   }
 
-  function buildOverleafControls(b){
-    const wrap=el("span",{class:"bubble-tool-group",title:"Overleaf project controls"});
-    const open=el("button",{class:"ghost small",title:b.overleaf_url?"Open this bubble’s Overleaf project":"Link an Overleaf project to this bubble"});
-    open.append(el("span",{class:"overleaf-label"},
-      el("img",{class:"overleaf-mark",alt:"",src:"https://images.ctfassets.net/nrgyaltdicpt/451Wbu94Q1X3M5QIk74QLL/08e42061e965fb152a329ded74cdc3ce/overleaf-o-logo-primary.svg"}),
-      document.createTextNode("Overleaf")));
-    open.onclick=()=>b.overleaf_url?window.open(b.overleaf_url,"_blank","noopener"):openOverleafModal(b);
-    wrap.append(open);
-    if(b.overleaf_url)wrap.append(el("button",{class:"ghost small bubble-tool-secondary",title:"Change or remove Overleaf project",onclick:()=>openOverleafModal(b)},"✏️"));
-    return wrap;
+  // One ⋮ menu for everything the bubble's title row used to spell out in buttons: the Overleaf
+  // link, the read-only preview and public share link, and the assets browser.
+  function buildBubbleToolsMenu(slug,b){
+    const host=el("div",{class:"toolmenu desktop-only-tool"});
+    const btn=el("button",{class:"toolmenu-btn",title:"Bubble tools","aria-label":"Bubble tools",
+      "aria-haspopup":"menu"},
+      el("span",{class:"toolmenu-glyph"},"\u22ee"),
+      el("span",{class:"toolmenu-live",title:"Public link is live"}));
+    let panel=null;
+    const close=()=>{ if(!panel)return; panel.remove(); panel=null; btn.classList.remove("on"); };
+    const open=()=>{
+      panel=buildPanel(); host.append(panel); btn.classList.add("on");
+      // Registered a tick later so the click that opened the menu doesn't immediately close it.
+      setTimeout(()=>document.addEventListener("click",close,{once:true}),0);
+    };
+    btn.onclick=e=>{ e.stopPropagation(); if(panel)close(); else open(); };
+    host.append(btn);
+
+    function item(icon,label,opts){
+      const row=el("button",{class:"toolmenu-item",title:opts.title||""},
+        el("span",{class:"toolmenu-icon"},icon),
+        el("span",{class:"toolmenu-label"},label));
+      if(opts.note)row.append(el("span",{class:"toolmenu-note"+(opts.noteOn?" on":"")},opts.note));
+      row.onclick=e=>{ e.stopPropagation(); if(!opts.keepOpen)close(); opts.run(row); };
+      return row;
+    }
+    const overleafMark=()=>el("img",{class:"overleaf-mark",alt:"",
+      src:"https://images.ctfassets.net/nrgyaltdicpt/451Wbu94Q1X3M5QIk74QLL/08e42061e965fb152a329ded74cdc3ce/overleaf-o-logo-primary.svg"});
+
+    function buildPanel(){
+      const menu=el("div",{class:"toolmenu-panel",role:"menu",onclick:e=>e.stopPropagation()});
+      menu.append(el("div",{class:"toolmenu-group"},"Overleaf"));
+      menu.append(item(overleafMark(),b.overleaf_url?"Open project":"Link a project",
+        {title:b.overleaf_url?"Open this bubble\u2019s Overleaf project"
+                             :"Link an Overleaf project to this bubble",
+         run:()=>b.overleaf_url?window.open(b.overleaf_url,"_blank","noopener"):openOverleafModal(b)}));
+      if(b.overleaf_url)
+        menu.append(item("\u270f\ufe0f","Change or remove link",
+          {title:"Change or remove Overleaf project",run:()=>openOverleafModal(b)}));
+      menu.append(el("div",{class:"toolmenu-group"},"Sharing"));
+      // The owner preview is exactly what a share viewer sees, so it is redundant once the public
+      // link itself is one row below — the same rule the old toolbar followed by hiding it.
+      if(!S.shareActive)
+        menu.append(item("\ud83d\udc41","Preview page",
+          {title:"Preview the read-only page your share viewers see",
+           run:()=>openReadOnlyPreview(slug)}));
+      menu.append(item(el("span",{class:"toolmenu-dot"+(S.shareActive?" on":"")}),"Public link",
+        {note:S.shareActive?"On":"Off",noteOn:S.shareActive,keepOpen:true,
+         title:S.shareActive?"Public link is live \u2014 click to stop sharing"
+                            :"Make this bubble viewable via an unlisted link",
+         run:async row=>{
+           row.disabled=true;
+           try{
+             const r=await api("/api/bubbles/"+slug+"/share",
+               {method:"POST",body:JSON.stringify({active:!S.shareActive})});
+             S.shareActive=r.share_active; S.shareToken=r.share_token; refresh();
+             toast(S.shareActive?"Sharing on \u2014 anyone with the link can view":"Sharing off");
+           }catch(err){ row.disabled=false; toast(err.message); }
+         }}));
+      if(S.shareActive)
+        menu.append(item("\u2197","Open shared page",
+          {title:"Open the shared page in a new tab",
+           run:()=>window.open(shareUrl(),"_blank","noopener")}));
+      menu.append(el("div",{class:"toolmenu-group"},"Files"));
+      menu.append(item("\ud83d\udcc1","Bubble assets",
+        {title:"Browse, upload, or download this bubble\u2019s files",
+         run:()=>openBubbleAssets(slug)}));
+      return menu;
+    }
+    // Toggling the public link changes which rows exist, so an open menu rebuilds in place.
+    function refresh(){
+      host.classList.toggle("sharing",!!S.shareActive);
+      if(panel){ const fresh=buildPanel(); panel.replaceWith(fresh); panel=fresh; }
+    }
+    refresh();
+    return host;
   }
 
   // ================= BUBBLE DETAIL (Notion-like multi-page) =================
@@ -3554,18 +3615,9 @@
       startPresence(slug);
     }
     if(b.approved){
-      // Preview + share controls are desktop-only: on mobile the header collapses to just the
-      // bubble name (sharing/preview are done from a larger screen) to keep the page minimal.
-      // "👁 Preview" opens the server-rendered, read-only page — exactly what a share viewer sees.
-      const tools=el("span",{class:"row desktop-only-tool",style:"gap:6px;align-items:center;flex-shrink:0"});
-      const preview=el("button",{class:"small",title:"Preview the read-only page your share viewers see",
-        onclick:()=>openReadOnlyPreview(slug)},"👁 Preview");
-      tools.append(preview);
-      tools.append(el("button",{class:"small",title:"Browse, upload, or download this bubble's files",
-        onclick:()=>openBubbleAssets(slug)},"📁 Assets"));
-      tools.append(buildOverleafControls(b));
-      tools.append(buildShareControls(slug,active=>preview.classList.toggle("hide",active)));
-      titleRow.append(tools);
+      // The tools are desktop-only: on mobile the header collapses to just the bubble name and
+      // buildMobileBubbleTools covers the same ground in a sheet.
+      titleRow.append(buildBubbleToolsMenu(slug,b));
     }
     m.append(titleRow);
 

@@ -157,8 +157,9 @@ are rewritten automatically.
 
 ## Sharing
 
-Click **🔗 Share** in the bubble header to publish an unlisted, read-only link. While
-sharing is active the button shows **🟢 Sharing** and a **📋 Copy link** button appears.
+Open the **⋮** menu in the bubble header and click **Public link** to publish an unlisted,
+read-only link. While sharing is active the row reads **On**, an **↗ Open shared page** entry
+appears, and the ⋮ button keeps a small green dot so you can see it from the closed menu.
 Anyone with the link can browse visible pages (no login needed). Toggle off to revoke
 immediately; toggle back on to restore the same URL.
 
@@ -440,7 +441,8 @@ unless you explicitly add `--discard-overleaf`.
 
 ### Overleaf: an explicit publication workflow
 
-Each bubble can optionally link one Overleaf Cloud project from its header. The link is workspace
+Each bubble can optionally link one Overleaf Cloud project from the **⋮** menu in its header.
+The link is workspace
 metadata managed by LockedIn; Scientist only reads it. After the worker has downloaded the link,
 connect the local checkout:
 
