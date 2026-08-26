@@ -307,6 +307,21 @@ website. The bot has no chat — it manages assets and TODOs only.
 run it. It does not launch Codex, Claude Code, or Antigravity: start your preferred agent normally
 after installing its native `lockedin-scientist` bootstrap skill.
 
+### The one-line way
+
+Open the bubble and click **🤖** beside the presence chip (or **Connect an agent** in the **⋮**
+menu). Pick your operating system, copy the single line it shows, and paste it into a terminal on
+the machine where you write. It installs the client, signs that terminal in with no browser step,
+asks which folder to use, binds the bubble to it, and installs the skill for whichever of Codex,
+Claude Code, and Antigravity are on that machine — then tells you what to run.
+
+That link is **single-use and expires in ten minutes**, because for its short life anyone who runs
+it is signed in as you. Click the robot again for a fresh one; nothing is stored server-side, so a
+server restart invalidates any outstanding link.
+
+Running it again later is safe: it resumes an already-connected folder instead of rebuilding it.
+The rest of this section is the same setup done by hand.
+
 ### Install
 
 On macOS or Linux (Python 3.11+):
@@ -344,6 +359,10 @@ lockedin-scientist workspaces switch <workspace-id-or-name>
 lockedin-scientist bubbles
 lockedin-scientist sync <bubble-slug>
 ```
+
+`workspaces switch` is a **device-global** setting shared by every project on the computer. The 🤖
+link avoids it entirely — it pins the bubble's workspace into that one project's binding, so
+connecting one project never retargets the others.
 
 ### Native agent skills
 

@@ -64,6 +64,12 @@ LOCKEDIN_HOME=/tmp/li_test uv run python -m unittest discover -s tests -t . -v
   closes on its backdrop; toggling the public link rewrites the open menu in place and lights the
   trigger's dot; an outside click closes it; and the whole thing still works at 390×800 with no
   floating mobile buttons left. Honors `LOCKEDIN_E2E_SHOTS` too.
+- `tests/scientist-setup-e2e.mjs` (`npm run test:scientist-setup-e2e`) — real Chrome: the 🤖 sits
+  beside the presence chip, the dialog mints a link and says it is single-use, the OS tabs swap
+  between the `curl` and PowerShell forms, Copy reaches the clipboard, the link actually serves a
+  runnable script, and the dialog fits a phone. Honors `LOCKEDIN_E2E_SHOTS`.
+- `tests/test_setup_link.py` — the ticket's negative properties: no session no mint, one redeem
+  only, expiry, and that serving a script never leaks the token.
 - `tests/_fixtures.py` — builds throwaway qwen workspaces seeded with the two diffusion papers
   (copies `meta.yaml`/`summary.md`/`text.txt` from a local user, not the 50 MB `paper.pdf`).
 - `tests/setup_unittest_user.py` — (re)creates the persistent `unittest`/`unittest` fixture user
@@ -100,6 +106,7 @@ Layered; the server is thin HTTP glue over `service.py`.
 | `tagger.py` | Background ingest after upload: extract text, model metadata, and a cached summary. Fail-safe. |
 | `bubbles.py` | Bubble registry (`bubbles.yaml`) + the per-bubble **mini-wiki**: pages manifest, page CRUD, image storage, legacy-`report.md` migration. |
 | `todos.py` | **Workspace-wide TODOs** (GitHub-issue style), stored in `todos.yaml` (`next_id` + `todos` map). Pure storage: compact integer `id`, `title`, markdown `note`, `done`. CRUD only — it does **not** import `bubbles`; reference counting, delete guard, and report-reference rewrites after id compaction live in `service.py`. Referenced from report pages as `@<id>`. |
+| `setup_tickets.py` | **One-shot bubble setup links** (the 🤖 button), in-memory only. Mints/serves/redeems the ticket behind `curl .../setup/<t>.sh \| bash`, and renders the bash and PowerShell it serves. |
 | `presence.py` | **Live bubble presence**, in-memory only (like auth sessions, lost on restart). Viewers keyed by **username** (tabs collapse); Scientist workers keyed by the **project directory**'s stable `worker_uid` (agents in one directory collapse; two directories on one bubble stay two rows). Computes each worker's health from what the client reported plus what the server observed. |
 | `reports.py` | The in-app usage guide (`APP_USAGE_GUIDE_SECTIONS` + `guide_section`), served by `/api/help`, the Scientist guide endpoint, and `lockedin editguide`. Nothing else lives here. |
 | `service.py` | Orchestration; wraps ops in `use_root`. |
@@ -207,6 +214,18 @@ data/workspaces/<workspace-id>/
   file `unused` (no page links to it) and `servable`, and the Assets browser badges them. Nothing
   deletes them automatically — a figure is routinely uploaded before the page that uses it, and
   `delete_page` deliberately leaves figures alone.
+- **A bubble's 🤖 link is a one-shot, in-memory bearer credential.** `POST
+  /api/bubbles/<slug>/setup-link` mints a real Scientist token and parks it in `setup_tickets.py`
+  under an unguessable id; `GET /setup/<t>.sh|.ps1` serves an *unauthenticated* script (the ticket
+  is the credential) that installs the client and runs `lockedin-scientist connect`, which redeems
+  the ticket once via `/api/scientist/v2/setup/<t>`. Nothing is persisted, so a restart invalidates
+  every outstanding link — the same rule as presence and device codes. Three details are
+  load-bearing: the served script runs `connect` with **`< /dev/tty`**, because the script itself
+  arrives on stdin from `curl` and the folder prompt would otherwise eat the rest of it; `peek()`
+  deliberately returns no token, so serving a script cannot leak one; and `connect` **pins the
+  workspace into the project's binding rather than calling `workspaces switch`**, because that
+  setting is device-global (see the `resync` note above). `connect` also reuses an existing
+  account rather than re-running `login`, which would reset its `workspace_id` to personal.
 - **Markup that cannot parse inside code is documentation, not an error.** The review
   (`\comment{id}{…}`) and text-colour (`\textcolor{c}{…}`) parsers exist twice —
   `parseCommentWrappers`/`parseTextColorWrappers` in `web/index.html` and

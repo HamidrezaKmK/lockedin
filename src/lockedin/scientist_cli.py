@@ -23,7 +23,7 @@ import webbrowser
 from pathlib import Path
 
 APP = "lockedin-scientist"
-SCIENTIST_CLIENT_VERSION = "2026.08.17.1"
+SCIENTIST_CLIENT_VERSION = "2026.08.26.1"
 POLL_SECONDS = 5
 # A worker that has not completed a cycle in three polls is wedged rather than merely busy.
 # `doctor` reports that verdict and `resync` repairs exactly what `doctor` complains about, so
@@ -94,7 +94,11 @@ def welcome() -> None:
     frame_line("research assistent", dim)
     print(violet("╰────────────────────────────────────╯"))
     print()
-    print(bold("Get started"))
+    print(bold("Fastest start"))
+    print(f"  {cyan('•')} {dim('Open a bubble on the website, click the 🤖 icon, and paste the line it gives you.')}")
+    print(f"    {dim('It installs, authorizes, binds a folder, and sets up your agent in one step.')}")
+    print()
+    print(bold("Or set it up by hand"))
     print(f"  {cyan('1.')} {dim('Authorize this computer')}\n     {cyan('lockedin-scientist login --server https://lockedin.codes')}")
     print(f"  {cyan('2.')} {dim('Choose a workspace')}\n     {cyan('lockedin-scientist workspaces')}\n     {cyan('lockedin-scientist workspaces switch <workspace-id-or-name>')}")
     print(f"  {cyan('3.')} {dim('See approved bubbles')}\n     {cyan('lockedin-scientist bubbles')}")
@@ -1264,6 +1268,146 @@ def doctor_command(project: Path) -> None:
     print(green("✓") + f" Worker {bold(rec['id'])} is healthy and can reach bubble {bold(binding['bubble'])}.")
 
 
+VENDOR_INVOCATION = {
+    "codex": "start codex, then invoke $lockedin-scientist",
+    "claude": "start claude, then invoke /lockedin-scientist",
+    "agy": "start agy, then use /skills to select lockedin-scientist",
+}
+
+
+def _connect_account(server: str, workspace_id: str, ticket: str) -> dict:
+    """Authorize this computer for ``server``, preferring the ticket the web page already signed.
+
+    Order matters. An existing account is used as-is — re-running `login` would reset its
+    ``workspace_id`` to personal and silently retarget the user's other projects. Only when there
+    is none do we spend the ticket, and only when that fails do we fall back to the browser.
+    """
+    existing = next((item for item in load_config().get("accounts", [])
+                     if item.get("server") == server), None)
+    if existing:
+        print(green("✓") + f" Already authorized as {bold(existing['user'])} on {dim(server)}")
+    elif ticket:
+        try:
+            granted = request(server, "GET", f"/api/scientist/v2/setup/{ticket}")
+        except RuntimeError as exc:
+            # Expired, already spent, or the server restarted. The browser flow still works.
+            print(orange("•") + f" That setup link could not be used ({exc}).")
+            login(server)
+        else:
+            cfg = load_config(); accounts = cfg.setdefault("accounts", [])
+            accounts[:] = [a for a in accounts
+                           if not (a.get("server") == server and a.get("user") == granted["user"])]
+            accounts.append({"server": server, "user": granted["user"], "token": granted["token"],
+                             "workspace_id": granted.get("workspace_id", "")})
+            save_config(cfg)
+            print(green("✓") + f" Authorized {bold(granted['user'])} on {dim(server)}"
+                  + dim(" (no browser needed)"))
+    else:
+        login(server)
+    account = next((item for item in load_config().get("accounts", [])
+                    if item.get("server") == server), None)
+    if not account:
+        raise RuntimeError(f"Authorization did not complete. Run `lockedin-scientist login --server {server}`.")
+    # Pinned locally, never through `workspaces switch`: the profile's active workspace is shared by
+    # every project on this device, so connecting one project must not retarget the others.
+    account = dict(account)
+    account["workspace_id"] = workspace_id or account.get("workspace_id", "")
+    return account
+
+
+def _ask_project(supplied: str) -> Path:
+    """Where the project lives. Asks, unless a path was given or there is nobody to ask."""
+    if supplied:
+        project = Path(supplied).expanduser()
+    else:
+        if not sys.stdin.isatty():
+            raise RuntimeError("No terminal to ask which folder to use. Re-run with `--project <path>`.")
+        default = Path.cwd()
+        print()
+        print("  " + bold("Which project folder should this bubble sync into?"))
+        print("  " + dim(f"Press Enter for {default}"))
+        answer = input("  " + cyan("path: ")).strip()
+        project = Path(answer).expanduser() if answer else default
+    project = project.expanduser()
+    if not project.exists():
+        project.mkdir(parents=True, exist_ok=True)
+        print(green("✓") + f" Created {dim(str(project.resolve()))}")
+    if not project.is_dir():
+        raise RuntimeError(f"{project} is not a directory. Re-run with `--project <path>`.")
+    return project.resolve()
+
+
+def _install_detected_skills() -> list[str]:
+    """Install the native skill for every agent actually present on this machine.
+
+    A missing agent is skipped rather than installed for: the closing message should name only
+    commands the user can really run. A vendor that refuses (a user-owned skill file) or fails
+    (agy's plugin import) is a warning, never fatal — one uncooperative agent must not undo an
+    otherwise complete setup.
+    """
+    installed: list[str] = []
+    for vendor in VENDORS:
+        if not shutil.which(vendor):
+            print(dim(f"  • {vendor} is not installed here — skipped."))
+            continue
+        try:
+            setup_vendor_skill(vendor)
+        except RuntimeError as exc:
+            print(orange("•") + f" {vendor}: {exc}")
+            continue
+        installed.append(vendor)
+        print(green("✓") + f" {vendor} skill installed")
+    return installed
+
+
+def connect_command(server: str, workspace_id: str, bubble: str, *,
+                    ticket: str = "", project_path: str = "") -> None:
+    """Do everything a fresh machine needs to work on one bubble with an agent.
+
+    Authorize, bind a folder to the bubble, start its sync worker, install the skills for whatever
+    agents are here, and finish by naming the command to run. Every step is idempotent, so running
+    the same link twice is a no-op that reports what already exists.
+    """
+    server = server.rstrip("/")
+    heading("Connecting a project to LockedIn", f"bubble {bubble} on {server}")
+    account = _connect_account(server, workspace_id, ticket)
+    # One cheap probe so a wrong workspace or a revoked token fails here, with a clear message,
+    # rather than somewhere inside the first sync.
+    try:
+        account_request(account, "GET", f"/api/scientist/v2/bubbles/{bubble}/manifest")
+    except RuntimeError as exc:
+        raise RuntimeError(f"Could not reach bubble {bubble} on {server}: {exc}") from exc
+    print(green("✓") + f" Reached bubble {bold(bubble)}")
+
+    project = _ask_project(project_path)
+    binding_path = project / ".lockedin" / "config" / "binding.json"
+    if binding_path.exists():
+        binding = read_binding(project)
+        wanted = {"server": server, "user": account["user"],
+                  "workspace_id": account.get("workspace_id", ""), "bubble": bubble}
+        if binding != wanted:
+            raise RuntimeError(
+                f"{project / '.lockedin'} is already bound to bubble {binding['bubble']}. "
+                f"Pick another folder, or run `lockedin-scientist hard-reset {bubble}` there to replace it.")
+        resync_command(project)
+    else:
+        start_sync(account, bubble, project)
+
+    heading("Agent skills", "Installed for the agents found on this computer.")
+    installed = _install_detected_skills()
+
+    heading("Ready", str(project))
+    if installed:
+        print("  " + dim("From this folder:"))
+        for vendor in installed:
+            print(f"  {cyan('•')} {VENDOR_INVOCATION[vendor]}")
+    else:
+        print("  " + dim("No agent CLI was found here. Install codex, claude, or agy, then run"))
+        print("  " + cyan("lockedin-scientist codex setup") + dim("  (or claude / agy)"))
+    print()
+    print("  " + dim("Verify at any time with ") + cyan("lockedin-scientist doctor"))
+
+
 def _stop_and_wait(worker_id: str) -> None:
     """Stop a worker and wait for it to actually exit, before replacing it."""
     stop_command(worker_id)
@@ -1332,6 +1476,12 @@ def _main() -> None:
     sub.add_parser("ps")
     sub.add_parser("doctor", help="Verify this project's bound worker and server connection.")
     sub.add_parser("resync", help="Resume the bubble this project is already bound to.")
+    connect_p = sub.add_parser("connect", help="Set this computer up for one bubble, end to end.")
+    connect_p.add_argument("--server", required=True)
+    connect_p.add_argument("--workspace", required=True)
+    connect_p.add_argument("--bubble", required=True)
+    connect_p.add_argument("--ticket", default="")
+    connect_p.add_argument("--project", default="")
     stop_p = sub.add_parser("stop"); stop_p.add_argument("worker_id")
     reset_p = sub.add_parser("hard-reset"); reset_p.add_argument("bubble"); reset_p.add_argument("--discard-overleaf", action="store_true")
     for vendor in VENDORS:
@@ -1360,6 +1510,11 @@ def _main() -> None:
     # Deliberately dispatched before choose_account(): resync resolves its account from the
     # project's own binding, so it must not depend on which account was authorized last.
     if args.command == "resync": resync_command(Path.cwd()); return
+    # Also above choose_account(): connect runs on a machine with no account yet — it is the
+    # command that creates one.
+    if args.command == "connect":
+        connect_command(args.server, args.workspace, args.bubble,
+                        ticket=args.ticket, project_path=args.project); return
     if args.command in VENDORS:
         if args.vendor_command == "setup": setup_vendor_command(args.command)
         return

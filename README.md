@@ -82,7 +82,12 @@ Windows PowerShell:
 irm https://raw.githubusercontent.com/HamidrezaKmK/lockedin/main/install.ps1 | iex
 ```
 
-Then authorize and synchronize a bubble from the project where you want the files:
+The fastest path is the **🤖** button on a bubble page: pick your OS, copy the one line it shows,
+and paste it into a terminal. It installs the client, authorizes it without a browser step, asks
+which folder to use, binds the bubble, and installs the skill for whichever agents you have. The
+link is single-use and expires in ten minutes.
+
+To do the same by hand, authorize and synchronize a bubble from the project where you want the files:
 ```bash
 lockedin-scientist login --server https://lockedin.codes
 lockedin-scientist workspaces

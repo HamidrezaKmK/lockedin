@@ -760,6 +760,20 @@
     border-top:1px solid var(--line);padding-top:6px}
   /* Presence: one compact chip in the bubble title row. People and sync workers can both be
      numerous, so the row stays a fixed width and everything else lives in the dropdown. */
+  /* Sized to sit level with the presence chip beside it, and to read as part of that cluster. */
+  .robot-btn{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;
+    width:28px;height:28px;padding:0;font-size:14px;line-height:1;border-radius:999px;
+    border:1px solid var(--line);background:var(--panel2);cursor:pointer;
+    transition:border-color .15s,transform .15s}
+  .robot-btn:hover{border-color:var(--accent);transform:translateY(-1px)}
+  .setup-dialog{width:min(620px,calc(100vw - 28px))}
+  .setup-tabs{display:flex;gap:0;border-bottom:1px solid var(--line);margin:2px 0 12px}
+  /* Themed rather than reusing .command, whose colours are hardcoded for the always-dark landing. */
+  .setup-snippet{display:block;padding:12px 13px;border-radius:8px;background:var(--panel2);
+    border:1px solid var(--line);color:var(--ink);font-family:var(--font-mono);font-size:12px;
+    line-height:1.6;white-space:nowrap;overflow-x:auto;overflow-y:hidden;user-select:all}
+  .setup-note{margin-top:10px;font-size:11.5px;line-height:1.5}
+  .create-dialog-footer button.ok{background:var(--good);border-color:var(--good)}
   .presence{position:relative;flex-shrink:0}
   .presence-chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;min-height:28px;
     border-radius:999px;border:1px solid var(--line);background:var(--panel2);color:var(--muted);
@@ -3411,6 +3425,78 @@
     overlay.append(box); overlay.onclick=e=>{if(e.target===overlay)close();}; document.body.append(overlay); render();
   }
 
+  // Copying is new in this app, so both halves are here: the modern API, and execCommand for the
+  // non-secure contexts a plain http:// tunnel produces, where navigator.clipboard is undefined.
+  function copyText(text){
+    if(navigator.clipboard&&window.isSecureContext) return navigator.clipboard.writeText(text);
+    return new Promise((resolve,reject)=>{
+      const area=el("textarea",{style:"position:fixed;top:-1000px;opacity:0"});
+      area.value=text; document.body.append(area); area.select();
+      try{ document.execCommand("copy") ? resolve() : reject(new Error("Copy was blocked.")); }
+      catch(e){ reject(e); }
+      finally{ area.remove(); }
+    });
+  }
+  function detectPlatform(){
+    const hint=(navigator.userAgentData&&navigator.userAgentData.platform)||navigator.platform||navigator.userAgent||"";
+    if(/win/i.test(hint))return "windows";
+    if(/mac|iphone|ipad/i.test(hint))return "mac";
+    return "linux";
+  }
+
+  // One line that installs the client, authorizes this terminal, binds a folder to this bubble and
+  // sets up whichever agent CLIs are on that machine. The ticket behind the link is minted lazily,
+  // when the dialog opens, so merely rendering a bubble never signs a credential.
+  function openScientistSetup(slug){
+    const overlay=el("div",{class:"overlay",role:"dialog","aria-modal":"true","aria-label":"Connect an agent"});
+    const box=el("div",{class:"diffbox create-dialog setup-dialog"});
+    const tabs=el("div",{class:"setup-tabs"});
+    const snippet=el("code",{class:"setup-snippet"},"Preparing your setup link…");
+    const note=el("div",{class:"muted setup-note"});
+    const copy=el("button",{class:"primary",disabled:true},"Copy");
+    const refresh=el("button",{class:"ghost"},"New link");
+    const close=()=>overlay.remove();
+    let commands=null, os=detectPlatform();
+    const OSES=[["mac","macOS"],["linux","Linux"],["windows","Windows"]];
+    const commandFor=()=>commands?(os==="windows"?commands.powershell:commands.unix):"";
+    function render(){
+      tabs.textContent="";
+      OSES.forEach(([key,label])=>tabs.append(el("button",{class:"help-tab"+(key===os?" active":""),
+        onclick:()=>{ os=key; render(); }},label)));
+      snippet.textContent=commands?commandFor():"Preparing your setup link…";
+      copy.disabled=!commands;
+    }
+    async function mint(){
+      commands=null; copy.disabled=true; note.textContent=""; render();
+      try{
+        commands=await api("/api/bubbles/"+encodeURIComponent(slug)+"/setup-link",{method:"POST"});
+        // Say plainly what the link is: for its short life it authorizes whoever runs it as you.
+        note.textContent="Single-use, and expires in "+Math.round((commands.expires_in||600)/60)
+          +" minutes. Anyone who runs it before then is signed in as you, so don't share it.";
+      }catch(e){ snippet.textContent="Could not create a setup link: "+e.message; }
+      render();
+    }
+    copy.onclick=async()=>{
+      try{
+        await copyText(commandFor());
+        // Feedback in the button, not a toast: .toast sits at z-index 50, below this overlay's 60.
+        copy.textContent="Copied ✓"; copy.classList.add("ok");
+        clearTimeout(copy._t); copy._t=setTimeout(()=>{ copy.textContent="Copy"; copy.classList.remove("ok"); },2000);
+      }catch(e){ copy.textContent="Press ⌘/Ctrl+C"; snippet.focus(); }
+    };
+    refresh.onclick=mint;
+    box.append(
+      el("div",{class:"create-dialog-header"},el("b",{},"🤖 Connect an agent"),
+        el("span",{class:"spacer"}),el("button",{class:"ghost small",title:"Close",onclick:close},"✕")),
+      el("div",{class:"diffbody create-dialog-body"},
+        el("p",{class:"muted"},"Paste this into a terminal on the machine where you write. It installs "
+          + "LockedIn Scientist, signs that terminal in, asks which folder to use, and sets up your agent."),
+        tabs, snippet, note),
+      el("div",{class:"create-dialog-footer"},refresh,copy));
+    overlay.append(box); overlay.onclick=e=>{if(e.target===overlay)close();}; document.body.append(overlay);
+    render(); mint();
+  }
+
   function openOverleafModal(b){
     const overlay=el("div",{class:"overlay",role:"dialog","aria-modal":"true","aria-label":"Link Overleaf project"});
     const box=el("div",{class:"diffbox create-dialog"});
@@ -3479,6 +3565,8 @@
          title:S.editingTitles?"Save the page and bubble names":"Rename pages and this bubble",
          run:()=>toggleEditTitles()}));
       menu.append(el("div",{class:"toolmenu-group"},"This bubble"));
+      menu.append(item("\ud83e\udd16","Connect an agent",
+        {title:"Set up a terminal to work on this bubble",run:()=>openScientistSetup(slug)}));
       menu.append(item("\ud83d\udcda","Papers",
         {title:"Papers attached to this bubble",run:()=>openBubblePapers(slug)}));
       menu.append(item("\ud83d\udcc1","Assets",
@@ -3704,6 +3792,11 @@
     if(b.approved){
       S.presenceEl=el("div",{class:"presence hide"});
       titleRow.append(S.presenceEl);
+      // Next to the presence chip on purpose: that chip says who is syncing this bubble, and this
+      // is how you become one of them.
+      titleRow.append(el("button",{class:"robot-btn",title:"Connect an agent to this bubble",
+        "aria-label":"Connect an agent to this bubble",
+        onclick:()=>openScientistSetup(slug)},"🤖"));
       startPresence(slug);
     }
     // Built here, but homed in the page toolbar by refreshTabs: it needs the bubble detail (the

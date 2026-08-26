@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import quote
 
-from . import assets, auth, bubbles, landing, models, paths, presence, service, tagger, workspaces
+from . import assets, auth, bubbles, landing, models, paths, presence, service, setup_tickets, tagger, workspaces
 from . import scientist_sync
 
 
@@ -37,7 +37,7 @@ _WORKER_PATH_RE = re.compile(r"^/api/scientist/v2/bubbles/([^/]+)(?:/|$)")
 # Keep this equal to ``scientist_cli.SCIENTIST_CLIENT_VERSION``. Bump both when a Scientist
 # release needs an installed client refresh; the dependency-free installed client cannot import
 # package metadata from this server.
-SCIENTIST_CLIENT_VERSION = "2026.08.17.1"
+SCIENTIST_CLIENT_VERSION = "2026.08.26.1"
 
 
 def _build_refs(pages: "list[dict]", bibliography: "dict | None" = None) -> dict:
@@ -749,7 +749,7 @@ def _warn_slow_mutation(kind: str, started: float, slug: str, page: str) -> None
 
 def build_app():
     from fastapi import (BackgroundTasks, Cookie, Depends, FastAPI, File, Form,
-                         Header, HTTPException, UploadFile)
+                         Header, HTTPException, Request, UploadFile)
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import FileResponse, JSONResponse
     from pydantic import BaseModel
@@ -1552,6 +1552,60 @@ def build_app():
             raise HTTPException(status_code=404, detail="No such PDF.")
         return FileResponse(p, media_type="application/pdf",
                             headers={"Content-Disposition": "inline"})
+
+    # ---- one-command bubble setup (the bubble page's 🤖 link) -------------------------
+    @app.post("/api/bubbles/{slug}/setup-link")
+    def bubble_setup_link(slug: str, request: Request, user: str = Depends(current_user)):
+        """Mint a one-shot link that connects a terminal to this bubble.
+
+        The browser is already signed in, so it authorizes the terminal on the user's behalf and
+        hands them a single line to paste — no device code to approve, which matters most on the
+        headless boxes where this is least pleasant today.
+        """
+        home = home_of(user)
+        with paths.use_root(home):
+            if slug not in bubbles.load_registry():
+                raise HTTPException(status_code=404, detail="No such bubble.")
+        token = auth.new_scientist_token(user, "lockedin-scientist setup link")
+        ticket = setup_tickets.mint(user, token, active_workspace_id(user), slug)
+        origin = str(request.base_url).rstrip("/")
+        return {"ticket": ticket, "expires_in": int(setup_tickets.TICKET_TTL),
+                "unix": f"curl -fsSL {origin}/setup/{ticket}.sh | bash",
+                "powershell": f"iex (irm {origin}/setup/{ticket}.ps1)"}
+
+    @app.get("/setup/{ticket}.sh")
+    def bubble_setup_sh(ticket: str, request: Request):
+        return _setup_script(ticket, request, "unix")
+
+    @app.get("/setup/{ticket}.ps1")
+    def bubble_setup_ps1(ticket: str, request: Request):
+        return _setup_script(ticket, request, "powershell")
+
+    def _setup_script(ticket: str, request: Request, shell: str):
+        """Serve a setup script. Deliberately unauthenticated: the ticket *is* the credential.
+
+        A spent or expired ticket still answers with a script — a JSON 404 body piped into a shell
+        produces a parse error instead of an explanation.
+        """
+        from fastapi.responses import PlainTextResponse
+        rec = setup_tickets.peek(ticket)
+        origin = str(request.base_url).rstrip("/")
+        if not rec:
+            body = setup_tickets.expired_script(shell)
+        elif shell == "powershell":
+            body = setup_tickets.powershell_script(origin, ticket, rec["workspace_id"], rec["slug"])
+        else:
+            body = setup_tickets.unix_script(origin, ticket, rec["workspace_id"], rec["slug"])
+        return PlainTextResponse(body, headers={"Cache-Control": "no-store"})
+
+    @app.get("/api/scientist/v2/setup/{ticket}")
+    def scientist_redeem_setup(ticket: str, _version: None = Depends(scientist_client_version)):
+        """Spend a setup ticket, exactly once."""
+        rec = setup_tickets.redeem(ticket)
+        if not rec:
+            raise HTTPException(status_code=404, detail="This setup link expired or was already used.")
+        return {"user": rec["user"], "token": rec["token"],
+                "workspace_id": rec["workspace_id"], "bubble": rec["slug"]}
 
     # ---- installed Scientist client -------------------------------------------------
     @app.post("/api/scientist/v2/device")

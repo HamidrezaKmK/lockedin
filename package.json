@@ -7,6 +7,7 @@
     "test:lightbox-e2e": "node tests/lightbox-e2e.mjs",
     "test:workspace-route-e2e": "node tests/workspace-route-e2e.mjs",
     "test:toolmenu-e2e": "node tests/toolmenu-e2e.mjs",
+    "test:scientist-setup-e2e": "node tests/scientist-setup-e2e.mjs",
     "test:source-markers": "node tests/source-markers.mjs"
   },
   "devDependencies": {

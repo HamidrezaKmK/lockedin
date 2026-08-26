@@ -721,6 +721,121 @@ class ScientistProfileAndWorkersTest(unittest.TestCase):
                     scientist_cli.resync_command(project)
             start.assert_not_called()
 
+    # ---- connect: the whole setup, from one pasted line ----
+
+    @staticmethod
+    def _connect(**kwargs):
+        defaults = {"server": ACCOUNT["server"], "workspace_id": "lab", "bubble": "work"}
+        defaults.update(kwargs)
+        output = io.StringIO()
+        with redirect_stdout(output):
+            scientist_cli.connect_command(defaults.pop("server"), defaults.pop("workspace_id"),
+                                          defaults.pop("bubble"), **defaults)
+        return output.getvalue()
+
+    def test_connect_redeems_a_ticket_without_ever_opening_a_browser(self):
+        """The page already signed the user in; a terminal must not need a second approval."""
+        granted = {"user": ACCOUNT["user"], "token": "li_sc_new", "workspace_id": "lab", "bubble": "work"}
+        with temp_data_home(), tempfile.TemporaryDirectory() as directory, patch.object(
+                scientist_cli, "request", return_value=granted), patch.object(
+                scientist_cli, "account_request", return_value={"files": []}), patch.object(
+                scientist_cli.webbrowser, "open") as browser, patch.object(
+                scientist_cli, "login") as login, patch.object(
+                scientist_cli.shutil, "which", return_value=None), patch.object(
+                scientist_cli, "start_sync") as start:
+            out = self._connect(ticket="tkt", project_path=directory)
+            browser.assert_not_called(); login.assert_not_called()
+            self.assertIn("no browser needed", out)
+            stored = scientist_cli.load_config()["accounts"]
+            self.assertEqual([a["token"] for a in stored], ["li_sc_new"])
+            account, bubble, project = start.call_args.args
+            self.assertEqual((bubble, str(project)), ("work", str(Path(directory).resolve())))
+            self.assertEqual(account["workspace_id"], "lab")
+
+    def test_connect_falls_back_to_the_browser_when_the_ticket_is_spent(self):
+        with temp_data_home(), tempfile.TemporaryDirectory() as directory, patch.object(
+                scientist_cli, "request", side_effect=RuntimeError("server returned 404: expired")), patch.object(
+                scientist_cli, "account_request", return_value={"files": []}), patch.object(
+                scientist_cli.shutil, "which", return_value=None), patch.object(
+                scientist_cli, "start_sync"), patch.object(
+                scientist_cli, "login",
+                side_effect=lambda server: scientist_cli.save_config({"accounts": [dict(ACCOUNT)]})) as login:
+            out = self._connect(ticket="stale", project_path=directory)
+            login.assert_called_once_with(ACCOUNT["server"])
+            self.assertIn("could not be used", out)
+
+    def test_connect_reuses_an_existing_account_and_keeps_its_workspace(self):
+        """Re-running `login` would reset workspace_id to personal and retarget other projects."""
+        saved = dict(ACCOUNT); saved["workspace_id"] = "chosen-elsewhere"
+        with temp_data_home(), tempfile.TemporaryDirectory() as directory, patch.object(
+                scientist_cli, "request") as request, patch.object(
+                scientist_cli, "account_request", return_value={"files": []}), patch.object(
+                scientist_cli, "login") as login, patch.object(
+                scientist_cli.shutil, "which", return_value=None), patch.object(
+                scientist_cli, "start_sync") as start:
+            scientist_cli.save_config({"accounts": [saved]})
+            self._connect(ticket="tkt", project_path=directory)
+            login.assert_not_called(); request.assert_not_called()
+            # The profile is device-global: connecting one project must not retarget the rest.
+            self.assertEqual(scientist_cli.load_config()["accounts"][0]["workspace_id"], "chosen-elsewhere")
+            self.assertEqual(start.call_args.args[0]["workspace_id"], "lab")
+
+    def test_connect_resyncs_a_project_already_bound_to_the_same_bubble(self):
+        with temp_data_home(), tempfile.TemporaryDirectory() as directory, patch.object(
+                scientist_cli, "account_request", return_value={"files": []}), patch.object(
+                scientist_cli.shutil, "which", return_value=None), patch.object(
+                scientist_cli, "resync_command") as resync, patch.object(
+                scientist_cli, "start_sync") as start:
+            project = self._bound_project(directory, workspace_id="lab")
+            self._connect(ticket="", project_path=directory)
+            resync.assert_called_once(); start.assert_not_called()
+            self.assertEqual(resync.call_args.args[0], project.resolve())
+
+    def test_connect_refuses_a_folder_bound_to_another_bubble(self):
+        with temp_data_home(), tempfile.TemporaryDirectory() as directory, patch.object(
+                scientist_cli, "account_request", return_value={"files": []}), patch.object(
+                scientist_cli.shutil, "which", return_value=None), patch.object(
+                scientist_cli, "start_sync") as start:
+            self._bound_project(directory, bubble="something-else", workspace_id="lab")
+            with self.assertRaisesRegex(RuntimeError, "hard-reset"):
+                self._connect(ticket="", project_path=directory)
+            start.assert_not_called()
+
+    def test_connect_installs_skills_only_for_agents_that_are_here(self):
+        present = {"claude": "/usr/bin/claude"}
+        with temp_data_home(), tempfile.TemporaryDirectory() as directory, patch.object(
+                scientist_cli, "account_request", return_value={"files": []}), patch.object(
+                scientist_cli.shutil, "which", side_effect=lambda name: present.get(name)), patch.object(
+                scientist_cli, "setup_vendor_skill") as vendor, patch.object(
+                scientist_cli, "start_sync"):
+            scientist_cli.save_config({"accounts": [dict(ACCOUNT)]})
+            out = self._connect(ticket="", project_path=directory)
+            self.assertEqual([call.args[0] for call in vendor.call_args_list], ["claude"])
+            self.assertIn("/lockedin-scientist", out)
+            self.assertIn("codex is not installed here", out)
+
+    def test_a_refusing_vendor_is_a_warning_not_a_failed_setup(self):
+        """One uncooperative agent must not undo an otherwise complete connection."""
+        with temp_data_home(), tempfile.TemporaryDirectory() as directory, patch.object(
+                scientist_cli, "account_request", return_value={"files": []}), patch.object(
+                scientist_cli.shutil, "which", return_value="/usr/bin/agent"), patch.object(
+                scientist_cli, "setup_vendor_skill",
+                side_effect=RuntimeError("Refusing to overwrite the existing skill")), patch.object(
+                scientist_cli, "start_sync"):
+            scientist_cli.save_config({"accounts": [dict(ACCOUNT)]})
+            out = self._connect(ticket="", project_path=directory)
+            self.assertIn("Refusing to overwrite", out)
+            self.assertIn("No agent CLI was found here", out)
+
+    def test_connect_without_a_terminal_names_the_project_flag(self):
+        """Under `curl | bash` stdin is the script, so there is nobody to ask."""
+        with temp_data_home(), patch.object(
+                scientist_cli, "account_request", return_value={"files": []}), patch.object(
+                scientist_cli.sys.stdin, "isatty", return_value=False):
+            scientist_cli.save_config({"accounts": [dict(ACCOUNT)]})
+            with self.assertRaisesRegex(RuntimeError, r"--project"):
+                self._connect(ticket="")
+
     def test_outdated_warning_is_visible_without_failing_a_local_command(self):
         output = io.StringIO()
         with patch.object(scientist_cli, "account_request", side_effect=RuntimeError("LockedIn Scientist is out of date. Reinstall it, then retry.")):
@@ -862,6 +977,7 @@ class ScientistProfileAndWorkersTest(unittest.TestCase):
         self.assertNotIn("--from-server", source)
         self.assertIn('add_parser("hard-reset")', source)
         self.assertIn('add_parser("resync", help=', source)
+        self.assertIn('add_parser("connect", help=', source)
         self.assertIn('add_parser("overleaf")', source)
         self.assertIn("the sync worker registers it automatically", scientist_cli.SKILL_RULES)
         self.assertIn("the sync worker removes it", scientist_cli.SKILL_RULES)
