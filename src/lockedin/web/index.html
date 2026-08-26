@@ -775,13 +775,37 @@
     border:1px solid var(--line);background:var(--panel2);cursor:pointer;
     transition:border-color .15s,transform .15s}
   .robot-btn:hover{border-color:var(--accent);transform:translateY(-1px)}
-  .setup-dialog{width:min(620px,calc(100vw - 28px))}
-  .setup-tabs{display:flex;gap:0;border-bottom:1px solid var(--line);margin:2px 0 12px}
+  .setup-dialog{width:min(640px,calc(100vw - 28px))}
+  /* The dialog walks a first-timer through the whole journey, so it can outgrow the viewport. */
+  .setup-body{gap:0;overflow:auto;max-height:min(72vh,640px)}
+  .setup-step{display:grid;grid-template-columns:26px minmax(0,1fr);gap:12px;padding:14px 0}
+  .setup-step + .setup-step{border-top:1px solid var(--line)}
+  .setup-step-num{width:22px;height:22px;margin-top:1px;display:grid;place-items:center;
+    border-radius:50%;background:var(--accent);color:var(--bg);
+    font-family:var(--font-mono);font-size:11px;font-weight:700}
+  .setup-step-body{min-width:0}
+  .setup-step-body>b{display:block;font-size:13.5px;margin-bottom:8px}
+  .setup-tabs{display:flex;gap:0;border-bottom:1px solid var(--line);margin:0 0 10px}
   /* Themed rather than reusing .command, whose colours are hardcoded for the always-dark landing. */
-  .setup-snippet{display:block;padding:12px 13px;border-radius:8px;background:var(--panel2);
+  .setup-snippet{display:block;padding:11px 12px;border-radius:8px;background:var(--panel2);
     border:1px solid var(--line);color:var(--ink);font-family:var(--font-mono);font-size:12px;
     line-height:1.6;white-space:nowrap;overflow-x:auto;overflow-y:hidden;user-select:all}
-  .setup-note{margin-top:10px;font-size:11.5px;line-height:1.5}
+  /* The agent command is one word, so it gets a chip rather than the wide snippet block. */
+  .setup-agent-cmd{display:inline-block;padding:7px 14px;border-radius:8px;background:var(--panel2);
+    border:1px solid var(--line);color:var(--ink);font-family:var(--font-mono);font-size:12.5px;
+    line-height:1.3;user-select:all}
+  .setup-inline{padding:1px 5px;border-radius:5px;background:var(--panel2);border:1px solid var(--line);
+    color:var(--ink);font-family:var(--font-mono);font-size:11px;white-space:nowrap}
+  .setup-hint{margin-top:8px;font-size:11.5px;line-height:1.65}
+  /* This line is a credential for ten minutes. A muted grey footnote is how that gets missed. */
+  .setup-warn{margin-top:9px;font-size:11.5px;line-height:1.55;color:var(--warn);
+    font-weight:600}
+  .setup-warn:empty{display:none}
+  .create-dialog-footer button.setup-refresh{width:38px;min-width:38px;padding:0;font-size:17px;
+    line-height:1;background:transparent}
+  .create-dialog-footer button.setup-refresh:hover{background:var(--panel2)}
+  .setup-refresh.spin{animation:setup-spin .7s linear infinite}
+  @keyframes setup-spin{to{transform:rotate(360deg)}}
   .create-dialog-footer button.ok{background:var(--good);border-color:var(--good)}
   .presence{position:relative;flex-shrink:0}
   .presence-chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;min-height:28px;
@@ -3456,32 +3480,57 @@
   // One line that installs the client, authorizes this terminal, binds a folder to this bubble and
   // sets up whichever agent CLIs are on that machine. The ticket behind the link is minted lazily,
   // when the dialog opens, so merely rendering a bubble never signs a credential.
+  // Four numbered steps, in the order a person actually does them. The dialog explains the whole
+  // journey — open a terminal, run one line, start your agent, walk away — because someone meeting
+  // this for the first time has no idea a sync worker exists, and shouldn't need to.
   function openScientistSetup(slug){
     const overlay=el("div",{class:"overlay",role:"dialog","aria-modal":"true","aria-label":"Connect an agent"});
     const box=el("div",{class:"diffbox create-dialog setup-dialog"});
-    const tabs=el("div",{class:"setup-tabs"});
+    const osTabs=el("div",{class:"setup-tabs"});
     const snippet=el("code",{class:"setup-snippet"},"Preparing your setup link…");
-    const note=el("div",{class:"muted setup-note"});
+    const warn=el("div",{class:"setup-warn"});
+    const agentTabs=el("div",{class:"setup-tabs"});
+    const agentBody=el("div",{class:"setup-agent"});
     const copy=el("button",{class:"primary",disabled:true},"Copy");
-    const refresh=el("button",{class:"ghost"},"New link");
+    // A circular arrow rather than the words "New link": the button restores a link that went
+    // stale, which is a retry, not a second kind of link.
+    const refresh=el("button",{class:"setup-refresh",title:"Get a fresh link",
+      "aria-label":"Get a fresh link"},"↻");
     const close=()=>overlay.remove();
-    let commands=null, os=detectPlatform();
+    let commands=null, os=detectPlatform(), agent="claude";
     const OSES=[["mac","macOS"],["linux","Linux"],["windows","Windows"]];
+    const AGENTS=[
+      ["claude","Claude",["claude"],"then type ","/lockedin-scientist"],
+      ["codex","Codex",["codex"],"then type ","$lockedin-scientist"],
+      ["agy","Agy",["agy"],"then type ","/skills"," and pick lockedin-scientist"],
+    ];
     const commandFor=()=>commands?(os==="windows"?commands.powershell:commands.unix):"";
+    function tabRow(host,options,current,pick){
+      host.textContent="";
+      options.forEach(option=>host.append(el("button",{class:"help-tab"+(option[0]===current?" active":""),
+        onclick:()=>pick(option[0])},option[1])));
+    }
     function render(){
-      tabs.textContent="";
-      OSES.forEach(([key,label])=>tabs.append(el("button",{class:"help-tab"+(key===os?" active":""),
-        onclick:()=>{ os=key; render(); }},label)));
+      tabRow(osTabs,OSES,os,key=>{ os=key; render(); });
+      tabRow(agentTabs,AGENTS,agent,key=>{ agent=key; render(); });
       snippet.textContent=commands?commandFor():"Preparing your setup link…";
       copy.disabled=!commands;
+      const [,label,[cmd],lead,invoke,tail]=AGENTS.find(row=>row[0]===agent);
+      agentBody.textContent="";
+      agentBody.append(el("code",{class:"setup-agent-cmd"},cmd),
+        el("div",{class:"muted setup-hint"},
+          "Start " + label + " in that same folder, " + lead,
+          el("code",{class:"setup-inline"},invoke),
+          tail || "."));
     }
     async function mint(){
-      commands=null; copy.disabled=true; note.textContent=""; render();
+      commands=null; copy.disabled=true; warn.textContent=""; render();
       try{
         commands=await api("/api/bubbles/"+encodeURIComponent(slug)+"/setup-link",{method:"POST"});
-        // Say plainly what the link is: for its short life it authorizes whoever runs it as you.
-        note.textContent="Single-use, and expires in "+Math.round((commands.expires_in||600)/60)
-          +" minutes. Anyone who runs it before then is signed in as you, so don't share it.";
+        // Warning-coloured on purpose: for its short life this line is a credential, and a muted
+        // grey footnote is exactly how people miss that.
+        warn.textContent="⚠ Single-use, and expires in "+Math.round((commands.expires_in||600)/60)
+          +" minutes. Anyone who runs it before then is signed in as you — don't share it.";
       }catch(e){ snippet.textContent="Could not create a setup link: "+e.message; }
       render();
     }
@@ -3493,14 +3542,31 @@
         clearTimeout(copy._t); copy._t=setTimeout(()=>{ copy.textContent="Copy"; copy.classList.remove("ok"); },2000);
       }catch(e){ copy.textContent="Press ⌘/Ctrl+C"; snippet.focus(); }
     };
-    refresh.onclick=mint;
+    refresh.onclick=()=>{ refresh.classList.add("spin"); mint().finally(()=>refresh.classList.remove("spin")); };
+    const step=(n,title,...body)=>el("div",{class:"setup-step"},
+      el("div",{class:"setup-step-num"},String(n)),
+      el("div",{class:"setup-step-body"},el("b",{},title),...body));
     box.append(
       el("div",{class:"create-dialog-header"},el("b",{},"🤖 Connect an agent"),
         el("span",{class:"spacer"}),el("button",{class:"ghost small",title:"Close",onclick:close},"✕")),
-      el("div",{class:"diffbody create-dialog-body"},
-        el("p",{class:"muted"},"Paste this into a terminal on the machine where you write. It installs "
-          + "LockedIn Scientist, signs that terminal in, asks which folder to use, and sets up your agent."),
-        tabs, snippet, note),
+      el("div",{class:"diffbody create-dialog-body setup-body"},
+        step(1,"Open a terminal in your project folder",
+          el("div",{class:"muted setup-hint"},"Wherever this bubble's writing should live. ",
+            el("code",{class:"setup-inline"},"cd"), " there first — the script offers that folder by default.")),
+        step(2,"Run this there",
+          osTabs, snippet,
+          el("div",{class:"muted setup-hint"},
+            "Installs LockedIn Scientist, signs this terminal in, confirms the folder, and connects it to this bubble."),
+          warn),
+        step(3,"Start your AI assistant in the same folder",
+          agentTabs, agentBody),
+        step(4,"That's it — you can walk away",
+          el("div",{class:"muted setup-hint"},
+            "Syncing continues in the background, so you can close the terminal or work from another machine. "
+            + "Your agent's edits appear on this page and yours appear in the folder. "
+            + "The 👥 chip above shows the folder while it is live; ",
+            el("code",{class:"setup-inline"},"lockedin-scientist doctor")," checks it and ",
+            el("code",{class:"setup-inline"},"lockedin-scientist resync")," resumes it later."))),
       el("div",{class:"create-dialog-footer"},refresh,copy));
     overlay.append(box); overlay.onclick=e=>{if(e.target===overlay)close();}; document.body.append(overlay);
     render(); mint();

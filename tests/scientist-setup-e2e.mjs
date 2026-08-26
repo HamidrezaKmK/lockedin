@@ -140,10 +140,30 @@ async function main() {
     assert.ok(ticket, `the snippet must carry a ticket: ${unix}`);
     assert.ok(unix.startsWith("curl "), `a unix snippet must curl: ${unix}`);
     assert.ok(unix.includes(baseUrl), `the link must point at this server: ${unix}`);
-    // Say plainly what the link is — it authorizes whoever runs it.
-    assert.match(await dialog.locator(".setup-note").innerText(), /single-use/i);
+    // Say plainly what the link is — it authorizes whoever runs it — and say it in warning colour,
+    // because a muted grey footnote is exactly how that gets missed.
+    const warned = dialog.locator(".setup-warn");
+    assert.match(await warned.innerText(), /single-use/i);
+    assert.ok(await warned.evaluate(node => {
+      const style = getComputedStyle(node);
+      const warn = getComputedStyle(document.body).getPropertyValue("--warn").trim();
+      const probe = document.createElement("span");
+      probe.style.color = warn; document.body.append(probe);
+      const resolved = getComputedStyle(probe).color; probe.remove();
+      return style.color === resolved;
+    }), "the expiry warning must use the theme's warning colour");
+
+    // Four numbered steps: open a terminal, run the line, start the agent, walk away.
+    const steps = await dialog.locator(".setup-step").count();
+    assert.equal(steps, 4, "the dialog must walk through all four steps");
+    const stepText = (await dialog.locator(".setup-step").allInnerTexts()).join("\n").toLowerCase();
+    for (const expected of ["terminal", "run this there", "assistant", "walk away"]) {
+      assert.ok(stepText.includes(expected), `step list is missing ${expected}:\n${stepText}`);
+    }
     await shoot(page, "setup-dialog");
-    step("the dialog mints a link and says what it is");
+    assert.equal(await dialog.locator(".setup-refresh").innerText(), "↻",
+      "the fresh-link control is a circular arrow, not a second kind of link");
+    step("the dialog mints a link and warns what it is");
 
     await dialog.locator(".help-tab", { hasText: "Windows" }).click();
     const win = await snippet.innerText();
@@ -152,6 +172,17 @@ async function main() {
     await dialog.locator(".help-tab", { hasText: "macOS" }).click();
     assert.equal(await snippet.innerText(), unix, "switching back restores the curl form");
     step("the OS tabs swap between curl and PowerShell");
+
+    // Step 3 names each agent's own way of loading the skill.
+    for (const [agent, invoke] of [["Claude", "/lockedin-scientist"], ["Codex", "$lockedin-scientist"],
+                                   ["Agy", "/skills"]]) {
+      await dialog.locator(".setup-step", { hasText: "assistant" })
+        .locator(".help-tab", { hasText: agent }).click();
+      const shown = await dialog.locator(".setup-agent").innerText();
+      assert.ok(shown.includes(invoke), `${agent} must show ${invoke}:\n${shown}`);
+      assert.ok(shown.toLowerCase().includes(agent.toLowerCase()), `${agent} must name its command`);
+    }
+    step("each agent tab explains how to load the skill");
 
     await dialog.locator("button", { hasText: /^Copy$/ }).click();
     await page.waitForFunction(
