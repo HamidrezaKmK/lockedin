@@ -64,6 +64,7 @@
     background:linear-gradient(160deg,#51458d 0%,#5f50a3 48%,#6c5bb3 100%)
   }
   body.theme-light #side .navbtn.active{background:rgba(196,181,253,.2);border-color:rgba(196,181,253,.68)}
+  body.theme-dark .editor-pane>.ptabs{--tabrow-ink:#fff}
   body.theme-light .editor-pane>.ptabs{
     --bg:#372f66; --panel:#493d80; --panel2:#5a4c98; --line:#786bb6;
     --ink:#f6f4ff; --muted:#d0caec; --accent:#ddd6fe; --accent2:#99f6e4;
@@ -656,7 +657,9 @@
   /* preview-pane toggle is handled via S.previewEl.classList.toggle("hide") */
 
   /* page tabs + editor host */
-  .ptabs{display:flex;gap:10px;align-items:center;padding:8px 10px;
+  /* The accent-filled controls take their glyph colour from here rather than --bg directly, so a
+     single theme can flip it without out-specifying every hover rule that also sets a colour. */
+  .ptabs{--tabrow-ink:var(--bg);display:flex;gap:10px;align-items:center;padding:8px 10px;
          border-bottom:1px solid var(--line);flex:0 0 auto;min-width:0}
   .ptab-scroll{display:flex;gap:4px;align-items:center;min-width:0;flex:1 1 auto;
          overflow-x:auto;overflow-y:hidden;padding-bottom:2px}
@@ -676,8 +679,8 @@
     border-radius:7px 7px 0 0}
   /* One fill for every control in the tab row, defined once so they cannot drift apart. */
   .ptab-new,.tabrow-group{
-    border:1px solid var(--accent);background:var(--accent);color:var(--bg)}
-  .ptab-new:hover{border-color:var(--accent);color:var(--bg);
+    border:1px solid var(--accent);background:var(--accent);color:var(--tabrow-ink)}
+  .ptab-new:hover{border-color:var(--accent);color:var(--tabrow-ink);
     background:color-mix(in srgb,var(--accent) 84%,var(--bg))}
   /* Deliberately NOT overflow:hidden — the ⋮ dropdown is a descendant and would be clipped away.
      Each half carries its own outer corners instead, so a hover cannot square them off. */
@@ -685,14 +688,14 @@
   /* The ⋮ half is a button inside a positioning wrapper, so both need neutralising — the wrapper
      is not a button and the button is not a direct child. */
   .tabrow-group>*,.tabrow-group .toolmenu-btn{
-    background:transparent;border:0;color:var(--bg);
+    background:transparent;border:0;color:var(--tabrow-ink);
     min-height:0;height:30px;width:34px;padding:0;display:inline-flex;
     align-items:center;justify-content:center}
   .tabrow-group>:first-child,.tabrow-group .toolmenu-btn{border-radius:8px 0 0 8px}
   .tabrow-group>:last-child{border-radius:0 8px 8px 0;
     border-left:1px solid color-mix(in srgb,var(--bg) 26%,transparent)}
   .tabrow-group>*:hover,.tabrow-group .toolmenu-btn:hover,.tabrow-group .toolmenu-btn.on{
-    color:var(--bg);background:color-mix(in srgb,var(--accent) 84%,var(--bg))}
+    color:var(--tabrow-ink);background:color-mix(in srgb,var(--accent) 84%,var(--bg))}
   .ptab{padding:4px 10px;border-radius:7px 7px 0 0;border:1px solid var(--line);
         background:var(--panel2);cursor:pointer;font-size:13px;display:flex;gap:6px;align-items:center;
         max-width:280px}

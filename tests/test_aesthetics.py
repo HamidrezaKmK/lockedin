@@ -133,7 +133,10 @@ class AestheticsConfigTests(unittest.TestCase):
         group = source[source.index(".tabrow-group{"):source.index(".tabrow-group{") + 120]
         self.assertNotIn("overflow:hidden", group)
         self.assertNotIn("overflow:clip", group)
-        self.assertIn("background:var(--accent);color:var(--bg)}", source)
+        self.assertIn("background:var(--accent);color:var(--tabrow-ink)}", source)
+        # Dark's row keeps the page tokens, where the accent is a mid purple rather than the pale
+        # tint the other themes use — white glyphs read better on it than near-black ones.
+        self.assertIn("body.theme-dark .editor-pane>.ptabs{--tabrow-ink:#fff}", source)
         self.assertIn("if(S.toolsMenu) group.append(S.toolsMenu);", source)
         self.assertIn('id:"bubbleFocusToggle"', source)
         # The menu is built once per bubble and re-homed by refreshTabs, which rebuilds that row
