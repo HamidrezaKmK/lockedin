@@ -669,8 +669,17 @@
   .ptab-group{display:flex;gap:4px;align-items:center;min-width:0}
   .ptab-group.hidden-tabs{margin-left:auto;padding-left:8px;border-left:1px solid var(--line);opacity:.76}
   .ptab-controls{display:flex;gap:8px;align-items:center;flex:0 0 auto;white-space:nowrap}
-  /* Page creation sits outside the scrolling tab list, so it stays reachable at any tab count. */
-  .ptab-new{flex:0 0 auto;padding:4px 11px;font-size:15px;line-height:1.15}
+  /* Page creation sits outside the scrolling tab list, so it stays reachable at any tab count.
+     It is a card in that row rather than a toolbar button — same shape and height as a page tab,
+     filled with the accent so it reads as the one *action* among the tabs. Both colours come from
+     the row's own scope: every theme but dark re-declares --accent and --bg on .ptabs, and there
+     the accent is a pale tint that needs the row's dark background as its foreground. */
+  .ptab-new{flex:0 0 auto;display:flex;align-items:center;justify-content:center;
+    min-height:0;padding:4px 12px;font-size:15px;line-height:1.35;font-weight:700;
+    border-radius:7px 7px 0 0;border:1px solid var(--accent);
+    background:var(--accent);color:var(--bg)}
+  .ptab-new:hover{border-color:var(--accent);
+    background:color-mix(in srgb,var(--accent) 84%,var(--bg))}
   .ptab{padding:4px 10px;border-radius:7px 7px 0 0;border:1px solid var(--line);
         background:var(--panel2);cursor:pointer;font-size:13px;display:flex;gap:6px;align-items:center;
         max-width:280px}
@@ -4683,7 +4692,7 @@
     if(S.showHiddenPages&&hiddenTabs.childElementCount)tabScroll.append(hiddenTabs);
     // Outside the horizontally scrolling list on purpose: inside it, a long enough set of tabs
     // scrolls page creation off-screen and out of reach.
-    if(!S.editingTitles) tabs.prepend(el("button",{type:"button",class:"small ghost ptab-new",
+    if(!S.editingTitles) tabs.prepend(el("button",{type:"button",class:"ptab-new",
       title:"New page","aria-label":"New page",onclick:newPage},"+"));
     // Keep page creation outside the horizontally scrolling tab list.  Once a bubble has
     // enough tabs, a button in that list can be clipped/off-screen and become unreachable.

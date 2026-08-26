@@ -126,7 +126,9 @@ class AestheticsConfigTests(unittest.TestCase):
                         "papers-menu", "data-papers-toggle"):
             self.assertNotIn(retired, source, f"{retired} should have been removed")
         # The row: page creation at the far left, then the tabs, then the menu and focus toggle.
-        self.assertIn('class:"small ghost ptab-new"', source)
+        self.assertIn('class:"ptab-new"', source)
+        # The new-page control is a card in the tab row, accent-filled, not a ghost button.
+        self.assertIn("background:var(--accent);color:var(--bg)}", source)
         self.assertIn("if(S.toolsMenu) controls.append(S.toolsMenu);", source)
         self.assertIn('id:"bubbleFocusToggle"', source)
         # The menu is built once per bubble and re-homed by refreshTabs, which rebuilds that row
