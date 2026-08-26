@@ -127,7 +127,8 @@ class AestheticsConfigTests(unittest.TestCase):
             self.assertNotIn(retired, source, f"{retired} should have been removed")
         # The row: page creation at the far left, then the tabs, then the menu and focus toggle.
         self.assertIn('class:"ptab-new"', source)
-        # The new-page control is a card in the tab row, accent-filled, not a ghost button.
+        # Every control in the tab row shares one accent fill, defined once so they cannot drift.
+        self.assertIn(".ptab-new,.toolmenu-btn,#bubbleFocusToggle{", source)
         self.assertIn("background:var(--accent);color:var(--bg)}", source)
         self.assertIn("if(S.toolsMenu) controls.append(S.toolsMenu);", source)
         self.assertIn('id:"bubbleFocusToggle"', source)

@@ -251,7 +251,12 @@ data/workspaces/<workspace-id>/
   `refreshTabs`, which rebuilds that row on every page switch and every 5s poll — building it
   there instead would drop an open panel, and is how the old papers dropdown ended up a stale
   detached node. Its panel hangs inside `.pane`, which is `overflow:clip`, so it must keep a
-  `max-height`.
+  `max-height`. **All three controls share one accent fill** (`.ptab-new,.toolmenu-btn,
+  #bubbleFocusToggle`), defined once so the row cannot drift apart, and the panel is an
+  accent-tinted lift of `--panel`. Colour alone cannot mark anything in that menu: the row
+  re-declares `--accent` as a pale tint in four of the five themes, near enough to `--ink` that
+  the active view mode was invisible — it wears a filled chip plus its ✓ instead. The trigger
+  carries no state badge; whether the public link is live is read from the menu's own row.
 - **One figure viewer, served to every rendered surface.** `web/lightbox.js` (route `/lightbox.js`,
   unauthenticated so public shares can load it) implements the full-screen click-to-zoom/pan viewer.
   The SPA loads it and calls `LockedInLightbox.watch("#previewWrap")` (covers Split and Read); the

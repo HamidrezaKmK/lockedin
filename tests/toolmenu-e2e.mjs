@@ -178,7 +178,7 @@ async function main() {
     await trigger.click();
     await panel.waitFor({ state: "visible", timeout: 2_000 });
 
-    // Toggling sharing rewrites the open menu in place and lights the trigger's dot.
+    // Toggling sharing rewrites the open menu in place.
     await page.locator(".toolmenu-item", { hasText: "Public link" }).click();
     await page.locator(".toolmenu-item", { hasText: "Open shared page" })
       .waitFor({ state: "visible", timeout: 5_000 });
@@ -186,10 +186,8 @@ async function main() {
     assert.ok(/public link\s*\non\b/.test(shared), `the public link must read as on:\n${shared}`);
     assert.ok(!shared.includes("preview page"),
       `the owner preview is redundant once the public link is live:\n${shared}`);
-    assert.ok(await page.locator(".toolmenu").evaluate(node => node.classList.contains("sharing")),
-      "a live public link must show on the collapsed trigger");
     await shoot(page, "toolmenu-sharing");
-    step("toggling the public link rewrites the menu and marks the trigger");
+    step("toggling the public link rewrites the menu in place");
 
     await page.locator("h2.section-title").click();
     await panel.waitFor({ state: "detached", timeout: 2_000 });
