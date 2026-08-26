@@ -112,9 +112,12 @@ Manage workers or rebuild a project from the server:
 ```bash
 lockedin-scientist ps
 lockedin-scientist doctor
+lockedin-scientist resync
 lockedin-scientist stop <worker-id>
 lockedin-scientist hard-reset <bubble-slug>
 ```
+`resync` resumes the bubble a project is already bound to — no bubble slug and no workspace switch,
+because `.lockedin/` records both. It is the normal way to restart a stopped worker.
 `stop` preserves `.lockedin/`. `hard-reset` stops that project worker, replaces `.lockedin/` with
 the current selected bubble, then starts a new worker. Concurrent report edits are revision-guarded:
 the server version is restored locally and the rejected local copy plus a patch are retained in

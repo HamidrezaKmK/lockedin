@@ -608,6 +608,119 @@ class ScientistProfileAndWorkersTest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "No worker is assigned"):
                 scientist_cli.doctor_command(project)
 
+    # ---- resync: resume the bubble this project is already bound to ----
+    # A worker dies for ordinary reasons, and resuming it used to mean `workspaces switch` +
+    # `sync <slug>` — the switch being mandatory, not cosmetic, because validate_or_initialize
+    # compares the binding against the *active* account. These pin that resync needs neither.
+
+    @staticmethod
+    def _bound_project(directory: str, *, bubble: str = "work", workspace_id: str = "personal") -> Path:
+        project = Path(directory)
+        config = project / ".lockedin" / "config"; config.mkdir(parents=True)
+        (config / "binding.json").write_text(json.dumps({
+            "server": ACCOUNT["server"], "user": ACCOUNT["user"],
+            "workspace_id": workspace_id, "bubble": bubble}))
+        scientist_cli.save_config({"accounts": [dict(ACCOUNT)]})
+        return project
+
+    @staticmethod
+    def _worker_record(project: Path, **changes) -> dict:
+        rec = {"id": "worker", "project": str(project.resolve()), "bubble": "work",
+               "server": ACCOUNT["server"], "user": ACCOUNT["user"],
+               "workspace_id": ACCOUNT["workspace_id"], "pid": 42, "status": "running",
+               "started_at": time.time(), "last_sync": time.time(), "last_error": ""}
+        rec.update(changes)
+        return rec
+
+    def test_resync_resumes_the_bound_workspace_without_switching_the_global_one(self):
+        # The device-global selection has drifted to another workspace, which is exactly when
+        # `sync <bubble>` refuses and sends you to the destructive hard-reset.
+        with temp_data_home(), tempfile.TemporaryDirectory() as directory, patch.object(
+                scientist_cli, "start_sync") as start:
+            project = self._bound_project(directory, workspace_id="bound-workspace")
+            drifted = dict(ACCOUNT); drifted["workspace_id"] = "somewhere-else"
+            scientist_cli.save_config({"accounts": [drifted]})
+            output = io.StringIO()
+            with redirect_stdout(output): scientist_cli.resync_command(project)
+            account, bubble, passed = start.call_args.args
+            self.assertEqual(bubble, "work")
+            self.assertEqual(account["workspace_id"], "bound-workspace")
+            self.assertEqual(passed, project.resolve())
+            self.assertFalse(start.call_args.kwargs["announce"])
+            # The profile is a shared, device-wide setting: repairing one project must not
+            # silently retarget every other one.
+            self.assertEqual(scientist_cli.load_config()["accounts"][0]["workspace_id"], "somewhere-else")
+
+    def test_resync_without_a_binding_points_at_sync(self):
+        with temp_data_home(), tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(RuntimeError, r"sync <bubble>"):
+                scientist_cli.resync_command(Path(directory))
+
+    def test_resync_with_an_incomplete_binding_points_at_hard_reset(self):
+        with temp_data_home(), tempfile.TemporaryDirectory() as directory:
+            project = Path(directory)
+            config = project / ".lockedin" / "config"; config.mkdir(parents=True)
+            (config / "binding.json").write_text(json.dumps({"server": ACCOUNT["server"], "bubble": "work"}))
+            with self.assertRaisesRegex(RuntimeError, "hard-reset"):
+                scientist_cli.resync_command(project)
+
+    def test_resync_without_an_authorized_account_points_at_login_for_that_server(self):
+        with temp_data_home(), tempfile.TemporaryDirectory() as directory:
+            project = self._bound_project(directory)
+            scientist_cli.save_config({"accounts": []})
+            with self.assertRaisesRegex(RuntimeError, r"login --server https://example.test"):
+                scientist_cli.resync_command(project)
+
+    def test_resync_reports_a_healthy_worker_instead_of_restarting_it(self):
+        with temp_data_home(), tempfile.TemporaryDirectory() as directory, patch.object(
+                scientist_cli, "_alive", return_value=True), patch.object(
+                scientist_cli, "_stop_and_wait") as stop, patch.object(
+                scientist_cli, "start_sync") as start:
+            project = self._bound_project(directory)
+            scientist_cli.save_workers({"workers": {"worker": self._worker_record(project)}})
+            output = io.StringIO()
+            with redirect_stdout(output): scientist_cli.resync_command(project)
+            self.assertIn("already syncing", output.getvalue())
+            stop.assert_not_called(); start.assert_not_called()
+
+    def test_resync_replaces_a_worker_that_is_alive_but_wedged(self):
+        # `doctor` calls this unhealthy, so resync must repair it rather than call it fine.
+        stale = time.time() - scientist_cli.WORKER_STALE_SECONDS - 1
+        with temp_data_home(), tempfile.TemporaryDirectory() as directory, patch.object(
+                scientist_cli, "_alive", return_value=True), patch.object(
+                scientist_cli, "_stop_and_wait") as stop, patch.object(
+                scientist_cli, "start_sync") as start:
+            project = self._bound_project(directory)
+            scientist_cli.save_workers({"workers": {"worker": self._worker_record(
+                project, status="degraded", last_sync=stale)}})
+            output = io.StringIO()
+            with redirect_stdout(output): scientist_cli.resync_command(project)
+            self.assertIn("replacing it", output.getvalue())
+            stop.assert_called_once_with("worker"); start.assert_called_once()
+
+    def test_resync_starts_a_worker_after_the_previous_one_stopped(self):
+        with temp_data_home(), tempfile.TemporaryDirectory() as directory, patch.object(
+                scientist_cli, "_alive", return_value=False), patch.object(
+                scientist_cli, "_stop_and_wait") as stop, patch.object(
+                scientist_cli, "start_sync") as start:
+            project = self._bound_project(directory)
+            scientist_cli.save_workers({"workers": {"worker": self._worker_record(
+                project, status="stopped", stopped_at=time.time())}})
+            with redirect_stdout(io.StringIO()): scientist_cli.resync_command(project)
+            stop.assert_not_called(); start.assert_called_once()
+
+    def test_resync_refuses_when_a_live_worker_holds_another_bubble(self):
+        with temp_data_home(), tempfile.TemporaryDirectory() as directory, patch.object(
+                scientist_cli, "_alive", return_value=True), patch.object(
+                scientist_cli, "start_sync") as start:
+            project = self._bound_project(directory)
+            scientist_cli.save_workers({"workers": {"worker": self._worker_record(
+                project, bubble="another")}})
+            with redirect_stdout(io.StringIO()):
+                with self.assertRaisesRegex(RuntimeError, "hard-reset"):
+                    scientist_cli.resync_command(project)
+            start.assert_not_called()
+
     def test_outdated_warning_is_visible_without_failing_a_local_command(self):
         output = io.StringIO()
         with patch.object(scientist_cli, "account_request", side_effect=RuntimeError("LockedIn Scientist is out of date. Reinstall it, then retry.")):
@@ -748,6 +861,7 @@ class ScientistProfileAndWorkersTest(unittest.TestCase):
         self.assertNotIn("def " + "run" + "_agent", source)
         self.assertNotIn("--from-server", source)
         self.assertIn('add_parser("hard-reset")', source)
+        self.assertIn('add_parser("resync", help=', source)
         self.assertIn('add_parser("overleaf")', source)
         self.assertIn("the sync worker registers it automatically", scientist_cli.SKILL_RULES)
         self.assertIn("the sync worker removes it", scientist_cli.SKILL_RULES)

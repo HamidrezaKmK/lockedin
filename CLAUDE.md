@@ -178,7 +178,12 @@ data/workspaces/<workspace-id>/
   instead of vanishing. The identity is `worker_uid` in `.lockedin/config/identity.json`, minted
   once per project directory and deliberately kept **out of `binding.json`** (that file is compared
   for exact equality against `{server,user,workspace_id,bubble}`, so an extra key reads as a
-  mismatch) and stable across worker restarts. Browsers heartbeat `POST /api/bubbles/<slug>/presence`
+  mismatch) and stable across worker restarts. This is why `resync` exists next to `hard-reset`:
+  `resync` reads `binding.json`, pins the account to the workspace it names, and restarts the
+  worker in place, so the directory keeps its `worker_uid` and its row on the bubble page, while
+  `hard-reset` deletes `.lockedin/` — `identity.json` included — and the project comes back as a
+  new row. `resync` must never touch the profile's device-global active workspace, and is
+  dispatched before `choose_account()` so it cannot depend on which account was authorized last. Browsers heartbeat `POST /api/bubbles/<slug>/presence`
   every 20s, which both reports the viewer and returns the snapshot. Nothing is written to disk:
   presence is a claim about *now*, so a restarted server correctly shows an empty bubble. Each
   worker row carries an `attention` flag (dead by failure or rejection, vs a clean "stopped"): the

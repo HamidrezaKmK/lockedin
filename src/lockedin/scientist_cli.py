@@ -25,6 +25,11 @@ from pathlib import Path
 APP = "lockedin-scientist"
 SCIENTIST_CLIENT_VERSION = "2026.08.17.1"
 POLL_SECONDS = 5
+# A worker that has not completed a cycle in three polls is wedged rather than merely busy.
+# `doctor` reports that verdict and `resync` repairs exactly what `doctor` complains about, so
+# both read the threshold from here.
+WORKER_STALE_SECONDS = POLL_SECONDS * 3
+BINDING_KEYS = ("server", "user", "workspace_id", "bubble")
 WORKER_HISTORY_LIMIT = 10
 TERMINAL_WORKER_STATUSES = {"stopped"}
 ATTENTION_WORKER_STATUSES = {"degraded", "failed"}
@@ -98,6 +103,7 @@ def welcome() -> None:
     print(bold("Manage synchronization"))
     print(f"  {cyan('•')} {dim('List workers')}\n     {cyan('lockedin-scientist ps')}")
     print(f"  {cyan('•')} {dim('Stop a worker without removing local files')}\n     {cyan('lockedin-scientist stop <worker-id>')}")
+    print(f"  {cyan('•')} {dim('Resume this project’s bubble after a worker stopped')}\n     {cyan('lockedin-scientist resync')}")
     print(f"  {cyan('•')} {dim('Replace this project’s .lockedin from the server')}\n     {cyan('lockedin-scientist hard-reset <bubble-slug>')}")
     print(f"  {cyan('•')} {dim('Verify this project’s worker and server connection')}\n     {cyan('lockedin-scientist doctor')}")
     print()
@@ -322,9 +328,9 @@ def bubbles_command(account: dict) -> list[dict]:
     return rows
 
 
-SKILL_VERSION = 15
+SKILL_VERSION = 16
 
-SKILL_RULES = """<!-- lockedin-scientist-skill: 15 -->
+SKILL_RULES = """<!-- lockedin-scientist-skill: 16 -->
 # LockedIn Scientist research and publication skill
 
 This project is synchronized with one LockedIn bubble. Read this file before editing.
@@ -431,7 +437,9 @@ Before telling the user that a report edit is synchronized—or before making a 
 that relies on background synchronization—run `lockedin-scientist doctor` from the project root.
 It verifies that this `.lockedin` directory has a matching, healthy worker and can reach its bound
 LockedIn bubble. If it fails, do not claim the work was submitted; show the user the failure and
-ask whether they want to repair it (for example with `sync`, `stop`, or `hard-reset`).
+ask whether they want to repair it. `lockedin-scientist resync` is the usual repair: it resumes
+whatever bubble this project is already bound to, needs no arguments, and leaves `.lockedin`
+intact. Reach for `hard-reset` only when the directory itself is broken—it replaces it wholesale.
 
 ## Sync and conflicts
 
@@ -1118,8 +1126,9 @@ def _run_worker(worker_id: str, project: str) -> None:
     _update_worker(worker_id, status="stopped", stopped_at=time.time())
 
 
-def start_sync(account: dict, bubble: str, project: Path) -> None:
-    heading("Synchronizing a bubble", f"{bubble} → {project / '.lockedin'}")
+def start_sync(account: dict, bubble: str, project: Path, *, announce: bool = True) -> None:
+    # `announce=False` is for callers that already printed their own heading (resync).
+    if announce: heading("Synchronizing a bubble", f"{bubble} → {project / '.lockedin'}")
     sync = ProjectSync(account, project, bubble); sync.validate_or_initialize(); sync.sync_once()
     data = load_workers()
     for wid, rec in data.get("workers", {}).items():
@@ -1186,51 +1195,112 @@ def stop_command(worker_id: str) -> None:
     print(dim("  .lockedin was left unchanged."))
 
 
+def read_binding(project: Path) -> dict:
+    """This project's bubble binding, validated.
+
+    `.lockedin` records its own server, user, workspace and bubble, so a project never has to
+    depend on — or agree with — the device-global workspace that `workspaces switch` selects.
+    """
+    path = project.resolve() / ".lockedin" / "config" / "binding.json"
+    try:
+        binding = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError("No valid .lockedin/config/binding.json in this project. Run `lockedin-scientist sync <bubble>` first.") from exc
+    if any(not binding.get(key) for key in BINDING_KEYS):
+        raise RuntimeError("The .lockedin binding is incomplete. Run `lockedin-scientist hard-reset <bubble>` to rebuild it.")
+    return binding
+
+
+def account_for_binding(binding: dict) -> dict:
+    """The authorized account for a binding, pinned to the workspace the binding names.
+
+    Pinning rather than reading the profile's active workspace is what lets a project be repaired
+    from any directory in any order; it is the same override the running worker applies.
+    """
+    account = next((item for item in load_config().get("accounts", [])
+                    if item.get("server") == binding["server"] and item.get("user") == binding["user"]), None)
+    if not account:
+        raise RuntimeError("The account for this project is no longer authorized. "
+                           f"Run `lockedin-scientist login --server {binding['server']}` again.")
+    account = dict(account); account["workspace_id"] = binding["workspace_id"]
+    return account
+
+
+def _project_worker(project: Path) -> dict | None:
+    """The most recently started worker record for this project directory, if any."""
+    project = project.resolve()
+    records = [rec for rec in load_workers().get("workers", {}).values()
+               if Path(rec.get("project", "")).resolve() == project]
+    return max(records, key=lambda rec: rec.get("started_at", 0)) if records else None
+
+
+def _worker_is_healthy(rec: dict) -> bool:
+    """Running, and having completed a cycle recently — the verdict `doctor` reports."""
+    return (rec.get("status") == "running"
+            and time.time() - float(rec.get("last_sync", 0) or 0) <= WORKER_STALE_SECONDS)
+
+
 def doctor_command(project: Path) -> None:
     """Check that this project is bound to a live, current, reachable Scientist worker."""
     root = project.resolve() / ".lockedin"
-    binding_path = root / "config" / "binding.json"
-    try:
-        binding = json.loads(binding_path.read_text())
-    except (OSError, json.JSONDecodeError) as exc:
-        raise RuntimeError("No valid .lockedin/config/binding.json in this project. Run `lockedin-scientist sync <bubble>` first.") from exc
-    required = ("server", "user", "workspace_id", "bubble")
-    if any(not binding.get(key) for key in required):
-        raise RuntimeError("The .lockedin binding is incomplete. Run `lockedin-scientist hard-reset <bubble>` to rebuild it.")
+    binding = read_binding(project)
     project = project.resolve()
     matches = [rec for rec in load_workers().get("workers", {}).values()
                if Path(rec.get("project", "")).resolve() == project and rec.get("bubble") == binding["bubble"]]
     heading("Scientist doctor", str(root))
     if not matches:
-        raise RuntimeError(f"No worker is assigned to this project. Run `lockedin-scientist sync {binding['bubble']}` from {project}.")
+        raise RuntimeError(f"No worker is assigned to this project. Run `lockedin-scientist resync` from {project}.")
     rec = max(matches, key=lambda item: item.get("started_at", 0))
-    if any(rec.get(key) != binding[key] for key in required):
-        raise RuntimeError("The assigned worker does not match this .lockedin binding. Stop it, then run `lockedin-scientist sync <bubble>`.")
+    if any(rec.get(key) != binding[key] for key in BINDING_KEYS):
+        raise RuntimeError("The assigned worker does not match this .lockedin binding. Stop it, then run `lockedin-scientist resync`.")
     status, pid = rec.get("status", "?"), int(rec.get("pid", 0))
     if status != "running" or not _alive(pid):
         detail = rec.get("last_error") or rec.get("error") or status
-        raise RuntimeError(f"Worker {rec.get('id', '?')} is not healthy ({detail}). Run `lockedin-scientist ps` for details, then sync or hard-reset this bubble.")
-    last_sync = float(rec.get("last_sync", 0) or 0)
-    if time.time() - last_sync > POLL_SECONDS * 3:
+        raise RuntimeError(f"Worker {rec.get('id', '?')} is not healthy ({detail}). Run `lockedin-scientist ps` for details, then `lockedin-scientist resync` to resume this project.")
+    if not _worker_is_healthy(rec):
         raise RuntimeError(f"Worker {rec.get('id', '?')} has not completed a sync recently. Run `lockedin-scientist ps` and repair it before relying on report submission.")
-    account = next((item for item in load_config().get("accounts", [])
-                    if item.get("server") == binding["server"] and item.get("user") == binding["user"]), None)
-    if not account:
-        raise RuntimeError("The account for this project is no longer authorized. Run `lockedin-scientist login --server <URL>` again.")
-    account = dict(account); account["workspace_id"] = binding["workspace_id"]
+    account = account_for_binding(binding)
     account_request(account, "GET", f"/api/scientist/v2/bubbles/{binding['bubble']}/manifest")
     print(green("✓") + f" Worker {bold(rec['id'])} is healthy and can reach bubble {bold(binding['bubble'])}.")
 
 
 def _stop_and_wait(worker_id: str) -> None:
-    """Stop a worker before hard-reset removes its project-local files."""
+    """Stop a worker and wait for it to actually exit, before replacing it."""
     stop_command(worker_id)
     for _ in range(30):
         rec = _worker_record(worker_id)
         if not rec or not _alive(int(rec.get("pid", 0))):
             return
         time.sleep(0.1)
-    raise RuntimeError("Scientist worker did not stop in time; retry hard-reset after stopping it.")
+    raise RuntimeError("Scientist worker did not stop in time; stop it manually, then retry.")
+
+
+def resync_command(project: Path) -> None:
+    """Resume the bubble this project is already bound to.
+
+    A worker dies for ordinary reasons — the machine slept, the server blipped, someone ran
+    `stop` — and resuming it should not require remembering the bubble slug or first switching
+    the device-global workspace back. `.lockedin` already knows both, so this reads the binding
+    and never consults or changes the profile's active workspace. Unlike `hard-reset` it keeps
+    the directory intact, including the `worker_uid` that identifies it on the bubble page.
+    """
+    project = project.resolve()
+    binding = read_binding(project)
+    account = account_for_binding(binding)
+    bubble = binding["bubble"]
+    heading("Resuming this project’s bubble", f"{bubble} → {project / '.lockedin'}")
+    rec = _project_worker(project)
+    if rec and _alive(int(rec.get("pid", 0))):
+        if rec.get("bubble") != bubble:
+            raise RuntimeError("Another bubble worker already manages this project. Use hard-reset first.")
+        if _worker_is_healthy(rec):
+            print(green("✓") + f" Worker {bold(rec['id'])} is already syncing {bold(bubble)}.")
+            print(dim("  Run lockedin-scientist doctor to verify it."))
+            return
+        # Alive but wedged: replacing it is the repair this command exists for.
+        print(orange("•") + f" Worker {bold(rec['id'])} is {rec.get('status', 'unresponsive')}; replacing it.")
+        _stop_and_wait(rec["id"])
+    start_sync(account, bubble, project, announce=False)
 
 
 def hard_reset(account: dict, bubble: str, project: Path, *, discard_overleaf: bool = False) -> None:
@@ -1261,6 +1331,7 @@ def _main() -> None:
     sync_p = sub.add_parser("sync"); sync_p.add_argument("bubble")
     sub.add_parser("ps")
     sub.add_parser("doctor", help="Verify this project's bound worker and server connection.")
+    sub.add_parser("resync", help="Resume the bubble this project is already bound to.")
     stop_p = sub.add_parser("stop"); stop_p.add_argument("worker_id")
     reset_p = sub.add_parser("hard-reset"); reset_p.add_argument("bubble"); reset_p.add_argument("--discard-overleaf", action="store_true")
     for vendor in VENDORS:
@@ -1286,6 +1357,9 @@ def _main() -> None:
     if args.command == "ps": ps_command(); return
     if args.command == "stop": stop_command(args.worker_id); return
     if args.command == "doctor": doctor_command(Path.cwd()); return
+    # Deliberately dispatched before choose_account(): resync resolves its account from the
+    # project's own binding, so it must not depend on which account was authorized last.
+    if args.command == "resync": resync_command(Path.cwd()); return
     if args.command in VENDORS:
         if args.vendor_command == "setup": setup_vendor_command(args.command)
         return

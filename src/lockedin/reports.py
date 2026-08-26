@@ -430,14 +430,22 @@ bubble pages restart GIFs from their first frame whenever they render.
 
 ```
 lockedin-scientist ps
+lockedin-scientist resync
 lockedin-scientist stop <worker-id>
 lockedin-scientist hard-reset <bubble-slug>
 lockedin-scientist overleaf help
 ```
 
-`stop` leaves `.lockedin/` intact. `hard-reset` stops the project worker, replaces the directory
-with the current server bubble, and starts a new worker. It preserves a connected Overleaf checkout
-unless you explicitly add `--discard-overleaf`.
+`resync` is the ordinary repair when a project's worker has stopped: run it from the project and it
+resumes whatever bubble that directory is already bound to. It takes no arguments and needs no
+workspace switch — `.lockedin/` records its own server, workspace, and bubble — and it leaves the
+directory, its unsynchronized work, and its identity on the bubble page untouched. A healthy worker
+is reported rather than restarted.
+
+`stop` leaves `.lockedin/` intact. `hard-reset` is the heavier repair, for a directory that is
+itself broken: it stops the project worker, replaces the directory with the current server bubble,
+and starts a new worker. It preserves a connected Overleaf checkout unless you explicitly add
+`--discard-overleaf`.
 
 ### Overleaf: an explicit publication workflow
 
