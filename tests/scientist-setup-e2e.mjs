@@ -143,7 +143,7 @@ async function main() {
     // Say plainly what the link is — it authorizes whoever runs it — and say it in warning colour,
     // because a muted grey footnote is exactly how that gets missed.
     const warned = dialog.locator(".setup-warn");
-    assert.match(await warned.innerText(), /single-use/i);
+    assert.match(await warned.innerText(), /expires in \d+ minutes/i);
     assert.ok(await warned.evaluate(node => {
       const style = getComputedStyle(node);
       const warn = getComputedStyle(document.body).getPropertyValue("--warn").trim();
