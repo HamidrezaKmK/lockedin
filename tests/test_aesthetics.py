@@ -128,9 +128,13 @@ class AestheticsConfigTests(unittest.TestCase):
         # The row: page creation at the far left, then the tabs, then the menu and focus toggle.
         self.assertIn('class:"ptab-new"', source)
         # Every control in the tab row shares one accent fill, defined once so they cannot drift.
-        self.assertIn(".ptab-new,.toolmenu-btn,#bubbleFocusToggle{", source)
+        self.assertIn(".ptab-new,.tabrow-group{", source)
+        # The dropdown is a descendant of the group, so the group must never clip its overflow.
+        group = source[source.index(".tabrow-group{"):source.index(".tabrow-group{") + 120]
+        self.assertNotIn("overflow:hidden", group)
+        self.assertNotIn("overflow:clip", group)
         self.assertIn("background:var(--accent);color:var(--bg)}", source)
-        self.assertIn("if(S.toolsMenu) controls.append(S.toolsMenu);", source)
+        self.assertIn("if(S.toolsMenu) group.append(S.toolsMenu);", source)
         self.assertIn('id:"bubbleFocusToggle"', source)
         # The menu is built once per bubble and re-homed by refreshTabs, which rebuilds that row
         # on every page switch and every poll — rebuilding it there would drop an open panel.

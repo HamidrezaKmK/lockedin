@@ -572,8 +572,7 @@
      button whose dropdown reuses the presence menu's visual language. */
   .toolmenu{position:relative;flex-shrink:0}
   .toolmenu-btn{position:relative;display:inline-flex;align-items:center;justify-content:center;
-    width:28px;height:28px;padding:0;border-radius:999px;cursor:pointer;
-    transition:background .15s}
+    padding:0;cursor:pointer;transition:background .15s}
   .toolmenu-glyph{font-size:17px;line-height:1}
   /* The panel now hangs inside .pane, which is overflow:clip — bound its height so a short
      screen scrolls the menu instead of silently cutting it off. */
@@ -675,12 +674,25 @@
   .ptab-new{flex:0 0 auto;display:flex;align-items:center;justify-content:center;
     min-height:0;padding:4px 12px;font-size:15px;line-height:1.35;font-weight:700;
     border-radius:7px 7px 0 0}
-  /* One fill for every control in the tab row, defined once so the three cannot drift apart. */
-  .ptab-new,.toolmenu-btn,#bubbleFocusToggle{
+  /* One fill for every control in the tab row, defined once so they cannot drift apart. */
+  .ptab-new,.tabrow-group{
     border:1px solid var(--accent);background:var(--accent);color:var(--bg)}
-  .ptab-new:hover,.toolmenu-btn:hover,.toolmenu-btn.on,#bubbleFocusToggle:hover{
-    border-color:var(--accent);color:var(--bg);
+  .ptab-new:hover{border-color:var(--accent);color:var(--bg);
     background:color-mix(in srgb,var(--accent) 84%,var(--bg))}
+  /* Deliberately NOT overflow:hidden — the ⋮ dropdown is a descendant and would be clipped away.
+     Each half carries its own outer corners instead, so a hover cannot square them off. */
+  .tabrow-group{display:inline-flex;align-items:stretch;flex-shrink:0;border-radius:9px}
+  /* The ⋮ half is a button inside a positioning wrapper, so both need neutralising — the wrapper
+     is not a button and the button is not a direct child. */
+  .tabrow-group>*,.tabrow-group .toolmenu-btn{
+    background:transparent;border:0;color:var(--bg);
+    min-height:0;height:30px;width:34px;padding:0;display:inline-flex;
+    align-items:center;justify-content:center}
+  .tabrow-group>:first-child,.tabrow-group .toolmenu-btn{border-radius:8px 0 0 8px}
+  .tabrow-group>:last-child{border-radius:0 8px 8px 0;
+    border-left:1px solid color-mix(in srgb,var(--bg) 26%,transparent)}
+  .tabrow-group>*:hover,.tabrow-group .toolmenu-btn:hover,.tabrow-group .toolmenu-btn.on{
+    color:var(--bg);background:color-mix(in srgb,var(--accent) 84%,var(--bg))}
   .ptab{padding:4px 10px;border-radius:7px 7px 0 0;border:1px solid var(--line);
         background:var(--panel2);cursor:pointer;font-size:13px;display:flex;gap:6px;align-items:center;
         max-width:280px}
@@ -4774,10 +4786,14 @@
     // tabs: page creation at the far left, then the menu and the focus toggle at the far right.
     // The ⋮ host is built once per bubble and re-homed here, because this row is rebuilt on every
     // page switch and every poll — rebuilding the menu would drop an open panel.
-    if(S.toolsMenu) controls.append(S.toolsMenu);
-    controls.append(el("button",{class:"small",id:"bubbleFocusToggle",
+    // One card, two halves: the menu and the focus toggle are both "what to do with this view",
+    // and two separate pills for that read as more chrome than the row has business showing.
+    const group=el("div",{class:"tabrow-group"});
+    if(S.toolsMenu) group.append(S.toolsMenu);
+    group.append(el("button",{class:"small",id:"bubbleFocusToggle",
       title:"Enter focused workspace", "aria-label":"Enter focused workspace",
       onclick:()=>setBubbleFocus(!S.bubbleFocus)},"⛶"));
+    controls.append(group);
     refreshPageVisibilityTool();
     refreshHiddenPagesTool();
   }

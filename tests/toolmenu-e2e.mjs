@@ -126,8 +126,10 @@ async function main() {
     assert.equal(await page.locator(".ptab-new").innerText(), "+", "page creation is a bare +");
     assert.equal(await page.locator("#ptabs > *").count(), 3,
       "the toolbar row is exactly: + , the tab list, the right-hand controls");
-    assert.equal(await page.locator(".ptab-controls > *").count(), 2,
-      "the right-hand controls are exactly ⋮ and ⛶");
+    assert.equal(await page.locator(".ptab-controls > *").count(), 1,
+      "⋮ and ⛶ are one card, not two");
+    assert.equal(await page.locator(".tabrow-group > *").count(), 2,
+      "that card has exactly two halves");
     assert.ok(await page.locator("#ptabs > *").first().evaluate(n => n.classList.contains("ptab-new")),
       "page creation must be the leftmost thing in the row");
     assert.equal(await page.locator(".toolmenu-panel").count(), 0, "the menu starts closed");
