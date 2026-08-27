@@ -19,6 +19,8 @@
 <!-- Full-screen figure viewer, served from the same file the share/preview pages load so the
      two surfaces cannot drift apart. -->
 <script src="/lightbox.js"></script>
+<!-- Chalk talks: dated slide decks the agent writes, and the marks you leave on them. -->
+<script src="/talks.js"></script>
 <style>
   :root{
     --radius:12px; --vvh:100vh;
@@ -548,7 +550,6 @@
   .sync-toolbar.stale,.sync-toolbar.saving{color:var(--warn)!important}
   .sync-toolbar.conflict{color:var(--bad)!important}
   .sync-toolbar.saving{opacity:.8}
-  #reviewToolbarButton.active{color:var(--accent)!important;box-shadow:inset 0 -2px 0 var(--accent)}
   .toolbar{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
   .color-tool{position:relative;display:inline-flex;align-items:center;height:24px}
   .color-tool-btn{position:relative;display:inline-flex;align-items:center;justify-content:center;
@@ -679,6 +680,15 @@
   /* One fill for every control in the tab row, defined once so they cannot drift apart. */
   .ptab-new,.tabrow-group{
     border:1px solid var(--accent);background:var(--accent);color:var(--tabrow-ink)}
+  /* The bubble glyph's slot, holding a back arrow once a page is open. Sized to match the
+     h2 it replaces so the title row does not shift as you move between home and page. */
+  /* The bubble's name is the page's title; it was set in the same size as the chrome around it. */
+  .bubble-name{font-family:var(--font-ui);font-size:21px;font-weight:600;letter-spacing:-.015em;
+    line-height:1.2}
+  .bubble-back{min-height:0;padding:2px 11px;font-size:19px;line-height:1.1;border-radius:9px;
+    background:var(--panel2);border:1px solid var(--line);color:var(--ink)}
+  .bubble-back:hover{border-color:var(--accent);background:var(--panel)}
+  .bubble-home-pane{flex:1;min-width:0;display:flex;flex-direction:column;overflow:auto}
   .ptab-new:hover{border-color:var(--accent);color:var(--tabrow-ink);
     background:color-mix(in srgb,var(--accent) 84%,var(--bg))}
   /* Deliberately NOT overflow:hidden — the ⋮ dropdown is a descendant and would be clipped away.
@@ -686,14 +696,14 @@
   .tabrow-group{display:inline-flex;align-items:stretch;flex-shrink:0;border-radius:9px}
   /* The ⋮ half is a button inside a positioning wrapper, so both need neutralising — the wrapper
      is not a button and the button is not a direct child. */
-  .tabrow-group>*,.tabrow-group .toolmenu-btn{
-    background:transparent;border:0;color:var(--tabrow-ink);
-    min-height:0;height:30px;width:34px;padding:0;display:inline-flex;
+  /* Equal segments, and one divider rule so they cannot drift apart as buttons are added. */
+  .tabrow-group>*{background:transparent;border:0;color:var(--tabrow-ink);
+    min-height:0;height:30px;width:38px;padding:0;display:inline-flex;border-radius:0;
     align-items:center;justify-content:center}
-  .tabrow-group>:first-child,.tabrow-group .toolmenu-btn{border-radius:8px 0 0 8px}
-  .tabrow-group>:last-child{border-radius:0 8px 8px 0;
-    border-left:1px solid color-mix(in srgb,var(--bg) 26%,transparent)}
-  .tabrow-group>*:hover,.tabrow-group .toolmenu-btn:hover,.tabrow-group .toolmenu-btn.on{
+  .tabrow-group>*+*{border-left:1px solid color-mix(in srgb,var(--bg) 30%,transparent)}
+  .tabrow-group>:first-child{border-radius:8px 0 0 8px}
+  .tabrow-group>:last-child{border-radius:0 8px 8px 0}
+  .tabrow-group>*:hover{
     color:var(--tabrow-ink);background:color-mix(in srgb,var(--accent) 84%,var(--bg))}
   .ptab{padding:4px 10px;border-radius:7px 7px 0 0;border:1px solid var(--line);
         background:var(--panel2);cursor:pointer;font-size:13px;display:flex;gap:6px;align-items:center;
@@ -708,31 +718,16 @@
   #editorHost{position:relative;flex:1;min-height:0;min-width:0;display:flex;overflow:hidden;overflow:clip}
   #editorWrap{flex:1;min-height:0;min-width:0;overflow:hidden;overflow:clip}
   #editorWrap .toastui-editor-defaultUI{height:100%}
-  #reviewWrap{flex:0 0 300px;min-width:240px;overflow:auto;border-left:1px solid var(--line);
-    background:var(--panel2);font-family:var(--font-ui)}
-  #editorHost.review-closed #reviewWrap,#editorHost.mode-view #reviewWrap{display:none}
-  #editorHost.mode-split #reviewWrap{order:1}
+  #reviewWrap{flex:0 0 348px;min-width:308px;overflow:auto;border-left:1px solid var(--line);
+    background:color-mix(in srgb,var(--panel) 55%,var(--bg));font-family:var(--font-ui);
+    padding:20px 18px 28px;display:flex;flex-direction:column;gap:30px}
+  #editorHost.marks-off #reviewWrap{display:none}
+  .pane-toggle.on{background:color-mix(in srgb,var(--tabrow-ink,#fff) 20%,transparent)}
   #editorHost.mode-split #previewWrap{order:2}
-  .review-hd{position:sticky;top:0;z-index:2;display:flex;gap:5px;align-items:center;padding:9px 10px;
-    background:var(--panel2);border-bottom:1px solid var(--line)}
-  .review-tab{font-size:12px;padding:4px 7px;border-radius:6px;background:transparent;border:1px solid transparent;color:var(--muted)}
-  .review-tab.active{color:var(--ink);border-color:var(--accent);background:var(--panel)}
-  .review-add{min-width:25px;padding:3px 7px!important;background:color-mix(in srgb,var(--accent) 24%,var(--panel))!important;
-    border-color:color-mix(in srgb,var(--accent) 55%,var(--line))!important;color:var(--accent)!important;font-weight:700}
-  .review-add:hover{background:color-mix(in srgb,var(--accent) 38%,var(--panel))!important}
-  .review-thread{margin:9px;border:1px solid var(--line);border-radius:8px;background:var(--panel);overflow:hidden}
-  .review-thread.selected{border-color:var(--accent);box-shadow:0 0 0 1px color-mix(in srgb,var(--accent) 35%,transparent)}
-  .review-thread summary{cursor:pointer;padding:8px 9px;font-size:12px;list-style:none}
-  .review-thread summary::-webkit-details-marker{display:none}
-  .review-thread summary::before{content:"▸ ";color:var(--muted)}
-  .review-thread[open] summary::before{content:"▾ "}
+  #editorHost.mode-split #reviewWrap,#editorHost.mode-view #reviewWrap{order:3}
   .review-meta{color:var(--muted);font-size:11px;margin-top:3px}
   .review-msg{border-top:1px solid var(--line);padding:8px 9px;font-size:13px;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere}
-  .review-thread summary>b,.review-msg b{font-size:11px;color:var(--accent);font-weight:700}
   .review-actions{display:flex;gap:5px;flex-wrap:wrap;padding:8px 9px;border-top:1px solid var(--line)}
-  .review-actions button{font-size:11px;padding:3px 6px}.review-compose{display:flex;flex-direction:column;gap:6px;padding:8px 9px;border-top:1px solid var(--line)}
-  .review-compose textarea{min-height:58px;resize:vertical;font:inherit;font-size:12px}
-  .review-compose-actions{display:flex;gap:6px;align-items:center}.review-orphan{color:var(--warn);font-size:11px;font-weight:700}
   .review-inline-edit{display:block;width:100%;box-sizing:border-box;min-height:66px;resize:vertical;font:inherit;font-size:13px}
   ::highlight(lockedin-review){background-color:rgba(245,204,62,.24)}
   /* The pending selection while a comment is being composed. Opening the review panel moves
@@ -825,6 +820,18 @@
   .presence{position:relative;flex-shrink:0}
   /* One pill, three segments: people · workers · connect. Dividers are borders on the segments
      rather than separate nodes, so the hover highlight fills a segment edge to edge. */
+  /* Presence and the tools menu share one pill; the inner card gives up its own edge so the
+     four segments read as one control. */
+  .hdr-cluster{display:inline-flex;align-items:stretch;overflow:visible;border-radius:999px;
+    border:1px solid var(--line);background:var(--panel2)}
+  .hdr-cluster .presence-group-card{border:0;border-radius:999px 0 0 999px;background:none}
+  .hdr-cluster .presence{display:inline-flex}
+  .hdr-cluster .toolmenu{display:inline-flex;align-items:stretch}
+  .hdr-cluster .toolmenu-btn{border:0;border-left:1px solid var(--line);border-radius:0 999px 999px 0;
+    background:none;color:var(--muted);min-height:28px;height:auto;padding:0 12px;
+    display:inline-flex;align-items:center}
+  .hdr-cluster .toolmenu-btn:hover,.hdr-cluster .toolmenu-btn.on{
+    background:color-mix(in srgb,var(--accent) 18%,transparent);color:var(--ink)}
   .presence-group-card{display:inline-flex;align-items:stretch;overflow:hidden;
     border-radius:999px;border:1px solid var(--line);background:var(--panel2)}
   .presence-seg{display:inline-flex;align-items:center;gap:5px;padding:0 11px;min-height:28px;
@@ -1243,6 +1250,10 @@
   }
   let _appliedHash=null;
   function pushRoute(hash){ history.pushState(null,"",routeHref(hash)); _appliedHash=location.hash; }
+  /** Push a route AND act on it. `pushRoute` deliberately suppresses the router, because most
+   *  callers have already done the navigation themselves; moving between a bubble's home and
+   *  its pages is the case where nobody has, so the route has to be applied. */
+  function gotoRoute(hash){ history.pushState(null,"",routeHref(hash)); applyHash(); }
   /** Move this tab to another workspace without routing; the caller owns the destination. */
   function adoptWorkspace(id){
     if(!id||id===S.workspaceId)return;
@@ -1275,7 +1286,13 @@
     const am=h.match(/^asset\/([^/]+)$/);
     if(am){openAssetById(decodeURIComponent(am[1]),{noRoute:true});return;}
     const m=h.match(/^bubble\/([^/]+)(?:\/([^/]+))?$/);
-    if(m){openBubble(m[1],{noRoute:true,page:m[2]||null});return;}
+    if(m){
+      // `bubble/<slug>` is the bubble's *home* — the idea, the document, the chalk talks.
+      // `bubble/<slug>/<page>` is a document page. The underlying pane still opens either way,
+      // so closing the home lands you on a real page rather than on nothing.
+      openBubble(m[1],{noRoute:true,page:m[2]||null});
+      return;
+    }
     switchView("assets",{noRoute:true});
   }
   // Back/forward fires popstate, while a link or a script assigning location.hash fires only
@@ -1546,6 +1563,24 @@
     validateEditorCommentMarkup(value);
     return parseTextColorWrappers(value);
   }
+  const CMT_OPEN=id=>`@@LICMS${id}LICMS@@`, CMT_CLOSE="@@LICME@@";
+  function markCommentWrappers(value){
+    const source=String(value||""), wrappers=parseCommentWrappers(source);
+    if(!wrappers.length)return source;
+    let out="",cursor=0;
+    wrappers.forEach(w=>{
+      out+=source.slice(cursor,w.openStart)+CMT_OPEN(w.id)+source.slice(w.bodyStart,w.bodyEnd)+CMT_CLOSE;
+      cursor=w.closeEnd;
+    });
+    return out+source.slice(cursor);
+  }
+  function commentTokensToHtml(html){
+    // The id charset is already constrained by the pattern (wrapper ids are token_urlsafe), so
+    // it needs no escaping — and this runs at top level, where escAttr is not in scope.
+    return String(html)
+      .replace(/@@LICMS([A-Za-z0-9_-]+)LICMS@@/g,(_,id)=>'<mark class="tk-anno" data-note="'+id+'">')
+      .replace(/@@LICME@@/g,"</mark>");
+  }
   function stripCommentMarkers(value){
     const source=String(value||""), wrappers=parseCommentWrappers(source); if(!wrappers.length)return source;
     let out="",cursor=0;
@@ -1574,7 +1609,7 @@
     const store=[], captionStore=[]; let s=md||"";
     // Inline review delimiters are source-only. Strip them before math/KaTeX processing and
     // before marked.js renders the preview, while leaving the markers visible in Markdown mode.
-    try{ s=stripCommentMarkers(s); parseTextColorWrappers(s); }
+    try{ s=opts.markComments?markCommentWrappers(s):stripCommentMarkers(s); parseTextColorWrappers(s); }
     catch(error){if(error&&(error.name==="CommentMarkupError"||error.name==="TextColorMarkupError"))return reviewMarkupErrorHtml(error);throw error;}
     if(opts.sourceMarkers) s=withSourceMarkers(s);
     // Stored report Markdown predates workspaces. Add the active workspace capability at render
@@ -1776,7 +1811,7 @@
     // Restore inline code LAST and globally (placeholders can land inside theorem HTML too).
     // Escape HTML so the literal source shows verbatim; unescape \| like marked does in tables.
     html=html.replace(/@@IC(\d+)@@/g,(_,i)=>'<code>'+escHtml(icStore[+i].replace(/\\\|/g,"|"))+'</code>');
-    return html;
+    return opts.markComments?commentTokensToHtml(html):html;
   }
 
   function withSourceMarkers(md){
@@ -1811,6 +1846,92 @@
     return out;
   }
 
+  // One mark surface for the whole product: the same five kinds, picker, gutter card and
+  // quote-plus-context anchor a chalk-talk slide uses, pointed at the rendered page. Nothing is
+  // written into the page Markdown — the anchor lives in a sidecar beside it.
+  function bindPageMarks(){
+    const wrap=$("#previewWrap"), gutter=$("#reviewWrap");
+    if(!wrap||!window.LockedInMarks||!S.bubble||!S.page)return;
+    if(!S.paneRight)return;   // nothing to paint, nothing to select into
+    window.LockedInMarks.paint(wrap,S.comments||[]);
+    if(gutter&&!S.commentDraftAnchor)
+      window.LockedInMarks.gutter(gutter,S.comments||[],
+        {onDelete:id=>markDelete(id),onEdit:(id,text)=>markEdit(id,text),
+         onReply:(id,text)=>markReply(id,text)});
+    if(wrap.dataset.marksBound!=="1"){
+      wrap.dataset.marksBound="1";
+      wrap.addEventListener("mouseup",()=>setTimeout(startMarkFromPreview,0));
+    }
+  }
+  async function markReply(id,text){
+    if(id===null||!text){renderReview();return;}
+    const state=captureReviewEditorState(); setReviewMutationBusy(true);
+    try{
+      const result=await api("/api/bubbles/"+S.bubble+"/pages/"+S.page+"/comments/"+id+"/replies",
+        {method:"POST",body:JSON.stringify({body:text})});
+      applyAuthoritativeReviewResponse(result,state);
+    }catch(e){toast(e.message);renderReview();}finally{setReviewMutationBusy(false);}
+  }
+  async function markEdit(id,text){
+    if(id===null){renderReview();return;}                 // cancelled
+    const t=(S.comments||[]).find(x=>x.id===id); if(!t)return;
+    const msgs=t.messages||[];
+    const first=msgs[msgs.length-1];   // your last turn is the only editable one
+    const state=captureReviewEditorState(); setReviewMutationBusy(true);
+    try{
+      // A mark left with no prose has no message yet, so the first edit creates one.
+      const result=first
+        ? await api("/api/bubbles/"+S.bubble+"/pages/"+S.page+"/comments/"+id+"/messages/"+first.id,
+            {method:"PATCH",body:JSON.stringify({body:text})})
+        : await api("/api/bubbles/"+S.bubble+"/pages/"+S.page+"/comments/"+id+"/replies",
+            {method:"POST",body:JSON.stringify({body:text})});
+      applyAuthoritativeReviewResponse(result,state);
+    }catch(e){toast(e.message);renderReview();}finally{setReviewMutationBusy(false);}
+  }
+  async function markDelete(id){
+    const content=S.editor&&S.editor.getMarkdown?S.editor.getMarkdown():"";
+    const state=captureReviewEditorState(); setReviewMutationBusy(true);
+    try{
+      const result=await api("/api/bubbles/"+S.bubble+"/pages/"+S.page+"/comments/"+id,
+        {method:"DELETE",body:JSON.stringify({content,base_mtime:S.baseMtime})});
+      applyAuthoritativeReviewResponse(result,state);
+    }catch(e){toast(e.message);}finally{setReviewMutationBusy(false);}
+  }
+  // Select rendered text -> five marks -> a real \comment{id}{…} wrapper in the source. The id
+  // is the mark's identity, and because the wrapper surrounds the text it survives the editing
+  // a report page gets constantly, where a remembered quote would quietly stop matching.
+  function startMarkFromPreview(){
+    if(S.commentDraftAnchor)return;
+    if(document.querySelector(".tk-pop"))return;
+    const sel=window.getSelection&&window.getSelection();
+    if(!sel||sel.isCollapsed)return;
+    const wrap=$("#previewWrap");
+    if(!wrap||!wrap.contains(sel.anchorNode))return;
+    const found=previewSelectionOffsets();
+    if(!found)return;
+    const range=sel.getRangeAt(0).cloneRange(), rect=range.getBoundingClientRect();
+    window.LockedInMarks.clearPending();
+    window.LockedInMarks.pendingRange(range);
+    sel.removeAllRanges();
+    window.LockedInMarks.picker(rect.left,rect.bottom+8,found.quote,async(kind,text)=>{
+      const content=S.editor&&S.editor.getMarkdown?S.editor.getMarkdown():"";
+      if(content.slice(found.start,found.end)!==found.quote){toast("The text changed. Select it again.");return;}
+      if(S.baseMtime==null){toast("Still loading the page revision — try again in a moment.");primeSync();return;}
+      try{
+        const overlap=parseCommentWrappers(content).some(w=>found.start<w.closeEnd&&found.end>w.openStart);
+        if(overlap){toast("Marks cannot overlap or nest.");return;}
+      }catch(error){toast(error.message);return;}
+      const offsets=serverSelectionOffsets(content,found.start,found.end);
+      const state=captureReviewEditorState(); setReviewMutationBusy(true);
+      try{
+        const result=await api("/api/bubbles/"+S.bubble+"/pages/"+S.page+"/comments",{method:"POST",
+          body:JSON.stringify({body:text,kind,content,base_mtime:S.baseMtime,
+            selection_start:offsets.start,selection_end:offsets.end})});
+        if(!Array.isArray(result.threads)&&result.thread)upsertReviewThread(result.thread);
+        applyAuthoritativeReviewResponse(result,state);
+      }catch(e){toast(e.message);}finally{setReviewMutationBusy(false);}
+    });
+  }
   function bindPreviewSourceOffsets(root){
     const walker=document.createTreeWalker(root,NodeFilter.SHOW_COMMENT);
     const markers=[]; let node;
@@ -1891,7 +2012,7 @@
     pollTimer:null, lastPageMtime:null, lastManifestMtime:null, lastAssetsMtime:null,
     baseMtime:null, autosaveTimer:null, saving:false, syncState:"synced", applyingRemote:false,
     previewEl:null, remoteChangePending:false, toolsMenu:null,
-    comments:[], reviewOpen:false, reviewTab:"open", selectedComment:null, lastCommentsMtime:null,
+    comments:[], selectedComment:null, lastCommentsMtime:null,
     reviewSelection:null, reviewHitTargets:[], reviewMarkupError:null, reviewHighlightFrame:null,reviewMutationObserver:null,
     reviewMutating:false,reviewMutationEpoch:0,reviewCommentsLoaded:false,
     refAc:null,
@@ -3671,24 +3792,19 @@
       const menu=el("div",{class:"toolmenu-panel",role:"menu",onclick:e=>e.stopPropagation()});
       // View first: it is the control reached for most, and on a phone it is reachable nowhere
       // else — the toolbar select this replaced was hidden on narrow screens.
-      menu.append(el("div",{class:"toolmenu-group"},"View"));
-      [["split","\u25e7","Split"],["edit","\u270f\ufe0f","Edit"],["view","\ud83d\udc41","Read"]].forEach(([mode,icon,label])=>{
-        menu.append(item(icon,label,{on:mode===S.viewMode&&!S.editingTitles,
-          title:"Show this page as "+label.toLowerCase(),
-          run:async()=>{
-            // Renaming is a mode you are *in*; leaving it for a view mode saves the edits first.
-            if(S.editingTitles) await toggleEditTitles();
-            setViewMode(mode);
-          }}));
-      });
-      // Renaming pages and the bubble used to hide inside the view picker as a fourth "mode".
-      menu.append(item("\ud83c\udff7\ufe0f","Edit titles",
+      // View modes are gone: ◧ and ◨ in the tab row are the two switches those three names
+      // were combinations of. Renaming is still a mode you are *in*, so it stays.
+      // Page-scoped entries only make sense with a page open. On the bubble home the bubble-wide
+      // ones still do, so the menu keeps working rather than emptying out.
+      const onPage=!S.onBubbleHome;
+      if(onPage) menu.append(item("\ud83c\udff7\ufe0f","Edit titles",
         {on:S.editingTitles,
          title:S.editingTitles?"Save the page and bubble names":"Rename pages and this bubble",
          run:()=>toggleEditTitles()}));
       menu.append(el("div",{class:"toolmenu-group"},"This bubble"));
-      menu.append(item("\ud83e\udd16","Connect an agent",
-        {title:"Set up a terminal to work on this bubble",run:()=>openScientistSetup(slug)}));
+      menu.append(item("\ud83c\udfe0","Bubble home",
+        {title:"The idea, the document, and the chalk talks",
+         run:()=>gotoRoute("bubble/"+slug)}));
       menu.append(item("\ud83d\udcda","Papers",
         {title:"Papers attached to this bubble",run:()=>openBubblePapers(slug)}));
       menu.append(item("\ud83d\udcc1","Assets",
@@ -3702,14 +3818,14 @@
       if(b.overleaf_url)
         menu.append(item("\u270f\ufe0f","Change or remove link",
           {title:"Change or remove Overleaf project",run:()=>openOverleafModal(b)}));
-      menu.append(el("div",{class:"toolmenu-group"},"Sharing"));
+      if(onPage) menu.append(el("div",{class:"toolmenu-group"},"Sharing"));
       // The owner preview is exactly what a share viewer sees, so it is redundant once the public
       // link itself is one row below — the same rule the old toolbar followed by hiding it.
-      if(!S.shareActive)
+      if(onPage&&!S.shareActive)
         menu.append(item("\ud83d\udc41","Preview page",
           {title:"Preview the read-only page your share viewers see",
            run:()=>openReadOnlyPreview(slug)}));
-      menu.append(item(el("span",{class:"toolmenu-dot"+(S.shareActive?" on":"")}),"Public link",
+      if(onPage) menu.append(item(el("span",{class:"toolmenu-dot"+(S.shareActive?" on":"")}),"Public link",
         {note:S.shareActive?"On":"Off",noteOn:S.shareActive,keepOpen:true,
          title:S.shareActive?"Public link is live \u2014 click to stop sharing"
                             :"Make this bubble viewable via an unlisted link",
@@ -3926,10 +4042,21 @@
     S.shareActive=!!b.share_active; S.shareToken=b.share_token||"";
     // Bubble creation is explicit and immediately creates its report workspace. The approval
     // branch below only protects against an old direct link while its legacy data is cleaned up.
-    const nameSpan=el("span",{class:"truncate",style:"max-width:60vw"},b.name);
+    const nameSpan=el("span",{class:"truncate bubble-name",style:"max-width:60vw"},b.name);
     S.nameSpan=nameSpan;
+    // On a page the bubble glyph is the way back to the bubble's home; on the home itself
+    // there is nowhere to go back to, so it stays a glyph. One affordance, in the place you
+    // already look — the bubble's own title.
+    const onHome=!page; S.onBubbleHome=onHome;
+    // The glyph's slot is the way back, at every depth: from a page it returns to the bubble's
+    // home, and from inside a chalk talk it returns to the same place. Only the home itself has
+    // nowhere to go, and only there is it a glyph.
+    const backTo=fn=>el("button",{class:"bubble-back",title:"Back to the bubble\u2019s home",
+      "aria-label":"Back to the bubble\u2019s home",onclick:fn},"\u2039");
+    const glyph=el("h2",{class:"section-title",style:"margin:0"},"🫧 ");
+    const mark=onHome?glyph:backTo(()=>gotoRoute("bubble/"+slug));
     const titleRow=el("div",{class:"row bubble-title",style:"margin:10px 0 12px;align-items:center;gap:8px;flex-wrap:wrap"},
-      el("h2",{class:"section-title",style:"margin:0"},"🫧 "), nameSpan);
+      mark, nameSpan);
     if(!b.approved){
       titleRow.append(el("button",{class:"ghost small",title:"Rename bubble",
         style:"opacity:.5;padding:4px 7px;flex-shrink:0",
@@ -3938,13 +4065,16 @@
     titleRow.append(el("span",{class:"spacer"}));
     if(b.approved){
       S.presenceEl=el("div",{class:"presence hide"});
-      titleRow.append(S.presenceEl);
       startPresence(slug);
     }
-    // Built here, but homed in the page toolbar by refreshTabs: it needs the bubble detail (the
-    // Overleaf link), which that function does not have, and rebuilding it every refresh would
-    // drop an open panel.
-    if(b.approved) S.toolsMenu=buildBubbleToolsMenu(slug,b);
+    // The ⋮ is the pill's fourth segment, not a chip beside it: people · workers · connect ·
+    // tools are all "this bubble", and four separate rounded shapes read as more chrome than
+    // the row has business showing.
+    if(b.approved){
+      S.toolsMenu=buildBubbleToolsMenu(slug,b);
+      const cluster=el("div",{class:"hdr-cluster"},S.presenceEl,S.toolsMenu);
+      titleRow.append(cluster);
+    }
     m.append(titleRow);
 
     const wrap=el("div",{id:"detail"});
@@ -3953,6 +4083,29 @@
 
     if(!b.approved){ buildApprovalPane(left,b); }
     else { buildWorkspace(left,b); }
+    // The bubble's home *is* the bubble's view when no page is selected. The workspace is still
+    // built underneath — every invariant the poll, presence and tab machinery rely on stays
+    // true — but it is the home that occupies the pane until you pick a page.
+    if(b.approved&&onHome&&window.LockedInTalks){
+      left.classList.add("hide");
+      // Not a `.pane`: each band already draws its own container, and wrapping the lot in one
+      // more card put a box inside a box inside a box.
+      const homeHost=el("div",{class:"bubble-home-pane"});
+      wrap.append(homeHost);
+      window.LockedInTalks.mount(homeHost,slug,{name:b.name,
+        onPage:p=>gotoRoute("bubble/"+slug+"/"+encodeURIComponent(p)),
+        // Opening a talk goes a level deeper without changing the route, so the title's glyph
+        // has to follow it down and become the way back out.
+        onView:(()=>{
+          // Built once: render() fires on every slide change, and a fresh button each time
+          // would churn the DOM and drop focus.
+          const deckBack=backTo(()=>window.LockedInTalks.home());
+          return view=>{
+            const cur=titleRow.firstChild, want=view==="home"?glyph:deckBack;
+            if(cur!==want)titleRow.replaceChild(want,cur);
+          };
+        })()});
+    }
     // Focus mode is a per-tab workspace preference. Restore it after the bubble UI exists so
     // refreshing the current bubble keeps the same focused page instead of returning to chrome.
     if(b.approved&&sessionStorage.getItem("li_bubble_focus")==="1"){
@@ -3982,9 +4135,12 @@
     S.previewEl=el("div",{id:"previewWrap",class:"preview"});
     // Open in the user's last-used view mode for this bubble (persisted across refreshes),
     // defaulting to reading view. The toolbar dropdown switches to editor / side-by-side.
-    S.viewMode=loadViewMode(b.slug);
-    S.reviewOpen=localStorage.getItem("lockedin:review:"+b.slug)==="1";
-    const host=el("div",{id:"editorHost",class:"mode-"+S.viewMode+(S.reviewOpen?"":" review-closed")});
+    S.viewMode="split";   // derived below from the pane toggles; kept for editor-only guards
+    const saved=(()=>{try{return localStorage.getItem("lockedin:panes:"+b.slug)||"";}catch(e){return "";}})();
+    S.paneLeft=saved.includes("L"); S.paneRight=saved.includes("R");
+    S.viewMode=S.paneLeft?"split":"view";
+    const host=el("div",{id:"editorHost",
+      class:(S.paneLeft?"mode-split":"mode-view")+(S.paneRight?"":" marks-off")});
     host.append(editorWrap, reviewWrap, S.previewEl);
     left.append(tabs,host);
 
@@ -4100,7 +4256,6 @@
                          // view, which can scroll the whole document and hide the app
       toolbarItems:[[
         {name:"page-sync",tooltip:"Page sync status",el:buildSyncTool()},
-        {name:"review-toggle",tooltip:"Toggle review comments",el:buildReviewTool()},
         'image','table',
         {name:"text-color",tooltip:"Color selected text",el:buildColorTool()},
         {name:"center-text",tooltip:"Center selected text",el:buildCenterTextTool()},
@@ -4485,10 +4640,11 @@
       }
       throw error;
     }
-    S.previewEl.innerHTML=renderMarkdown(markdown,{refs:S.refs,pageSlug:S.page,citationPdfLinks:true,sourceMarkers:true});
+    S.previewEl.innerHTML=renderMarkdown(markdown,{refs:S.refs,pageSlug:S.page,citationPdfLinks:true,sourceMarkers:true,markComments:!!S.paneRight});
     bindPreviewSourceOffsets(S.previewEl);
     decorateFigures(S.previewEl);
     linkifyWikilinks(S.previewEl);
+    bindPageMarks();
     if(restartGifs) restartGifPlayback(S.previewEl);
     else restorePreviewResources(S.previewEl,savedResources);
     const restoreScroll=()=>{ S.previewEl.scrollTop=sTop; S.previewEl.scrollLeft=sLeft; };
@@ -4510,7 +4666,11 @@
     const openCommentAtPointer=e=>{
       const hit=(S.reviewHitTargets||[]).find(target=>target.rects.some(rect=>
         e.clientX>=rect.left&&e.clientX<=rect.right&&e.clientY>=rect.top&&e.clientY<=rect.bottom));
-      if(hit)openReviewThread(hit.id);
+      if(!hit)return;
+      S.selectedComment=hit.id;
+      const card=document.querySelector('#reviewWrap .tk-note[data-note="'+CSS.escape(String(hit.id))+'"]');
+      if(card){card.scrollIntoView({block:"nearest"});card.style.borderColor="var(--accent)";
+        setTimeout(()=>{card.style.borderColor="";},900);}
     };
     const captureSelection=()=>requestAnimationFrame(()=>{snapshotReviewSelection();scheduleEditorCommentHighlights();});
     // Bind to the stable editor host. Toast replaces its ProseMirror root during setMarkdown;
@@ -4825,6 +4985,7 @@
     // scrolls page creation off-screen and out of reach.
     if(!S.editingTitles) tabs.prepend(el("button",{type:"button",class:"ptab-new",
       title:"New page","aria-label":"New page",onclick:newPage},"+"));
+
     // Keep page creation outside the horizontally scrolling tab list.  Once a bubble has
     // enough tabs, a button in that list can be clipped/off-screen and become unreachable.
     // Papers, the view modes and Edit titles all live in the ⋮ menu now. What is left flanks the
@@ -4833,11 +4994,22 @@
     // page switch and every poll — rebuilding the menu would drop an open panel.
     // One card, two halves: the menu and the focus toggle are both "what to do with this view",
     // and two separate pills for that read as more chrome than the row has business showing.
+    // Four controls, and the two on the outside say what they do by where they are: the left
+    // one opens the pane on the left, the right one opens the pane on the right. "Split / Edit /
+    // Read" named three combinations of the same two switches, so the switches are the control
+    // now and the modes are gone.
     const group=el("div",{class:"tabrow-group"});
-    if(S.toolsMenu) group.append(S.toolsMenu);
+    group.append(el("button",{class:"small pane-toggle"+(S.paneLeft?" on":""),id:"paneLeftToggle",
+      title:S.paneLeft?"Hide the Markdown editor":"Show the Markdown editor",
+      "aria-label":"Toggle the Markdown editor","aria-pressed":String(!!S.paneLeft),
+      onclick:()=>setPane("left",!S.paneLeft)},"◧"));
     group.append(el("button",{class:"small",id:"bubbleFocusToggle",
       title:"Enter focused workspace", "aria-label":"Enter focused workspace",
       onclick:()=>setBubbleFocus(!S.bubbleFocus)},"⛶"));
+    group.append(el("button",{class:"small pane-toggle"+(S.paneRight?" on":""),id:"paneRightToggle",
+      title:S.paneRight?"Hide your marks":"Show your marks",
+      "aria-label":"Toggle the marks column","aria-pressed":String(!!S.paneRight),
+      onclick:()=>setPane("right",!S.paneRight)},"◨"));
     controls.append(group);
     refreshPageVisibilityTool();
     refreshHiddenPagesTool();
@@ -5142,18 +5314,29 @@
     b.addEventListener("click",e=>{ e.preventDefault(); onClick(); });
     return b;
   }
-  function buildReviewTool(){
-    const b=editorToolButton("reviewToolbarButton","Toggle review comments",toggleReview);
-    b.classList.toggle("active",!!S.reviewOpen);
-    b.textContent="💬"; return b;
+  // Both panes closed is the reading state: the rendered page and nothing else. Marks are not
+  // merely hidden then — they are not painted at all, because a highlight you cannot open or
+  // answer is decoration on someone else's prose.
+  function applyPanes(){
+    const host=$("#editorHost"); if(!host)return;
+    host.classList.toggle("mode-split",!!S.paneLeft);
+    host.classList.toggle("mode-view",!S.paneLeft);
+    host.classList.remove("mode-edit");
+    host.classList.toggle("marks-off",!S.paneRight);
+    const l=$("#paneLeftToggle"),r=$("#paneRightToggle");
+    if(l){l.classList.toggle("on",!!S.paneLeft);l.setAttribute("aria-pressed",String(!!S.paneLeft));
+      l.title=S.paneLeft?"Hide the Markdown editor":"Show the Markdown editor";}
+    if(r){r.classList.toggle("on",!!S.paneRight);r.setAttribute("aria-pressed",String(!!S.paneRight));
+      r.title=S.paneRight?"Hide your marks":"Show your marks";}
   }
-  function toggleReview(){
-    if(S.viewMode==="view")return;
-    S.reviewOpen=!S.reviewOpen;
-    try{localStorage.setItem("lockedin:review:"+S.bubble,S.reviewOpen?"1":"0");}catch(e){}
-    const host=$("#editorHost"); if(host)host.classList.toggle("review-closed",!S.reviewOpen);
-    const b=$("#reviewToolbarButton"); if(b)b.classList.toggle("active",S.reviewOpen);
-    if(S.reviewOpen)renderReview();
+  function setPane(side,on){
+    if(side==="left")S.paneLeft=!!on; else S.paneRight=!!on;
+    S.viewMode=S.paneLeft?"split":"view";
+    try{localStorage.setItem("lockedin:panes:"+S.bubble,
+      (S.paneLeft?"L":"")+(S.paneRight?"R":""));}catch(e){}
+    applyPanes();
+    updatePreview();          // marks are painted only when their column is open
+    if(S.editor&&S.editor.setHeight)try{S.editor.setHeight("100%");}catch(e){}
   }
   function snapshotReviewSelection(){
     const content=S.editor&&S.editor.getMarkdown?S.editor.getMarkdown():"",view=editorView();let selection=null;
@@ -5169,19 +5352,47 @@
     const start=Math.max(0,Math.min(selection.from,selection.to,content.length)),end=Math.max(start,Math.min(Math.max(selection.from,selection.to),content.length));
     S.reviewSelection={start,end,quote:content.slice(start,end)};return S.reviewSelection;
   }
-  function startComment(){
-    const selection=S.reviewSelection;
-    if(!selection||selection.start===selection.end){toast("Select text first");return;}
-    const content=S.editor.getMarkdown();
-    if(content.slice(selection.start,selection.end)!==selection.quote){toast("The selected text changed. Select it again.");return;}
-    try{
-      const overlap=parseCommentWrappers(content).some(w=>selection.start<w.closeEnd&&selection.end>w.openStart);
-      if(overlap){toast("Comments cannot overlap or be nested.");return;}
-    }catch(error){toast(error.message);updatePreview();return;}
-    if(!S.reviewOpen)toggleReview();
-    S.reviewTab="open";S.commentDraftAnchor={...selection}; S.selectedComment=null; renderReview();
-    scheduleEditorCommentHighlights();
+  // Marking the *rendered* text, not the Markdown source. This is how a chalk-talk slide is
+  // marked, and having to hunt for a sentence in raw Markdown to say "I don't follow" about it
+  // was the reason the two surfaces felt like different products.
+  //
+  // The rendered selection is mapped back to source offsets in two steps: the enclosing block
+  // carries a `data-source-start`/`data-source-end` pair (already put there by
+  // bindPreviewSourceOffsets for the scroll sync), which narrows the search to one block, and
+  // the selected text is then located inside that block's source. Markdown eats emphasis
+  // characters, so a run that reads as continuous may be `**bold** text` underneath — those
+  // characters are allowed to reappear between any two selected characters.
+  function findInBlockSource(hay,want){
+    const direct=hay.indexOf(want);
+    if(direct>=0)return {start:direct,end:direct+want.length};
+    const pattern=want.split("").map(ch=>{
+      const c=ch.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+      return ch===" "?"[\\s]+":c;
+    }).join("[*_`~]*");
+    const m=new RegExp(pattern).exec(hay);
+    return m?{start:m.index,end:m.index+m[0].length}:null;
   }
+  function previewSelectionOffsets(){
+    const wrap=$("#previewWrap");
+    if(!wrap||!S.editor||!S.editor.getMarkdown)return null;
+    const sel=window.getSelection&&window.getSelection();
+    if(!sel||!sel.rangeCount||sel.isCollapsed)return null;
+    const range=sel.getRangeAt(0);
+    if(!wrap.contains(range.commonAncestorContainer))return null;
+    const want=range.toString().replace(/\s+/g," ").trim();
+    if(want.length<2)return null;
+    const content=S.editor.getMarkdown();
+    let el=range.commonAncestorContainer;
+    if(el.nodeType===Node.TEXT_NODE)el=el.parentNode;
+    while(el&&el!==wrap&&!(el.dataset&&el.dataset.sourceStart))el=el.parentElement;
+    const from=el&&el.dataset&&el.dataset.sourceStart?+el.dataset.sourceStart:0;
+    const to=el&&el.dataset&&el.dataset.sourceEnd?+el.dataset.sourceEnd:content.length;
+    const hit=findInBlockSource(content.slice(from,to),want);
+    if(!hit)return null;
+    const start=from+hit.start,end=from+hit.end;
+    return {start,end,quote:content.slice(start,end)};
+  }
+
   function refreshCommentSourceState(){
     const content=S.editor&&S.editor.getMarkdown?S.editor.getMarkdown():"";let byId=new Map();
     try{byId=new Map(validateEditorCommentMarkup(content).map(wrapper=>[wrapper.id,wrapper]));S.reviewMarkupError=null;}
@@ -5191,27 +5402,12 @@
       thread._start=wrapper?wrapper.bodyStart:-1;thread._end=wrapper?wrapper.bodyEnd:-1;
     });
   }
-  function openReviewThread(id){
-    S.selectedComment=id;S.reviewTab="open";
-    if(!S.reviewOpen){S.reviewOpen=true;try{localStorage.setItem("lockedin:review:"+S.bubble,"1");}catch(e){}
-      const host=$("#editorHost");if(host)host.classList.remove("review-closed");const button=$("#reviewToolbarButton");if(button)button.classList.add("active");}
-    renderReview();requestAnimationFrame(()=>{const node=document.querySelector('.review-thread[data-review-id="'+CSS.escape(String(id))+'"]');if(node)node.scrollIntoView({block:"nearest"});});
-  }
   async function loadComments(){
     if(!S.bubble||!S.page||S.reviewMutating)return;
     const bubble=S.bubble,page=S.page,epoch=S.reviewMutationEpoch||0;
     try{const r=await api("/api/bubbles/"+bubble+"/pages/"+page+"/comments");
       if(S.bubble===bubble&&S.page===page&&!S.reviewMutating&&epoch===(S.reviewMutationEpoch||0)){S.comments=r.threads||[];S.reviewCommentsLoaded=true;refreshCommentSourceState();scheduleEditorCommentHighlights();renderReview();if(S.reviewMarkupError)updatePreview();}}
     catch(e){}
-  }
-  function reviewThreads(){
-    const status=S.reviewTab||"open";
-    return (S.comments||[]).filter(t=>(t.status||"open")===status).sort((a,b)=>{
-      // A detached thread stays where its original source selection was, rather than falling
-      // to the end of review. This preserves the reviewer’s spatial reading order.
-      const aa=a._start<0?Number((a.anchor||{}).start||0):a._start;
-      const bb=b._start<0?Number((b.anchor||{}).start||0):b._start; return aa-bb;
-    });
   }
   function captureReviewEditorState(){
     const selection=currentEditorSelectionOffsets(),scrolls=(reviewEditorScrollElements()||[]).map(node=>({node,top:node.scrollTop,left:node.scrollLeft}));
@@ -5284,71 +5480,22 @@
     requestAnimationFrame(()=>{
       restoreReviewEditorScroll(state);
       setTimeout(()=>{restoreReviewEditorScroll(state);scheduleEditorCommentHighlights();},30);
-      renderReview();scheduleEditorCommentHighlights();
+      // The new wrapper only becomes a highlight once the preview is rebuilt from the
+      // authoritative source that now contains it.
+      updatePreview();renderReview();scheduleEditorCommentHighlights();bindPageMarks();
     });
   }
+  // One owner for this panel. It used to render its own tabs, composer and reply threads, which
+  // fought with the mark gutter for the same element — whichever ran last won. A page mark is a
+  // slide note now: five kinds, a quote, an optional sentence, and removal. No tabs, no replies,
+  // no resolve, because a mark whose point has been taken should leave rather than move to a
+  // list nobody reads.
   function renderReview(){
-    const wrap=$("#reviewWrap"); if(!wrap)return; wrap.innerHTML="";
-    const hd=el("div",{class:"review-hd"});
-    ["open","resolved"].forEach(tab=>hd.append(el("button",{class:"review-tab "+(S.reviewTab===tab?"active":""),onclick:()=>{S.reviewTab=tab;renderReview();}},tab[0].toUpperCase()+tab.slice(1))));
-    hd.append(el("span",{class:"spacer"}),el("button",{class:"ghost small review-add",title:"Add comment to selected text","aria-label":"Add comment to selected text",onmousedown:e=>e.preventDefault(),onclick:startComment},"+"));
-    wrap.append(hd);
-    if(S.commentDraftAnchor){
-      const ta=el("textarea",{placeholder:"Add a review comment…"}), save=el("button",{class:"primary small"},"Comment");
-      save.onclick=async()=>{
-        const selection=S.commentDraftAnchor,content=S.editor&&S.editor.getMarkdown?S.editor.getMarkdown():"";
-        if(!ta.value.trim()){toast("Comment text required");return;}
-        if(!selection||content.slice(selection.start,selection.end)!==selection.quote){toast("The selected text changed. Select it again.");return;}
-        if(S.baseMtime==null){toast("The page revision is still loading. Try again in a moment.");primeSync();return;}
-        const serverOffsets=serverSelectionOffsets(content,selection.start,selection.end);
-        const state=captureReviewEditorState();save.disabled=true;setReviewMutationBusy(true);
-        try{
-          const result=await api("/api/bubbles/"+S.bubble+"/pages/"+S.page+"/comments",{method:"POST",body:JSON.stringify({
-            body:ta.value,content,base_mtime:S.baseMtime,selection_start:serverOffsets.start,selection_end:serverOffsets.end})});
-          if(!Array.isArray(result.threads)&&result.thread)upsertReviewThread(result.thread);
-          S.commentDraftAnchor=null;S.reviewSelection=null;S.selectedComment=result.thread&&result.thread.id||null;
-          applyAuthoritativeReviewResponse(result,state);
-        }catch(e){toast(e.message);save.disabled=false;}finally{setReviewMutationBusy(false);}
-      };
-      // Abandoning the draft must also drop its highlight, so the editor never keeps a painted
-      // range that no longer belongs to anything.
-      const cancel=el("button",{class:"ghost small"},"Cancel");
-      cancel.onclick=()=>{S.commentDraftAnchor=null;renderReview();scheduleEditorCommentHighlights();};
-      wrap.append(el("div",{class:"review-compose"},el("b",{},"New review"),ta,
-        el("div",{class:"review-compose-actions"},save,cancel))); setTimeout(()=>ta.focus(),0);
-    }
-    const rows=reviewThreads(); if(!rows.length&&!S.commentDraftAnchor)wrap.append(el("div",{class:"muted",style:"padding:12px;font-size:12px"},"No "+S.reviewTab+" reviews."));
-    rows.forEach(t=>wrap.append(reviewThreadNode(t)));
-  }
-  function reviewThreadNode(t){
-    const messages=t.messages||[], first=messages[0]||{}, details=el("details",{class:"review-thread"+(S.selectedComment===t.id?" selected":""),"data-review-id":t.id});
-    details.open=S.selectedComment===t.id;
-    const replyCount=Math.max(0,messages.length-1);
-    const summary=el("summary",{},el("b",{},first.author||"Unknown"),
-      el("div",{class:"review-meta"},replyCount?(replyCount+" "+(replyCount===1?"reply":"replies")):"No replies"));
-    if(t._start<0||t.anchor_state==="unanchored")summary.append(el("span",{class:"review-orphan"}," Unanchored"));
-    summary.onclick=e=>{e.preventDefault();S.selectedComment=t.id;if(t._start>=0)scrollToCommentAnchor(t);renderReview();}; details.append(summary);
-    (t.messages||[]).forEach(msg=>{
-      const row=el("div",{class:"review-msg"},el("b",{},msg.author||"Unknown")," "+msg.body);
-      if(msg.author===S.user){
-        row.title="Double-click to edit";
-        row.ondblclick=e=>{ e.preventDefault(); e.stopPropagation(); inlineEditReviewMessage(t,msg,row); };
-      }
-      details.append(row);
-    });
-    const reply=el("textarea",{placeholder:"Reply…"}), actions=el("div",{class:"review-actions"});
-    actions.append(el("button",{class:"ghost",onclick:()=>replyReview(t,reply)},"Reply"));
-    actions.append(el("button",{class:"ghost",onclick:()=>setReviewStatus(t,t.status==="resolved"?"open":"resolved")},t.status==="resolved"?"Reopen":"Resolve"));
-    actions.append(el("button",{class:"ghost",onclick:()=>deleteReview(t)},"Delete"));
-    details.append(el("div",{class:"review-compose"},reply,actions)); return details;
-  }
-  async function replyReview(t,ta){
-    if(!ta.value.trim()){toast("Reply text required");return;}
-    const state=captureReviewEditorState();setReviewMutationBusy(true);
-    try{const result=await api("/api/bubbles/"+S.bubble+"/pages/"+S.page+"/comments/"+t.id+"/replies",{method:"POST",body:JSON.stringify({body:ta.value})});
-      if(!Array.isArray(result.threads)&&result.message)t.messages=[...(t.messages||[]),result.message];
-      applyAuthoritativeReviewResponse(result,state,{pageMutation:false});
-    }catch(e){toast(e.message);}finally{setReviewMutationBusy(false);}
+    const wrap=$("#reviewWrap"); if(!wrap)return;
+    if(!window.LockedInMarks){wrap.innerHTML="";return;}
+    window.LockedInMarks.gutter(wrap,S.comments||[],
+      {onDelete:id=>markDelete(id),onEdit:(id,text)=>markEdit(id,text),
+       onReply:(id,text)=>markReply(id,text)});
   }
   function inlineEditReviewMessage(t,msg,row){
     if(row.dataset.editing)return; row.dataset.editing="1"; row.replaceChildren();
@@ -5362,31 +5509,6 @@
     save.onclick=finish; cancel.onclick=()=>renderReview();
     ta.onkeydown=e=>{if((e.ctrlKey||e.metaKey)&&e.key==="Enter"){e.preventDefault();finish();}if(e.key==="Escape"){e.preventDefault();renderReview();}};
     row.append(ta,el("div",{class:"review-actions"},save,cancel)); ta.focus(); ta.setSelectionRange(ta.value.length,ta.value.length);
-  }
-  async function setReviewStatus(t,status){
-    if(S.baseMtime==null){toast("The page revision is still loading. Try again in a moment.");primeSync();return;}
-    const state=captureReviewEditorState(),content=state.content;setReviewMutationBusy(true);
-    try{
-      const result=await api("/api/bubbles/"+S.bubble+"/pages/"+S.page+"/comments/"+t.id,{method:"PATCH",body:JSON.stringify({status,content,base_mtime:S.baseMtime})});
-      if(!Array.isArray(result.threads)&&result.thread)upsertReviewThread(result.thread);
-      S.reviewTab=status;S.selectedComment=t.id;applyAuthoritativeReviewResponse(result,state);
-    }catch(e){toast(e.message);}finally{setReviewMutationBusy(false);}
-  }
-  async function deleteReview(t){
-    if(!confirm("Delete this review and all replies?"))return;
-    if(S.baseMtime==null){toast("The page revision is still loading. Try again in a moment.");primeSync();return;}
-    const state=captureReviewEditorState(),content=state.content;setReviewMutationBusy(true);
-    try{
-      const result=await api("/api/bubbles/"+S.bubble+"/pages/"+S.page+"/comments/"+t.id,{method:"DELETE",body:JSON.stringify({content,base_mtime:S.baseMtime})});
-      if(!Array.isArray(result.threads))S.comments=(S.comments||[]).filter(thread=>thread.id!==t.id);
-      S.selectedComment=null;applyAuthoritativeReviewResponse(result,state);
-    }catch(e){toast(e.message);}finally{setReviewMutationBusy(false);}
-  }
-  function scrollToCommentAnchor(t){
-    const scroller=reviewEditorScroller(),target=(S.reviewHitTargets||[]).find(item=>item.id===String(t.id));
-    if(!scroller||!target||!target.rects.length)return;
-    const rect=target.rects[0],box=scroller.getBoundingClientRect();scroller.scrollTop+=rect.top-box.top-(box.height*.32);
-    scheduleEditorCommentHighlights();
   }
   function buildSyncTool(){
     const b=editorToolButton("syncToolbarButton","Saved automatically; click to save now",clickSave);
@@ -5486,31 +5608,6 @@
 
   // Per-bubble view mode, remembered across page refreshes (localStorage). Falls back to the
   // reading view for unknown/legacy values or when storage is unavailable.
-  function loadViewMode(slug){
-    try{ const m=localStorage.getItem("lockedin:viewMode:"+slug);
-      return (m==="edit"||m==="split")?m:"view"; }catch(e){ return "view"; }
-  }
-  function saveViewMode(slug,mode){
-    try{ localStorage.setItem("lockedin:viewMode:"+slug,mode); }catch(e){}
-  }
-  async function setViewMode(mode){
-    const host=$("#editorHost"); if(!host||!S.editor)return;
-    // entering pure reading view from an editing mode -> persist first
-    if(mode==="view" && S.viewMode!=="view") await savePage();
-    S.viewMode=mode;
-    saveViewMode(S.bubble,mode);
-    host.classList.remove("mode-view","mode-edit","mode-split");
-    host.classList.add("mode-"+mode);
-    renderEditorCommentHighlights();
-    updatePreview();                       // keep the rendered side current (view + split)
-    if(mode!=="view"){
-      // the editor may have been laid out while hidden; nudge CodeMirror to recompute, then focus
-      window.dispatchEvent(new Event("resize"));
-      try{ S.editor.focus(); }catch(e){}
-    }
-    refreshTabs();
-    scrollContentTop();
-  }
   // go
   loadLandingContent();
   boot();

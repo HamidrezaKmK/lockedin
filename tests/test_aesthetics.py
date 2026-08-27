@@ -114,19 +114,27 @@ class AestheticsConfigTests(unittest.TestCase):
         self.assertIn('id:"mobileFocusExit"', source)
 
     def test_the_bubble_toolbar_is_one_control_surface_on_every_screen(self):
-        """Papers, the view modes and Edit titles live in the \u22ee menu, which phones get too.
+        """Papers and Edit titles live in the \u22ee menu, which phones get too.
 
         A phone previously could not create a page or change view mode at all (both controls were
         display:none) and reached Papers/Overleaf only through floating pill buttons. Those two
         surfaces are gone; if either class comes back, so has the split.
+
+        View modes are gone as well: \u25e7 and \u25e8 in the tab row toggle the two panes those
+        three names were combinations of.
         """
         source = (Path(server.WEB_DIR) / "index.html").read_text()
         for retired in (".mobile-workspace-control", ".desktop-only-tool",
                         ".mobile-bubble-actions", ".mobile-sheet", "buildMobileBubbleTools",
                         "papers-menu", "data-papers-toggle"):
             self.assertNotIn(retired, source, f"{retired} should have been removed")
-        # The row: page creation at the far left, then the tabs, then the menu and focus toggle.
+        # The row: page creation at the far left, then the tabs, then the pane toggles.
         self.assertIn('class:"ptab-new"', source)
+        for gone in ("function setViewMode", "function loadViewMode", "function toggleReview",
+                     "function reviewThreadNode", "function startComment("):
+            self.assertNotIn(gone, source, f"{gone} is dead and should have been removed")
+        self.assertIn('id:"paneLeftToggle"', source)
+        self.assertIn('id:"paneRightToggle"', source)
         # Every control in the tab row shares one accent fill, defined once so they cannot drift.
         self.assertIn(".ptab-new,.tabrow-group{", source)
         # The dropdown is a descendant of the group, so the group must never clip its overflow.
@@ -137,7 +145,8 @@ class AestheticsConfigTests(unittest.TestCase):
         # Dark's row keeps the page tokens, where the accent is a mid purple rather than the pale
         # tint the other themes use — white glyphs read better on it than near-black ones.
         self.assertIn("body.theme-dark .editor-pane>.ptabs{--tabrow-ink:#fff}", source)
-        self.assertIn("if(S.toolsMenu) group.append(S.toolsMenu);", source)
+        # The ⋮ is the presence pill's fourth segment now, not a tab-row button.
+        self.assertIn('el("div",{class:"hdr-cluster"},S.presenceEl,S.toolsMenu)', source)
         self.assertIn('id:"bubbleFocusToggle"', source)
         # The menu is built once per bubble and re-homed by refreshTabs, which rebuilds that row
         # on every page switch and every poll — rebuilding it there would drop an open panel.
@@ -229,11 +238,13 @@ class AestheticsConfigTests(unittest.TestCase):
         self.assertIn("function editorVisibleTextIndex(root,source)", source)
         self.assertIn("const start=source.indexOf(value,cursor)", source)
         self.assertIn("function serverSelectionOffsets(source,start,end)", source)
-        self.assertIn("selection_start:serverOffsets.start,selection_end:serverOffsets.end", source)
+        self.assertIn("selection_start:offsets.start,selection_end:offsets.end", source)
         self.assertIn("function applyAuthoritativeReviewResponse(result,state,", source)
         self.assertIn("epoch===(S.reviewMutationEpoch||0)", source)
-        self.assertIn("Comments cannot overlap or be nested", source)
-        self.assertIn('s=stripCommentMarkers(s);', source)
+        self.assertIn("Marks cannot overlap or nest.", source)
+        # The preview renders wrappers as highlights rather than stripping them; only a surface
+        # with no marks column (share pages, previews) strips.
+        self.assertIn("s=opts.markComments?markCommentWrappers(s):stripCommentMarkers(s);", source)
         self.assertIn('Cannot save: "+error.message', source)
         self.assertNotIn("function addInlineCommentMarker", source)
         self.assertNotIn("await doSave({}); await loadComments()", source)
