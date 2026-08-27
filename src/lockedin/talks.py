@@ -562,12 +562,22 @@ def absorb_push(slug: str, talk_id: str, text: str) -> None:
 
     for slide in new:
         was = old.get(slide["index"])
-        if was is None or was["body"] == slide["body"] and was["title"] == slide["title"]:
-            slide["version"] = was["version"] if was else slide.get("version", 1)
+        asked = [n.strip() for n in str(slide.pop("resolves", "")).split(",") if n.strip()]
+        why = str(slide.pop("why", "")).strip()
+        edited = was is not None and (was["body"] != slide["body"] or was["title"] != slide["title"])
+        if was is not None:
+            slide["version"] = was["version"]
+        if not edited and not asked:
+            continue
+        if not edited:
+            # A mark can be answered by an *earlier* revision and only cleared now. Honour the
+            # directive without inventing a version: there is no new text to record.
+            for note_id in asked:
+                if note_id in notes.get("notes", {}):
+                    dropped.append(note_id)
             continue
         changed = True
-        asked = [n.strip() for n in str(slide.pop("resolves", "")).split(",") if n.strip()]
-        why = str(slide.pop("why", "")).strip() or "revised by the agent"
+        why = why or "revised by the agent"
         marks = []
         for note_id in asked:
             note = notes.get("notes", {}).get(note_id)

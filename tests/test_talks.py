@@ -208,6 +208,29 @@ class ProjectHandoffTests(unittest.TestCase):
             # The directive is consumed, not left lying in the stored deck.
             self.assertNotIn("resolves=", talks.read_deck(self.slug, self.talk))
 
+    def test_a_header_can_clear_a_mark_an_earlier_revision_already_answered(self):
+        """Resolution must not require inventing a text change.
+
+        A live agent found two marks that the v2/v3 text had already answered but which nobody
+        had ever named in a revision. Consuming the directive and doing nothing left them stuck
+        open forever.
+        """
+        with paths.use_root(self.home):
+            note = talks.add_note(self.slug, self.talk, slide=0, kind="q", author="pi",
+                                  quote="Sample the noise level", text="Answered ages ago.")
+        revised = DECK.replace("<!-- slide: kind=setup, date=2026-08-27, v=1 -->",
+                               f"<!-- slide: kind=setup, date=2026-08-27, v=1, resolves={note['id']} -->")
+        result = scientist_sync.apply_writes(self.home, self.slug, [{
+            "path": f"reports/talks/{self.talk}.md",
+            "content_b64": base64.b64encode(revised.encode()).decode(),
+            "base_revision": scientist_sync.revision(self._deck_bytes())}])
+        self.assertEqual(result["conflicts"], [])
+        with paths.use_root(self.home):
+            self.assertEqual(talks.load_notes(self.slug, self.talk)["notes"], {})
+            # No text changed, so no version is invented and no history entry is fabricated.
+            self.assertEqual(talks.parse_deck(talks.read_deck(self.slug, self.talk))[0]["version"], 1)
+            self.assertEqual(talks.load_history(self.slug, self.talk).get("versions", []), [])
+
     def _deck_bytes(self):
         with paths.use_root(self.home):
             return paths.bubble_talk_path(self.slug, self.talk).read_bytes()
