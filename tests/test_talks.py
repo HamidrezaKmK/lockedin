@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import base64
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 from lockedin import bubbles, feedback, paths, scientist_sync, talks
@@ -241,6 +242,40 @@ class ProjectHandoffTests(unittest.TestCase):
                     "reports/talks/talks.yaml",
                     "reports/talks/nested/deck.md"):
             self.assertFalse(scientist_sync.writable_path(self.slug, rel), rel)
+
+
+class SlideCitationTests(unittest.TestCase):
+    """A citation means the same thing on a slide as in the document."""
+
+    def setUp(self):
+        self.ctx = temp_home()
+        self.home = self.ctx.__enter__()
+        with paths.use_root(self.home):
+            self.slug = bubbles.create_bubble("Diffusion noise schedules")
+            bubbles.approve_bubble(self.slug)
+            bubbles.ensure_pages(self.slug)
+
+    def tearDown(self):
+        self.ctx.__exit__(None, None, None)
+
+    def test_a_key_cited_only_on_a_slide_still_gets_a_number(self):
+        """Otherwise `\\cite{}` on a slide renders as `?key` forever.
+
+        The reference registry used to scan report pages only, so a source introduced in a talk
+        had no number and no link — which is exactly when an agent cites one.
+        """
+        from lockedin import server
+        with paths.use_root(self.home):
+            talks.create_talk(self.slug, "Setup", date="2026-08-27", body=(
+                "<!-- slide: kind=setup, date=2026-08-27, v=1 -->\n"
+                "# Setup\n\n*Why this matters.*\n\nFollowing \\cite{ho2020denoising}.\n"))
+            pages = bubbles.list_pages(self.slug)
+        with patch.object(server, "_bubble_bibliography", return_value={
+                "ho2020denoising": {"key": "ho2020denoising", "text": "Ho et al.",
+                                    "type": "inproceedings", "fields": {}, "pdf_id": "abc123"}}):
+            refs = server._bubble_refs(self.home, self.slug, pages)
+        self.assertEqual(refs["citeMap"], {"ho2020denoising": 1})
+        self.assertEqual(refs["bibliography"]["ho2020denoising"]["pdf_id"], "abc123")
 
 
 class PageMarkTests(unittest.TestCase):

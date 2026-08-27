@@ -136,11 +136,22 @@ def _bubble_bibliography(home, slug: str) -> dict:
 
 
 def _bubble_refs(home, slug: str, all_pages: list) -> dict:
-    """Read every page's stored content (manifest order) and build the reference registry."""
-    return _build_refs([{"page_slug": p["page_slug"],
-                         "content": service.get_page(home, slug, p["page_slug"])}
-                        for p in all_pages],
-                       bibliography=_bubble_bibliography(home, slug))
+    """Read every page's stored content (manifest order) and build the reference registry.
+
+    Chalk-talk decks are scanned after the pages. A citation is meant to mean the same thing
+    wherever it appears — a slide that numbered its sources independently of the document would
+    be actively misleading — and a key cited only on a slide would otherwise have no number at
+    all. Pages come first so existing page numbering does not shift when a talk is written.
+    """
+    docs = [{"page_slug": p["page_slug"],
+             "content": service.get_page(home, slug, p["page_slug"])}
+            for p in all_pages]
+    with paths.use_root(home):
+        for rec in sorted(talks.load_index(slug).get("talks", []),
+                          key=lambda r: (r.get("date", ""), r.get("id", ""))):
+            docs.append({"page_slug": f"talk:{rec['id']}",
+                         "content": talks.read_deck(slug, rec["id"])})
+    return _build_refs(docs, bibliography=_bubble_bibliography(home, slug))
 
 
 def _visible_pages(pages: list[dict]) -> list[dict]:

@@ -341,12 +341,25 @@ def bubbles_command(account: dict) -> list[dict]:
     return rows
 
 
-SKILL_VERSION = 24
+SKILL_VERSION = 25
 
-SKILL_RULES = """<!-- lockedin-scientist-skill: 24 -->
-# LockedIn Scientist research and publication skill
+SKILL_ROUTER = """\
+<!-- lockedin-scientist-skill: 25 -->
+# LockedIn Scientist
 
-This project is synchronized with one LockedIn bubble. Read this file before editing.
+This project is synchronized with one LockedIn bubble. These rules always apply. The detail
+lives in `.lockedin/guides/`, and each guide says when it is worth reading — **read one when you
+are about to do the thing it covers, not before**. Loading all of them into every session costs
+more than it is worth.
+
+| read this | before you |
+|---|---|
+| `guides/paths.md` | look for anything under `.lockedin/` — the layout is fixed, do not search for it |
+| `guides/reports.md` | write, edit, link or submit a report page |
+| `guides/feedback.md` | act on `feedback/OPEN.md`, or write a chalk talk |
+| `guides/editing.md` | write Markdown, LaTeX, figures, citations or theorem environments |
+| `guides/overleaf.md` | touch a local Overleaf checkout |
+| `guides/macros.md` | use a `\\\\`-macro in maths |
 
 ## Where `.lockedin/` is
 
@@ -384,6 +397,33 @@ elsewhere in the repository. Read paper information only from
 `.lockedin/reports/_lockedin_papers.md` and the listed asset directories. Prefer higher relevance
 papers first.
 
+## Sync and conflicts
+
+The sync worker publishes report changes periodically. If it restores a server copy, inspect
+`.lockedin/config/conflicts/` and reapply the intended change to the current report instead of
+restoring stale content. Use Markdown with `$...$` and `$$...$$` math delimiters only.
+
+## What this bubble is for
+
+`.lockedin/IDEA.md` states the premise: one paragraph on the idea and one line on the goal. Read
+it at the start of a session — it is short, and everything else assumes it.
+
+It is generated and read-only. If it is wrong, stale, or narrower than the work actually being
+done, say so and propose better wording rather than working around it; the user applies it in
+the app.
+
+## When the user has left feedback
+
+If `.lockedin/feedback/OPEN.md` exists, the user has marked something and that file is the whole
+of the request. Read it, then read `guides/feedback.md` before acting — the five marks each mean
+something specific, and complying with the wrong one wastes both your work and their review.
+"""
+
+
+GUIDES = {
+    'paths.md': """\
+# Where things are
+
 ## Direct LockedIn paths — do not search for them
 
 Use these exact paths when their information is needed, resolved against the project root above —
@@ -404,14 +444,10 @@ For any report-related search, search only inside `.lockedin/`: use
 `.lockedin/reports/pages/` for report source, `.lockedin/reports/assets/` for report figures,
 `.lockedin/reports/_lockedin_papers.md` for attached-paper discovery, and `.lockedin/assets/` for
 paper material. Do not search the surrounding repository for report content unless the user
-explicitly asks to combine it with project code or files.
+explicitly asks to combine it with project code or files.""",
 
-## Workspace math macros
-
-The active workspace's math macros are generated directly below. Use that table as the source of
-truth when editing mathematics; do not guess or redefine an existing abbreviation. The underlying
-`.lockedin/config/math.yaml` remains read-only and is for synchronization only. Change macros
-only through LockedIn workspace settings.
+    'reports.md': """\
+# Writing reports
 
 ## Reports: the live research record
 
@@ -431,138 +467,6 @@ serves figures from a single-segment URL. Name figures in lowercase with hyphens
 (`drift-field-two-moons.png`, not `Drift Field_TwoMoons.PNG`); that is exactly the name the website
 assigns to an uploaded image, so a matching name avoids creating a duplicate figure.
 
-## Private review feedback
-
-When `.lockedin/config/reviews.yaml` exists, it contains the open private review threads for this
-bubble. Read the relevant thread, its full conversation, and the anchored source text on the cited
-report page before responding with an edit. Treat feedback critically, not as unquestionable
-instructions: ask the user for clarification when a comment is vague, contradictory, unsupported,
-or does not make a concrete requested change clear.
-
-Make the smallest change that directly addresses an actionable comment. Do not reorganize unrelated
-material, broaden claims, or make large conceptual changes unless the feedback explicitly asks for
-that scope. `reviews.yaml` is read-only: never reply to, edit, delete, or resolve a review thread.
-The author reviews the report change and manages comment status in LockedIn.
-
-An attached open review is linked to its exact report source by
-`\\comment{<comment-id>}{highlighted source text}`. Match the ID in `reviews.yaml` to the wrapper
-on the cited page, then read the full thread and nearby source. Wrappers are managed by LockedIn:
-never create, copy, fabricate, rename, nest, or move one, and never add a wrapper for an unanchored
-thread. Never guess where an unanchored review belongs. For an attached review, preserve its
-existing wrapper and make the smallest useful edit inside its body. Remove the whole commented
-passage only when the user explicitly requests that scope; removing the wrapper makes the review
-unanchored. Wrappers disappear automatically from rendered previews and KaTeX but remain in
-Markdown while the review is attached.
-
-Colored passages use `\\textcolor{<color>}{text}`, where the color is a hex value or a CSS color
-name. LockedIn rejects a page whose color wrappers are unclosed or overlap another one, so keep
-each wrapper balanced and never nest colors. Edit inside an existing wrapper rather than around it.
-
-## What this bubble is for
-
-`.lockedin/IDEA.md` states the premise: one paragraph on the idea and one line on the goal. Read
-it before anything else in a session — it is the shared understanding everything else assumes,
-and it is short on purpose.
-
-It is generated and read-only. If it is wrong, stale, or narrower than the work actually being
-done, that is worth raising immediately rather than quietly working around: say what you think it
-should say and why, and let the user apply it in the app. A premise nobody corrects is how a
-project drifts for weeks. Never edit `IDEA.md`; your edits are overwritten on the next sync.
-
-## Chalk talks and the marks left on them
-
-A chalk talk is a dated slide deck under `.lockedin/reports/talks/<id>.md` that explains one idea
-whose correctness needs the user's judgement — a derivation, a design trade-off. Slides are
-separated by `---`; each carries a `<!-- slide: kind=..., date=..., v=N -->` header, a `# Title`,
-an optional one-line italic subtitle, and ordinary Markdown. One idea per slide, and it must fit a
-screen: if it does not, it is two slides.
-
-**Reading them without drowning.** A bubble accumulates talks, and each talk accumulates
-versions. Do not sweep the lot. At the start of a session read `IDEA.md`, then
-`feedback/OPEN.md` if it exists — that is the whole of what is being asked of you. From there:
-
-- Open a deck only when a mark points into it, the user names it, or you are about to write
-  about the same idea. The talk list in `talks.yaml` (id, title, date) is usually enough to know
-  whether a deck is relevant; the file itself is not.
-- Read the *current* deck. Version history is not published to the project at all, so there is
-  nothing to trawl: what is on disk is what the slide says now.
-- Do not re-read a deck you have already read this session unless it was pushed since.
-- When a mark names a slide, read that slide and its neighbours, not the whole talk. The mark
-  quotes the exact text; the surrounding two slides give you the argument it sits in.
-
-Old talks are the project's memory, not its inbox. Reach for one when you need to know why
-something has the shape it has — and then read the one that answers it, not all of them.
-
-**Writing one.** A talk is created by writing the file — there is no second step and no API to
-call. Put it at `.lockedin/reports/talks/YYYY-MM-DD-a-short-slug.md` and push it; the bubble
-indexes it on arrival, taking the date from the filename, the title from the first slide's `#`
-heading and the one-line summary from its italic subtitle. Write a talk when the user asks for
-one in so many words ("walk me through X", "make me a talk about Y"), and offer one unprompted
-when you have reached something whose correctness needs their judgement — a derivation you are
-unsure of, a design trade-off with no obvious winner. Do not write one to report status; status
-belongs in the document.
-
-The sidecars beside a deck (`*.notes.yaml`, `*.history.yaml`, `talks.yaml`, `shots/`) are
-generated. They are not published to the project and cannot be pushed.
-
-**What a slide should look like.** A deck is not a report with page breaks. It is the thing you
-talk *from*, and the reader is a person deciding whether your argument holds — so:
-
-- **One idea per slide**, and it must fit a screen without scrolling. If it does not, it is two
-  slides. This is the rule that does the most work: the frame is what forces you to say the
-  thing rather than circle it.
-- **Condensed, not prose.** Short lines, fragments where a fragment is clearer, no paragraph
-  that restates the slide above. If a sentence survives being cut, cut it.
-- **Minimise equations.** Carry the idea in words and put on the slide only the step that
-  matters. When the derivation *is* the point, that is the exception — then number the steps, so
-  the reader can mark the exact one that is wrong instead of rejecting the whole slide.
-- **A figure beats a paragraph**, and a figure with the axis ranges stated beats a figure.
-- **Say what you are unsure of.** The subtitle is the place: "every step is exact except one,
-  and I have marked which" is worth more than a confident slide that hides the soft spot.
-- **Open with why this matters and close with what you need.** A deck that ends without an ask
-  leaves the reader with nothing to do, which is the same as not sending it.
-
-Cite on a slide the same way you cite on a page: `\\cite{key}`, using the bubble's existing
-citation keys. It renders as the same bracketed number the document uses and opens that PDF, so
-a source keeps one number everywhere. Cite the paper you are leaning on rather than paraphrasing
-it as "prior work".
-
-Titles carry the claim, not the topic: "The residual term survives the change of variables"
-tells the reader something; "Derivation" does not.
-
-When `.lockedin/feedback/OPEN.md` exists, the user has marked something while reading, and that
-file is the whole of it. Each entry names one of five marks — `✗ this is wrong`, `? I don't
-follow`, `→ go deeper`, `✓ good, keep this`, `✂ cut this` — the exact slide text it is anchored
-to, or a region of the slide, and usually a sentence of explanation.
-
-**Look at the picture.** An entry with a `picture:` line points at
-`.lockedin/feedback/shots/<note-id>.png`, the slide rendered as the user saw it with their mark
-drawn on. Open it. It carries what the text cannot: where a figure sat, what was beside what,
-whether the layout itself was the problem. For a mark on a region rather than on words, the
-picture *is* the message — the coordinates alone mean nothing.
-
-Work through marks **with the user, not for them**. Read the mark, look at the picture, then say
-what you propose to change and why, and let them agree before you touch the deck. A `?` means
-re-explain, not re-derive; a `✗` means the argument is wrong, so re-derive rather than reword; a
-`→` means expand, and the expansion usually belongs in a report page rather than on the slide.
-Treat a mark critically: if you believe it is mistaken, say so and argue the point instead of
-complying.
-
-Resolve a mark only once the user is satisfied, and resolve it **in the file you are already
-editing**: revise the slide and name the marks the revision answers in that slide's header.
-
-    <!-- slide: kind=derivation, date=2026-08-27, v=2, resolves=n1,n2, why=re-derived without the assumption -->
-
-On the next sync that bumps the slide to a new version, records `why` and what each mark asked
-for in the version history, and deletes those marks and their pictures — `OPEN.md` shrinks, and
-disappears entirely when nothing is open. The `resolves=` and `why=` attributes are consumed, so
-they do not linger in the stored deck; you do not need to set `v=` yourself. Slides you did not
-change are left alone.
-
-Never resolve a mark you have only replied to or only disagreed with, and never edit `OPEN.md`,
-the `shots/`, or a deck's sidecars directly: they are generated, and your edits will be
-overwritten on the next sync.
-
 ## Before relying on a report submission
 
 Before telling the user that a report edit is synchronized—or before making a sequence of edits
@@ -580,13 +484,86 @@ worktree they fail with "No valid `.lockedin/config/binding.json` in this projec
    machine in, and connects the folder you are working in. Pasting it here works — with no
    terminal to answer from it uses the current directory instead of prompting.
 4. `lockedin-scientist hard-reset <bubble>` only when the directory itself is broken; it replaces
-   `.lockedin` wholesale and discards local work that never synchronized. Ask first.
+   `.lockedin` wholesale and discards local work that never synchronized. Ask first.""",
 
-## Sync and conflicts
+    'feedback.md': """\
+# The user's marks, and chalk talks
 
-The sync worker publishes report changes periodically. If it restores a server copy, inspect
-`.lockedin/config/conflicts/` and reapply the intended change to the current report instead of
-restoring stale content. Use Markdown with `$...$` and `$$...$$` math delimiters only.
+## The five marks
+
+`.lockedin/feedback/OPEN.md` lists every open mark. Each names a kind, the exact text or region
+it points at, and usually a sentence. The kind is the instruction:
+
+| mark | means | do |
+|---|---|---|
+| ✗ | this is wrong | re-derive; do not reword |
+| ? | I don't follow | re-explain; do not re-derive |
+| → | go deeper | expand, usually into a report page |
+| ✓ | good, keep this | lean on it |
+| ✂ | cut this | remove it |
+
+A mark with no sentence is complete: the kind said it.
+
+Work through them **with the user, not for them** — propose, agree, then change.
+Make the smallest change that answers the mark: do not reorganise unrelated material,
+broaden claims, or rewrite beyond what was asked.
+
+If you think a mark is mistaken, say so and argue it; do not comply silently. An entry with a `picture:` line
+points at a PNG of the slide with the mark drawn on: open it, since it carries layout a quote
+cannot, and for a region mark it is the whole message.
+
+Never edit `OPEN.md`, `shots/`, or a deck's sidecars — they are generated and overwritten.
+
+## Marks on report pages
+
+A page mark is anchored by the `\\comment{id}{…}` wrapper in the page source; the id in
+`OPEN.md` is that id. Match it to the wrapper, then make the smallest useful edit inside its body
+and leave the wrapper in place — removing it unanchors the mark.
+
+Wrappers are managed by LockedIn: never create, copy, fabricate, rename, nest, or move one, and
+never add one for an unanchored mark. Never guess where an unanchored review belongs — ask.
+`config/reviews.yaml` holds the full threads and is read-only —
+never reply to, edit, delete, or resolve a page mark there. The user resolves those in the app.
+
+Colored passages use `\\textcolor{<color>}{text}`; keep each wrapper balanced and never nest them.
+Markup that fails to parse inside a code span or fence is literal text, not an error.
+
+## Chalk talks
+
+A chalk talk is a dated deck at `reports/talks/<id>.md` explaining one idea whose correctness
+needs the user's judgement. Slides are separated by `---`; each has a
+`<!-- slide: kind=…, date=…, v=N -->` header, a `# Title`, an optional one-line *italic
+subtitle*, then Markdown with `$…$` maths and `\\cite{key}` citations.
+
+**Reading them without drowning.** Start with `IDEA.md`, then `OPEN.md`. Open a deck only when a
+mark points into it, the user names it, or you are about to write on the same idea — `talks.yaml`
+is not published, and version history is not either, so what is on disk is what the slide says
+now. When a mark names a slide, read that slide and its neighbours, not the whole talk.
+
+**Writing one.** Write the file; the bubble indexes it on arrival, taking the date from the
+filename, the title from the first `#`, and the summary from its subtitle. Write one when asked,
+or offer one when you reach something needing judgement. Never for status — status is the
+document.
+
+- One idea per slide, fitting a screen. If it does not fit, it is two slides.
+- Condensed, not prose. If a sentence survives being cut, cut it.
+- Minimise equations; carry the idea in words. When the derivation *is* the point, number the
+  steps so the user can mark the one that is wrong.
+- Say what you are unsure of — the subtitle is the place.
+- Open with why it matters, close with what you need. Titles carry the claim, not the topic.
+
+**Resolving.** Name the marks in the slide header of the revision that answers them:
+
+    <!-- slide: kind=derivation, date=2026-08-27, v=2, resolves=n1,n2, why=re-derived -->
+
+On the next sync that versions the slide, records `why` and what each mark asked for in the
+history, and deletes those marks. The attributes are consumed; you need not set `v=`. A mark an
+earlier revision already answered can be cleared the same way with no text change. Never resolve
+one you only replied to or disagreed with.
+""",
+
+    'overleaf.md': """\
+# Overleaf
 
 ## Optional Overleaf checkout: the publication manuscript
 
@@ -606,14 +583,24 @@ and other ordinary project files, and use the repository's usual LaTeX tooling.
 - Do not edit `.lockedin/overleaf/.git/`, change its configured remote, or run
   `lockedin-scientist overleaf sync` unless the user explicitly asks to publish to Overleaf.
   The Scientist worker does not synchronize this checkout automatically: it never pulls, pushes,
-  changes, or deletes it; manuscript changes stay local until that explicit sync.
-"""
+  changes, or deletes it; manuscript changes stay local until that explicit sync.""",
+
+}
+def skill_document(editing_guide: str = "", math_macros: dict | None = None) -> str:
+    """The file an agent loads every session: rules that always apply, and where the rest is.
+
+    The detail used to live here too, which meant ~6.5k tokens of Overleaf procedure and LaTeX
+    syntax loaded before a session that only wanted to answer one comment. It is now in
+    ``.lockedin/guides/``, indexed above and read on demand.
+    """
+    return SKILL_ROUTER.rstrip() + "\n"
 
 
-def skill_document(editing_guide: str, math_macros: dict | None = None) -> str:
-    """Keep the project-local agent instructions aligned with the website's canonical guide."""
+def macros_guide(math_macros: dict | None = None) -> str:
     macros = math_macros if isinstance(math_macros, dict) else {}
-    lines = [SKILL_RULES.rstrip(), "", "### Active macro table", ""]
+    lines = ["# Workspace math macros", "",
+             "Read this before using a `\\`-macro in maths: only the commands below exist in this",
+             "workspace, and an undefined one breaks the whole equation at render time.", ""]
     if not macros:
         lines.append("No custom workspace math macros are currently configured.")
     else:
@@ -622,12 +609,32 @@ def skill_document(editing_guide: str, math_macros: dict | None = None) -> str:
             safe_command = str(command).replace("|", "\\|")
             safe_expansion = str(expansion).replace("|", "\\|").replace("\n", "<br>")
             lines.append(f"| `{safe_command}` | `{safe_expansion}` |")
-    lines.extend(["", "## Complete LockedIn editing guide", "", editing_guide.rstrip(), ""])
-    return "\n".join(lines)
+    return "\n".join(lines) + "\n"
+
+
+def write_skill_bundle(root: Path, editing_guide: str, math_macros: dict | None = None) -> None:
+    """Write SKILL.md plus the guides it points at, and drop guides that no longer exist."""
+    (root / "SKILL.md").write_text(skill_document())
+    guides = root / "guides"
+    guides.mkdir(parents=True, exist_ok=True)
+    written = dict(GUIDES)
+    written["macros.md"] = macros_guide(math_macros)
+    written["editing.md"] = ("# The complete editing guide\n\n"
+                             "Read this before writing Markdown, LaTeX, figures, citations or\n"
+                             "theorem environments — not to answer a comment.\n\n"
+                             + editing_guide.rstrip() + "\n")
+    for name, body in written.items():
+        (guides / name).write_text(body)
+    for stale in guides.glob("*.md"):
+        if stale.name not in written:
+            stale.unlink()
 
 
 # Kept as a small inspectable baseline for code/tests; projects receive the complete guide below.
-SKILL = SKILL_RULES
+# The whole bundle as one string, for tests and inspection. An agent never loads this — it
+# reads SKILL.md and only the guides it needs.
+SKILL_RULES = SKILL_ROUTER + "\n\n" + "\n\n".join(GUIDES[k] for k in sorted(GUIDES))
+SKILL = SKILL_ROUTER
 
 OVERLEAF_HELP = """Overleaf uses the project linked to this bubble in LockedIn's website. Open the
 bubble, click Overleaf, and add its Cloud project URL, Git URL, or project ID first.
@@ -955,7 +962,7 @@ class ProjectSync:
         guide = response.get("guide", "")
         if not guide.strip():
             raise RuntimeError("The server did not provide the LockedIn Editing Guide. Reinstall or update the server.")
-        (self.root / "SKILL.md").write_text(skill_document(guide, response.get("math_macros")))
+        write_skill_bundle(self.root, guide, response.get("math_macros"))
 
     def validate_or_initialize(self, *, reset: bool = False) -> None:
         current = self._binding()

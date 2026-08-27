@@ -407,7 +407,11 @@ class ScientistProjectSyncTest(unittest.TestCase):
             self.assertEqual(json.loads((root / "config" / "binding.json").read_text())["bubble"], "work")
             self.assertTrue((root / "reports" / "pages").is_dir())
             self.assertTrue((root / "reports" / "assets").is_dir())
-            self.assertIn("Complete LockedIn editing guide", (root / "SKILL.md").read_text())
+            # SKILL.md is the router; the editing guide is one of the files it points at, read
+            # only when something is actually being written.
+            self.assertIn("guides/editing.md", (root / "SKILL.md").read_text())
+            self.assertIn("The complete editing guide",
+                          (root / "guides" / "editing.md").read_text())
             self.assertFalse((root / "overleaf").exists())
             self.assertIn(".lockedin/", (project / ".git" / "info" / "exclude").read_text())
             with self.assertRaises(RuntimeError):
@@ -469,7 +473,7 @@ class ScientistProjectSyncTest(unittest.TestCase):
             self.assertEqual(reviews.read_bytes(), b"threads: []\n")
             self.assertFalse(os.stat(reviews).st_mode & 0o222)
             self.assertFalse((sync.root / "overleaf").exists())
-            self.assertIn("`\\bmu`", (sync.root / "SKILL.md").read_text())
+            self.assertIn("`\\bmu`", (sync.root / "guides" / "macros.md").read_text())
 
     def test_report_conflict_restores_server_copy_and_keeps_patch(self):
         files = {"reports/pages/overview.md": b"# Server\n"}
@@ -1049,7 +1053,8 @@ class ScientistProfileAndWorkersTest(unittest.TestCase):
         self.assertIn("Reports: the live research record", scientist_cli.SKILL_RULES)
         self.assertIn("the curated publication source", scientist_cli.SKILL_RULES)
         self.assertIn("portable relative Markdown image", scientist_cli.SKILL_RULES)
-        self.assertIn("Treat feedback critically", scientist_cli.SKILL_RULES)
+        # Same instruction, tighter wording: a mark is not an order.
+        self.assertIn("say so and argue it; do not comply silently", scientist_cli.SKILL_RULES)
         self.assertIn("Make the smallest change", scientist_cli.SKILL_RULES)
         self.assertIn("never reply to, edit, delete, or resolve", scientist_cli.SKILL_RULES)
         self.assertIn("never create, copy, fabricate, rename, nest, or move one", scientist_cli.SKILL_RULES)
@@ -1069,8 +1074,9 @@ class ScientistProfileAndWorkersTest(unittest.TestCase):
         self.assertIn("second worker on the same bubble", scientist_cli.SKILL_RULES)
 
     def test_skill_embeds_the_active_math_macro_table(self):
-        skill = scientist_cli.skill_document("## Markdown\n", {"\\E": "\\mathbb{E}"})
-        self.assertIn("| `\\E` | `\\mathbb{E}` |", skill)
+        self.assertIn("| `\\E` | `\\mathbb{E}` |", scientist_cli.macros_guide({"\\E": "\\mathbb{E}"}))
+        # The router stays small: it names the macro guide rather than inlining the table.
+        self.assertIn("guides/macros.md", scientist_cli.skill_document())
 
     def test_vendor_setup_installs_named_native_bootstraps_without_a_profile(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(scientist_cli.shutil, "which", return_value="/usr/bin/agy"), patch.object(
