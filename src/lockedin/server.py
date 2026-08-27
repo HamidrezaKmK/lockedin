@@ -37,7 +37,7 @@ _WORKER_PATH_RE = re.compile(r"^/api/scientist/v2/bubbles/([^/]+)(?:/|$)")
 # Keep this equal to ``scientist_cli.SCIENTIST_CLIENT_VERSION``. Bump both when a Scientist
 # release needs an installed client refresh; the dependency-free installed client cannot import
 # package metadata from this server.
-SCIENTIST_CLIENT_VERSION = "2026.08.26.1"
+SCIENTIST_CLIENT_VERSION = "2026.08.26.2"
 
 
 def _build_refs(pages: "list[dict]", bibliography: "dict | None" = None) -> dict:
@@ -1575,7 +1575,11 @@ def build_app():
         origin = str(request.base_url).rstrip("/")
         return {"ticket": ticket, "expires_in": int(setup_tickets.TICKET_TTL),
                 "unix": f"curl -fsSL {origin}/setup/{ticket}.sh | bash",
-                "powershell": f"iex (irm {origin}/setup/{ticket}.ps1)"}
+                "powershell": f"iex (irm {origin}/setup/{ticket}.ps1)",
+                # For the dialog's by-hand fallback, so the frontend does not keep its own copy.
+                "install_unix": setup_tickets.INSTALL_UNIX,
+                "install_powershell": setup_tickets.INSTALL_POWERSHELL,
+                "workspace_id": active_workspace_id(user), "bubble": slug}
 
     @app.get("/setup/{ticket}.sh")
     def bubble_setup_sh(ticket: str, request: Request):

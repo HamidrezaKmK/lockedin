@@ -29,6 +29,12 @@ TICKET_TTL = 600.0
 # there because minting is reachable from a request, not because the number is expected to grow.
 MAX_TICKETS = 500
 
+# The install one-liners live here because this module already embeds them in the scripts it
+# serves; the setup dialog shows the same strings for its by-hand fallback rather than keeping a
+# fourth copy of them in the frontend.
+INSTALL_UNIX = "curl -fsSL https://raw.githubusercontent.com/HamidrezaKmK/lockedin/main/install.sh | bash"
+INSTALL_POWERSHELL = "irm https://raw.githubusercontent.com/HamidrezaKmK/lockedin/main/install.ps1 | iex"
+
 _LOCK = threading.Lock()
 # ticket id -> {user, token, workspace_id, slug, created_at}
 _TICKETS: dict[str, dict] = {}
@@ -109,7 +115,7 @@ def unix_script(origin: str, ticket: str, workspace_id: str, slug: str) -> str:
 set -euo pipefail
 
 echo "Installing lockedin-scientist…"
-curl -fsSL https://raw.githubusercontent.com/HamidrezaKmK/lockedin/main/install.sh | bash
+{INSTALL_UNIX}
 
 # install.sh does not touch PATH; it only prints where it put the command.
 export PATH="$HOME/.local/bin:$PATH"
@@ -143,7 +149,7 @@ def powershell_script(origin: str, ticket: str, workspace_id: str, slug: str) ->
                f"    --ticket {quote(ticket)}")
     return f"""$ErrorActionPreference = 'Stop'
 Write-Host "Installing lockedin-scientist…"
-irm https://raw.githubusercontent.com/HamidrezaKmK/lockedin/main/install.ps1 | iex
+{INSTALL_POWERSHELL}
 
 if ([Console]::IsInputRedirected) {{
   Write-Host "No terminal to ask on - connecting the current directory: $PWD"

@@ -23,7 +23,7 @@ import webbrowser
 from pathlib import Path
 
 APP = "lockedin-scientist"
-SCIENTIST_CLIENT_VERSION = "2026.08.26.1"
+SCIENTIST_CLIENT_VERSION = "2026.08.26.2"
 POLL_SECONDS = 5
 # A worker that has not completed a cycle in three polls is wedged rather than merely busy.
 # `doctor` reports that verdict and `resync` repairs exactly what `doctor` complains about, so
@@ -332,9 +332,9 @@ def bubbles_command(account: dict) -> list[dict]:
     return rows
 
 
-SKILL_VERSION = 16
+SKILL_VERSION = 17
 
-SKILL_RULES = """<!-- lockedin-scientist-skill: 16 -->
+SKILL_RULES = """<!-- lockedin-scientist-skill: 17 -->
 # LockedIn Scientist research and publication skill
 
 This project is synchronized with one LockedIn bubble. Read this file before editing.
@@ -441,9 +441,17 @@ Before telling the user that a report edit is synchronized—or before making a 
 that relies on background synchronization—run `lockedin-scientist doctor` from the project root.
 It verifies that this `.lockedin` directory has a matching, healthy worker and can reach its bound
 LockedIn bubble. If it fails, do not claim the work was submitted; show the user the failure and
-ask whether they want to repair it. `lockedin-scientist resync` is the usual repair: it resumes
-whatever bubble this project is already bound to, needs no arguments, and leaves `.lockedin`
-intact. Reach for `hard-reset` only when the directory itself is broken—it replaces it wholesale.
+ask whether they want to repair it, in this order:
+
+1. `lockedin-scientist ps` — every worker on this machine and the folder each one syncs.
+2. `lockedin-scientist resync` — the usual repair. It resumes whatever bubble this project is
+   already bound to, needs no arguments, and leaves `.lockedin` intact.
+3. If the command itself is missing (a fresh cloud sandbox, for instance), ask the user for a
+   setup link: the bubble page's 🤖 button produces one line that installs the client, signs this
+   machine in, and connects the folder you are working in. Pasting it here works — with no
+   terminal to answer from it uses the current directory instead of prompting.
+4. `lockedin-scientist hard-reset <bubble>` only when the directory itself is broken; it replaces
+   `.lockedin` wholesale and discards local work that never synchronized. Ask first.
 
 ## Sync and conflicts
 

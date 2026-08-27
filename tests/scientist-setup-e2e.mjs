@@ -160,10 +160,18 @@ async function main() {
     // An agent already open in the folder is the other way to run this, and the repair that needs
     // nothing installed — both have to be findable from the dialog itself.
     for (const expected of ["terminal", "run this there", "assistant", "troubleshoot",
-                            "paste the line from step 2", "never installed"]) {
+                            "paste the line from step 2",
+                            // the recovery checklist, in the order you would try it
+                            "lockedin-scientist ps", "lockedin-scientist doctor",
+                            "lockedin-scientist resync", "workspaces switch",
+                            "hard-reset", "install the client"]) {
       assert.ok(stepText.includes(expected), `step list is missing ${expected}:\n${stepText}`);
     }
     await shoot(page, "setup-dialog");
+    const recovery = await dialog.locator(".setup-step", { hasText: "Troubleshoot" }).innerText();
+    assert.ok(!recovery.includes("<workspace-id>"),
+      `the by-hand steps must carry the real workspace id:\n${recovery}`);
+    assert.ok(recovery.includes(`sync ${slug}`), "the by-hand steps must name this bubble");
     assert.equal(await dialog.locator(".setup-refresh").innerText(), "↻",
       "the fresh-link control is a circular arrow, not a second kind of link");
     // The controls act on the snippet, so they live beside it.

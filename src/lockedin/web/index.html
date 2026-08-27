@@ -805,6 +805,13 @@
   .setup-inline{padding:1px 5px;border-radius:5px;background:var(--panel2);border:1px solid var(--line);
     color:var(--ink);font-family:var(--font-mono);font-size:11px;white-space:nowrap}
   .setup-hint{margin-top:8px;font-size:11.5px;line-height:1.65}
+  .setup-steps{margin:9px 0 0;padding-left:20px;font-size:11.5px;line-height:1.75;color:var(--muted)}
+  .setup-steps li{margin:5px 0}
+  .setup-steps li::marker{color:var(--accent);font-weight:700}
+  .setup-steps .setup-steps{margin:6px 0 2px;font-size:11px}
+  /* The install one-liner is a long URL; let it wrap rather than run off the dialog. */
+  .setup-steps code{white-space:pre-wrap;overflow-wrap:anywhere}
+  .setup-os{opacity:.7}
   /* This line is a credential for ten minutes. A muted grey footnote is how that gets missed. */
   .setup-warn{margin-top:9px;font-size:11.5px;line-height:1.55;color:var(--warn);
     font-weight:600}
@@ -3494,6 +3501,7 @@
     const warn=el("div",{class:"setup-warn"});
     const agentTabs=el("div",{class:"setup-tabs"});
     const agentBody=el("div",{class:"setup-agent"});
+    const troubleshootBody=el("div");
     const copy=el("button",{class:"primary",disabled:true},"Copy");
     // A circular arrow rather than the words "New link": the button restores a link that went
     // stale, which is a retry, not a second kind of link.
@@ -3518,6 +3526,7 @@
       tabRow(agentTabs,AGENTS,agent,key=>{ agent=key; render(); });
       snippet.textContent=commands?commandFor():"Preparing your setup link…";
       copy.disabled=!commands;
+      troubleshootBody.textContent=""; troubleshootBody.append(troubleshooting());
       const [,,[cmd],lead,invoke,tail]=AGENTS.find(row=>row[0]===agent);
       agentBody.textContent="";
       agentBody.append(el("div",{class:"muted setup-hint"},
@@ -3545,6 +3554,30 @@
       }catch(e){ copy.textContent="Press ⌘/Ctrl+C"; snippet.focus(); }
     };
     refresh.onclick=()=>{ refresh.classList.add("spin"); mint().finally(()=>refresh.classList.remove("spin")); };
+    const chip=text=>el("code",{class:"setup-inline"},text);
+    function troubleshooting(){
+      const list=el("ol",{class:"setup-steps"});
+      const li=(...kids)=>{ const row=el("li",{},...kids); list.append(row); return row; };
+      li(chip("lockedin-scientist ps"),
+         " — every worker on this machine, and the folder each one syncs.");
+      li(chip("lockedin-scientist doctor"),
+         " — run it inside a folder to check that folder's worker and its connection.");
+      li(chip("lockedin-scientist resync"),
+         " — restarts a worker that died or got stuck. No arguments; it remembers this bubble.");
+      const last=li("Still stuck? Run a fresh line from step 2 — it repairs the folder in place "
+        + "and installs the client first if it is missing. To do the same by hand:");
+      const manual=el("ol",{class:"setup-steps"});
+      manual.append(el("li",{},"Install the client: ",
+        chip(commands?(os==="windows"?commands.install_powershell:commands.install_unix):"…"),
+        el("span",{class:"setup-os"}," (",OSES.find(o=>o[0]===os)[1],")")));
+      manual.append(el("li",{},"Point it at this workspace: ",
+        chip("lockedin-scientist workspaces switch "+(commands&&commands.workspace_id||"<workspace-id>"))));
+      manual.append(el("li",{},"Bind the folder: ",chip("lockedin-scientist sync "+slug),
+        " — or ",chip("lockedin-scientist hard-reset "+slug),
+        " to rebuild it from the server, which discards anything local that never synced."));
+      last.append(manual);
+      return list;
+    }
     const step=(n,title,...body)=>el("div",{class:"setup-step"},
       el("div",{class:"setup-step-num"},String(n)),
       el("div",{class:"setup-step-body"},el("b",{},title),...body));
@@ -3572,19 +3605,10 @@
             + "folder the agent is working in.")),
         step(4,"Troubleshoot if needed",
           el("div",{class:"muted setup-hint"},
-            "Syncing runs in the background, so you can close the terminal. The chip at the top of "
-            + "this page lists everyone reading the bubble and every folder syncing it — a green dot "
-            + "means they are all healthy. If one turns amber or red, or your folder never appears, "
-            + "run ",
-            el("code",{class:"setup-inline"},"lockedin-scientist doctor"),
-            " in it and it will say what is wrong. ",
-            el("code",{class:"setup-inline"},"lockedin-scientist resync"),
-            " restarts a worker that stopped or got stuck — no arguments, it remembers this bubble. "
-            + "Or run a fresh line from step 2 again: it repairs the folder in place, and it is "
-            + "the only one of these that also works where the client was never installed. "
-            + "If the folder itself is broken, ",
-            el("code",{class:"setup-inline"},"lockedin-scientist hard-reset "+slug),
-            " rebuilds it from the server, discarding anything local that never synced."))));
+            chip("lockedin-scientist"),
+            " keeps one small background worker per folder. The chip at the top of this page "
+            + "lists every folder syncing this bubble — a green dot means they are all healthy."),
+          troubleshootBody)));
     overlay.append(box); overlay.onclick=e=>{if(e.target===overlay)close();}; document.body.append(overlay);
     render(); mint();
   }
