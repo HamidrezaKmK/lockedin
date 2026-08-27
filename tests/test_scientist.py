@@ -410,8 +410,11 @@ class ScientistProjectSyncTest(unittest.TestCase):
             # SKILL.md is the router; the editing guide is one of the files it points at, read
             # only when something is actually being written.
             self.assertIn("guides/editing.md", (root / "SKILL.md").read_text())
-            self.assertIn("The complete editing guide",
-                          (root / "guides" / "editing.md").read_text())
+            editing = (root / "guides" / "editing.md").read_text()
+            self.assertIn("Editing reference", editing)
+            # Framed as searchable, with a contents list, so it is not read end to end.
+            self.assertIn("do not read it end to", editing)
+            self.assertIn("## What is in here", editing)
             self.assertFalse((root / "overleaf").exists())
             self.assertIn(".lockedin/", (project / ".git" / "info" / "exclude").read_text())
             with self.assertRaises(RuntimeError):

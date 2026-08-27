@@ -609,10 +609,18 @@ def absorb_push(slug: str, talk_id: str, text: str) -> None:
 # --------------------------------------------------------------------------- #
 # What a syncing Scientist worker puts in the project
 # --------------------------------------------------------------------------- #
-def _region_phrase(rect: dict) -> str:
-    return (f"a region of the slide at x {rect.get('x', 0):.0f}–{rect.get('x', 0) + rect.get('w', 0):.0f}%, "
-            f"y {rect.get('y', 0):.0f}–{rect.get('y', 0) + rect.get('h', 0):.0f}% "
-            f"(see the picture — it is drawn on)")
+def _region_phrase(rect: dict, *, has_picture: bool) -> str:
+    """Describe a region mark, and promise a picture only when one exists.
+
+    The snapshot is captured in the browser, so a mark made any other way — or one whose capture
+    failed offline — has none. Saying "see the picture" regardless sent a live agent hunting for
+    a file that was never there and reporting it as a blocker.
+    """
+    where = (f"a region of the slide at x {rect.get('x', 0):.0f}–{rect.get('x', 0) + rect.get('w', 0):.0f}%, "
+             f"y {rect.get('y', 0):.0f}–{rect.get('y', 0) + rect.get('h', 0):.0f}%")
+    return where + (" (see the picture — it is drawn on)" if has_picture
+                    else " — no picture was captured for this one, so go by the coordinates and "
+                         "the comment")
 
 
 def feedback_blocks(slug: str) -> list[str]:
@@ -632,7 +640,8 @@ def feedback_blocks(slug: str) -> list[str]:
             sl = slides[i] if 0 <= i < len(slides) else {}
             k = KINDS.get(note["kind"], {})
             where = (f"the text `{note['quote']}`" if note.get("quote")
-                     else _region_phrase(note.get("rect") or {}))
+                     else _region_phrase(note.get("rect") or {},
+                                         has_picture=bool(note.get("image"))))
             lines = [f"### {k.get('glyph','')} {k.get('means','')} — slide {i + 1}: "
                      f"{sl.get('title','')}",
                      "",

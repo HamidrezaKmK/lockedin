@@ -429,8 +429,26 @@ mark.tk-anno{background:color-mix(in srgb,var(--kc,var(--accent)) 26%,transparen
     return { text: out, found };
   }
 
+  // `assets/<file>` is the portable report syntax, and a slide is stored in the same bubble as
+  // the pages — so a figure written the documented way must resolve here too. Without this the
+  // browser asks for a path relative to the SPA route and gets a 404.
+  function resolveAssetLinks(md) {
+    const ws = (location.hash.match(/^#w\/([^/]+)/) || [])[1];
+    const q = ws ? `?workspace=${encodeURIComponent(ws)}` : "";
+    return String(md).replace(/(!\[[^\]\n]*\]\()assets\/([^\s)]+)(\))/g,
+      (_, open, file, close) =>
+        `${open}/api/bubbles/${encodeURIComponent(S.slug)}/assets/${encodeURIComponent(file)}${q}${close}`);
+  }
+
+  // The same full-screen viewer the report pages use. `watch` takes a selector and delegates
+  // from the document, so this is idempotent and survives every re-render.
+  function watchFigures() {
+    if (!window.LockedInLightbox) return;
+    try { window.LockedInLightbox.watch(".tk-md"); } catch (e) { /* the viewer is optional */ }
+  }
+
   function renderMarkdown(md, into) {
-    const { text, found } = stashMath(md);
+    const { text, found } = stashMath(resolveAssetLinks(md));
     let html;
     try { html = window.marked ? window.marked.parse(text, { breaks: false }) : esc(text); }
     catch (e) { html = esc(text); }
@@ -439,6 +457,7 @@ mark.tk-anno{background:color-mix(in srgb,var(--kc,var(--accent)) 26%,transparen
     });
     html = citationsToHtml(html);
     into.innerHTML = html;
+    watchFigures();
     into.querySelectorAll(".tk-math").forEach(node => {
       const m = found[Number(node.dataset.i)];
       if (!m) return;

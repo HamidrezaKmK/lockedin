@@ -341,25 +341,31 @@ def bubbles_command(account: dict) -> list[dict]:
     return rows
 
 
-SKILL_VERSION = 25
+SKILL_VERSION = 27
 
 SKILL_ROUTER = """\
-<!-- lockedin-scientist-skill: 25 -->
+<!-- lockedin-scientist-skill: 27 -->
 # LockedIn Scientist
 
 This project is synchronized with one LockedIn bubble. These rules always apply. The detail
-lives in `.lockedin/guides/`, and each guide says when it is worth reading — **read one when you
-are about to do the thing it covers, not before**. Loading all of them into every session costs
-more than it is worth.
+lives in `.lockedin/guides/`.
 
-| read this | before you |
-|---|---|
-| `guides/paths.md` | look for anything under `.lockedin/` — the layout is fixed, do not search for it |
-| `guides/reports.md` | write, edit, link or submit a report page |
-| `guides/feedback.md` | act on `feedback/OPEN.md`, or write a chalk talk |
-| `guides/editing.md` | write Markdown, LaTeX, figures, citations or theorem environments |
-| `guides/overleaf.md` | touch a local Overleaf checkout |
-| `guides/macros.md` | use a `\\\\`-macro in maths |
+**Read a guide when you are about to do the thing it covers — not in case you might.** One you
+turn out not to need costs the user real money and crowds out what you are reasoning about.
+
+| guide | read it | size |
+|---|---|---|
+| `guides/feedback.md` | before acting on `feedback/OPEN.md`, or writing a chalk talk | small |
+| `guides/paths.md` | before looking for anything under `.lockedin/` | small |
+| `guides/reports.md` | before creating, deleting or submitting a report page | small |
+| `guides/macros.md` | before using a `\\\\`-macro in maths | tiny |
+| `guides/overleaf.md` | before touching a local Overleaf checkout | small |
+| `guides/editing.md` | **reference, not prerequisite** | large |
+
+`guides/editing.md` is a syntax reference for figures, citations, theorem environments and the
+rest. Do not read it end to end: search it for the one construct you are unsure of, and skip it
+entirely when editing prose or maths you already know how to write. It opens with its own
+contents list.
 
 ## Where `.lockedin/` is
 
@@ -545,6 +551,9 @@ filename, the title from the first `#`, and the summary from its subtitle. Write
 or offer one when you reach something needing judgement. Never for status — status is the
 document.
 
+- A figure beats a paragraph. Save it flat in `reports/assets/` and reference it the same way a
+  report page does: `![caption](assets/name.png)`. State the axis ranges in the caption — the
+  user can mark a region of a figure, and a rectangle over unlabelled axes says little.
 - One idea per slide, fitting a screen. If it does not fit, it is two slides.
 - Condensed, not prose. If a sentence survives being cut, cut it.
 - Minimise equations; carry the idea in words. When the derivation *is* the point, number the
@@ -619,9 +628,14 @@ def write_skill_bundle(root: Path, editing_guide: str, math_macros: dict | None 
     guides.mkdir(parents=True, exist_ok=True)
     written = dict(GUIDES)
     written["macros.md"] = macros_guide(math_macros)
-    written["editing.md"] = ("# The complete editing guide\n\n"
-                             "Read this before writing Markdown, LaTeX, figures, citations or\n"
-                             "theorem environments — not to answer a comment.\n\n"
+    headings = [line.lstrip("# ").strip() for line in editing_guide.splitlines()
+                if line.startswith("## ")]
+    contents = "\n".join(f"- {h}" for h in headings)
+    written["editing.md"] = ("# Editing reference\n\n"
+                             "**Search this file for the construct you need; do not read it end to\n"
+                             "end.** It is the largest guide here and most sessions need one\n"
+                             "section of it, or none.\n\n"
+                             "## What is in here\n\n" + contents + "\n\n"
                              + editing_guide.rstrip() + "\n")
     for name, body in written.items():
         (guides / name).write_text(body)

@@ -145,6 +145,20 @@ class ProjectHandoffTests(unittest.TestCase):
                        "reports/talks/talks.yaml"):
             self.assertNotIn(leaked, names)
 
+    def test_a_region_mark_promises_a_picture_only_when_one_exists(self):
+        """A live agent went looking for a snapshot that was never captured, and stalled."""
+        with paths.use_root(self.home):
+            bare = talks.add_note(self.slug, self.talk, slide=0, kind="more", author="pi",
+                                  rect={"x": 8, "y": 30, "w": 55, "h": 40}, text="say more here")
+            body = feedback.open_markdown(self.slug).decode()
+            self.assertIn("no picture was captured", body)
+            self.assertNotIn("see the picture", body.split("## ", 1)[1])
+
+            talks.save_note_image(self.slug, self.talk, bare["id"], b"\x89PNG\r\n\x1a\nfake")
+            body = feedback.open_markdown(self.slug).decode()
+            self.assertIn("see the picture", body)
+            self.assertNotIn("no picture was captured", body)
+
     def test_feedback_disappears_entirely_once_nothing_is_open(self):
         with paths.use_root(self.home):
             note = talks.add_note(self.slug, self.talk, slide=0, kind="q", author="pi",
@@ -276,6 +290,16 @@ class SlideCitationTests(unittest.TestCase):
             refs = server._bubble_refs(self.home, self.slug, pages)
         self.assertEqual(refs["citeMap"], {"ho2020denoising": 1})
         self.assertEqual(refs["bibliography"]["ho2020denoising"]["pdf_id"], "abc123")
+
+
+class SlideFigureTests(unittest.TestCase):
+    def test_a_slide_resolves_assets_links_like_a_report_page(self):
+        """`assets/x.png` in a slide used to 404: only page rendering rewrote the link."""
+        js = (Path(__file__).resolve().parents[1] / "src/lockedin/web/talks.js").read_text()
+        self.assertIn("function resolveAssetLinks(md)", js)
+        self.assertIn("/api/bubbles/${encodeURIComponent(S.slug)}/assets/", js)
+        # And the same viewer the pages use, by selector so re-renders need no re-binding.
+        self.assertIn('window.LockedInLightbox.watch(".tk-md")', js)
 
 
 class PageMarkTests(unittest.TestCase):
