@@ -577,6 +577,38 @@ class ScientistProjectSyncTest(unittest.TestCase):
             self.assertFalse((sync.root / "reports" / "assets" / "figure.png").exists())
 
 
+class GitWorktreeLayout(unittest.TestCase):
+    """The locator the skills hand agents has to actually resolve a worktree."""
+
+    def test_the_common_dir_names_the_main_checkout_from_inside_a_worktree(self):
+        import shutil as _shutil
+        import subprocess
+        git = _shutil.which("git")
+        if not git:
+            self.skipTest("git is not installed")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            main, tree = root / "main", root / "feature"
+            run = lambda *args, cwd: subprocess.run([git, *args], cwd=cwd, check=True,
+                                                    capture_output=True, text=True)
+            main.mkdir()
+            run("init", "-q", cwd=main)
+            run("-c", "user.email=t@t", "-c", "user.name=t",
+                "commit", "-q", "--allow-empty", "-m", "init", cwd=main)
+            (main / ".lockedin" / "config").mkdir(parents=True)
+            (main / ".lockedin" / "config" / "binding.json").write_text("{}")
+            run("worktree", "add", "-q", str(tree), "-b", "feature", cwd=main)
+
+            # The situation the skills describe: no .lockedin here.
+            self.assertFalse((tree / ".lockedin").exists())
+            common = subprocess.run(
+                [git, "rev-parse", "--path-format=absolute", "--git-common-dir"],
+                cwd=tree, check=True, capture_output=True, text=True).stdout.strip()
+            resolved = Path(common).parent
+            self.assertEqual(resolved.resolve(), main.resolve())
+            self.assertTrue((resolved / ".lockedin" / "config" / "binding.json").exists())
+
+
 class ScientistProfileAndWorkersTest(unittest.TestCase):
     def test_doctor_requires_a_matching_live_worker_and_server_probe(self):
         with temp_data_home(), tempfile.TemporaryDirectory() as directory, patch.object(
@@ -1002,6 +1034,14 @@ class ScientistProfileAndWorkersTest(unittest.TestCase):
         self.assertIn("Direct LockedIn paths — do not search for them", scientist_cli.SKILL_RULES)
         self.assertIn("For any report-related search, search only inside `.lockedin/`", scientist_cli.SKILL_RULES)
         self.assertIn("lockedin-scientist doctor", scientist_cli.SKILL_RULES)
+        # A session started in a git worktree is ordinary, and .lockedin/ is untracked so it stays
+        # in the main checkout. Both skills must resolve that root instead of assuming the cwd —
+        # without it an agent rediscovers the situation every session and narrates it.
+        for text in (scientist_cli.SKILL_RULES, scientist_cli.VENDOR_SKILL_BOOTSTRAP):
+            self.assertIn("--git-common-dir", text)
+            self.assertIn("worktree", text)
+        self.assertIn("do not describe it to", scientist_cli.SKILL_RULES)
+        self.assertIn("second worker on the same bubble", scientist_cli.SKILL_RULES)
 
     def test_skill_embeds_the_active_math_macro_table(self):
         skill = scientist_cli.skill_document("## Markdown\n", {"\\E": "\\mathbb{E}"})
@@ -1019,8 +1059,14 @@ class ScientistProfileAndWorkersTest(unittest.TestCase):
                 content = skill.read_text()
                 self.assertIn("name: lockedin-scientist", content)
                 self.assertIn(".lockedin/SKILL.md", content)
-                self.assertIn("Open exactly `.lockedin/SKILL.md`", content)
+                # All three vendors get the same bootstrap verbatim, so the worktree locator has
+                # to reach codex and agy exactly as it reaches claude.
+                self.assertIn("--git-common-dir", content)
+                self.assertIn("worktree", content)
                 self.assertIn("Do not search the repository, home directory", content)
+            bodies = {next(p for p in t if p.name == "SKILL.md").read_text()
+                      for t in (codex, claude, agy)}
+            self.assertEqual(len(bodies), 1, "every vendor must get the identical bootstrap")
             plugin = json.loads(agy[0].read_text())
             self.assertEqual(plugin["name"], "lockedin-scientist")
             self.assertEqual(plugin["managed_by"], "lockedin-scientist")

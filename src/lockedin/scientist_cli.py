@@ -48,14 +48,23 @@ description: Work safely with a project-local LockedIn Scientist bubble. Read it
 
 # LockedIn Scientist
 
-Open exactly `.lockedin/SKILL.md` relative to the current project root and read it in full before
-making any change. Do not search the repository, home directory, or other projects for the guide.
+Read `<project-root>/.lockedin/SKILL.md` in full before making any change, where
+`<project-root>` is the directory containing the repository's shared `.git`:
+
+```
+git rev-parse --path-format=absolute --git-common-dir   # -> <project-root>/.git
+```
+
+Use that command rather than assuming the current directory. In an ordinary checkout it names that
+checkout; in a **git worktree** it names the main checkout, which is where `.lockedin/` lives —
+the directory is untracked, so it never appears in a worktree. This is a normal setup, not a
+problem to report. Do not search the repository, home directory, or other projects for the guide.
 It contains the current bubble's editing guide, paper context, math conventions, permitted write
 paths, conflict recovery rules, and—when present—rules for the local Overleaf checkout. Follow it
 as the source of truth.
 
-If `.lockedin/SKILL.md` does not exist, do not create a replacement. Tell the user to run
-`lockedin-scientist sync <bubble-slug>` from the project first.
+If there is no `.lockedin/SKILL.md` at that root, do not create a replacement and do not look
+elsewhere. Tell the user to run `lockedin-scientist sync <bubble-slug>` from the project root.
 """
 
 AGY_PLUGIN_MANAGED_BY = "lockedin-scientist"
@@ -332,12 +341,25 @@ def bubbles_command(account: dict) -> list[dict]:
     return rows
 
 
-SKILL_VERSION = 17
+SKILL_VERSION = 18
 
-SKILL_RULES = """<!-- lockedin-scientist-skill: 17 -->
+SKILL_RULES = """<!-- lockedin-scientist-skill: 18 -->
 # LockedIn Scientist research and publication skill
 
 This project is synchronized with one LockedIn bubble. Read this file before editing.
+
+## Where `.lockedin/` is
+
+Every path in this guide is relative to the **project root**: the directory holding the shared
+`.git`, which `git rev-parse --path-format=absolute --git-common-dir` names (its parent). Resolve
+it once at the start of a session and use it as the prefix.
+
+If you are working in a **git worktree**, that root is the main checkout, not the worktree.
+`.lockedin/` is untracked, so it does not come along — and the sync worker only watches the main
+checkout's copy. Read and edit that copy. This is the ordinary arrangement: do not describe it to
+the user, do not treat it as a problem, and do not run `lockedin-scientist sync` inside the
+worktree to obtain a local one — the worker registry keys on directory, so that would start a
+second worker on the same bubble and the bubble page would flag the pair as conflicting.
 
 ## Project work and LockedIn boundaries
 
@@ -364,8 +386,9 @@ papers first.
 
 ## Direct LockedIn paths — do not search for them
 
-Use these exact paths when their information is needed; do not spend time searching the project
-for an alternative copy:
+Use these exact paths when their information is needed, resolved against the project root above —
+in a worktree they are in the main checkout, not the current directory. Do not spend time searching
+the project for an alternative copy:
 
 - `.lockedin/config/math.yaml` — workspace math macros; the generated macro table below is the
   preferred ready-to-use form.
@@ -441,7 +464,8 @@ Before telling the user that a report edit is synchronized—or before making a 
 that relies on background synchronization—run `lockedin-scientist doctor` from the project root.
 It verifies that this `.lockedin` directory has a matching, healthy worker and can reach its bound
 LockedIn bubble. If it fails, do not claim the work was submitted; show the user the failure and
-ask whether they want to repair it, in this order:
+ask whether they want to repair it, in this order. Run these from the project root — from a
+worktree they fail with "No valid `.lockedin/config/binding.json` in this project":
 
 1. `lockedin-scientist ps` — every worker on this machine and the folder each one syncs.
 2. `lockedin-scientist resync` — the usual repair. It resumes whatever bubble this project is
