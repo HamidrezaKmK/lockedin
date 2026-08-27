@@ -435,9 +435,17 @@ mark.tk-anno{background:color-mix(in srgb,var(--kc,var(--accent)) 26%,transparen
   function resolveAssetLinks(md) {
     const ws = (location.hash.match(/^#w\/([^/]+)/) || [])[1];
     const q = ws ? `?workspace=${encodeURIComponent(ws)}` : "";
-    return String(md).replace(/(!\[[^\]\n]*\]\()assets\/([^\s)]+)(\))/g,
-      (_, open, file, close) =>
-        `${open}/api/bubbles/${encodeURIComponent(S.slug)}/assets/${encodeURIComponent(file)}${q}${close}`);
+    const url = file =>
+      `/api/bubbles/${encodeURIComponent(S.slug)}/assets/${encodeURIComponent(file)}${q}`;
+    // Matched on the link, not the caption: a caption containing `]` — which any LaTeX
+    // interval does, `$\\lambda \\in [-10, 8]$` — defeats a caption-shaped pattern, and the
+    // figure then silently 404s. This is exactly how a real agent wrote one.
+    return String(md)
+      .replace(/\]\(assets\/([^\s)]+)\)/g, (_, file) => `](${url(file)})`)
+      // Agents write raw <img> too, especially when a caption carries maths. A figure that
+      // silently 404s is worse than one that renders plainly, so cover both spellings.
+      .replace(/(<img\b[^>]*?\bsrc=["'])assets\/([^"']+)(["'])/gi,
+               (_, open, file, close) => open + url(file) + close);
   }
 
   // The same full-screen viewer the report pages use. `watch` takes a selector and delegates
@@ -453,7 +461,7 @@ mark.tk-anno{background:color-mix(in srgb,var(--kc,var(--accent)) 26%,transparen
     // tag. The SPA guards report pages the same way; a slide caption with maths in it leaked
     // raw HTML onto the slide until it did too.
     const captions = [];
-    const guarded = resolveAssetLinks(md).replace(/!\[([^\]\n]*)\](?=\()/g, (_, cap) => {
+    const guarded = resolveAssetLinks(md).replace(/!\[([\s\S]*?)\](?=\()/g, (_, cap) => {
       captions.push(cap);
       return `![@@LICAP${captions.length - 1}@@]`;
     });

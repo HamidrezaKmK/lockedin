@@ -341,6 +341,9 @@ class SlideFigureTests(unittest.TestCase):
         js = (Path(__file__).resolve().parents[1] / "src/lockedin/web/talks.js").read_text()
         self.assertIn("function resolveAssetLinks(md)", js)
         self.assertIn("/api/bubbles/${encodeURIComponent(S.slug)}/assets/", js)
+        # Anchored on the link, not the caption: a caption holding `]` (any LaTeX interval)
+        # defeated a caption-shaped pattern and the figure silently 404'd.
+        self.assertIn(r"\]\(assets\/([^\s)]+)\)", js)
         # And the same viewer the pages use, by selector so re-renders need no re-binding.
         self.assertIn('window.LockedInLightbox.watch(".tk-md")', js)
 
