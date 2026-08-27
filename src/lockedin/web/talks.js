@@ -448,7 +448,16 @@ mark.tk-anno{background:color-mix(in srgb,var(--kc,var(--accent)) 26%,transparen
   }
 
   function renderMarkdown(md, into) {
-    const { text, found } = stashMath(resolveAssetLinks(md));
+    // Image alt text becomes an HTML attribute, so a `$…$` inside it must not be stashed and
+    // re-rendered as KaTeX — doing so injects markup into the attribute and breaks out of the
+    // tag. The SPA guards report pages the same way; a slide caption with maths in it leaked
+    // raw HTML onto the slide until it did too.
+    const captions = [];
+    const guarded = resolveAssetLinks(md).replace(/!\[([^\]\n]*)\](?=\()/g, (_, cap) => {
+      captions.push(cap);
+      return `![@@LICAP${captions.length - 1}@@]`;
+    });
+    const { text, found } = stashMath(guarded);
     let html;
     try { html = window.marked ? window.marked.parse(text, { breaks: false }) : esc(text); }
     catch (e) { html = esc(text); }
@@ -456,6 +465,9 @@ mark.tk-anno{background:color-mix(in srgb,var(--kc,var(--accent)) 26%,transparen
       html = html.split(MATH_TOKEN(i)).join(`<span class="tk-math" data-i="${i}"></span>`);
     });
     html = citationsToHtml(html);
+    captions.forEach((cap, i) => {
+      html = html.split(`@@LICAP${i}@@`).join(esc(cap));
+    });
     into.innerHTML = html;
     watchFigures();
     into.querySelectorAll(".tk-math").forEach(node => {

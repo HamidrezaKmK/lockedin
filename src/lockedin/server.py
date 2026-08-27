@@ -1916,6 +1916,54 @@ def build_app():
             raise HTTPException(status_code=400, detail=str(e))
         return {"note": note}
 
+    @app.post("/api/bubbles/{slug}/talks/{talk_id}/notes/{note_id}/replies")
+    def reply_talk_note(slug: str, talk_id: str, note_id: str, body: TalkNoteEditIn,
+                        user: str = Depends(current_user)):
+        try:
+            return {"note": service.reply_talk_note(home_of(user), slug, talk_id, note_id,
+                                                    user, body.text)}
+        except KeyError:
+            raise HTTPException(status_code=404, detail="no such note")
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    @app.patch("/api/bubbles/{slug}/talks/{talk_id}/notes/{note_id}")
+    def edit_talk_note(slug: str, talk_id: str, note_id: str, body: TalkNoteEditIn,
+                       user: str = Depends(current_user)):
+        try:
+            return {"note": service.edit_talk_note(home_of(user), slug, talk_id, note_id,
+                                                   body.text, author=user)}
+        except KeyError:
+            raise HTTPException(status_code=404, detail="no such note")
+        except ValueError as e:
+            # Only the author's last turn is editable; anything else is a conflict, not a 400.
+            raise HTTPException(status_code=409, detail=str(e))
+
+    @app.put("/api/bubbles/{slug}/talks/{talk_id}/notes/{note_id}/shot.png")
+    def put_talk_note_shot(slug: str, talk_id: str, note_id: str, body: TalkShotIn,
+                           user: str = Depends(current_user)):
+        """Attach the rendered slide, as the reviewer saw it, to a mark."""
+        raw = body.image_b64.split(",", 1)[-1]
+        try:
+            data = base64.b64decode(raw, validate=True)
+        except Exception:
+            raise HTTPException(status_code=400, detail="image_b64 is not base64")
+        if not data.startswith(b"\x89PNG"):
+            raise HTTPException(status_code=400, detail="expected a PNG")
+        if len(data) > 8_000_000:
+            raise HTTPException(status_code=413, detail="snapshot too large")
+        return {"image": service.save_talk_note_image(home_of(user), slug, talk_id, note_id, data)}
+
+    @app.get("/api/bubbles/{slug}/talks/{talk_id}/notes/{note_id}/shot.png")
+    def get_talk_note_shot(slug: str, talk_id: str, note_id: str,
+                           user: str = Depends(current_user)):
+        path = service.talk_note_image_path(home_of(user), slug, talk_id, note_id)
+        if not path.exists():
+            raise HTTPException(status_code=404, detail="no snapshot")
+        # private, no-cache (never no-store): revalidates through auth and 304s when unchanged.
+        return FileResponse(path, media_type="image/png",
+                            headers={"Cache-Control": "private, no-cache"})
+
     @app.delete("/api/bubbles/{slug}/talks/{talk_id}/notes/{note_id}")
     def delete_talk_note(slug: str, talk_id: str, note_id: str,
                          user: str = Depends(current_user)):

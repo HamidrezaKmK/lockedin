@@ -292,6 +292,49 @@ class SlideCitationTests(unittest.TestCase):
         self.assertEqual(refs["bibliography"]["ho2020denoising"]["pdf_id"], "abc123")
 
 
+class SlideCaptionTests(unittest.TestCase):
+    def test_maths_in_a_figure_caption_cannot_break_out_of_the_tag(self):
+        """A live agent wrote `![... $\\lambda$ ...](assets/x.png)` and the slide leaked HTML.
+
+        Alt text becomes an attribute, so stashing and re-rendering maths inside it injects
+        markup into the attribute. The SPA already guarded report pages; slides did not.
+        """
+        js = (Path(__file__).resolve().parents[1] / "src/lockedin/web/talks.js").read_text()
+        self.assertIn("@@LICAP", js)
+        self.assertIn("captions.push(cap)", js)
+        # The guard has to run before the math pass, or it is pointless.
+        self.assertLess(js.index("@@LICAP"), js.index("stashMath(guarded)"))
+
+
+class RouteSurfaceTests(unittest.TestCase):
+    def test_every_talk_route_the_ui_calls_exists(self):
+        """Two cleanups have now silently deleted a route by cutting a source range.
+
+        The snapshot upload disappeared and only a live browser run noticed, because nothing
+        asserted the surface. This walks the app's real routing table.
+        """
+        from lockedin import server
+        app = server.build_app()
+        seen = {(m, r.path) for r in app.routes for m in getattr(r, "methods", []) or []}
+        required = [
+            ("GET", "/api/bubbles/{slug}/talks"),
+            ("POST", "/api/bubbles/{slug}/talks"),
+            ("GET", "/api/bubbles/{slug}/talks/{talk_id}"),
+            ("DELETE", "/api/bubbles/{slug}/talks/{talk_id}"),
+            ("POST", "/api/bubbles/{slug}/talks/{talk_id}/notes"),
+            ("PATCH", "/api/bubbles/{slug}/talks/{talk_id}/notes/{note_id}"),
+            ("POST", "/api/bubbles/{slug}/talks/{talk_id}/notes/{note_id}/replies"),
+            ("DELETE", "/api/bubbles/{slug}/talks/{talk_id}/notes/{note_id}"),
+            ("PUT", "/api/bubbles/{slug}/talks/{talk_id}/notes/{note_id}/shot.png"),
+            ("GET", "/api/bubbles/{slug}/talks/{talk_id}/notes/{note_id}/shot.png"),
+            ("POST", "/api/bubbles/{slug}/talks/{talk_id}/slides/{slide}/revise"),
+            ("GET", "/api/bubbles/{slug}/talk-notes"),
+            ("PUT", "/api/bubbles/{slug}/premise"),
+        ]
+        for method, path in required:
+            self.assertIn((method, path), seen, f"{method} {path} is missing")
+
+
 class SlideFigureTests(unittest.TestCase):
     def test_a_slide_resolves_assets_links_like_a_report_page(self):
         """`assets/x.png` in a slide used to 404: only page rendering rewrote the link."""
