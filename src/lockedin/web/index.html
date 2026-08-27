@@ -827,16 +827,20 @@
      rather than separate nodes, so the hover highlight fills a segment edge to edge. */
   .presence-group-card{display:inline-flex;align-items:stretch;overflow:hidden;
     border-radius:999px;border:1px solid var(--line);background:var(--panel2)}
-  /* Trouble is the middle segment's business: ringing the whole pill amber shouts, and in the
-     light themes --warn is a muddy brown that reads as damage rather than a warning. */
-  .presence-seg.warn{color:var(--warn)}
-  .presence-seg.warn:hover,.presence-seg.warn.on{color:var(--warn)}
   .presence-seg{display:inline-flex;align-items:center;gap:5px;padding:0 11px;min-height:28px;
     border:0;border-radius:0;background:none;color:var(--muted);
     font-family:var(--font-ui);font-size:12px;line-height:1;cursor:pointer;
     font-variant-numeric:tabular-nums;transition:background .15s,color .15s}
   .presence-seg + .presence-seg{border-left:1px solid var(--line)}
   .presence-seg:hover,.presence-seg.on{background:var(--panel);color:var(--ink)}
+  /* The workers segment states its own health — the gear and count take the colour, so no extra
+     dot is needed and the segment stays balanced. Declared after the hover rule on purpose: the
+     two are equally specific, and a hover must not wash the colour out. Trouble is scoped to this
+     segment rather than the whole pill: ringing everything amber shouts, and in the light themes
+     --warn is a muddy brown that reads as damage. */
+  .presence-seg.sync-live{color:var(--good)}
+  .presence-seg.sync-degraded,.presence-seg.sync-unresponsive{color:var(--warn)}
+  .presence-seg.sync-dead{color:var(--bad)}
   .presence-emoji{font-size:12.5px;line-height:1}
   .presence-count{min-width:6px;text-align:center}
   .presence-robot{font-size:14px;padding:0 10px}
@@ -3803,20 +3807,22 @@
     host.classList.remove("hide");
     const viewers=snap.viewers||[], workers=visibleWorkers(snap);
     const worst=worstWorkerState(workers);
-    const segment=(view,title,warn,...kids)=>el("button",
-      {class:"presence-seg"+(S.presenceView===view?" on":"")+(warn?" warn":""),
+    const segment=(view,title,state,...kids)=>el("button",
+      {class:"presence-seg"+(S.presenceView===view?" on":"")+(state?" sync-"+state:""),
        title,onclick:e=>{ e.stopPropagation(); togglePresence(view); }},...kids);
     const group=el("div",{class:"presence-group-card"},
       segment("people", viewers.length===1?"1 person is reading this bubble"
-                                          :viewers.length+" people are reading this bubble", false,
+                                          :viewers.length+" people are reading this bubble", "",
         el("span",{class:"presence-emoji"},"👥"),
         el("span",{class:"presence-count"},String(viewers.length))),
       segment("workers", workers.length===1?"1 folder is syncing this bubble"
                                            :workers.length+" folders are syncing this bubble",
-        workers.length>0&&worst!=="live",
+        // The gear and the count carry the health themselves — `⚙` is a text glyph, so it takes
+        // the colour. A separate dot said the same thing twice and made the segment lopsided.
+        // With nothing syncing there is no health to report, so the segment stays neutral.
+        workers.length?worst:"",
         el("span",{class:"presence-emoji"},"⚙"),
-        el("span",{class:"presence-count"},String(workers.length)),
-        workers.length?el("span",{class:"presence-dot "+worst}):null),
+        el("span",{class:"presence-count"},String(workers.length))),
       el("button",{class:"presence-seg presence-robot",title:"Connect an agent to this bubble",
         "aria-label":"Connect an agent to this bubble",
         onclick:e=>{ e.stopPropagation(); closePresenceMenu(); openScientistSetup(S.bubble); }},"🤖"));

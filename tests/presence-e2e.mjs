@@ -175,11 +175,19 @@ async function main() {
     assert.match(await seg(1).innerText(), /⚙\s*3/,
       "the middle segment counts every worker except the cleanly stopped grave");
     assert.match(await seg(2).innerText(), /🤖/, "the right segment connects an agent");
-    // Trouble belongs to the segment it concerns, not to the whole pill.
-    assert.ok(await seg(1).evaluate(node => node.classList.contains("warn")),
+    // Health is the colour of the gear and the count — no separate dot, and scoped to the segment
+    // it concerns. `worst` here is a rejected client, i.e. dead.
+    assert.ok(await seg(1).evaluate(node => node.classList.contains("sync-dead")),
       "an unhealthy worker must colour the workers segment");
-    assert.ok(!(await seg(0).evaluate(node => node.classList.contains("warn"))),
+    assert.ok(await seg(0).evaluate(node => !/sync-/.test(node.className)),
       "a worker problem must not bleed into the people segment");
+    assert.equal(await page.locator(".presence-group-card .presence-dot").count(), 0,
+      "the card says it with colour; a dot repeated it and unbalanced the segment");
+    // The colour must survive hover and the open state, which are equally specific selectors.
+    const dead = await seg(1).evaluate(node => getComputedStyle(node).color);
+    await seg(1).hover();
+    assert.equal(await seg(1).evaluate(node => getComputedStyle(node).color), dead,
+      "hovering must not wash the health colour out");
     await shoot(page, "presence-card");
     step("the card counts people and workers separately and flags trouble on the right half");
 

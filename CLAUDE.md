@@ -197,8 +197,12 @@ data/workspaces/<workspace-id>/
   `.presence-group-card` pill of three segments — 👥 people | ⚙ workers | 🤖 connect — and each
   half opens only its own half of the menu, so a click answers the question it was asked. It
   renders before the first heartbeat with zeroes rather than appearing a moment late, counts stay
-  visible at 0, and an unhealthy worker colours **the workers segment**, never the whole pill
-  (`--warn` is a muddy brown in the light themes and reads as damage when it rings everything). Nothing is written to disk:
+  visible at 0, and the workers segment states its health **as its own colour** — `⚙` is a text
+  glyph, so gear and count tint together: `--good` while syncing, `--warn` degraded, `--bad` dead,
+  neutral at zero. No status dot beside it (it said the same thing twice), and never the whole
+  pill (`--warn` is a muddy brown in the light themes and reads as damage when it rings
+  everything). Those colour rules must stay **after** `.presence-seg:hover` in the stylesheet:
+  the selectors are equally specific, so declared earlier a hover would wash the health out. Nothing is written to disk:
   presence is a claim about *now*, so a restarted server correctly shows an empty bubble. Each
   worker row carries an `attention` flag (dead by failure or rejection, vs a clean "stopped"): the
   UI hides attention-free graves from the count and the menu, and the multi-directory sync
