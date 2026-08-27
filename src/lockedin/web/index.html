@@ -3565,7 +3565,11 @@
             "Installs LockedIn Scientist, signs this terminal in, confirms the folder, and connects it to this bubble."),
           warn),
         step(3,"Start your AI assistant in the same folder",
-          agentTabs, agentBody),
+          agentTabs, agentBody,
+          el("div",{class:"muted setup-hint"},
+            "Already have one open in that folder? Paste the line from step 2 into that "
+            + "conversation instead — with no terminal to answer from, it just uses the "
+            + "folder the agent is working in.")),
         step(4,"Troubleshoot if needed",
           el("div",{class:"muted setup-hint"},
             "Syncing runs in the background, so you can close the terminal. The chip at the top of "
@@ -3576,6 +3580,8 @@
             " in it and it will say what is wrong. ",
             el("code",{class:"setup-inline"},"lockedin-scientist resync"),
             " restarts a worker that stopped or got stuck — no arguments, it remembers this bubble. "
+            + "Or run a fresh line from step 2 again: it repairs the folder in place, and it is "
+            + "the only one of these that also works where the client was never installed. "
             + "If the folder itself is broken, ",
             el("code",{class:"setup-inline"},"lockedin-scientist hard-reset "+slug),
             " rebuilds it from the server, discarding anything local that never synced."))));

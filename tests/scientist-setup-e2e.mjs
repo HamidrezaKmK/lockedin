@@ -157,7 +157,10 @@ async function main() {
     const steps = await dialog.locator(".setup-step").count();
     assert.equal(steps, 4, "the dialog must walk through all four steps");
     const stepText = (await dialog.locator(".setup-step").allInnerTexts()).join("\n").toLowerCase();
-    for (const expected of ["terminal", "run this there", "assistant", "troubleshoot"]) {
+    // An agent already open in the folder is the other way to run this, and the repair that needs
+    // nothing installed — both have to be findable from the dialog itself.
+    for (const expected of ["terminal", "run this there", "assistant", "troubleshoot",
+                            "paste the line from step 2", "never installed"]) {
       assert.ok(stepText.includes(expected), `step list is missing ${expected}:\n${stepText}`);
     }
     await shoot(page, "setup-dialog");
