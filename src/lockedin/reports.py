@@ -134,15 +134,28 @@ that renames its pages).
 **Show archive** lists the archived ones, where **Restore** brings one back. The 🗑 icon deletes a
 bubble **and all its wiki pages** — archive is the reversible option.
 
+## The bubble home
+
+Opening a bubble shows its **home**: the idea (one paragraph and a goal, kept short on purpose),
+the document as a row of page cards, and the **chalk talks**. Click a page card to open it; the
+**‹** beside the bubble name brings you back from anywhere.
+
+The idea is written by the agent and stamped with when it last revised it — it is the agent's
+own statement of what the work is for. If it is subtly wrong, that is the cheapest and
+highest-value thing you can correct, so **✎ correct this** is right beside it. Both fields take
+Markdown and LaTeX.
+
 ## Page tabs
 
 Each bubble has a mini-wiki. The tabs at the top of the editor list all pages.
 
 - **+** at the left of the tab row — create a new page
+- **◧** and **◨** at the right — open the Markdown editor and your marks. With both closed you
+  get the rendered page and nothing else
 - Click a tab to switch pages (the current page auto-saves first)
 - Drag a tab to reorder pages; page order controls wiki navigation and bubble-wide numbering
 - **✕** on a tab deletes that page (the overview page cannot be deleted)
-- Pick **🏷️ Edit titles** in the **⋮** menu to rename pages (and the bubble itself)
+- Pick **🏷️ Edit titles** in the **⋮** menu (beside the presence pill) to rename pages
 
 The eye icon beside **Insert link** in the editor toolbar hides or shows the current page in
 read-only previews and public shares. Hidden pages are omitted from the tab bar by default.
@@ -168,6 +181,93 @@ immediately; toggle back on to restore the same URL.
 
 Hovering a heading on the shared page reveals a 🔗 anchor for deep-linking to a section.
 Shared pages have a theme-cycle button, restricted to the themes you enabled in **Aesthetics**.
+""",
+    },
+    {
+        "title": "Chalk talks",
+        "content": """\
+## What a chalk talk is
+
+The document is where an idea **lands**. A **chalk talk** is where it gets argued first.
+
+It is a dated deck of slides an agent writes when it has reached something whose correctness
+needs your judgement — a derivation it cannot justify, a design choice with no obvious winner,
+a result it does not trust. You read it and **mark it up**, rather than replying to it.
+
+Open a bubble to see its talks listed under **Chalk talks**, newest first, each showing its
+slide count and how many of your marks are still open.
+
+## Reading one
+
+Click a talk to open it. **←** and **→** or the dot strip move between slides; a yellow dot is a
+slide you have marked. **all slides** shows the whole deck as a contact sheet, so you can see at
+a glance where your ink is; click any card to jump there.
+
+Each slide carries its kind (setup, derivation, evidence, comparison, implementation, ask), its
+date, and its version. A slide revised after your marks shows **◷** — click it for the history,
+which records each version alongside the mark that caused it.
+
+## The five marks
+
+Select any text on a slide and pick one:
+
+| mark | means | what the agent does |
+|---|---|---|
+| ✗ | this is wrong | re-derives, rather than rewording |
+| ? | I don't follow | re-explains, rather than re-deriving |
+| → | go deeper | expands, usually into a report page |
+| ✓ | good, keep this | leans on it rather than cutting it |
+| ✂ | cut this | removes it |
+
+**A mark alone is a complete comment.** Tapping ✗ on a sentence says everything it needs to;
+the text box is optional. That matters on a phone, and it gives the agent a far stronger signal
+than prose it has to infer intent from.
+
+## Marking a region
+
+Some marks are about *where things are*, not what they say. Hit **✎ mark region**, drag a box
+over any part of the slide, and pick a mark. A region mark stores a picture of the slide as you
+saw it, with your box drawn on — which is the only thing that carries layout and placement to an
+agent that cannot see your screen.
+
+Region marks exist only on slides. On a report page, which reflows, a rectangle would say
+nothing a quoted sentence does not.
+
+## Marks are conversations
+
+Every mark is a thread. **reply** adds a turn; the agent answers in the same thread. You can
+**edit** your own last turn — but only that, because rewriting something the other side has
+already answered would leave that answer replying to words that no longer exist.
+
+**remove** withdraws a mark entirely.
+
+## What happens to a mark
+
+A mark is working state, and working state should end. When the agent has genuinely addressed
+one, it revises the slide and names the mark; the mark and its picture are deleted, and what it
+asked for is kept in the slide's version history instead. Nothing accumulates a list of
+"resolved" items nobody reads.
+
+If the agent thinks a mark is mistaken, it is told to say so and argue rather than comply.
+
+## Asking for one
+
+Press **+ ask for one** beside **Chalk talks**. Say what you want explained, add any steer
+("five slides at most", "assume I know the ELBO"), and copy the message into the session working
+on this bubble. The agent creates the talk by writing one file; it appears here on its next sync.
+
+You do not need to describe the format or the rules — the agent has already read them.
+
+## Marks on report pages
+
+Report pages take the same five marks. Select text in the **rendered** page (not the Markdown)
+and pick one; the highlight appears where you read. Open the marks column with **◨** in the tab
+row.
+
+The one difference is the anchor. A page is hand-edited constantly, so a page mark wraps the
+text it points at — you will see `\\comment{id}{…}` in the Markdown — and moves with it when you
+edit around it. A slide mark remembers the quoted text instead, and says so plainly if that text
+later disappears.
 """,
     },
     {

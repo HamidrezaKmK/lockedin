@@ -279,6 +279,10 @@
   .open-source-panel>*{position:relative}
   .open-source-panel h2{margin:0 0 9px}
   .open-source-panel p{margin:0;color:var(--muted);font-size:14px;line-height:1.6;max-width:650px}
+  .landing-bullets{margin:0;padding:0;list-style:none;display:grid;gap:12px;
+    grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+  .landing-bullets li{border:1px solid var(--line);border-radius:12px;background:var(--panel);
+    padding:16px 18px;color:var(--muted);font-size:14.5px;line-height:1.6}
   .clone-box{display:grid;gap:10px;padding:15px;background:color-mix(in srgb,var(--panel) 88%,transparent);border:1px solid var(--line);border-radius:10px}
   .clone-box small{font-family:var(--font-ui);font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--accent2)}
   .clone-command{display:block;overflow:auto;white-space:nowrap;padding:9px 10px;border-radius:7px;background:var(--bg);border:1px solid var(--line);font-family:var(--font-mono);font-size:11px;color:var(--ink)}
@@ -989,7 +993,11 @@
     .workflow-step,.feature-card{min-height:0}
     .open-source-panel{display:block}
     .open-source-panel h2{font-size:23px}
-    .clone-box{margin-top:18px}
+    .landing-bullets{margin:0;padding:0;list-style:none;display:grid;gap:12px;
+    grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+  .landing-bullets li{border:1px solid var(--line);border-radius:12px;background:var(--panel);
+    padding:16px 18px;color:var(--muted);font-size:14.5px;line-height:1.6}
+  .clone-box{margin-top:18px}
     .scientist-install{padding:18px 14px}
   }
 </style>
@@ -1002,10 +1010,10 @@
     <div class="landing-inner">
       <section class="landing-hero" aria-labelledby="landing-title">
         <div>
-          <div class="landing-kicker"><span class="landing-lock">🔒</span> Research command center for grad students</div>
+          <div class="landing-kicker"><span class="landing-lock">🔒</span> AI that communicates clearly for research</div>
           <h1 id="landing-title"><span class="lock">locked</span>in</h1>
-          <p class="landing-lede">Turn a pile of papers and ideas into a rigorous research</p>
-          <p class="landing-copy">Collect PDFs, shape ideas into bubbles, write technical reports, and keep your notes, references, TODOs, and AI-assisted research close to the work.</p>
+          <p class="landing-lede">Stop reading your agent’s work in a terminal</p>
+          <p class="landing-copy">An agent that writes into a chat window is an agent whose work you cannot review. lockedin gives it somewhere to put a real document — slides, figures, derivations — and gives you a way to mark that work up the way you would a student’s.</p>
           <div class="landing-points">
             <div class="landing-point"><b>Organize Research</b><span>Keep PDFs, notes, tags, summaries, and BibTeX in a fully indexed library.</span></div>
             <div class="landing-point"><b>Math Help with AI</b><span>Build bubbles and math-aware reports that evolve with your project.</span></div>
@@ -1014,7 +1022,7 @@
         </div>
         <form class="landing-auth-panel col" onsubmit="return false" aria-label="Account access">
           <h2>Enter your workspace</h2>
-          <div class="auth-note">Log in, or create an account and start building your research graph.</div>
+          <div class="auth-note">Log in, or create an account and give your agent somewhere to write.</div>
           <input id="au_user" placeholder="username" autocomplete="username">
           <input id="au_pass" type="password" placeholder="password" autocomplete="current-password">
           <div class="row">
@@ -1053,10 +1061,22 @@
         </div>
       </section>
 
+      <section class="landing-section" aria-labelledby="why-title">
+        <div class="landing-section-head">
+          <h2 id="why-title">Why this exists</h2>
+          <p>lockedin came out of equal parts fascination and frustration with working alongside AI through a terminal. The models had become good collaborators; the interface had not.</p>
+        </div>
+        <ul class="landing-bullets" id="why-bullets">
+          <li>Chalk talks: dated slide decks an agent writes when something needs your judgement.</li>
+          <li>Marks, not replies: five of them, on slides and report pages alike, anchored to the exact text.</li>
+          <li>A record that survives the session: every revision keeps the mark that caused it.</li>
+        </ul>
+      </section>
+
       <section class="landing-section" aria-labelledby="workflow-title">
         <div class="landing-section-head">
-          <h2 id="workflow-title">Paper pile to working theory</h2>
-          <p>Collect sources, shape topic clusters, write technical notes, then share and track.</p>
+          <h2 id="workflow-title">From an experiment to something you can argue with</h2>
+          <p>Point an agent at the repo where the work actually happens; read what it found as a document, not a transcript.</p>
         </div>
         <div class="workflow-grid">
           <div class="workflow-step"><span class="workflow-num">01</span><b>Bubble</b><span>Create a theme or idea you would like to research on</span></div>
@@ -1079,6 +1099,18 @@
           <div class="feature-card"><div class="feature-icon">💬</div><b>Slack Sync</b><br><span>Sync papers and research notes across devices using Slack.</span></div>
           <div class="feature-card"><div class="feature-icon">📋</div><b>TODOs</b><br><span>Track open research tasks and link them from your report pages with Github issue style referencing.</span></div>
         </div>
+      </section>
+
+      <section class="landing-section" aria-labelledby="pi-title">
+        <div class="landing-section-head">
+          <h2 id="pi-title">Research like a PI, not a grad student</h2>
+          <p>The pitch is not that the agent does your work. It is that you get to do the part of the job that is actually yours.</p>
+        </div>
+        <ul class="landing-bullets" id="pi-bullets">
+          <li>You read and judge; the agent derives, runs, plots and rewrites.</li>
+          <li>A mark is a pointed finger plus one word — it costs a tap, not a paragraph.</li>
+          <li>Marks disappear when they are answered. Nothing accumulates a list nobody reads.</li>
+        </ul>
       </section>
 
       <section class="landing-section" aria-labelledby="privacy-title">
@@ -1373,6 +1405,15 @@
       el("b",{},f.title||""),
       el("br"),
       el("span",{},f.text||"")));
+
+    const bulletSection=(data,titleSel,listSel)=>{
+      setText(titleSel,data.title);
+      const host=$(titleSel)&&$(titleSel).parentElement.querySelector("p");
+      if(host&&data.text!=null) host.textContent=String(data.text).split("\n\n")[0];
+      cards(listSel,data.bullets,(b)=>el("li",{},String(b||"")));
+    };
+    bulletSection(c.why||{},"#why-title","#why-bullets");
+    bulletSection(c.pi||{},"#pi-title","#pi-bullets");
 
     const privacy=c.privacy||{};
     setText("#privacy-title",privacy.title);
