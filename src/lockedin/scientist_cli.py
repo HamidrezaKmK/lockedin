@@ -1083,7 +1083,14 @@ class ProjectSync:
                 item = fetch(rel); self._write_remote(item)
             tracked[rel] = {"revision": remote[rel]}
         math_revision = remote.get("config/math.yaml", "")
-        if prior_math_revision != math_revision:
+        # The version marker is checked here as well as in validate_or_initialize, which only runs
+        # when a worker starts: a project whose worker has been up since before a SKILL_VERSION
+        # bump would otherwise keep serving its agents the old guide indefinitely — exactly the
+        # projects that are working fine and never get restarted.
+        skill = self.root / "SKILL.md"
+        stale = f"lockedin-scientist-skill: {SKILL_VERSION}" not in (
+            skill.read_text() if skill.exists() else "")
+        if prior_math_revision != math_revision or stale:
             self._refresh_skill()
             state["skill_math_revision"] = math_revision
         for root_name in ("assets",):

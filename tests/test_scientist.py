@@ -577,6 +577,31 @@ class ScientistProjectSyncTest(unittest.TestCase):
             self.assertFalse((sync.root / "reports" / "assets" / "figure.png").exists())
 
 
+class SkillVersionReachesRunningWorkers(unittest.TestCase):
+    """A SKILL_VERSION bump has to reach projects whose worker never restarts.
+
+    validate_or_initialize checks the marker, but it only runs when a worker starts — so the
+    projects that are healthiest were the ones stuck on the old guide.
+    """
+
+    def test_a_stale_guide_is_refreshed_by_an_ordinary_sync_cycle(self):
+        with temp_data_home(), tempfile.TemporaryDirectory() as directory, patch.object(
+                scientist_cli, "request", return_value={"guide": "## Guide\n"}):
+            project = Path(directory)
+            sync = scientist_cli.ProjectSync(dict(ACCOUNT), project, "work")
+            sync.validate_or_initialize()
+            skill = project / ".lockedin" / "SKILL.md"
+            self.assertIn(f"lockedin-scientist-skill: {scientist_cli.SKILL_VERSION}",
+                          skill.read_text())
+
+            skill.write_text("<!-- lockedin-scientist-skill: 1 -->\nancient\n")
+            with patch.object(scientist_cli.ProjectSync, "_request",
+                              return_value={"files": [], "writable": []}):
+                sync.sync_once()
+            self.assertIn(f"lockedin-scientist-skill: {scientist_cli.SKILL_VERSION}",
+                          skill.read_text())
+
+
 class GitWorktreeLayout(unittest.TestCase):
     """The locator the skills hand agents has to actually resolve a worktree."""
 
