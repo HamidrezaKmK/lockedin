@@ -323,7 +323,13 @@ That link is **single-use and expires in ten minutes**, because for its short li
 it is signed in as you. Click the robot again for a fresh one; nothing is stored server-side, so a
 server restart invalidates any outstanding link.
 
-Running it again later is safe: it resumes an already-connected folder instead of rebuilding it.
+You can also hand that line to an agent instead of a terminal — a cloud sandbox, for instance,
+where nothing is installed yet. With no terminal to ask on it connects the directory it was run
+from rather than prompting, so start the agent in the project folder.
+
+Running it again later is safe: it resumes an already-connected folder instead of rebuilding it,
+which also makes it the way to revive a worker that stopped on a machine where the client is not
+installed. Where the client *is* installed, `lockedin-scientist resync` does that in one word.
 The rest of this section is the same setup done by hand.
 
 ### Install

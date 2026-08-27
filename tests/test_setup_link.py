@@ -87,6 +87,51 @@ class SetupScriptServing(unittest.TestCase):
                 self.assertIn(marker, response.text)
 
 
+class SetupScriptWithoutATerminal(unittest.TestCase):
+    """The same line has to work for a person and for an agent.
+
+    A person pastes it into their own terminal, where the folder prompt reaches them only through
+    /dev/tty (the script itself is on stdin, from curl). An agent pastes it into a shell with no
+    controlling terminal, where opening /dev/tty is a hard error — and that is exactly the case
+    where the client is least likely to be installed already, so failing there would break the one
+    path that could have set it up.
+    """
+
+    @staticmethod
+    def _script():
+        return setup_tickets.unix_script("https://x.test", "TKT", "WS", "bub")
+
+    def test_the_unix_script_offers_both_a_prompt_and_a_fallback(self):
+        script = self._script()
+        self.assertIn("< /dev/tty", script)
+        self.assertIn('--project "$PWD"', script)
+
+    def test_the_powershell_script_offers_both(self):
+        script = setup_tickets.powershell_script("https://x.test", "TKT", "WS", "bub")
+        self.assertIn("IsInputRedirected", script)
+        self.assertIn('--project "$PWD"', script)
+
+    def test_a_shell_with_no_terminal_actually_takes_the_fallback(self):
+        """Exercise the branch rather than the string: this is shell logic, not copy."""
+        import subprocess
+        script = self._script()
+        # Keep the real branch; stub the install and the command it would exec.
+        script = script.replace(
+            "curl -fsSL https://raw.githubusercontent.com/HamidrezaKmK/lockedin/main/install.sh | bash",
+            "true")
+        script = script.replace("exec lockedin-scientist connect", "echo CHOSE:")
+        run = subprocess.run(["bash", "-c", script], capture_output=True, text=True,
+                             stdin=subprocess.DEVNULL, cwd="/tmp")
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertIn("CHOSE:", run.stdout)
+        self.assertIn("--project /tmp", run.stdout.replace('"', ""))
+        self.assertIn("No terminal to ask on", run.stdout)
+        # And it must be quiet about it: the failed open has to be silenced *before* it happens,
+        # or bash prints "/dev/tty: No such device" into the agent's log for no reason.
+        self.assertNotIn("No such device", run.stderr)
+        self.assertEqual(run.stderr.strip(), "")
+
+
 class SetupTicketRedemption(unittest.TestCase):
     def test_redeeming_returns_the_authorization_exactly_once(self):
         with client() as (api, slug):

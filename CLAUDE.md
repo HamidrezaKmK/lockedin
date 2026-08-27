@@ -220,8 +220,12 @@ data/workspaces/<workspace-id>/
   is the credential) that installs the client and runs `lockedin-scientist connect`, which redeems
   the ticket once via `/api/scientist/v2/setup/<t>`. Nothing is persisted, so a restart invalidates
   every outstanding link — the same rule as presence and device codes. Three details are
-  load-bearing: the served script runs `connect` with **`< /dev/tty`**, because the script itself
-  arrives on stdin from `curl` and the folder prompt would otherwise eat the rest of it; `peek()`
+  load-bearing: the served script runs `connect` with **`< /dev/tty`** when there is a terminal,
+  because the script itself arrives on stdin from `curl` and the folder prompt would otherwise eat
+  the rest of it — and falls back to `--project "$PWD"` when there is not, because an **agent** on
+  a fresh cloud box has no controlling terminal and that is precisely where this link is the only
+  thing that can install the client (the `/dev/tty` probe silences stderr *before* attempting the
+  open, or bash logs a bogus "No such device" at it); `peek()`
   deliberately returns no token, so serving a script cannot leak one; and `connect` **pins the
   workspace into the project's binding rather than calling `workspaces switch`**, because that
   setting is device-global (see the `resync` note above). `connect` also reuses an existing

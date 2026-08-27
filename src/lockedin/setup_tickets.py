@@ -90,42 +90,68 @@ def clear() -> None:
 
 
 def unix_script(origin: str, ticket: str, workspace_id: str, slug: str) -> str:
-    """The bash the macOS/Linux snippet pipes into a shell."""
-    # `< /dev/tty` is load-bearing: this script is itself arriving on stdin from curl, so without
-    # it `connect`'s "which folder?" prompt would read the remainder of the script and never reach
-    # a human. install.sh does not put its bin directory on PATH either, hence the explicit export.
+    """The bash the macOS/Linux snippet pipes into a shell.
+
+    Two environments have to work from the same line. A person pastes it into their own terminal,
+    where `connect` should ask which folder to use — and because the script is itself arriving on
+    stdin from curl, that prompt only reaches them through `/dev/tty`. An **agent** pastes it into
+    a shell with no controlling terminal at all, where opening `/dev/tty` is a hard error; that is
+    also the case where the client is least likely to be installed already (a fresh cloud box),
+    so failing there would break the one path that could have set it up. With nobody to ask, the
+    directory the script was run from *is* the project, which is what a person would have answered.
+    """
+    connect = (f"lockedin-scientist connect \\\n"
+               f"    --server {origin!r} \\\n"
+               f"    --workspace {workspace_id!r} \\\n"
+               f"    --bubble {slug!r} \\\n"
+               f"    --ticket {ticket!r}")
     return f"""#!/usr/bin/env bash
 set -euo pipefail
 
 echo "Installing lockedin-scientist…"
 curl -fsSL https://raw.githubusercontent.com/HamidrezaKmK/lockedin/main/install.sh | bash
 
+# install.sh does not touch PATH; it only prints where it put the command.
 export PATH="$HOME/.local/bin:$PATH"
 
-exec lockedin-scientist connect \\
-  --server {origin!r} \\
-  --workspace {workspace_id!r} \\
-  --bubble {slug!r} \\
-  --ticket {ticket!r} < /dev/tty
+# stderr is silenced *before* the open is attempted: bash applies redirections left to right,
+# so the other order lets "/dev/tty: No such device" escape to an agent's log.
+if : 2>/dev/null < /dev/tty; then
+  exec {connect} < /dev/tty
+else
+  echo "No terminal to ask on — connecting the current directory: $PWD"
+  exec {connect} \\
+    --project "$PWD"
+fi
 """
 
 
 def powershell_script(origin: str, ticket: str, workspace_id: str, slug: str) -> str:
-    """The PowerShell the Windows snippet pipes into ``iex``."""
-    # install.ps1 already prepends its bin directory to the current session's PATH, so the command
-    # below resolves without an explicit path. Read-Host reads the console, so no /dev/tty dance.
+    """The PowerShell the Windows snippet pipes into ``iex``.
+
+    Same two environments as :func:`unix_script`. Read-Host reads the console directly, so there
+    is no ``/dev/tty`` dance — but with input redirected (an agent, CI) it cannot prompt either,
+    and the current directory stands in for the answer.
+    """
     def quote(value: str) -> str:
         return "'" + str(value).replace("'", "''") + "'"
 
+    connect = (f"lockedin-scientist connect `\n"
+               f"    --server {quote(origin)} `\n"
+               f"    --workspace {quote(workspace_id)} `\n"
+               f"    --bubble {quote(slug)} `\n"
+               f"    --ticket {quote(ticket)}")
     return f"""$ErrorActionPreference = 'Stop'
 Write-Host "Installing lockedin-scientist…"
 irm https://raw.githubusercontent.com/HamidrezaKmK/lockedin/main/install.ps1 | iex
 
-lockedin-scientist connect `
-  --server {quote(origin)} `
-  --workspace {quote(workspace_id)} `
-  --bubble {quote(slug)} `
-  --ticket {quote(ticket)}
+if ([Console]::IsInputRedirected) {{
+  Write-Host "No terminal to ask on - connecting the current directory: $PWD"
+  {connect} `
+    --project "$PWD"
+}} else {{
+  {connect}
+}}
 """
 
 
