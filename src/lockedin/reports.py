@@ -128,7 +128,11 @@ New bubbles are created explicitly from the Bubbles view.
 ## Renaming & deleting
 
 Rename a bubble from its detail view via **🏷️ Edit titles** in the **⋮** menu (the same mode
-that renames its pages). The 🗑 icon on a bubble card deletes the bubble **and all its wiki pages**.
+that renames its pages).
+
+**Archive** on a bubble card hides it from the Bubbles list without touching its papers or pages;
+**Show archive** lists the archived ones, where **Restore** brings one back. The 🗑 icon deletes a
+bubble **and all its wiki pages** — archive is the reversible option.
 
 ## Page tabs
 
@@ -157,10 +161,9 @@ are rewritten automatically.
 
 ## Sharing
 
-Open the **⋮** menu in the bubble header and click **Public link** to publish an unlisted,
-read-only link. While sharing is active the row reads **On**, an **↗ Open shared page** entry
-appears, and the ⋮ button keeps a small green dot so you can see it from the closed menu.
-Anyone with the link can browse visible pages (no login needed). Toggle off to revoke
+Open the **⋮** menu in the page toolbar and click **Public link** to publish an unlisted,
+read-only link. While sharing is active the row reads **On** and an **↗ Open shared page** entry
+appears beneath it. Anyone with the link can browse visible pages (no login needed). Toggle off to revoke
 immediately; toggle back on to restore the same URL.
 
 Hovering a heading on the shared page reveals a 🔗 anchor for deep-linking to a section.
@@ -468,7 +471,7 @@ and starts a new worker. It preserves a connected Overleaf checkout unless you e
 
 ### Overleaf: an explicit publication workflow
 
-Each bubble can optionally link one Overleaf Cloud project from the **⋮** menu in its header.
+Each bubble can optionally link one Overleaf Cloud project from the **⋮** menu in its page toolbar.
 The link is workspace
 metadata managed by LockedIn; Scientist only reads it. After the worker has downloaded the link,
 connect the local checkout:
@@ -542,8 +545,7 @@ hides the navigation; click it again to exit.
 
 The bubble page is the same one control surface, sized for a phone: page tabs, the editor
 toolbar, **+**, and **⋮**. Everything above is reachable from that menu, including switching
-between **👁 Read** and **✏️ Edit**. A small **↗** link in the top-right corner opens the
-read-only preview of the current page.
+between **👁 Read** and **✏️ Edit**, and **👁 Preview page** for the read-only view.
 
 ---
 

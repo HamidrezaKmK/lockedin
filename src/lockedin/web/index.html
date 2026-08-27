@@ -213,14 +213,12 @@
   .muted{color:var(--muted)}
   .pill{display:inline-block;background:var(--panel2);border:1px solid var(--line);
         border-radius:999px;padding:2px 10px;font-size:12px;margin:2px 4px 2px 0}
-  .pill.suggest{border-color:var(--warn);color:var(--warn)}
   .pill.more{border-color:var(--line);color:var(--muted)}
   .dot{width:9px;height:9px;border-radius:50%;display:inline-block;background:var(--muted)}
   .dot.ok{background:var(--good)} .dot.bad{background:var(--bad)}
   .hide{display:none!important}
   /* Shown only on phones (the mobile media query flips it on); the `.hide` class still wins
      (it's !important) so it can additionally be gated to specific views from JS. */
-  .mobile-only{display:none}
 
   /* auth / public landing */
   #auth{height:100vh;min-height:100vh;display:block;
@@ -260,12 +258,12 @@
   .landing-section h2{font-size:28px;line-height:1.15;margin:0;letter-spacing:0}
   .landing-section-head p{margin:0;color:var(--muted)}
   .workflow-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
-  .workflow-step,.feature-card,.privacy-panel{background:var(--panel);border:1px solid var(--line);
+  .workflow-step,.feature-card{background:var(--panel);border:1px solid var(--line);
     border-radius:8px;padding:16px;box-shadow:var(--shadow-sm)}
   .workflow-step{display:flex;flex-direction:column;gap:8px;min-height:150px}
   .workflow-num{font-family:var(--font-mono);font-size:12px;color:var(--accent2)}
   .workflow-step b,.feature-card b{font-size:15px}
-  .workflow-step span,.feature-card span,.privacy-panel p{color:var(--muted);font-size:13px;line-height:1.55}
+  .workflow-step span,.feature-card span{color:var(--muted);font-size:13px;line-height:1.55}
   .feature-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
   .feature-card{min-height:142px}
   .feature-icon{width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;
@@ -568,9 +566,10 @@
   .color-swatch:hover{border-color:var(--ink);transform:translateY(-1px)}
   .small{font-size:12px;padding:5px 9px}
   .overleaf-mark{display:block;width:16px;height:16px;object-fit:contain;flex:0 0 auto}
-  /* Bubble tools: Assets, Overleaf and preview/sharing used to be three button groups in the
-     title row, which crowded it and shoved the bubble name around. They collapse into one ⋮
-     button whose dropdown reuses the presence menu's visual language. */
+  /* Bubble tools: the view modes, Edit titles, Papers, Assets, the Overleaf link and
+     preview/sharing were once six controls spread over two rows, several of them hidden on
+     phones. They collapse into the page toolbar's ⋮, whose dropdown reuses the presence menu's
+     visual language. */
   .toolmenu{position:relative;flex-shrink:0}
   .toolmenu-btn{position:relative;display:inline-flex;align-items:center;justify-content:center;
     padding:0;cursor:pointer;transition:background .15s}
@@ -728,7 +727,6 @@
   .review-thread summary::before{content:"▸ ";color:var(--muted)}
   .review-thread[open] summary::before{content:"▾ "}
   .review-meta{color:var(--muted);font-size:11px;margin-top:3px}
-  .review-body{padding:0 9px 9px;font-size:13px;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere}
   .review-msg{border-top:1px solid var(--line);padding:8px 9px;font-size:13px;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere}
   .review-thread summary>b,.review-msg b{font-size:11px;color:var(--accent);font-weight:700}
   .review-actions{display:flex;gap:5px;flex-wrap:wrap;padding:8px 9px;border-top:1px solid var(--line)}
@@ -770,8 +768,6 @@
   .centered-text{text-align:center}
   .todoref{color:var(--accent);font-weight:500;cursor:pointer;text-decoration:none;
     background:rgba(124,156,255,.12);padding:0 4px;border-radius:4px}
-  .scopebar{display:flex;gap:6px;align-items:center;padding:6px 10px;border-top:1px solid var(--line)}
-  .scopebar select{width:auto;max-width:230px}
   /* "Papers in this bubble": papers render as wrapped, pressable pills (same look as the
      each links to the PDF; a remove ✕ only appears in edit mode. */
   .bubble-pdf-list{display:flex;flex-wrap:wrap;gap:5px}
@@ -917,8 +913,6 @@
     /* A bubble is an editor workspace, not a document page: keep the app frame fixed and let
        the editor/preview own scrolling. This removes Safari's extra page-level scroll handle. */
     #app.detail-open{height:var(--vvh);min-height:var(--vvh);overflow:hidden}
-    /* The Papers controls are intentionally floating controls. Do not reserve page space
-       for them: that would shrink the bubble field and make the controls look detached. */
     #app.detail-open #main.detailmode{height:100%;overflow:hidden;padding:12px 10px 0}
     #app.detail-open #detail{display:flex;flex:1;min-height:0}
     #app.detail-open #detail>.editor-pane{height:auto;min-height:0;flex:1}
@@ -942,8 +936,6 @@
     #detail{display:block;min-height:0}
     .pane{height:auto;min-height:0}
     #detail>.editor-pane{height:calc(var(--vvh) - 154px - env(safe-area-inset-top));min-height:min(380px, calc(var(--vvh) - 154px))}
-    #previewArrow{display:none!important}
-    .mobile-only{display:inline-flex;align-items:center}
     /* Mobile respects the chosen view mode, picked from the ⋮ menu like everywhere else.
        Panes stack vertically; the .mode-view/.mode-edit rules above hide whichever pane isn't
        wanted, and split shows both — editor above preview. */
@@ -1099,8 +1091,6 @@
     </div>
     <button class="ghost small help-cta" id="helpBtn" title="Help and user guide">Help</button>
     <button class="ghost small" id="themeCycle" title="Cycle theme">🌙</button>
-    <!-- mobile-only: opens the read-only preview of the current bubble page; hidden off a bubble -->
-    <button class="ghost small mobile-only hide" id="previewArrow" title="Open the read-only preview of this page">↗</button>
   </div>
 
   <div id="side">
@@ -1879,9 +1869,9 @@
   // ---------- state ----------
   const WORKSPACE_STORAGE_KEY="li_workspace";
   const S = { user:null, model:null, premium:false, premiumRequestedAt:"", admin:false,
-    workspaceId:null, personalWorkspaceId:null, workspaces:[],
+    workspaceId:null, workspaces:[],
     mathMacros:{}, refs:null, view:"assets", bubble:null,
-    editor:null, page:null, pages:[], home:null, bubbleInstr:"", bubbleAssets:[],
+    editor:null, page:null, pages:[], home:null, bubbleAssets:[],
     todos:[], todosById:{}, todoFilter:"open", bubbleFilter:"active",
     pollTimer:null, lastPageMtime:null, lastManifestMtime:null, lastAssetsMtime:null,
     baseMtime:null, autosaveTimer:null, saving:false, syncState:"synced", applyingRemote:false,
@@ -2094,8 +2084,6 @@
   // preference; boot() restores that saved theme immediately after authentication.
   applyTheme("dark",{persist:false});
   // Mobile-only ↗ in the topbar → open the current bubble page's read-only preview in a new tab.
-  $("#previewArrow").onclick=()=>{ if(S.bubble) window.open(
-    workspaceUrl("/api/bubbles/"+S.bubble+"/preview/"+(S.page||S.home||"overview")),"_blank"); };
 
   async function boot(){
     // Click any figure in the rendered pane (Split and Read) to open it full-screen. Delegated
@@ -2122,7 +2110,7 @@
       try{ me=await api("/api/me"); }catch(_){ return; }
     }
     S.user=me.user; S.model=me.model; S.premium=!!me.premium;
-    S.workspaceId=me.workspace_id||null; S.personalWorkspaceId=me.personal_workspace_id||null;
+    S.workspaceId=me.workspace_id||null;
     if(S.workspaceId)localStorage.setItem(WORKSPACE_STORAGE_KEY,S.workspaceId);
     S.premiumRequestedAt=me.premium_requested_at||""; S.admin=!!me.admin;
     S.availableThemes=Array.isArray(me.themes)?me.themes:THEMES.slice();
@@ -2552,7 +2540,6 @@
   function switchView(v,{noRoute=false}={}){
     leaveBubbleWorkspace();
     S.view=v;
-    $("#previewArrow").classList.add("hide");   // left the bubble → hide the mobile preview link
     document.querySelectorAll(".navbtn").forEach(b=>b.classList.toggle("active",b.dataset.view===v));
     if(!noRoute)pushRoute(v==="assets"?"":v);
     if(v==="home")viewHome();
@@ -3053,7 +3040,6 @@
   async function viewMigratePapers({noRoute=false}={}){
     leaveBubbleWorkspace();
     S.view="bubbles";
-    $("#previewArrow").classList.add("hide");
     document.querySelectorAll(".navbtn").forEach(b=>b.classList.toggle("active",b.dataset.view==="bubbles"));
     if(!noRoute)pushRoute("migrate");
     const {m,version}=beginMainRender();
@@ -3273,7 +3259,6 @@
   async function viewTodo(id){
     leaveBubbleWorkspace();
     S.view="todos";
-    $("#previewArrow").classList.add("hide");   // left the bubble → hide the mobile preview link
     document.querySelectorAll(".navbtn").forEach(b=>b.classList.toggle("active",b.dataset.view==="todos"));
     pushRoute("todos/"+id);
     const {m,version}=beginMainRender();
@@ -3348,7 +3333,7 @@
     m.append(del);
   }
 
-  // ---- public share controls (toggle + copy link to current page/section) ----
+  // ---- public share links: which page a share URL should point at ----
   function currentPageMeta(){
     return (S.pages||[]).find(p=>p.page_slug===S.page)||null;
   }
@@ -3615,8 +3600,8 @@
     overlay.append(box);overlay.onclick=e=>{if(e.target===overlay)overlay.remove();};document.body.append(overlay);setTimeout(()=>input.focus(),0);
   }
 
-  // One ⋮ menu for everything the bubble's title row used to spell out in buttons: the Overleaf
-  // link, the read-only preview and public share link, and the assets browser.
+  // One ⋮ menu for everything you can do with a bubble that is not typing in it: the view
+  // modes and Edit titles, its papers and assets, the Overleaf link, and preview/sharing.
   function buildBubbleToolsMenu(slug,b){
     const host=el("div",{class:"toolmenu"});
     const btn=el("button",{class:"toolmenu-btn",title:"Bubble tools","aria-label":"Bubble tools",
@@ -3914,8 +3899,6 @@
     if(b.approved&&sessionStorage.getItem("li_bubble_focus")==="1"){
       setBubbleFocus(true,{persist:false});
     }
-    // mobile ↗ preview link in the topbar: only meaningful on an approved bubble (it has pages)
-    $("#previewArrow").classList.toggle("hide", !b.approved);
     // Deep-link: restore a specific page (e.g. after a refresh) without clobbering history.
     if(b.approved && page && page!==S.home && S.pages.some(p=>p.page_slug===page)){
       switchPage(page,{noRoute:true});
@@ -3932,7 +3915,7 @@
 
   // ---- workspace: page tabs + Toast UI editor ----
   function buildWorkspace(left,b){
-    S.pages=b.pages||[]; S.home=b.home; S.bubbleInstr=b.instructions||"";
+    S.pages=b.pages||[]; S.home=b.home;
     fetchRefs().then(()=>updatePreview());   // bubble-wide eqn/thm numbering for the preview
     const tabs=el("div",{class:"ptabs",id:"ptabs"});
     const editorWrap=el("div",{id:"editorWrap"});
@@ -5091,7 +5074,6 @@
       applyRemote(c||""); markSynced(); scrollContentTop(); primeSync(); }
     refreshTabs(); fetchRefs().then(()=>updatePreview());   // page removed → renumber
   }
-  const SYNC_LABEL={synced:"✓ synced",stale:"✎ unsaved",saving:"… saving",conflict:"✕ unsynced"};
   const SYNC_ICON={synced:"✓",stale:"✎",saving:"…",conflict:"✕"};
   function editorToolButton(id,title,onClick){
     const b=document.createElement("button");
