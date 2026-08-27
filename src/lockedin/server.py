@@ -1109,7 +1109,11 @@ def build_app():
         from . import reports as _r
         invite = (os.environ.get("SLACKBOT_INVITE_LINK") or "").strip()
         if invite and re.match(r"^https://join\.slack\.com/\S+$", invite):
-            invite_md = f"[Join the lockedin Slack workspace]({invite}) to use the bot."
+            # Slack shared invites expire, and nothing here can detect that without calling Slack
+            # on every help request — so say where to go when the link stops working.
+            invite_md = (f"[Join the lockedin Slack workspace]({invite}) to use the bot. "
+                         "Slack invites expire: if that link reports it is no longer active, ask "
+                         "the workspace admin for a fresh one.")
         else:
             invite_md = ("Ask the workspace admin for the Slack invite link. Operators can set "
                          "`SLACKBOT_INVITE_LINK` in the server environment to show it here.")

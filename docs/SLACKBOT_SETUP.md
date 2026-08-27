@@ -49,7 +49,17 @@ SLACK_APP_TOKEN=xapp-...
 # LOCKEDIN_URL=https://yourdomain.example/
 # OLLAMA_BASE_URL=http://localhost:11434/v1
 # QWEN_MODEL=qwen2.5:7b-instruct
+
+# Shown in the app's Help → Slackbot tab so people can join and DM the bot.
+# SLACKBOT_INVITE_LINK=https://join.slack.com/t/your-workspace/shared_invite/...
 ```
+
+`SLACKBOT_INVITE_LINK` is read by the **web server**, not the bot, so it belongs in
+`ops/lockedin.env` too if you run the server under systemd — and the server needs a restart to
+pick up a change. **Slack shared invites expire** (30 days, or after a set number of uses, unless
+you create one that never expires). When the Help tab's link starts answering *"this link is no
+longer active"*, generate a fresh one in Slack and replace the value; nothing in lockedin can
+detect the expiry for you.
 
 Then run:
 
@@ -90,7 +100,9 @@ For those persistent links, the web server and Slack bot must share
 |---|---|
 | *(first message)* | Bot asks for username, then password |
 | Attach a PDF / send a PDF link | Uploads it to your Library queue |
+| `workspaces` (or `switch workspace`) | Lists your workspaces, reply with a number to set the active one |
 | `select` (or `switch`) | Lists your bubbles, reply with a number to set the active one |
 | `list` | Lists your bubbles |
+| `todos` | Lists your open TODOs, then add / edit / complete / remove them |
 | `help` | Shows the command list |
 | anything else | Shows the command list — the bot has no chat, it only manages assets |

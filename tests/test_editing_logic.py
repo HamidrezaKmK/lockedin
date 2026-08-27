@@ -1646,5 +1646,42 @@ class DocumentedMarkupInCodeIsNotMarkup(unittest.TestCase):
                 self.assertEqual(saved.json()["content"], body)
 
 
+class SlackbotGuideInvite(unittest.TestCase):
+    """The Help tab's Slack invite is operator configuration, and Slack invites expire."""
+
+    def _slack_section(self, client):
+        sections = client.get("/api/help").json()["sections"]
+        return next(s["content"] for s in sections if s["title"] == "Slackbot")
+
+    def test_a_configured_invite_is_linked_and_says_what_to_do_when_it_lapses(self):
+        link = "https://join.slack.com/t/example/shared_invite/zt-abc-def"
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+                os.environ, {"LOCKEDIN_HOME": directory, "SLACKBOT_INVITE_LINK": link}):
+            with TestClient(server.build_app(), base_url="https://testserver") as client:
+                content = self._slack_section(client)
+        self.assertIn(f"]({link})", content)
+        self.assertIn("expire", content)
+        self.assertNotIn("{{SLACKBOT_INVITE}}", content)
+
+    def test_an_unset_or_bogus_invite_points_the_operator_at_the_env_var(self):
+        for value in ("", "https://evil.example/phish"):
+            with tempfile.TemporaryDirectory() as directory, patch.dict(
+                    os.environ, {"LOCKEDIN_HOME": directory, "SLACKBOT_INVITE_LINK": value}):
+                with TestClient(server.build_app(), base_url="https://testserver") as client:
+                    content = self._slack_section(client)
+            self.assertIn("SLACKBOT_INVITE_LINK", content)
+            self.assertNotIn("](https://evil.example", content)
+            self.assertNotIn("{{SLACKBOT_INVITE}}", content)
+
+    def test_the_guide_lists_every_command_the_bot_actually_answers(self):
+        """The bot's triggers and the guide drifted once already (workspaces, todos)."""
+        from lockedin import slackbot
+        source = Path(slackbot.__file__).read_text(encoding="utf-8")
+        section = reports.guide_section("Slackbot")
+        for command in ("help", "workspaces", "switch workspace", "select", "list", "todos"):
+            self.assertIn(f"`{command}`", section, f"the guide omits {command}")
+            self.assertIn(command.split()[0], source)
+
+
 if __name__ == "__main__":
     unittest.main()

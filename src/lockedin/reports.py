@@ -288,8 +288,9 @@ You only need to log in again if you change your lockedin username or password.
 
 ## What it can do
 
+- **`help`** — show this list in Slack; anything the bot does not recognize shows it too
 - **`workspaces`** or **`switch workspace`** — list and select the active workspace
-- **`select`** — choose the active bubble
+- **`select`** or **`switch`** — choose the active bubble
 - **`list`** — show your bubbles
 - **Attach a PDF** — uploads it to your Library queue
 - **Send a PDF link** — fetches and uploads the paper when the link resolves to a PDF
