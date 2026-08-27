@@ -134,3 +134,33 @@ def ensure_user_dirs(user: str) -> None:
     home = user_home(user)
     for sub in ("ASSETS", "REPORTS", "config"):
         (home / sub).mkdir(parents=True, exist_ok=True)
+
+
+def bubble_talks_dir(slug: str) -> Path:
+    """Chalk talks: dated slide decks the agent writes to explain an idea."""
+    return bubble_dir(slug) / "talks"
+
+
+def bubble_talk_path(slug: str, talk_id: str) -> Path:
+    return bubble_talks_dir(slug) / f"{talk_id}.md"
+
+
+def bubble_talk_notes_path(slug: str, talk_id: str) -> Path:
+    """Your marks on a deck. A sidecar, so your pen never edits the agent's record."""
+    return bubble_talks_dir(slug) / f"{talk_id}.notes.yaml"
+
+
+def bubble_talk_history_path(slug: str, talk_id: str) -> Path:
+    return bubble_talks_dir(slug) / f"{talk_id}.history.yaml"
+
+
+def bubble_talk_shots_dir(slug: str) -> Path:
+    """Rendered snapshots of a marked slide, one per note.
+
+    Kept out of ``REPORTS/<slug>/assets/`` deliberately: those are *report figures*, must be flat
+    because of the single-segment serving route, and are listed as the bubble's files. A note
+    snapshot is neither authored nor addressable by the user — its name is derived from ids — so
+    it lives in its own directory and is served by its own route.
+    """
+    return bubble_talks_dir(slug) / "shots"
+

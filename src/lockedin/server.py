@@ -5,6 +5,7 @@ request operates on the logged-in user's workspace (``data/users/<user>/``).
 
 Launch with ``lockedin serve``.
 """
+import base64
 import contextvars
 import json
 import logging
@@ -17,7 +18,7 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import quote
 
-from . import assets, auth, bubbles, landing, models, paths, presence, service, setup_tickets, tagger, workspaces
+from . import assets, auth, bubbles, landing, models, paths, presence, service, setup_tickets, tagger, talks, workspaces
 from . import scientist_sync
 
 
@@ -878,6 +879,38 @@ def build_app():
     class ApproveIn(BaseModel):
         instructions: str = ""
 
+    class PremiseIn(BaseModel):
+        abstract: Optional[str] = None
+        goal: Optional[str] = None
+
+    class TalkIn(BaseModel):
+        title: str
+        intent: str = ""
+        kicker: str = ""
+        date: str = ""
+        body: str = ""
+
+    class TalkNoteIn(BaseModel):
+        slide: int = 0
+        kind: str = "q"
+        quote: str = ""
+        text: str = ""
+        version: int = 1
+        rect: Optional[dict] = None
+
+    class TalkNoteEditIn(BaseModel):
+        text: str = ""
+
+    class TalkShotIn(BaseModel):
+        image_b64: str
+
+    class TalkReviseIn(BaseModel):
+        body: str
+        why: str
+        title: Optional[str] = None
+        sub: Optional[str] = None
+        resolves: list[str] = []
+
     class BubbleRenameIn(BaseModel):
         name: str
 
@@ -917,11 +950,12 @@ def build_app():
         page_slugs: list[str]
 
     class CommentCreateIn(BaseModel):
-        body: str
+        body: str = ""
         content: str
         base_mtime: float | None = None
         selection_start: int
         selection_end: int
+        kind: str = ""
 
     class CommentReplyIn(BaseModel):
         body: str
@@ -1096,6 +1130,14 @@ def build_app():
         # no-store, not no-cache: this file also travels through the public tunnel, where a
         # revalidating cache can still hand back yesterday's viewer. It is 15 KB.
         return FileResponse(WEB_DIR / "lightbox.js", media_type="application/javascript",
+                            headers={"Cache-Control": "no-store"})
+
+    @app.get("/talks.js")
+    def talks_js():
+        # Same reasoning as lightbox.js: one file, so the deck reader cannot drift between
+        # surfaces. Unlike the lightbox this one only runs behind a session, but the script
+        # itself carries no data, so it needs no auth to serve.
+        return FileResponse(WEB_DIR / "talks.js", media_type="application/javascript",
                             headers={"Cache-Control": "no-store"})
 
     @app.get("/api/landing")
@@ -1820,6 +1862,70 @@ def build_app():
         except KeyError as e:
             raise HTTPException(status_code=404, detail=str(e))
 
+
+    @app.put("/api/bubbles/{slug}/premise")
+    def set_bubble_premise(slug: str, body: PremiseIn, user: str = Depends(current_user)):
+        try:
+            return {"bubble": service.set_premise(home_of(user), slug,
+                                                  abstract=body.abstract, goal=body.goal)}
+        except KeyError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+
+    # ---- chalk talks: dated slide decks the agent writes, and the marks you leave on them ----
+    @app.get("/api/bubbles/{slug}/talks")
+    def list_talks(slug: str, user: str = Depends(current_user)):
+        return {"talks": service.list_talks(home_of(user), slug),
+                "kinds": [{"key": k, **talks.KINDS[k]} for k in talks.KIND_ORDER]}
+
+    @app.post("/api/bubbles/{slug}/talks")
+    def create_talk(slug: str, body: TalkIn, user: str = Depends(current_user)):
+        talk_id = service.create_talk(home_of(user), slug, body.title, intent=body.intent,
+                                      kicker=body.kicker, date=body.date or None, body=body.body)
+        return {"id": talk_id}
+
+    @app.get("/api/bubbles/{slug}/talks/{talk_id}")
+    def get_talk(slug: str, talk_id: str, user: str = Depends(current_user)):
+        try:
+            return service.talk_detail(home_of(user), slug, talk_id)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="no such talk")
+
+    @app.delete("/api/bubbles/{slug}/talks/{talk_id}")
+    def delete_talk(slug: str, talk_id: str, user: str = Depends(current_user)):
+        return {"ok": service.delete_talk(home_of(user), slug, talk_id)}
+
+    @app.post("/api/bubbles/{slug}/talks/{talk_id}/notes")
+    def add_talk_note(slug: str, talk_id: str, body: TalkNoteIn,
+                      user: str = Depends(current_user)):
+        try:
+            note = service.add_talk_note(home_of(user), slug, talk_id, slide=body.slide,
+                                         kind=body.kind, author=user, quote=body.quote,
+                                         text=body.text, rect=body.rect, version=body.version)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        return {"note": note}
+
+    @app.delete("/api/bubbles/{slug}/talks/{talk_id}/notes/{note_id}")
+    def delete_talk_note(slug: str, talk_id: str, note_id: str,
+                         user: str = Depends(current_user)):
+        return {"ok": service.delete_talk_note(home_of(user), slug, talk_id, note_id)}
+
+    @app.post("/api/bubbles/{slug}/talks/{talk_id}/slides/{slide}/revise")
+    def revise_talk_slide(slug: str, talk_id: str, slide: int, body: TalkReviseIn,
+                          user: str = Depends(current_user)):
+        try:
+            return {"slide": service.revise_talk_slide(home_of(user), slug, talk_id, slide,
+                                                       body=body.body, why=body.why,
+                                                       title=body.title, sub=body.sub,
+                                                       resolves=body.resolves)}
+        except IndexError:
+            raise HTTPException(status_code=404, detail="no such slide")
+
+    @app.get("/api/bubbles/{slug}/talk-notes")
+    def talk_notes_for_agent(slug: str, user: str = Depends(current_user)):
+        """Exactly what a Scientist worker receives on its next poll — no HTML, no pixels."""
+        return {"open_notes": service.talk_notes_for_agent(home_of(user), slug)}
+
     # ---- todos (global per-user; referenced from report pages as @<id>) ----
     @app.get("/api/todos")
     def list_todos(user: str = Depends(current_user)):
@@ -1935,7 +2041,7 @@ def build_app():
             return service.create_comment_state(
                 home_of(user), slug, page, user, body.body, content=body.content,
                 base_mtime=body.base_mtime, selection_start=body.selection_start,
-                selection_end=body.selection_end)
+                selection_end=body.selection_end, kind=body.kind)
         except bubbles.PageConflict as e:
             raise HTTPException(status_code=409, detail="Page changed on disk",
                                 headers={"X-Disk-Mtime": repr(e.disk_mtime)})

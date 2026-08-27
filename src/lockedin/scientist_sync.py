@@ -12,7 +12,7 @@ from pathlib import Path
 import yaml
 from slugify import slugify
 
-from . import assets, bubbles, paths
+from . import assets, bubbles, feedback, paths, talks
 
 
 def revision(data: bytes) -> str:
@@ -63,6 +63,34 @@ def _review_feedback(slug: str) -> bytes | None:
     return yaml.safe_dump(payload, allow_unicode=True, sort_keys=False).encode("utf-8")
 
 
+def _idea_markdown(slug: str) -> bytes | None:
+    """The bubble's premise, as a file the project actually contains.
+
+    `abstract` and `goal` live in the workspace registry, which is not under ``REPORTS/`` and so
+    was published nowhere — an agent could work a whole session without ever learning what the
+    bubble was *for*. It is generated (never pushed back), so the user's edit in the app is the
+    single source and reaches every worker on its next poll like any other changed file.
+    """
+    entry = bubbles.load_registry().get(slug, {})
+    abstract = str(entry.get("abstract") or "").strip()
+    goal = str(entry.get("goal") or "").strip()
+    if not abstract and not goal:
+        return None
+    out = [f"# {entry.get('name') or slug}", ""]
+    if abstract:
+        out += [abstract, ""]
+    if goal:
+        out += ["## Goal", "", goal, ""]
+    out += ["---", "",
+            "*Generated from the bubble's premise — the shared statement of what this work is*",
+            "*for. Read it before anything else. It is Markdown with LaTeX, and it is read-only*",
+            "*here: if it is wrong, stale, or narrower than what you are actually doing, say so*",
+            "*and propose better wording; the user applies it in the app.*"]
+    if entry.get("premise_revised_at"):
+        out += ["", f"*Last revised {str(entry['premise_revised_at'])[:10]}.*"]
+    return ("\n".join(out) + "\n").encode()
+
+
 def _files(home: Path, slug: str) -> dict[str, Path | bytes]:
     """Map v2 project-local paths to source files for one bubble."""
     with paths.use_root(home):
@@ -77,6 +105,16 @@ def _files(home: Path, slug: str) -> dict[str, Path | bytes]:
                 rel = path.relative_to(report)
                 # Private review comments (and legacy chats/ dirs) do not belong in an agent project.
                 if rel.parts and rel.parts[0] in {"chats", "comments"}:
+                    continue
+                # Chalk talks: the decks themselves are published (the agent revises them), but
+                # the marks' sidecar, the snapshots, and the version history are not. Raw YAML
+                # of every note ever left would sit in the agent's context forever; the
+                # generated feedback/OPEN.md below carries only what is still open, and
+                # disappears entirely once nothing is.
+                if rel.parts[:1] == ("talks",) and (
+                        rel.name.endswith((".notes.yaml", ".history.yaml"))
+                        or rel.name == "talks.yaml"
+                        or rel.parts[1:2] == ("shots",)):
                     continue
                 # Report figures are flat by contract: they are stored flat, listed flat, and
                 # served through /api/bubbles/<slug>/assets/{filename}, a single path segment that
@@ -101,9 +139,16 @@ def _files(home: Path, slug: str) -> dict[str, Path | bytes]:
                            ("aesthetics.yaml", paths.AESTHETICS_CONFIG_YAML)):
             if path.is_file():
                 out[(Path("config") / name).as_posix()] = path
-        feedback = _review_feedback(slug)
-        if feedback is not None:
-            out["config/reviews.yaml"] = feedback
+        idea = _idea_markdown(slug)
+        if idea is not None:
+            out["IDEA.md"] = idea
+        reviews = _review_feedback(slug)
+        if reviews is not None:
+            out["config/reviews.yaml"] = reviews
+        marks = feedback.open_markdown(slug)
+        if marks is not None:
+            out["feedback/OPEN.md"] = marks
+            out.update(feedback.images(slug))
         return out
 
 
@@ -141,6 +186,13 @@ def writable_path(slug: str, rel: str, *, existing_pages: bool = True) -> bool:
         # successfully, stay invisible to every surface, and then be deleted locally on the next
         # sync as "no longer on the server". Refuse it here so the client is told instead.
         return Path(parts[2]).name == parts[2] and not parts[2].endswith(".tmp")
+    if parts[1] == "talks":
+        # The sidecars are generated (marks, snapshots, version history) and must not be pushed;
+        # only the deck itself is the agent's to write.
+        name = Path(parts[2]).name
+        return (rel.endswith(".md") and name == parts[2]
+                and not name.endswith((".notes.yaml", ".history.yaml"))
+                and name != "talks.yaml")
     if parts[1] != "pages" or not rel.endswith(".md"):
         return False
     page_slug = Path(parts[2]).stem
@@ -151,6 +203,8 @@ def _server_path(slug: str, rel: str) -> Path:
     parts = Path(rel).parts
     if parts[1] == "assets":
         return paths.bubble_assets_dir(slug) / parts[2]
+    if parts[1] == "talks":
+        return paths.bubble_talk_path(slug, Path(parts[2]).stem)
     return paths.bubble_page_path(slug, Path(parts[2]).stem)
 
 
@@ -162,7 +216,7 @@ def apply_writes(home: Path, slug: str, writes: list[dict]) -> dict:
         pages = {p["page_slug"] for p in bubbles.list_pages(slug)}
         for item in writes:
             rel = str(item.get("path", ""))
-            if not writable_path(slug, rel) or (Path(rel).parts[1] == "pages" and Path(rel).stem not in pages):
+            if not writable_path(slug, rel) or (Path(rel).parts[1] == "pages" and Path(rel).stem not in pages):  # noqa: E501
                 conflicts.append({"path": rel, "reason": "read-only or invalid Scientist path"})
                 continue
             try:
@@ -178,6 +232,17 @@ def apply_writes(home: Path, slug: str, writes: list[dict]) -> dict:
                 conflicts.append({"path": rel, "reason": "refusing to replace non-empty content with an empty sync write",
                                   "revision": revision(current), "content_b64": base64.b64encode(current).decode("ascii")}); continue
             target.parent.mkdir(parents=True, exist_ok=True)
+            if Path(rel).parts[1] == "talks":
+                try:
+                    talks.absorb_push(slug, Path(rel).stem, raw.decode("utf-8"))
+                except UnicodeDecodeError:
+                    conflicts.append({"path": rel, "reason": "a deck must be UTF-8 text"})
+                    continue
+                # The deck file is the source of truth; the registry entry is derived from it, so
+                # writing a new file *is* how an agent creates a talk. Nothing else to ask for.
+                talks.register_deck(slug, Path(rel).stem)
+                applied.append({"path": rel, "revision": revision(raw)})
+                continue
             if Path(rel).parts[1] == "pages":
                 try:
                     bubbles.save_page(slug, Path(rel).stem, raw.decode("utf-8"),

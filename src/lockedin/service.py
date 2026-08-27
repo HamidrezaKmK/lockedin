@@ -10,7 +10,7 @@ from pathlib import Path
 
 import yaml
 
-from . import assets, auth, bubbles, models, paths, sharing, tagger, todos, workspaces
+from . import assets, auth, bubbles, models, paths, sharing, tagger, talks, todos, workspaces
 
 
 def ensure_workspace(home: Path) -> None:
@@ -462,11 +462,11 @@ def review_page_exists(home: Path, slug: str, page_slug: str) -> bool:
 
 def create_comment_state(home: Path, slug: str, page_slug: str, author: str, body: str, *,
                          content: str, base_mtime: "float | None",
-                         selection_start: int, selection_end: int) -> dict:
+                         selection_start: int, selection_end: int, kind: str = "") -> dict:
     with paths.use_root(home):
         return bubbles.create_comment_state(
             slug, page_slug, author, body, content=content, base_mtime=base_mtime,
-            selection_start=selection_start, selection_end=selection_end)
+            selection_start=selection_start, selection_end=selection_end, kind=kind)
 
 
 def reply_comment_state(home: Path, slug: str, page_slug: str, thread_id: str,
@@ -691,3 +691,74 @@ def save_aesthetics_config(home: Path, themes: list[str]) -> dict:
         p.parent.mkdir(parents=True, exist_ok=True)
         bubbles._atomic_write(p, yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True))
     return cfg
+
+
+def set_premise(home: Path, slug: str, **kw) -> dict:
+    with paths.use_root(home):
+        return bubbles.set_premise(slug, **kw)
+
+
+# --------------------------------------------------------------------------- #
+# Chalk talks
+# --------------------------------------------------------------------------- #
+def list_talks(home: Path, slug: str) -> list[dict]:
+    with paths.use_root(home):
+        return talks.list_talks(slug)
+
+
+def talk_detail(home: Path, slug: str, talk_id: str) -> dict:
+    with paths.use_root(home):
+        return talks.talk_detail(slug, talk_id)
+
+
+def create_talk(home: Path, slug: str, title: str, **kw) -> str:
+    with paths.use_root(home):
+        return talks.create_talk(slug, title, **kw)
+
+
+def delete_talk(home: Path, slug: str, talk_id: str) -> bool:
+    with paths.use_root(home):
+        return talks.delete_talk(slug, talk_id)
+
+
+def add_talk_note(home: Path, slug: str, talk_id: str, **kw) -> dict:
+    with paths.use_root(home):
+        return talks.add_note(slug, talk_id, **kw)
+
+
+def edit_talk_note(home: Path, slug: str, talk_id: str, note_id: str, text: str,
+                   author: str = "") -> dict:
+    with paths.use_root(home):
+        return talks.edit_note(slug, talk_id, note_id, text, author=author)
+
+
+def reply_talk_note(home: Path, slug: str, talk_id: str, note_id: str, author: str,
+                    body: str) -> dict:
+    with paths.use_root(home):
+        return talks.reply_note(slug, talk_id, note_id, author, body)
+
+
+def delete_talk_note(home: Path, slug: str, talk_id: str, note_id: str) -> bool:
+    with paths.use_root(home):
+        return talks.delete_note(slug, talk_id, note_id)
+
+
+def revise_talk_slide(home: Path, slug: str, talk_id: str, slide: int, **kw) -> dict:
+    with paths.use_root(home):
+        return talks.revise_slide(slug, talk_id, slide, **kw)
+
+
+def save_talk_note_image(home: Path, slug: str, talk_id: str, note_id: str, data: bytes) -> str:
+    with paths.use_root(home):
+        return talks.save_note_image(slug, talk_id, note_id, data)
+
+
+def talk_note_image_path(home: Path, slug: str, talk_id: str, note_id: str) -> Path:
+    with paths.use_root(home):
+        return talks.note_image_path(slug, talk_id, note_id)
+
+
+def talk_notes_for_agent(home: Path, slug: str) -> list[dict]:
+    """The payload a Scientist worker picks up on its next poll."""
+    with paths.use_root(home):
+        return talks.open_notes_for_agent(slug)

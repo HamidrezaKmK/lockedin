@@ -341,9 +341,9 @@ def bubbles_command(account: dict) -> list[dict]:
     return rows
 
 
-SKILL_VERSION = 18
+SKILL_VERSION = 24
 
-SKILL_RULES = """<!-- lockedin-scientist-skill: 18 -->
+SKILL_RULES = """<!-- lockedin-scientist-skill: 24 -->
 # LockedIn Scientist research and publication skill
 
 This project is synchronized with one LockedIn bubble. Read this file before editing.
@@ -457,6 +457,111 @@ Markdown while the review is attached.
 Colored passages use `\\textcolor{<color>}{text}`, where the color is a hex value or a CSS color
 name. LockedIn rejects a page whose color wrappers are unclosed or overlap another one, so keep
 each wrapper balanced and never nest colors. Edit inside an existing wrapper rather than around it.
+
+## What this bubble is for
+
+`.lockedin/IDEA.md` states the premise: one paragraph on the idea and one line on the goal. Read
+it before anything else in a session — it is the shared understanding everything else assumes,
+and it is short on purpose.
+
+It is generated and read-only. If it is wrong, stale, or narrower than the work actually being
+done, that is worth raising immediately rather than quietly working around: say what you think it
+should say and why, and let the user apply it in the app. A premise nobody corrects is how a
+project drifts for weeks. Never edit `IDEA.md`; your edits are overwritten on the next sync.
+
+## Chalk talks and the marks left on them
+
+A chalk talk is a dated slide deck under `.lockedin/reports/talks/<id>.md` that explains one idea
+whose correctness needs the user's judgement — a derivation, a design trade-off. Slides are
+separated by `---`; each carries a `<!-- slide: kind=..., date=..., v=N -->` header, a `# Title`,
+an optional one-line italic subtitle, and ordinary Markdown. One idea per slide, and it must fit a
+screen: if it does not, it is two slides.
+
+**Reading them without drowning.** A bubble accumulates talks, and each talk accumulates
+versions. Do not sweep the lot. At the start of a session read `IDEA.md`, then
+`feedback/OPEN.md` if it exists — that is the whole of what is being asked of you. From there:
+
+- Open a deck only when a mark points into it, the user names it, or you are about to write
+  about the same idea. The talk list in `talks.yaml` (id, title, date) is usually enough to know
+  whether a deck is relevant; the file itself is not.
+- Read the *current* deck. Version history is not published to the project at all, so there is
+  nothing to trawl: what is on disk is what the slide says now.
+- Do not re-read a deck you have already read this session unless it was pushed since.
+- When a mark names a slide, read that slide and its neighbours, not the whole talk. The mark
+  quotes the exact text; the surrounding two slides give you the argument it sits in.
+
+Old talks are the project's memory, not its inbox. Reach for one when you need to know why
+something has the shape it has — and then read the one that answers it, not all of them.
+
+**Writing one.** A talk is created by writing the file — there is no second step and no API to
+call. Put it at `.lockedin/reports/talks/YYYY-MM-DD-a-short-slug.md` and push it; the bubble
+indexes it on arrival, taking the date from the filename, the title from the first slide's `#`
+heading and the one-line summary from its italic subtitle. Write a talk when the user asks for
+one in so many words ("walk me through X", "make me a talk about Y"), and offer one unprompted
+when you have reached something whose correctness needs their judgement — a derivation you are
+unsure of, a design trade-off with no obvious winner. Do not write one to report status; status
+belongs in the document.
+
+The sidecars beside a deck (`*.notes.yaml`, `*.history.yaml`, `talks.yaml`, `shots/`) are
+generated. They are not published to the project and cannot be pushed.
+
+**What a slide should look like.** A deck is not a report with page breaks. It is the thing you
+talk *from*, and the reader is a person deciding whether your argument holds — so:
+
+- **One idea per slide**, and it must fit a screen without scrolling. If it does not, it is two
+  slides. This is the rule that does the most work: the frame is what forces you to say the
+  thing rather than circle it.
+- **Condensed, not prose.** Short lines, fragments where a fragment is clearer, no paragraph
+  that restates the slide above. If a sentence survives being cut, cut it.
+- **Minimise equations.** Carry the idea in words and put on the slide only the step that
+  matters. When the derivation *is* the point, that is the exception — then number the steps, so
+  the reader can mark the exact one that is wrong instead of rejecting the whole slide.
+- **A figure beats a paragraph**, and a figure with the axis ranges stated beats a figure.
+- **Say what you are unsure of.** The subtitle is the place: "every step is exact except one,
+  and I have marked which" is worth more than a confident slide that hides the soft spot.
+- **Open with why this matters and close with what you need.** A deck that ends without an ask
+  leaves the reader with nothing to do, which is the same as not sending it.
+
+Cite on a slide the same way you cite on a page: `\\cite{key}`, using the bubble's existing
+citation keys. It renders as the same bracketed number the document uses and opens that PDF, so
+a source keeps one number everywhere. Cite the paper you are leaning on rather than paraphrasing
+it as "prior work".
+
+Titles carry the claim, not the topic: "The residual term survives the change of variables"
+tells the reader something; "Derivation" does not.
+
+When `.lockedin/feedback/OPEN.md` exists, the user has marked something while reading, and that
+file is the whole of it. Each entry names one of five marks — `✗ this is wrong`, `? I don't
+follow`, `→ go deeper`, `✓ good, keep this`, `✂ cut this` — the exact slide text it is anchored
+to, or a region of the slide, and usually a sentence of explanation.
+
+**Look at the picture.** An entry with a `picture:` line points at
+`.lockedin/feedback/shots/<note-id>.png`, the slide rendered as the user saw it with their mark
+drawn on. Open it. It carries what the text cannot: where a figure sat, what was beside what,
+whether the layout itself was the problem. For a mark on a region rather than on words, the
+picture *is* the message — the coordinates alone mean nothing.
+
+Work through marks **with the user, not for them**. Read the mark, look at the picture, then say
+what you propose to change and why, and let them agree before you touch the deck. A `?` means
+re-explain, not re-derive; a `✗` means the argument is wrong, so re-derive rather than reword; a
+`→` means expand, and the expansion usually belongs in a report page rather than on the slide.
+Treat a mark critically: if you believe it is mistaken, say so and argue the point instead of
+complying.
+
+Resolve a mark only once the user is satisfied, and resolve it **in the file you are already
+editing**: revise the slide and name the marks the revision answers in that slide's header.
+
+    <!-- slide: kind=derivation, date=2026-08-27, v=2, resolves=n1,n2, why=re-derived without the assumption -->
+
+On the next sync that bumps the slide to a new version, records `why` and what each mark asked
+for in the version history, and deletes those marks and their pictures — `OPEN.md` shrinks, and
+disappears entirely when nothing is open. The `resolves=` and `why=` attributes are consumed, so
+they do not linger in the stored deck; you do not need to set `v=` yourself. Slides you did not
+change are left alone.
+
+Never resolve a mark you have only replied to or only disagreed with, and never edit `OPEN.md`,
+the `shots/`, or a deck's sidecars directly: they are generated, and your edits will be
+overwritten on the next sync.
 
 ## Before relying on a report submission
 

@@ -292,6 +292,20 @@ def rename_bubble(slug: str, new_name: str) -> dict:
     return reg[slug]
 
 
+def set_premise(slug: str, *, abstract: str | None = None, goal: str | None = None) -> dict:
+    """Set the one-paragraph statement of what this bubble is about, and its goal."""
+    reg = load_registry()
+    if slug not in reg:
+        raise KeyError(slug)
+    if abstract is not None:
+        reg[slug]["abstract"] = str(abstract).strip()
+    if goal is not None:
+        reg[slug]["goal"] = str(goal).strip()
+    reg[slug]["premise_revised_at"] = _now_iso()
+    save_registry(reg)
+    return bubble_detail(slug)
+
+
 def set_bubble_archived(slug: str, archived: bool) -> dict:
     """Reversibly hide a bubble without changing its reports, assets, or memberships."""
     reg = load_registry()
@@ -526,6 +540,12 @@ def all_bubbles() -> list[dict]:
             "pdf_count": counts.get(slug, 0),
             "page_count": _page_count(slug),
             "instructions": entry.get("instructions", ""),
+        # The agent's own statement of what this bubble is for. Kept as a short field rather
+        # than a page precisely because a page grows: this must stay skimmable, and its being
+        # wrong is the highest-value thing the user can correct.
+        "abstract": entry.get("abstract", ""),
+        "goal": entry.get("goal", ""),
+        "premise_revised_at": entry.get("premise_revised_at", ""),
             **overleaf_urls(entry.get("overleaf_project_id")),
             "last_edited_at": last_edited_at,
         })
@@ -554,6 +574,12 @@ def bubble_detail(slug: str) -> dict:
         "archived": bool(entry.get("archived", False)),
         "in_registry": slug in reg,
         "instructions": entry.get("instructions", ""),
+        # The agent's own statement of what this bubble is for. Kept as a short field rather
+        # than a page precisely because a page grows: this must stay skimmable, and its being
+        # wrong is the highest-value thing the user can correct.
+        "abstract": entry.get("abstract", ""),
+        "goal": entry.get("goal", ""),
+        "premise_revised_at": entry.get("premise_revised_at", ""),
         "last_edited_at": entry.get("last_edited_at") or entry.get("created_at") or "",
         "pdf_count": len(pdfs),
         "page_count": _page_count(slug),
@@ -1245,12 +1271,24 @@ def _review_result(slug: str, page_slug: str, content: str, data: dict,
     return result
 
 
+# The five marks, shared with chalk talks. A review thread and a mark on a slide are the same
+# act — the user pointing at something and saying one of five things — so they carry the same
+# vocabulary and land in the same place for an agent to pick up.
+REVIEW_KINDS = ("bad", "q", "more", "good", "cut")
+
+
 def create_comment_state(slug: str, page_slug: str, author: str, body: str, *,
                          content: str, base_mtime: "float | None",
-                         selection_start: int, selection_end: int) -> dict:
+                         selection_start: int, selection_end: int,
+                         kind: str = "") -> dict:
     """Atomically create a thread and wrap the exact selected source range."""
     body = str(body or "").strip()
-    if not body:
+    kind = str(kind or "").strip()
+    if kind and kind not in REVIEW_KINDS:
+        raise ValueError(f"unknown mark: {kind}")
+    # A mark alone is a complete comment: "✗" on a sentence says everything it needs to. Prose
+    # stays required only when no mark was chosen.
+    if not body and not kind:
         raise ValueError("Comment text required.")
     with _review_page_lock(slug, page_slug):
         path = paths.bubble_page_path(slug, page_slug)
@@ -1274,14 +1312,14 @@ def create_comment_state(slug: str, page_slug: str, author: str, body: str, *,
             if thread_id not in known_ids:
                 break
         now = _now_iso()
-        item = {"id": thread_id, "page_slug": page_slug, "status": "open",
+        item = {"id": thread_id, "page_slug": page_slug, "status": "open", "kind": kind,
                 "anchor_state": "attached", "created_at": now, "updated_at": now,
                 "resolved_at": "", "resolved_by": "",
                 "anchor": {"quote": quote, "start": start,
                            "prefix": content[max(0, start - 96):start],
                            "suffix": content[end:end + 96]},
-                "messages": [{"id": secrets.token_urlsafe(12), "author": author, "body": body,
-                              "created_at": now, "edited_at": ""}]}
+                "messages": ([{"id": secrets.token_urlsafe(12), "author": author, "body": body,
+                               "created_at": now, "edited_at": ""}] if body else [])}
         marked = content[:start] + comment_marker(thread_id) + quote + "}" + content[end:]
         data.setdefault("threads", []).append(item)
         normalized = normalize_display_math(normalize_wikilinks(slug, marked))
