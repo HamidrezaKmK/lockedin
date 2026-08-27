@@ -781,12 +781,6 @@
     border-top:1px solid var(--line);padding-top:6px}
   /* Presence: one compact chip in the bubble title row. People and sync workers can both be
      numerous, so the row stays a fixed width and everything else lives in the dropdown. */
-  /* Sized to sit level with the presence chip beside it, and to read as part of that cluster. */
-  .robot-btn{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;
-    width:28px;height:28px;padding:0;font-size:14px;line-height:1;border-radius:999px;
-    border:1px solid var(--line);background:var(--panel2);cursor:pointer;
-    transition:border-color .15s,transform .15s}
-  .robot-btn:hover{border-color:var(--accent);transform:translateY(-1px)}
   .setup-dialog{width:min(640px,calc(100vw - 28px))}
   /* The dialog walks a first-timer through the whole journey, so it can outgrow the viewport. */
   .setup-body{gap:0;overflow:auto;max-height:min(72vh,640px)}
@@ -829,14 +823,24 @@
   @keyframes setup-spin{to{transform:rotate(360deg)}}
   .create-dialog-footer button.ok{background:var(--good);border-color:var(--good)}
   .presence{position:relative;flex-shrink:0}
-  .presence-chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;min-height:28px;
-    border-radius:999px;border:1px solid var(--line);background:var(--panel2);color:var(--muted);
+  /* One pill, three segments: people · workers · connect. Dividers are borders on the segments
+     rather than separate nodes, so the hover highlight fills a segment edge to edge. */
+  .presence-group-card{display:inline-flex;align-items:stretch;overflow:hidden;
+    border-radius:999px;border:1px solid var(--line);background:var(--panel2)}
+  /* Trouble is the middle segment's business: ringing the whole pill amber shouts, and in the
+     light themes --warn is a muddy brown that reads as damage rather than a warning. */
+  .presence-seg.warn{color:var(--warn)}
+  .presence-seg.warn:hover,.presence-seg.warn.on{color:var(--warn)}
+  .presence-seg{display:inline-flex;align-items:center;gap:5px;padding:0 11px;min-height:28px;
+    border:0;border-radius:0;background:none;color:var(--muted);
     font-family:var(--font-ui);font-size:12px;line-height:1;cursor:pointer;
-    font-variant-numeric:tabular-nums;transition:border-color .15s,color .15s}
-  .presence-chip:hover{border-color:var(--accent);color:var(--ink)}
-  .presence-chip.trouble{border-color:var(--warn);color:var(--ink)}
-  .presence-sep{opacity:.45}
-  .presence-dot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--good)}
+    font-variant-numeric:tabular-nums;transition:background .15s,color .15s}
+  .presence-seg + .presence-seg{border-left:1px solid var(--line)}
+  .presence-seg:hover,.presence-seg.on{background:var(--panel);color:var(--ink)}
+  .presence-emoji{font-size:12.5px;line-height:1}
+  .presence-count{min-width:6px;text-align:center}
+  .presence-robot{font-size:14px;padding:0 10px}
+  .presence-dot{width:7px;height:7px;border-radius:50%;flex:none;background:var(--good)}
   .presence-dot.degraded,.presence-dot.unresponsive{background:var(--warn)}
   .presence-dot.dead{background:var(--bad)}
   .presence-menu{position:absolute;right:0;top:calc(100% + 6px);z-index:40;padding:6px;
@@ -3750,7 +3754,7 @@
 
   function stopPresence(){
     if(S.presenceTimer){ clearInterval(S.presenceTimer); S.presenceTimer=null; }
-    S.presence=null; S.presenceOpen=false; S.presenceSelected=null;
+    S.presence=null; S.presenceView=null; S.presenceSelected=null;
   }
 
   function presenceAgo(seconds){
@@ -3786,51 +3790,65 @@
     return (snap.workers||[]).filter(w=>w.state!=="dead"||w.attention);
   }
 
+  // One card, three jobs: who is reading this bubble, which directories are syncing it, and how to
+  // connect another. They were a chip and a separate round button; together they read as the
+  // bubble's "who and what is attached" cluster. Each half opens only its own half of the menu, so
+  // a click answers the question it was asked.
   function renderPresence(){
     const host=S.presenceEl; if(!host)return;
     host.textContent="";
-    const snap=S.presence;
-    if(!snap){ host.classList.add("hide"); return; }
+    // Rendered before the first heartbeat too, with zeroes: a control that appears a moment after
+    // the page does is worse than one that starts empty, and the robot must not flicker in.
+    const snap=S.presence||{viewers:[],workers:[]};
     host.classList.remove("hide");
     const viewers=snap.viewers||[], workers=visibleWorkers(snap);
     const worst=worstWorkerState(workers);
-    const chip=el("button",{class:"presence-chip",title:"Who is on this bubble",
-      onclick:e=>{ e.stopPropagation(); togglePresence(); }},
-      el("span",{},"👥 "+viewers.length));
-    if(workers.length){
-      chip.append(el("span",{class:"presence-sep"},"·"),
-                  el("span",{class:"presence-dot "+worst}),
-                  el("span",{},"⚙ "+workers.length));
-    }
-    if(worst!=="live")chip.classList.add("trouble");
-    host.append(chip);
-    if(S.presenceOpen)host.append(buildPresenceMenu(snap));
+    const segment=(view,title,warn,...kids)=>el("button",
+      {class:"presence-seg"+(S.presenceView===view?" on":"")+(warn?" warn":""),
+       title,onclick:e=>{ e.stopPropagation(); togglePresence(view); }},...kids);
+    const group=el("div",{class:"presence-group-card"},
+      segment("people", viewers.length===1?"1 person is reading this bubble"
+                                          :viewers.length+" people are reading this bubble", false,
+        el("span",{class:"presence-emoji"},"👥"),
+        el("span",{class:"presence-count"},String(viewers.length))),
+      segment("workers", workers.length===1?"1 folder is syncing this bubble"
+                                           :workers.length+" folders are syncing this bubble",
+        workers.length>0&&worst!=="live",
+        el("span",{class:"presence-emoji"},"⚙"),
+        el("span",{class:"presence-count"},String(workers.length)),
+        workers.length?el("span",{class:"presence-dot "+worst}):null),
+      el("button",{class:"presence-seg presence-robot",title:"Connect an agent to this bubble",
+        "aria-label":"Connect an agent to this bubble",
+        onclick:e=>{ e.stopPropagation(); closePresenceMenu(); openScientistSetup(S.bubble); }},"🤖"));
+    host.append(group);
+    if(S.presenceView)host.append(buildPresenceMenu(snap,S.presenceView));
   }
 
-  function togglePresence(){
-    S.presenceOpen=!S.presenceOpen;
-    if(!S.presenceOpen)S.presenceSelected=null;
+  function togglePresence(view){
+    S.presenceView=S.presenceView===view?null:view;
+    S.presenceSelected=null;
     renderPresence();
     // Registered a tick later so the click that opened the menu doesn't immediately close it.
-    if(S.presenceOpen)setTimeout(()=>document.addEventListener("click",closePresenceMenu,{once:true}),0);
+    if(S.presenceView)setTimeout(()=>document.addEventListener("click",closePresenceMenu,{once:true}),0);
   }
 
-  function closePresenceMenu(){ S.presenceOpen=false; S.presenceSelected=null; renderPresence(); }
+  function closePresenceMenu(){ S.presenceView=null; S.presenceSelected=null; renderPresence(); }
 
   function selectPresence(key){
     S.presenceSelected=S.presenceSelected===key?null:key;
     renderPresence();
   }
 
-  function buildPresenceMenu(snap){
+  function buildPresenceMenu(snap,view){
     // Clicks inside the menu must not reach the document-level close handler.
     const menu=el("div",{class:"presence-menu",onclick:e=>e.stopPropagation()});
     const viewers=snap.viewers||[], workers=visibleWorkers(snap);
-    if((snap.duplicate_workers||[]).length){
+    if(view==="workers"&&(snap.duplicate_workers||[]).length){
       menu.append(el("div",{class:"presence-dupnote",
         title:"Edits from "+snap.duplicate_workers.map(presenceLabel).join(" and ")+" can conflict."},
         snap.duplicate_workers.length+" directories are syncing this bubble"));
     }
+    if(view==="people"){
     menu.append(el("div",{class:"presence-group"},"People viewing"));
     if(!viewers.length)menu.append(el("div",{class:"presence-empty"},"Nobody has this bubble open."));
     viewers.forEach(v=>{
@@ -3846,8 +3864,17 @@
           el("b",{},"last seen"),el("span",{},presenceAgo(v.seen_ago))));
       }
     });
+    }
+    if(view==="workers"){
     menu.append(el("div",{class:"presence-group"},"Scientist workers"));
-    if(!workers.length)menu.append(el("div",{class:"presence-empty"},"No project directory is syncing this bubble."));
+    if(!workers.length){
+      menu.append(el("div",{class:"presence-empty"},"No project directory is syncing this bubble."));
+      // The one actionable thing from here, and the reason the robot sits in the same card.
+      menu.append(el("button",{class:"presence-item",
+        onclick:()=>{ closePresenceMenu(); openScientistSetup(S.bubble); }},
+        el("span",{class:"presence-emoji"},"🤖"),
+        el("span",{class:"presence-name"},"Connect an agent…")));
+    }
     workers.forEach(w=>{
       const key="w:"+w.worker_id, on=S.presenceSelected===key;
       menu.append(el("button",{class:"presence-item "+w.state+(on?" on":""),onclick:()=>selectPresence(key)},
@@ -3864,6 +3891,7 @@
         menu.append(detail);
       }
     });
+    }
     return menu;
   }
 
@@ -3905,11 +3933,6 @@
     if(b.approved){
       S.presenceEl=el("div",{class:"presence hide"});
       titleRow.append(S.presenceEl);
-      // Next to the presence chip on purpose: that chip says who is syncing this bubble, and this
-      // is how you become one of them.
-      titleRow.append(el("button",{class:"robot-btn",title:"Connect an agent to this bubble",
-        "aria-label":"Connect an agent to this bubble",
-        onclick:()=>openScientistSetup(slug)},"🤖"));
       startPresence(slug);
     }
     // Built here, but homed in the page toolbar by refreshTabs: it needs the bubble detail (the

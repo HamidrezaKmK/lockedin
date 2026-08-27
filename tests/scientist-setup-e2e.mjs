@@ -116,16 +116,17 @@ async function main() {
     page.on("pageerror", error => { throw error; });
     await page.goto(`${baseUrl}/#bubble/${slug}`, { waitUntil: "domcontentloaded" });
 
-    // The robot belongs beside the presence chip: that chip says who is syncing this bubble.
-    const robot = page.locator(".bubble-title .robot-btn");
+    // The robot is the third segment of the presence card: that card says who is reading this
+    // bubble and what is syncing it, and this is how you attach one more.
+    const robot = page.locator(".bubble-title .presence-robot");
     await robot.waitFor({ state: "visible", timeout: 10_000 });
-    const order = await page.locator(".bubble-title > *").evaluateAll(
+    const segments = await page.locator(".presence-seg").evaluateAll(
       nodes => nodes.map(node => node.className));
-    const chip = order.findIndex(name => String(name).includes("presence"));
-    const bot = order.findIndex(name => String(name).includes("robot-btn"));
-    assert.ok(chip >= 0 && bot === chip + 1, `the robot must sit next to the presence chip: ${order}`);
+    assert.equal(segments.length, 3, `expected three segments, saw ${segments}`);
+    assert.ok(segments[2].includes("presence-robot"),
+      `the robot must be the last segment: ${segments}`);
     await shoot(page, "setup-robot");
-    step("the robot sits beside the presence chip");
+    step("the robot is the last segment of the presence card");
 
     await robot.click();
     const dialog = page.getByRole("dialog", { name: "Connect an agent" });

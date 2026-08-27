@@ -193,10 +193,15 @@ data/workspaces/<workspace-id>/
   `hard-reset` deletes `.lockedin/` — `identity.json` included — and the project comes back as a
   new row. `resync` must never touch the profile's device-global active workspace, and is
   dispatched before `choose_account()` so it cannot depend on which account was authorized last. Browsers heartbeat `POST /api/bubbles/<slug>/presence`
-  every 20s, which both reports the viewer and returns the snapshot. Nothing is written to disk:
+  every 20s, which both reports the viewer and returns the snapshot. The control is one
+  `.presence-group-card` pill of three segments — 👥 people | ⚙ workers | 🤖 connect — and each
+  half opens only its own half of the menu, so a click answers the question it was asked. It
+  renders before the first heartbeat with zeroes rather than appearing a moment late, counts stay
+  visible at 0, and an unhealthy worker colours **the workers segment**, never the whole pill
+  (`--warn` is a muddy brown in the light themes and reads as damage when it rings everything). Nothing is written to disk:
   presence is a claim about *now*, so a restarted server correctly shows an empty bubble. Each
   worker row carries an `attention` flag (dead by failure or rejection, vs a clean "stopped"): the
-  UI hides attention-free graves from the chip count and the menu, and the multi-directory sync
+  UI hides attention-free graves from the count and the menu, and the multi-directory sync
   situation renders as a small muted note (`presence-dupnote`), not a warning box — don't
   re-escalate either; routine endings and legitimate dual syncs are not alarms.
 - **Report figures are flat, everywhere.** A bubble's figures live directly in

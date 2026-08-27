@@ -166,30 +166,51 @@ async function main() {
     });
     await page.goto(`${baseUrl}/#bubble/${slug}`, { waitUntil: "domcontentloaded" });
 
-    const chip = page.locator(".presence .presence-chip");
-    await chip.waitFor({ state: "visible", timeout: 10_000 });
-    assert.match(await chip.innerText(), /👥 1/, "the chip must count the viewer");
-    assert.match(await chip.innerText(), /⚙ 3/,
-      "the chip must count every worker directory except the cleanly stopped grave");
-    assert.ok(await chip.evaluate(node => node.classList.contains("trouble")),
-      "an unhealthy worker must be visible on the collapsed chip");
-    await shoot(page, "presence-chip");
-    step("the collapsed chip counts people and workers and flags trouble");
+    const card = page.locator(".presence .presence-group-card");
+    await card.waitFor({ state: "visible", timeout: 10_000 });
+    const seg = i => page.locator(".presence-seg").nth(i);
+    assert.equal(await page.locator(".presence-seg").count(), 3,
+      "one card, three segments: people, workers, connect");
+    assert.match(await seg(0).innerText(), /👥\s*1/, "the left segment counts the viewer");
+    assert.match(await seg(1).innerText(), /⚙\s*3/,
+      "the middle segment counts every worker except the cleanly stopped grave");
+    assert.match(await seg(2).innerText(), /🤖/, "the right segment connects an agent");
+    // Trouble belongs to the segment it concerns, not to the whole pill.
+    assert.ok(await seg(1).evaluate(node => node.classList.contains("warn")),
+      "an unhealthy worker must colour the workers segment");
+    assert.ok(!(await seg(0).evaluate(node => node.classList.contains("warn"))),
+      "a worker problem must not bleed into the people segment");
+    await shoot(page, "presence-card");
+    step("the card counts people and workers separately and flags trouble on the right half");
 
-    await chip.click();
+    // The left half answers "who is reading this", and only that.
+    await seg(0).click();
     const menu = page.locator(".presence-menu");
     await menu.waitFor({ state: "visible", timeout: 2_000 });
+    const peopleText = await menu.innerText();
+    assert.ok(peopleText.includes(username), `people menu is missing the viewer:\n${peopleText}`);
+    for (const worker of ["thesis-repo", "side-notes", "old-clone"]) {
+      assert.ok(!peopleText.includes(worker),
+        `the people menu must not list workers:\n${peopleText}`);
+    }
+    await shoot(page, "presence-people");
+    step("the left segment shows only the people reading the bubble");
+
+    // The middle half answers "what is syncing this", and only that.
+    await seg(1).click();
+    await menu.waitFor({ state: "visible", timeout: 2_000 });
     const menuText = await menu.innerText();
-    for (const expected of [username, "thesis-repo", "side-notes", "old-clone",
+    for (const expected of ["thesis-repo", "side-notes", "old-clone",
                             "2 directories are syncing this bubble"]) {
       assert.ok(menuText.includes(expected), `dropdown is missing ${expected}:\n${menuText}`);
     }
+    assert.ok(!menuText.includes(username), `the workers menu must not list people:\n${menuText}`);
     assert.ok(!menuText.includes("finished-run"),
       `a cleanly stopped worker must not be listed:\n${menuText}`);
     assert.equal(await menu.locator(".presence-dupnote").count(), 1,
       "the duplicate note must be the small one-liner, not a warning box");
     await shoot(page, "presence-menu");
-    step("the dropdown lists the workers that matter and the small duplicate note");
+    step("the middle segment shows the workers that matter and the small duplicate note");
 
     // A failing worker's reason is one click away, not buried in a log.
     await page.locator(".presence-item", { hasText: "side-notes" }).click();
@@ -216,9 +237,9 @@ async function main() {
     await page.waitForTimeout(600);
     assert.ok(left.some(url => url.endsWith(`/api/bubbles/${slug}/presence`)),
       `leaving the bubble must release the viewer, saw: ${JSON.stringify(left)}`);
-    assert.equal(await page.locator(".presence-chip").count(), 0,
-      "the chip belongs to the bubble editor and must not survive it");
-    step("leaving the bubble releases the viewer and removes the chip");
+    assert.equal(await page.locator(".presence-group-card").count(), 0,
+      "the card belongs to the bubble editor and must not survive it");
+    step("leaving the bubble releases the viewer and removes the card");
 
     step("all presence checks passed");
   } finally {
