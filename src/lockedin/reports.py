@@ -228,6 +228,10 @@ Every open mark appears as a `\comment{id}{…}` wrapper — the same syntax rep
 the mark follows the text inside the braces when you rewrite it. Deleting a wrapper leaves the
 mark to orphan loudly rather than silently vanishing.
 
+The toolbar is the document editor's — same image upload, tables, text colour, centering and
+undo — and the same coloured chip on its left shows the save state: ✓ saved, ✎ unsaved; click it
+to save in place, or **Save slide** to save and return to the deck.
+
 A hand edit is a revision like any other: it bumps the slide's version, and the one-line **why**
 you optionally give is kept in the history. **+ add slide** inserts a blank slide after the
 current one; **✂ delete slide** removes the slide with its marks and history; the ✕ on a talk

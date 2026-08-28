@@ -583,6 +583,7 @@
   .page-visibility-btn.hidden-page{color:var(--muted);opacity:.55}
   .page-visibility-btn.hidden-page svg .slash{display:block}
   .page-visibility-btn svg .slash{display:none}
+  .toastui-editor-toolbar-icons{min-height:0}
   .sync-toolbar{color:var(--good)!important;font-weight:700!important}
   .sync-toolbar.stale,.sync-toolbar.saving{color:var(--warn)!important}
   .sync-toolbar.conflict{color:var(--bad)!important}
@@ -4366,25 +4367,38 @@
     create(host,opts){
       opts=opts||{};
       const bubbleOf=()=>opts.bubble||S.bubble;
+      // The document's toolbar, minus the page-only tools (page sync, visibility, hidden
+      // pages). When the caller supplies onSave, the same slot the page sync chip occupies
+      // holds a save chip with the same ✓/✎/… states — unsaved shows ✎, click saves in place.
+      let syncBtn=null;
+      const tools=[];
+      if(opts.onSave){
+        syncBtn=editorToolButton("slideSyncToolbarButton","Saved; click to save now",
+                                 ()=>opts.onSave());
+        syncBtn.className="sync-toolbar synced"; syncBtn.textContent=SYNC_ICON.synced;
+        tools.push({name:"slide-sync",tooltip:"Save state",el:syncBtn});
+      }
+      tools.push('image','table',
+        {name:"text-color",tooltip:"Color selected text",el:buildColorTool()},
+        {name:"center-text",tooltip:"Center selected text",el:buildCenterTextTool()},
+        'link',
+        {name:"undo",tooltip:"Undo (Ctrl+Z)",el:editorHistButton("↶","Undo",false)},
+        {name:"redo",tooltip:"Redo (Ctrl+Shift+Z)",el:editorHistButton("↷","Redo",true)});
       const ed=new toastui.Editor({
         el:host, height:opts.height||"100%", theme:"dark", initialEditType:"markdown",
         previewStyle:"tab", initialValue:opts.initialValue||"", usageStatistics:false,
         autofocus:false,
-        toolbarItems:[[
-          'heading','bold','italic','code',
-          'image','table',
-          {name:"text-color",tooltip:"Color selected text",el:buildColorTool()},
-          {name:"center-text",tooltip:"Center selected text",el:buildCenterTextTool()},
-          'link','quote','ul','ol',
-          {name:"undo",tooltip:"Undo (Ctrl+Z)",el:editorHistButton("↶","Undo",false)},
-          {name:"redo",tooltip:"Redo (Ctrl+Shift+Z)",el:editorHistButton("↷","Redo",true)}
-        ]],
+        toolbarItems:[tools],
         hooks:{ addImageBlobHook:(blob,cb)=>uploadImage(bubbleOf(),blob,cb) },
         customHTMLRenderer:editorImageRenderer(bubbleOf),
       });
       S.slideEd=ed;
-      return { editor:ed,
-               dispose(){ if(S.slideEd===ed)S.slideEd=null; try{ed.destroy();}catch(e){} } };
+      const handle={ editor:ed,
+        setSync(state){ if(syncBtn){ syncBtn.textContent=SYNC_ICON[state]||SYNC_ICON.synced;
+                                     syncBtn.className="sync-toolbar "+state; } },
+        dispose(){ if(S.slideEd===ed)S.slideEd=null; try{ed.destroy();}catch(e){} } };
+      if(opts.onSave) ed.on("change",()=>handle.setSync("stale"));
+      return handle;
     }
   };
 

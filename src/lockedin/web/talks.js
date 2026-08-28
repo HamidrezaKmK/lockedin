@@ -202,16 +202,16 @@ mark.tk-anno{background:color-mix(in srgb,var(--kc,var(--accent)) 26%,transparen
 .tk-edithead{display:flex;align-items:center;gap:9px;padding:11px 14px;border-bottom:1px solid var(--line);
   background:color-mix(in srgb,var(--panel2) 70%,var(--panel))}
 .tk-edithead .tk-cnt{margin-left:0}
-select.tk-ekind{font:500 9.5px var(--font-mono);letter-spacing:.14em;text-transform:uppercase;
-  background:var(--accent);color:var(--bg);padding:3px 10px;border-radius:999px;border:0;
-  cursor:pointer;appearance:none;outline:none}
+select.tk-ekind{width:auto;flex:0 0 auto;font:500 9.5px var(--font-mono);letter-spacing:.14em;
+  text-transform:uppercase;background:var(--accent);color:var(--bg);padding:3px 10px;
+  border-radius:999px;border:0;cursor:pointer;appearance:none;outline:none;
+  transition:none;box-shadow:none}
 select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:none}
-.tk-why{flex:1;min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:8px;
-  color:var(--ink);font:inherit;font-size:12.5px;padding:6px 10px;outline:none}
+.tk-why{width:auto;flex:1;min-width:0;background:var(--panel);border:1px solid var(--line);
+  border-radius:8px;color:var(--ink);font:inherit;font-size:12.5px;padding:6px 10px;outline:none}
 .tk-why:focus{border-color:var(--accent)}
 .tk-edithost{flex:1;min-height:0}
 .tk-edithost .toastui-editor-defaultUI{border:0;border-radius:0;height:100%}
-.tk-edithost .toastui-editor-toolbar-icons{width:32px;height:32px;min-height:0;margin:0;padding:0;border:0}
 .tk-editnote{font-size:11.5px;color:var(--muted);padding:7px 14px;border-top:1px solid var(--line)}
 .tk-editnote code{font-family:var(--font-mono);background:var(--panel2);padding:1px 5px;border-radius:5px}
 .tk-danger:hover{border-color:var(--bad);color:var(--bad)}
@@ -1090,11 +1090,34 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
     const host = wrap.querySelector(".tk-edithost");
     S.editInitial = sl.edit_source || "";
     S.editKind = sl.kind;
+
+    // One save path for both affordances: the toolbar chip saves in place (the deck reloads
+    // and edit mode re-opens on fresh source), the header button saves and leaves.
+    const saveSlide = async (exit) => {
+      if (!editDirty() && exit) { S.edit = false; render(); return; }
+      if (S.editorHandle) S.editorHandle.setSync("saving");
+      try {
+        await api(`/api/bubbles/${S.slug}/talks/${S.talk.talk.id}/slides/${S.slide}/source`, {
+          method: "PUT",
+          body: JSON.stringify({ text: S.editorObj.getMarkdown(),
+                                 why: wrap.querySelector(".tk-why").value.trim(),
+                                 kind: wrap.querySelector(".tk-ekind").value }),
+        });
+        S.edit = !exit;
+        await loadTalk(S.talk.talk.id, true);
+        toast("Saved");
+      } catch (e) {
+        if (S.editorHandle) S.editorHandle.setSync("stale");
+        toast(e.message);
+      }
+    };
+
     // The document's editor, pointed at one slide: index.html owns the construction so the two
     // surfaces cannot drift. The bare fallback exists only for a standalone mount.
     if (window.LockedInEditor) {
       S.editorHandle = window.LockedInEditor.create(host, { initialValue: S.editInitial,
-                                                            bubble: S.slug });
+                                                            bubble: S.slug,
+                                                            onSave: () => saveSlide(false) });
       S.editorObj = S.editorHandle.editor;
     } else {
       S.editorHandle = null;
@@ -1105,21 +1128,10 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
       });
     }
 
-    wrap.querySelector("[data-save]").onclick = async () => {
-      const b = wrap.querySelector("[data-save]");
-      b.disabled = true;
-      try {
-        await api(`/api/bubbles/${S.slug}/talks/${S.talk.talk.id}/slides/${S.slide}/source`, {
-          method: "PUT",
-          body: JSON.stringify({ text: S.editorObj.getMarkdown(),
-                                 why: wrap.querySelector(".tk-why").value.trim(),
-                                 kind: wrap.querySelector(".tk-ekind").value }),
-        });
-        S.edit = false;
-        await loadTalk(S.talk.talk.id, true);
-        toast("Saved");
-      } catch (e) { b.disabled = false; toast(e.message); }
-    };
+    wrap.querySelector("[data-save]").onclick = () => saveSlide(true);
+    // A kind change never touches the editor, so tell the chip ourselves.
+    wrap.querySelector(".tk-ekind").onchange = () =>
+      S.editorHandle && S.editorHandle.setSync("stale");
     const guarded = fn => () => { if (leaveEditOk()) fn(); };
     wrap.querySelectorAll("[data-nav]").forEach(b =>
       (b.onclick = guarded(() => go(S.slide + Number(b.dataset.nav)))));
