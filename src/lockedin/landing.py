@@ -51,7 +51,7 @@ DEFAULT_LANDING: dict[str, Any] = {
     },
     "components": {
         "title": "Features",
-        "intro": "An agent is only as good as what it can see. Context is something you keep, not something you re-paste every session.",
+        "intro": "AI is only as good as its context, our features are built around enriching it.",
         "features": [
             {"icon": "📚", "title": "Library", "text": "Papers with notes, tags and BibTeX — indexed for you and for the agent."},
             {"icon": "🫧", "title": "Idea bubbles", "text": "One idea: its pages, figures, talks and open questions together."},
