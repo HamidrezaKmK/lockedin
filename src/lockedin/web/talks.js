@@ -40,6 +40,12 @@
     if (!r.ok) throw new Error((await r.text()) || r.status);
     return r.json();
   };
+  /** Same job as index.html's workspaceUrl, for the URLs the browser fetches by itself.
+   *  An <img src> or an <a href> cannot carry the X-LockedIn-Workspace header that api() sets,
+   *  so those requests fall back to the viewer's Personal workspace — and 404, or quietly serve
+   *  the wrong workspace's copy. Anything the browser resolves on its own goes through here. */
+  const wsUrl = path => !S.workspaceId ? path
+    : path + (path.includes("?") ? "&" : "?") + "workspace=" + encodeURIComponent(S.workspaceId);
   const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g,
     c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   const h = (html) => { const d = document.createElement("div"); d.innerHTML = html; return d; };
@@ -542,7 +548,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
         // Unresolved keys stay visible as ?key rather than silently vanishing: a citation that
         // disappears is worse than one that is obviously broken.
         return pdf
-          ? `<a class="tk-cite" href="/api/assets/${encodeURIComponent(pdf)}/pdf" target="_blank"
+          ? `<a class="tk-cite" href="${wsUrl(`/api/assets/${encodeURIComponent(pdf)}/pdf`)}" target="_blank"
                rel="noopener" title="${esc((bib[k] || {}).text || k)}">${label}</a>`
           : `<span class="tk-cite unresolved" title="${esc(k)}">${label}</span>`;
       });
@@ -1279,7 +1285,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
 
   function renderGutter(mine) {
     const shot = n => n.image
-      ? `/api/bubbles/${S.slug}/talks/${S.talk.talk.id}/notes/${n.id}/shot.png` : "";
+      ? wsUrl(`/api/bubbles/${S.slug}/talks/${S.talk.talk.id}/notes/${n.id}/shot.png`) : "";
     const el = h(`<div style="display:contents">
       <div class="tk-gh">Your notes · slide ${S.slide + 1}<span class="tk-sp"></span>
         ${openCount() ? `<span class="tk-tag open">${openCount()} open</span>`
