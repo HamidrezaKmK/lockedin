@@ -78,12 +78,7 @@ DEFAULT_LANDING: dict[str, Any] = {
     "scientist": {
         "title": "Connecting a project takes one line",
         "intro": "Open your bubble, hit 🤖, paste one line into a bash in your repo — and your source code is connected to everything: the papers, the document, the talks, your marks.",
-        "platforms": [
-            {"title": "macOS or Linux", "text": "Prefer to set it up by hand? Python 3.11+; installs only the Scientist client in your user PATH.",
-             "command": "curl -fsSL https://raw.githubusercontent.com/HamidrezaKmK/lockedin/main/install.sh | bash"},
-            {"title": "Windows PowerShell", "text": "The same manual route for Windows; installs the client in local app data.",
-             "command": "irm https://raw.githubusercontent.com/HamidrezaKmK/lockedin/main/install.ps1 | iex"},
-        ],
+        "platforms": [],   # the manual installer cards were clutter; the 🤖 line does it all
         "steps": [
             {"title": "Hit 🤖 on the bubble", "text": "It hands you one command, pre-signed for this machine.",
              "command": ""},

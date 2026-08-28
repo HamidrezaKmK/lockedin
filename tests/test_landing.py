@@ -29,7 +29,10 @@ class LandingConfigTest(unittest.TestCase):
         cfg = landing.load_landing()
         self.assertEqual(cfg["hero"]["title_accent"], "locked")
         self.assertGreaterEqual(len(cfg["components"]["features"]), 1)
-        self.assertIn("curl -fsSL", cfg["scientist"]["platforms"][0]["command"])
+        # The installer cards were removed from the defaults as clutter; the 🤖 one-liner
+        # in the steps is the connect story now.
+        self.assertEqual(cfg["scientist"]["platforms"], [])
+        self.assertIn("setup/", cfg["scientist"]["steps"][1]["command"])
 
     def test_partial_yaml_merges_with_defaults(self):
         self.write_landing("""
@@ -76,9 +79,10 @@ scientist:
 """)
         cfg = landing.load_landing()
         self.assertEqual(cfg["scientist"]["title"], "Custom CLI")
-        self.assertIn("/lockedin/main/install.sh", cfg["scientist"]["platforms"][0]["command"])
         # The replacement is whatever the current default flow is — today the three-step
-        # hit-🤖 / paste / run-your-agent story, with the paste step carrying the command.
+        # hit-🤖 / paste / run-your-agent story with no installer cards, the paste step
+        # carrying the only command.
+        self.assertEqual(cfg["scientist"]["platforms"], [])
         self.assertEqual(len(cfg["scientist"]["steps"]), 3)
         self.assertIn("setup/", cfg["scientist"]["steps"][1]["command"])
 

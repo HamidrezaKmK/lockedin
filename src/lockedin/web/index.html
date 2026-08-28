@@ -338,12 +338,6 @@
   .scientist-install>*{position:relative}
   .scientist-install .landing-section-head{margin-bottom:22px}
   .scientist-install .landing-section-head p{max-width:620px;line-height:1.55}
-  .scientist-platforms{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:18px}
-  .scientist-platform{min-width:0;background:color-mix(in srgb,var(--panel) 90%,transparent);border:1px solid var(--line);
-    border-radius:10px;padding:15px;transition:transform .16s ease,border-color .16s ease,box-shadow .16s ease}
-  .scientist-platform:hover{transform:translateY(-2px);border-color:color-mix(in srgb,var(--accent2) 56%,var(--line));box-shadow:var(--shadow-sm)}
-  .scientist-platform h3{margin:0 0 5px;font-size:15px}
-  .scientist-platform p{margin:0 0 12px;color:var(--muted);font-size:12px;line-height:1.45}
   .command{display:block;min-width:0;margin:0;padding:11px 12px;border-radius:7px;background:#101218;
     border:1px solid color-mix(in srgb,var(--accent2) 35%,var(--line));color:#e8e5ff;font-family:var(--font-mono);
     font-size:12px;line-height:1.55;white-space:nowrap;overflow-x:auto;overflow-y:hidden;word-break:normal;user-select:all}
@@ -1030,7 +1024,7 @@
     .demo-note{margin-top:14px}
     .landing-section-head{display:block;margin-bottom:18px}
     .landing-section h2{font-size:23px;margin-bottom:8px}
-    .workflow-grid,.feature-grid,.scientist-platforms,.scientist-steps{grid-template-columns:minmax(0,1fr)}
+    .workflow-grid,.feature-grid,.scientist-steps{grid-template-columns:minmax(0,1fr)}
     .workflow-step,.feature-card{min-height:0}
     .open-source-panel{display:block}
     .open-source-panel h2{font-size:23px}
@@ -1162,18 +1156,6 @@
           <li><b>Paste it in your repo</b>Installs the client, signs you in, binds the folder, starts the sync.<code class="command">curl -fsSL https://lockedin.codes/setup/‹ticket›.sh | bash</code></li>
           <li><b>Run your agent as usual</b>claude, codex, agy — the skill is in place, and reports, talks and feedback sync every few seconds.</li>
         </ol>
-        <div class="scientist-platforms">
-          <article class="scientist-platform">
-            <h3>macOS or Linux</h3>
-            <p>Prefer to set it up by hand? Python 3.11+; installs only the Scientist client in your user PATH.</p>
-            <code class="command">curl -fsSL https://raw.githubusercontent.com/HamidrezaKmK/lockedin/main/install.sh | bash</code>
-          </article>
-          <article class="scientist-platform">
-            <h3>Windows PowerShell</h3>
-            <p>The same manual route for Windows; installs the client in local app data.</p>
-            <code class="command">irm https://raw.githubusercontent.com/HamidrezaKmK/lockedin/main/install.ps1 | iex</code>
-          </article>
-        </div>
         </div>
       </section>
 
@@ -1490,8 +1472,6 @@
     setText("#scientist-install-title",scientist.title);
     const scientistIntro=$("#scientist-install-title")&&$("#scientist-install-title").parentElement.querySelector("p");
     if(scientistIntro&&scientist.intro!=null)scientistIntro.textContent=scientist.intro;
-    cards(".scientist-platforms",scientist.platforms,(p)=>el("article",{class:"scientist-platform"},
-      el("h3",{},p.title||""),el("p",{},p.text||""),el("code",{class:"command"},p.command||"")));
     cards(".scientist-steps",scientist.steps,(s)=>{
       const li=el("li",{},el("b",{},s.title||""),document.createTextNode(s.text||""));
       if(s.command)li.append(el("code",{class:"command"},s.command));
