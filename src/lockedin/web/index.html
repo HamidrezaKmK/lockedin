@@ -2225,6 +2225,11 @@
   async function doAuth(kind){
     const username=$("#au_user").value.trim(), password=$("#au_pass").value;
     $("#au_err").textContent="";
+    // "Request Demo" reads as a standalone call to action, so a visitor clicks it before
+    // touching the fields. Answering that with a username-charset error hides the one thing
+    // they asked for; show them how to get access instead. With credentials filled in, the
+    // signup below still queues a real account for approval.
+    if(kind==="signup"&&(!username||!password)){ showDemoRequest(); return; }
     try{
       const r=await api("/api/"+kind,{method:"POST",body:JSON.stringify({username,password})});
       if(r&&r.pending){ showDemoRequest(); return; }
