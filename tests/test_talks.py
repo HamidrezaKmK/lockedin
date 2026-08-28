@@ -88,6 +88,19 @@ class TalkTests(unittest.TestCase):
             detail = talks.talk_detail(self.slug, self.talk)
         self.assertEqual(detail["slides"][1]["kind"], "Literature review")
 
+    def test_a_title_and_subtitle_are_markable_slide_source(self):
+        with paths.use_root(self.home):
+            title_note = talks.add_note(self.slug, self.talk, slide=0, kind="q", author="pi",
+                                        quote="What we're changing", text="Sharper title?")
+            sub_note = talks.add_note(self.slug, self.talk, slide=0, kind="more", author="pi",
+                                      quote="So the rest has somewhere to stand.", text="Explain this.")
+            detail = talks.talk_detail(self.slug, self.talk)
+            editable = detail["slides"][0]["edit_source"]
+        self.assertFalse(next(n for n in detail["notes"] if n["id"] == title_note["id"])["orphan"])
+        self.assertFalse(next(n for n in detail["notes"] if n["id"] == sub_note["id"])["orphan"])
+        self.assertIn(f"<comment-begin={title_note['id']}>What we're changing", editable)
+        self.assertIn(f"<comment-begin={sub_note['id']}>So the rest has somewhere to stand.", editable)
+
     def test_talk_revision_changes_when_remote_deck_or_notes_change(self):
         """The browser can tell that another collaborator updated an open talk."""
         with paths.use_root(self.home):

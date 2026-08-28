@@ -1172,9 +1172,12 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     </div>`).firstChild;
 
     const md = wrap.querySelector(".tk-md");
+    const annotationSurface = wrap.querySelector(".tk-slide");
     renderMarkdown(sl.body, md);
-    paintAnchors(md, sl, mine);
-    md.addEventListener("mouseup", onSelect);
+    // A slide's title and subtitle are source text too, not decorative chrome. Paint and
+    // select across this whole surface so they can carry the same review marks as its body.
+    paintAnchors(annotationSurface, sl, mine);
+    annotationSurface.addEventListener("mouseup", onSelect);
 
     wrap.querySelectorAll("[data-nav]").forEach(b =>
       (b.onclick = () => go(S.slide + Number(b.dataset.nav))));
@@ -1418,16 +1421,20 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     return frag.textContent.replace(/\s+/g, " ").trim();
   }
 
-  function onSelect() {
+  function onSelect(event) {
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed) return;
-    const md = root.querySelector(".tk-md");
-    if (!md || !md.contains(sel.anchorNode)) return;
-    const range = widenToMath(sel.getRangeAt(0).cloneRange(), md);
+    const surface = event && event.currentTarget || root.querySelector(".tk-slide");
+    if (!surface || !surface.contains(sel.anchorNode) || !surface.contains(sel.focusNode)) return;
+    // Keep section/date chrome out of the annotation address space, while treating title,
+    // subtitle and body as one editable slide surface.
+    const selectedEl = sel.anchorNode.nodeType === Node.TEXT_NODE ? sel.anchorNode.parentElement : sel.anchorNode;
+    if (!selectedEl || !selectedEl.closest("h2,.sub,.tk-md")) return;
+    const range = widenToMath(sel.getRangeAt(0).cloneRange(), surface);
     const text = selectionSource(range);
     if (text.length < 2) return;
     clearPending();
-    const quote = findInSource(S.talk.slides[S.slide].body, text);
+    const quote = findInSource(S.talk.slides[S.slide].source, text);
     if (!quote) {
       toast("Couldn’t anchor that selection to the slide source — try selecting whole words.");
       return;
@@ -1437,7 +1444,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     // its third appearance must not anchor — or paint — on the first.
     let occurrence = 1;
     try {
-      const { nodes, chars, flat } = flattenText(md);
+      const { nodes, chars, flat } = flattenText(surface);
       const probe = range.cloneRange(); probe.collapse(true);
       let pos = flat.length;
       for (let ci = 0; ci < chars.length; ci++) {

@@ -742,6 +742,9 @@ def talk_detail(slug: str, talk_id: str) -> dict:
 
     out_notes = []
     for note in sorted(notes.values(), key=lambda n: n.get("created_at", "")):
+        # ``source`` includes the title and optional subtitle as well as the body. A title is
+        # part of the argument a chalk talk makes, so marks on it must resolve and paint just
+        # like marks on a paragraph below it.
         src = slides[note["slide"]]["source"] if 0 <= note["slide"] < len(slides) else ""
         n = dict(note)
         pos = resolve_anchor(src, note) if note.get("quote") else -1
