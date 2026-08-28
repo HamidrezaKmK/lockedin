@@ -63,7 +63,7 @@ def open_markdown(slug: str) -> bytes | None:
         return None
     head = ("# Open feedback on this bubble\n\n"
             "Marks the user left while reading — on report pages and on chalk-talk slides. Each\n"
-            "one is a pointed finger plus one of five things:\n\n"
+            "one is a pointed finger plus one of these:\n\n"
             "| mark | means |\n|---|---|\n"
             + "".join(f"| {KINDS[k]['glyph']} | {KINDS[k]['means']} |\n" for k in talks.KIND_ORDER)
             + "\n"
@@ -71,7 +71,8 @@ def open_markdown(slug: str) -> bytes | None:
             "if there is one, propose a fix, and agree it before you change anything. A `?` means\n"
             "re-explain, not re-derive. A `✗` means the argument is wrong, so re-derive rather\n"
             "than reword. A `→` usually means the expansion belongs in a report page. If you\n"
-            "think a mark is mistaken, say so and argue it — do not comply silently.\n\n"
+            "think a mark is mistaken, say so and argue it — do not comply silently. A `✍` is a\n"
+            "freehand drawing: its picture carries the whole message, so open it first.\n\n"
             "A mark disappears from this file once it is genuinely resolved, and the file\n"
             "disappears once none are left. Never edit this file or anything under `feedback/`:\n"
             "it is generated, and your edits are overwritten on the next sync.\n\n")

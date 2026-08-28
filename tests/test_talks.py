@@ -595,3 +595,58 @@ class DeckPushEchoTests(unittest.TestCase):
         self.assertEqual(entry["revision"], scientist_sync.revision(stored))
         if stored != raw:
             self.assertEqual(base64.b64decode(entry["content_b64"]), stored)
+
+
+class InkNoteTests(unittest.TestCase):
+    """✍ — freehand drawings as a first-class mark, chalk-talk-only."""
+
+    def setUp(self):
+        self.ctx = temp_home()
+        self.home = self.ctx.__enter__()
+        with paths.use_root(self.home):
+            self.slug = bubbles.create_bubble("Diffusion noise schedules")
+            bubbles.approve_bubble(self.slug)
+            bubbles.ensure_pages(self.slug)
+            self.talk = talks.create_talk(self.slug, "Why the variance term doesn't vanish",
+                                          date="2026-08-27", body=DECK)
+
+    def tearDown(self):
+        self.ctx.__exit__(None, None, None)
+
+    STROKES = [[{"x": 10, "y": 20}, {"x": 30, "y": 22}, {"x": 55, "y": 25}],
+               [{"x": 60, "y": 70}, {"x": 61, "y": 90}]]
+
+    def test_a_drawing_alone_is_a_complete_anchor(self):
+        with paths.use_root(self.home):
+            note = talks.add_note(self.slug, self.talk, slide=0, kind="ink", author="pi",
+                                  paths=self.STROKES)
+            detail = talks.talk_detail(self.slug, self.talk)
+        self.assertEqual(len(note["paths"]), 2)
+        self.assertFalse(detail["notes"][0]["orphan"])   # nothing to orphan: no quote
+
+    def test_strokes_are_clamped_rounded_and_bounded(self):
+        wild = [[{"x": -5, "y": 120.567}, {"x": 30.129, "y": 22}],
+                [{"x": 1, "y": 1}]]                       # single point: not a stroke
+        cleaned = talks._clean_paths(wild)
+        self.assertEqual(cleaned, [[{"x": 0.0, "y": 100.0}, {"x": 30.13, "y": 22.0}]])
+        self.assertIsNone(talks._clean_paths([]))
+        self.assertIsNone(talks._clean_paths([[{"x": "junk"}]]))
+
+    def test_feedback_and_agent_payload_point_at_the_picture(self):
+        with paths.use_root(self.home):
+            talks.add_note(self.slug, self.talk, slide=0, kind="ink", author="pi",
+                           paths=self.STROKES, text="apply what I drew")
+            blocks = "\n".join(talks.feedback_blocks(self.slug))
+            payload = talks.open_notes_for_agent(self.slug)
+        self.assertIn("✍", blocks)
+        self.assertIn("freehand drawing", blocks)
+        # No picture captured (no browser here) — the file must say so, not send the agent
+        # hunting for a shot that does not exist.
+        self.assertIn("no picture was captured", blocks)
+        self.assertEqual(payload[0]["anchor"], {"type": "drawing", "strokes": 2})
+
+    def test_an_empty_note_is_still_refused(self):
+        with paths.use_root(self.home):
+            with self.assertRaises(ValueError):
+                talks.add_note(self.slug, self.talk, slide=0, kind="ink", author="pi",
+                               paths=[[{"x": 1, "y": 1}]])   # cleans to nothing

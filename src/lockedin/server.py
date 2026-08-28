@@ -908,6 +908,7 @@ def build_app():
         text: str = ""
         version: int = 1
         rect: Optional[dict] = None
+        paths: Optional[list] = None   # freehand strokes, % of the slide box
 
     class TalkNoteEditIn(BaseModel):
         text: str = ""
@@ -1919,7 +1920,8 @@ def build_app():
         try:
             note = service.add_talk_note(home_of(user), slug, talk_id, slide=body.slide,
                                          kind=body.kind, author=user, quote=body.quote,
-                                         text=body.text, rect=body.rect, version=body.version)
+                                         text=body.text, rect=body.rect, paths=body.paths,
+                                         version=body.version)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
         return {"note": note}

@@ -216,6 +216,17 @@ agent that cannot see your screen.
 Region marks exist only on slides. On a report page, which reflows, a rectangle would say
 nothing a quoted sentence does not.
 
+## Drawing on a slide
+
+Some feedback is faster to draw than to say. Hit **✍ draw** and the slide becomes a canvas:
+cross a line out, arrow a paragraph to where it belongs, circle the weak step, write in the
+margin. **↩ undo** removes the last stroke; **✓ done** pins it, with an optional sentence.
+
+It lands as a single **✍ drawn** mark. The agent gets a picture of the slide with your strokes
+on it and the instruction that the drawing *is* the feedback — crossed-out text wants rewriting,
+arrows want things moved, circles want attention. Like region marks, drawing exists only on
+chalk talks.
+
 ## Writing and editing by hand
 
 A talk is not agent-only. **+ add chalk talk** offers two doors: **Ask an agent** hands you a

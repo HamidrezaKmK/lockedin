@@ -19,6 +19,8 @@
     more: { glyph: "→", label: "deeper",  color: "var(--accent2)" },
     good: { glyph: "✓", label: "good",    color: "var(--good)" },
     cut:  { glyph: "✂", label: "cut",     color: "var(--muted)" },
+    // Created by the draw tool, not the picker: the drawing is the message.
+    ink:  { glyph: "✍", label: "drawn",   color: "var(--text-color-4, #ff7aa2)" },
   };
   const ORDER = ["bad", "q", "more", "good", "cut"];
 
@@ -192,6 +194,21 @@ mark.tk-anno{background:color-mix(in srgb,var(--kc,var(--accent)) 26%,transparen
   white-space:nowrap;pointer-events:none;box-shadow:var(--shadow-sm)}
 .tk-drawbox{position:absolute;border:1.5px solid var(--accent);border-radius:7px;
   background:color-mix(in srgb,var(--accent) 10%,transparent)}
+
+/* Freehand ink. The stored strokes repaint on a canvas glued over the slide; it never
+   takes pointer events, so text selection and the other marks keep working beneath it. */
+.tk-ink{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:3}
+.tk-inkdraw{position:absolute;inset:0;width:100%;height:100%;cursor:crosshair;z-index:6;
+  border-radius:14px;outline:1.5px dashed color-mix(in srgb,var(--kc,#ff7aa2) 70%,transparent);
+  outline-offset:-7px;touch-action:none}
+.tk-inkbar{position:absolute;left:50%;bottom:9px;transform:translateX(-50%);z-index:7;
+  display:flex;align-items:center;gap:8px;background:var(--panel2);border:1px solid var(--line);
+  border-radius:999px;padding:5px 8px 5px 14px;box-shadow:var(--shadow);white-space:nowrap;
+  font:500 11.5px var(--font-ui)}
+.tk-inkbar b{color:var(--muted);font-weight:500}
+.tk-inkbar button{padding:3px 10px;min-height:0;font-size:11.5px;border-radius:999px}
+.tk-slide.tk-capturing .tk-ink{display:none}
+.tk-slide.tk-capturing .tk-ink.tk-capture-target{display:block}
 
 /* Manual editing. The editor card takes the slide's place and its full height: editing is
    a mode, not a popup, and the deck footer keeps working so you can restructure the whole
@@ -408,7 +425,7 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
     // Dim everything except this mark, so the picture answers "which one" without a caption.
     slide.classList.add("tk-capturing");
     const target = slide.querySelector(
-      `.tk-anno[data-note="${noteId}"],.tk-region[data-note="${noteId}"]`);
+      `.tk-anno[data-note="${noteId}"],.tk-region[data-note="${noteId}"],.tk-ink[data-note="${noteId}"]`);
     if (target) target.classList.add("tk-capture-target");
     const restore = flattenColors(slide);
     try {
@@ -560,9 +577,42 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
     return m ? m[0] : null;
   }
 
+  function inkColor() {
+    const v = getComputedStyle(document.body).getPropertyValue("--text-color-4").trim();
+    return v || "#ff7aa2";
+  }
+  function paintInk(cv, hostEl, paths) {
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    cv.width = Math.max(1, Math.round(hostEl.clientWidth * dpr));
+    cv.height = Math.max(1, Math.round(hostEl.clientHeight * dpr));
+    const ctx = cv.getContext("2d");
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    ctx.strokeStyle = inkColor();
+    ctx.lineWidth = Math.max(2, cv.width / 480);
+    ctx.lineCap = ctx.lineJoin = "round";
+    (paths || []).forEach(pts => {
+      if (!pts || pts.length < 2) return;
+      ctx.beginPath();
+      pts.forEach((pt, i) => {
+        const x = pt.x * cv.width / 100, y = pt.y * cv.height / 100;
+        if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+      });
+      ctx.stroke();
+    });
+  }
+
   function paintAnchors(mdEl, slide, notes) {
     const slideEl = (mdEl.closest && mdEl.closest(".tk-slide")) || mdEl;
     notes.forEach(n => {
+      if (n.paths && n.paths.length) {
+        const cv = document.createElement("canvas");
+        cv.className = "tk-ink";
+        cv.dataset.note = n.id;
+        slideEl.appendChild(cv);
+        // Sized after layout: clientWidth is 0 until the slide is actually in the document.
+        requestAnimationFrame(() => paintInk(cv, slideEl, n.paths));
+        return;
+      }
       if (n.rect) {
         const d = document.createElement("div");
         d.className = "tk-region";
@@ -629,7 +679,8 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
       <div class="hd"><span class="tk-badge">${k.glyph} ${k.label}</span>
         <span class="tk-id" title="the id an agent sees">${esc(m.id)}</span></div>
       <div class="qt">${m.orphanNote || ""}${m.quote
-        ? "\u201c" + esc(m.quote) + "\u201d" : "\u25ad region on the slide"}</div>
+        ? "\u201c" + esc(m.quote) + "\u201d"
+        : (m.kind === "ink" ? "\u270d drawn on the slide" : "\u25ad region on the slide")}</div>
       ${msgs.length ? msgs.map(turn).join("")
         : `<div class="tk-turn"><div class="tk-said tk-dim" data-last="1">no comment</div></div>`}
       ${m.image ? `<img class="tk-shot" alt="the slide as you marked it" src="${esc(m.image)}">` : ""}
@@ -944,6 +995,7 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
           <span class="tk-cnt">${S.slide + 1} / ${S.talk.slides.length}</span>
           <button data-nav="-1">←</button><button data-nav="1">→</button>
           <button data-draw="1" title="drag a box over the slide">🖍 mark region</button>
+          <button data-ink="1" title="draw freely on the slide — the drawing becomes the feedback">✍ draw</button>
           <button data-editdeck="1" title="edit this slide's markdown by hand">✎ edit</button>
         </div>
       </div>
@@ -959,6 +1011,7 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
     wrap.querySelectorAll("[data-nav]").forEach(b =>
       (b.onclick = () => go(S.slide + Number(b.dataset.nav))));
     wrap.querySelector("[data-draw]").onclick = startDraw;
+    wrap.querySelector("[data-ink]").onclick = startInk;
     wrap.querySelectorAll(".tk-dot").forEach(d => (d.onclick = () => go(Number(d.dataset.i))));
     wrap.querySelector(".tk-gutter").append(renderGutter(mine));
     return wrap;
@@ -973,7 +1026,8 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
                       : `<span class="tk-tag done">all closed</span>`}</div>
       ${mine.length ? "" : `<div class="tk-empty tk-empty-notes" style="font-size:14px">
         Select any text on the slide — or hit <b>🖍 mark region</b> and drag a box —
-        then pick one of <b>✗ ? → ✓ ✂</b>.</div>`}
+        then pick one of <b>✗ ? → ✓ ✂</b>. Or <b>✍ draw</b> on the slide and let the
+        drawing say it.</div>`}
       ${mine.map(n => noteCard({ ...n, orphanNote: n.anchorLost ? "⚠ text moved · " : "",
                                  image: shot(n),
                                  messages: (n.messages || []).map(msg => ({ ...msg,
@@ -1002,7 +1056,7 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
     el.style.display = "contents";   // let the cards be the gutter's own flex items
     el.querySelector("[data-payload]").onclick = showPayload;
     el.querySelectorAll(".tk-note").forEach(c => (c.onclick = () => {
-      const m = root.querySelector(`.tk-anno[data-note="${c.dataset.note}"],.tk-region[data-note="${c.dataset.note}"]`);
+      const m = root.querySelector(`.tk-anno[data-note="${c.dataset.note}"],.tk-region[data-note="${c.dataset.note}"],.tk-ink[data-note="${c.dataset.note}"]`);
       if (m) m.scrollIntoView({ block: "center", behavior: "smooth" });
     }));
     const gh = el.querySelector(".tk-gh");
@@ -1357,6 +1411,102 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
       e.preventDefault();
     };
     addEventListener("keydown", esc, true);
+  }
+
+  /* ------------------------------------------------------------ freehand ink */
+  // Draw anything over the slide — cross a line out, arrow a paragraph somewhere else, circle
+  // the weak step, write in the margin. Done pins a single ✍ mark whose snapshot carries the
+  // strokes; to the agent the picture IS the feedback.
+  function startInk() {
+    const slide = root.querySelector(".tk-slide");
+    if (!slide || slide.querySelector(".tk-inkdraw")) return;
+    clearPending();
+    const layer = document.createElement("canvas");
+    layer.className = "tk-inkdraw";
+    layer.style.setProperty("--kc", inkColor());
+    slide.appendChild(layer);
+    const bar = h(`<div class="tk-inkbar"><b>draw on the slide · Esc cancels</b>
+      <button data-undo="1">↩ undo</button>
+      <button class="pri" data-done="1">✓ done</button></div>`).firstChild;
+    slide.appendChild(bar);
+
+    const paths = [];
+    let cur = null;
+    const repaint = () => paintInk(layer, slide, paths.concat(cur ? [cur] : []));
+    repaint();
+
+    const pos = e => {
+      const r = layer.getBoundingClientRect();
+      return { x: +((e.clientX - r.left) / r.width * 100).toFixed(2),
+               y: +((e.clientY - r.top) / r.height * 100).toFixed(2) };
+    };
+    const teardown = () => {
+      layer.remove(); bar.remove();
+      removeEventListener("keydown", esc, true);
+    };
+    layer.onpointerdown = e => {
+      layer.setPointerCapture(e.pointerId);
+      cur = [pos(e)];
+      e.preventDefault();
+    };
+    layer.onpointermove = e => {
+      if (!cur) return;
+      const pt = pos(e);
+      const last = cur[cur.length - 1];
+      if (Math.abs(pt.x - last.x) + Math.abs(pt.y - last.y) < 0.35) return;   // thin the samples
+      cur.push(pt); repaint();
+    };
+    layer.onpointerup = () => {
+      if (cur && cur.length >= 2) paths.push(cur);
+      cur = null; repaint();
+    };
+    bar.querySelector("[data-undo]").onclick = () => { paths.pop(); repaint(); };
+    bar.querySelector("[data-done]").onclick = e => {
+      if (!paths.length) { teardown(); return; }
+      bar.remove();
+      inkComposer(e.clientX, Math.min(e.clientY + 10, innerHeight - 200), async text => {
+        teardown();
+        const created = await api(`/api/bubbles/${S.slug}/talks/${S.talk.talk.id}/notes`, {
+          method: "POST",
+          body: JSON.stringify({ slide: S.slide, kind: "ink", paths, text,
+                                 version: S.talk.slides[S.slide].version }),
+        });
+        if (innerWidth <= 900) root.classList.add("notes-open");
+        await loadTalk(S.talk.talk.id, true);
+        // The snapshot is the message here, so it is captured with the strokes repainted on
+        // the fresh render — same lifecycle as a region mark's picture.
+        await captureNote(created.note.id);
+        await loadTalk(S.talk.talk.id, true);
+      }, () => teardown());
+    };
+    const esc = e => { if (e.key === "Escape") { teardown(); e.stopPropagation(); } };
+    addEventListener("keydown", esc, true);
+  }
+
+  // The five-kind picker makes no sense here — the drawing already is the mark. Just an
+  // optional sentence and a pin.
+  function inkComposer(x, y, onPin, onCancel) {
+    closePicker();
+    const p2 = h(`<div class="tk-pop">
+      <div class="tk-kinds"><div class="tk-kb sel" style="--kc:${KINDS.ink.color};flex:1">
+        <div class="g">${KINDS.ink.glyph}</div><div class="l">the drawing is the feedback</div></div></div>
+      <textarea placeholder="optional — say what the drawing asks for"></textarea>
+      <div class="row"><span class="hint">the drawing alone is enough</span>
+        <button data-cancel="1">Esc</button><button class="pri" data-pin="1">Pin drawing</button></div>
+    </div>`).firstChild;
+    p2.style.left = Math.max(10, Math.min(x, innerWidth - 326)) + "px";
+    p2.style.top = Math.min(y, innerHeight - 200) + "px";
+    document.body.append(p2);
+    const bail = () => { p2.remove(); if (onCancel) onCancel(); };
+    p2.querySelector("[data-cancel]").onclick = bail;
+    p2.querySelector("[data-pin]").onclick = () => {
+      const text = p2.querySelector("textarea").value.trim();
+      p2.remove();
+      onPin(text);
+    };
+    setTimeout(() => p2.querySelector("textarea").focus(), 30);
+    const esc2 = e => { if (e.key === "Escape") { bail(); removeEventListener("keydown", esc2, true); } };
+    addEventListener("keydown", esc2, true);
   }
 
   /* -------------------------------------------------------- modals + chrome */

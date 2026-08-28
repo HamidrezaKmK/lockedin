@@ -36,8 +36,11 @@ KINDS = {
     "more": {"glyph": "→", "label": "deeper",  "means": "go deeper"},
     "good": {"glyph": "✓", "label": "good",    "means": "good, keep this"},
     "cut":  {"glyph": "✂", "label": "cut",     "means": "cut this"},
+    # The sixth mark is not in the picker: it is created by the draw tool, and the drawing is
+    # the message. The strokes live on the note and are burned into the snapshot the agent gets.
+    "ink":  {"glyph": "✍", "label": "drawn",   "means": "look at what I drew on the picture and apply it"},
 }
-KIND_ORDER = ["bad", "q", "more", "good", "cut"]
+KIND_ORDER = ["bad", "q", "more", "good", "cut", "ink"]
 
 SLIDE_KINDS = ["setup", "derivation", "evidence", "comparison", "implementation", "ask"]
 
@@ -318,13 +321,37 @@ def resolve_anchor(source: str, note: dict) -> int:
     return source.find(quote)
 
 
+def _clean_paths(paths) -> list | None:
+    """Normalised freehand strokes: a list of polylines of {x, y} percents of the slide box.
+
+    Bounded and rounded here so a scribble cannot balloon the sidecar, and so the stored
+    numbers are stable however the browser sampled the pointer.
+    """
+    if not paths:
+        return None
+    out = []
+    for stroke in list(paths)[:200]:
+        pts = []
+        for pt in list(stroke)[:600]:
+            try:
+                x, y = float(pt["x"]), float(pt["y"])
+            except (TypeError, KeyError, ValueError):
+                continue
+            pts.append({"x": round(max(0.0, min(100.0, x)), 2),
+                        "y": round(max(0.0, min(100.0, y)), 2)})
+        if len(pts) >= 2:
+            out.append(pts)
+    return out or None
+
+
 def add_note(slug: str, talk_id: str, *, slide: int, kind: str, author: str,
              quote: str = "", text: str = "", rect: dict | None = None,
-             version: int = 1) -> dict:
+             paths: list | None = None, version: int = 1) -> dict:
     if kind not in KINDS:
         raise ValueError(f"unknown mark: {kind}")
-    if not quote and not rect:
-        raise ValueError("a note must anchor to a quote or a region")
+    paths = _clean_paths(paths)
+    if not quote and not rect and not paths:
+        raise ValueError("a note must anchor to a quote, a region, or a drawing")
 
     slides = parse_deck(read_deck(slug, talk_id))
     source = slides[slide]["source"] if 0 <= slide < len(slides) else ""
@@ -337,6 +364,7 @@ def add_note(slug: str, talk_id: str, *, slide: int, kind: str, author: str,
     data.setdefault("notes", {})[nid] = {
         "id": nid, "slide": slide, "version": version, "kind": kind,
         "quote": quote, "prefix": pre, "suffix": suf, "rect": rect or None,
+        "paths": paths,
         "author": author, "created_at": now, "image": "",
         # A mark is the opening of a conversation, not a one-shot. The kind and the anchor are
         # fixed; what gets said about them is a thread.
@@ -754,6 +782,10 @@ def open_notes_for_agent(slug: str) -> list[dict]:
                 item["anchor"] = {"type": "text", "quote": note["quote"],
                                   "prefix": note.get("prefix", ""), "suffix": note.get("suffix", ""),
                                   "resolves": resolve_anchor(s.get("source", ""), note) >= 0}
+            elif note.get("paths"):
+                # The strokes themselves are browser-geometry noise to an agent; the snapshot
+                # with them drawn on is the message.
+                item["anchor"] = {"type": "drawing", "strokes": len(note["paths"])}
             else:
                 item["anchor"] = {"type": "region", **(note.get("rect") or {})}
             out.append(item)
@@ -842,6 +874,16 @@ def _region_phrase(rect: dict, *, has_picture: bool) -> str:
                          "the comment")
 
 
+def _ink_phrase(note: dict) -> str:
+    n = len(note.get("paths") or [])
+    base = f"a freehand drawing over the whole slide ({n} stroke{'s' if n != 1 else ''})"
+    return base + (" — open the picture: the strokes ARE the feedback. Crossed-out text wants "
+                   "rewriting, arrows want things moved, circles want attention or expansion, "
+                   "handwriting wants reading."
+                   if note.get("image")
+                   else " — no picture was captured for it, so go by the comment")
+
+
 def feedback_blocks(slug: str) -> list[str]:
     """The chalk-talk half of `feedback/OPEN.md`. See `feedback.py` for the whole document."""
     blocks = []
@@ -858,9 +900,13 @@ def feedback_blocks(slug: str) -> list[str]:
             i = note.get("slide", 0)
             sl = slides[i] if 0 <= i < len(slides) else {}
             k = KINDS.get(note["kind"], {})
-            where = (f"the text `{note['quote']}`" if note.get("quote")
-                     else _region_phrase(note.get("rect") or {},
-                                         has_picture=bool(note.get("image"))))
+            if note.get("quote"):
+                where = f"the text `{note['quote']}`"
+            elif note.get("paths"):
+                where = _ink_phrase(note)
+            else:
+                where = _region_phrase(note.get("rect") or {},
+                                       has_picture=bool(note.get("image")))
             lines = [f"### {k.get('glyph','')} {k.get('means','')} — slide {i + 1}: "
                      f"{sl.get('title','')}",
                      "",
