@@ -26,7 +26,7 @@
 
   const S = { slug: null, name: "", view: "home", talk: null, data: null, bubble: null,
               slide: 0, kind: "q", pending: null, editPremise: false,
-              edit: false, editorObj: null, notes: true };
+              edit: false, editorObj: null, notes: true, user: "" };
   let root = null;
 
   const api = async (path, opts) => {
@@ -37,6 +37,14 @@
   const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g,
     c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   const h = (html) => { const d = document.createElement("div"); d.innerHTML = html; return d; };
+  const displayAuthor = author => {
+    const name = String(author || "");
+    const user = S.user || M.user || "";
+    if (!user) return name;
+    if (name === "you") return user;
+    if (name === "agent on behalf of you") return "agent on behalf of " + user;
+    return name;
+  };
 
   /* ------------------------------------------------------------------ styles */
   function injectStyles() {
@@ -734,7 +742,7 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
     const msgs = m.messages || [];
     const lastIdx = msgs.length - 1;
     const turn = (msg, i) => `<div class="tk-turn${msg.agent ? " agent" : ""}">
-      <div class="tk-who">${msg.agent ? "🤖 " : ""}${esc(msg.author || "")}${
+      <div class="tk-who">${msg.agent ? "🤖 " : ""}${esc(displayAuthor(msg.author))}${
         msg.edited_at ? ' <span class="tk-dim">· edited</span>' : ""}</div>
       <div class="tk-said"${i === lastIdx && !msg.agent ? ' data-last="1"' : ""}>${esc(msg.body || "")}</div>
     </div>`;
@@ -1793,6 +1801,7 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
     injectStyles();
     S.slug = slug;
     S.name = (opts && opts.name) || slug;
+    S.user = (opts && opts.user) || "";
     S.onPage = (opts && opts.onPage) || null;
     S.onView = (opts && opts.onView) || null;
     S.view = "home";
@@ -1820,7 +1829,7 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
    * This file owns the vocabulary and the look. Offsets, the wrapper and its storage stay in
    * the SPA, which already has all three.
    * ===================================================================================== */
-  const M = { kind: "q", gutter: null, preview: null, handlers: null };
+  const M = { kind: "q", gutter: null, preview: null, handlers: null, user: "" };
 
   function markPicker(x, y, quote, onPick) {
     injectStyles();   // a page view may never have opened a deck
@@ -1906,5 +1915,6 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
 
   window.LockedInTalks = { mount, close, home: loadHome };
   window.LockedInMarks = { picker: markPicker, paint: paintMarks, gutter: markGutter,
+                           setUser: user => { M.user = String(user || ""); },
                            pendingRange: paintPendingRange, clearPending };
 })();

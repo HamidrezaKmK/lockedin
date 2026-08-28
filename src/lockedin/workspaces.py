@@ -82,7 +82,7 @@ def create(user: str, name: str, *, kind: str = "shared") -> dict:
     # bubble and talks machinery, which this module must not depend on at import time.
     from . import tutorial
     with paths.use_root(root):
-        tutorial.seed()
+        tutorial.seed(user)
     return rec
 
 

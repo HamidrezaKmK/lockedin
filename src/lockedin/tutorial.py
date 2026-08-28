@@ -197,20 +197,21 @@ def _days_ago(n: int) -> str:
     return (datetime.now(timezone.utc) - timedelta(days=n)).strftime("%Y-%m-%d")
 
 
-def seed() -> str | None:
+def seed(author: str = "you") -> str | None:
     """Create the Tutorial bubble in the current workspace root. Returns its slug.
 
     Best-effort by design: a workspace must never fail to create because its welcome
     content could not be written.
     """
+    author = str(author or "").strip() or "you"
     try:
-        return _seed()
+        return _seed(author)
     except Exception:
         log.warning("Could not seed the Tutorial bubble.", exc_info=True)
         return None
 
 
-def _seed() -> str:
+def _seed(author: str) -> str:
     slug = bubbles.create_bubble(BUBBLE_NAME)
     bubbles.approve_bubble(slug)
     bubbles.ensure_pages(slug)
@@ -231,11 +232,11 @@ def _seed() -> str:
     start = content.find(anchor)
     if start >= 0:
         state = bubbles.create_comment_state(
-            slug, "the-five-marks", "you",
+            slug, "the-five-marks", author,
             "Does that mean the text box is pointless?",
             content=content, base_mtime=None,
             selection_start=start, selection_end=start + len(anchor), kind="q")
-        bubbles.reply_comment_state(slug, "the-five-marks", state["thread"]["id"], "agent on behalf of you",
+        bubbles.reply_comment_state(slug, "the-five-marks", state["thread"]["id"], f"agent on behalf of {author}",
                                     "Not pointless — optional. The mark carries the intent; "
                                     "prose is for whatever the glyph cannot say. This thread "
                                     "is itself the demo: resolve it with ✓ when you are done.")
@@ -246,17 +247,17 @@ def _seed() -> str:
     ask = talks.create_talk(slug, "How to ask your agent for work",
                             intent="The claim this deck defends, in four slides.",
                             date=d0, body=DECK_ASK.format(d0=d0))
-    wrong = talks.add_note(slug, ask, slide=1, kind="bad", author="you",
+    wrong = talks.add_note(slug, ask, slide=1, kind="bad", author=author,
                            quote='"Look into whether the schedule matters"',
                            text="Too kind — this one is not even a wish, it is a deflection.")
-    talks.reply_note(slug, ask, wrong["id"], "agent on behalf of you",
+    talks.reply_note(slug, ask, wrong["id"], f"agent on behalf of {author}",
                      "Fair — I will call it what it is; the contrast lands harder.", agent=True)
-    talks.add_note(slug, ask, slide=1, kind="good", author="you",
+    talks.add_note(slug, ask, slide=1, kind="good", author=author,
                    quote="The second one can *fail*, which is exactly what makes it answerable.")
-    talks.add_note(slug, ask, slide=2, kind="q", author="you",
+    talks.add_note(slug, ask, slide=2, kind="q", author=author,
                    rect={"x": 6.0, "y": 34.0, "w": 88.0, "h": 30.0},
                    text="Which of these three should a brand-new user reach for first?")
-    ink = talks.add_note(slug, ask, slide=0, kind="ink", author="you",
+    ink = talks.add_note(slug, ask, slide=0, kind="ink", author=author,
                    paths=[
                        # measured off the rendered slide (720px card): an underline
                        # beneath the first bullet, a ring around "the deliverable",
@@ -282,15 +283,15 @@ def _seed() -> str:
     marks_deck = talks.create_talk(slug, "Why marks beat paragraphs",
                                    intent="Why the feedback vocabulary is five glyphs.",
                                    date=d2, body=DECK_MARKS.format(d2=d2))
-    overclaim = talks.add_note(slug, marks_deck, slide=1, kind="bad", author="you",
+    overclaim = talks.add_note(slug, marks_deck, slide=1, kind="bad", author=author,
                                quote="Marks are always better than prose in",
                                text="Overclaimed. Say what the mechanism buys, "
                                     "not that it is perfect.")
-    talks.reply_note(slug, marks_deck, overclaim["id"], "agent on behalf of you",
+    talks.reply_note(slug, marks_deck, overclaim["id"], f"agent on behalf of {author}",
                      "Agreed — I would rewrite it as: the mark carries the intent and the "
                      "anchor carries the place. Confirm and I will edit the slide in place; "
                      "the mark stays yours to remove once it reads right.", agent=True)
-    talks.add_note(slug, marks_deck, slide=2, kind="more", author="you",
+    talks.add_note(slug, marks_deck, slide=2, kind="more", author=author,
                    quote="connect a repo and ask the agent",
                    text="Deep-link this to the Connecting your repo page?")
     return slug

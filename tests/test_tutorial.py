@@ -67,6 +67,17 @@ class TutorialSeedTests(unittest.TestCase):
         self.assertEqual(len(cross), 1)
         self.assertEqual(len(cross[0]["messages"]), 2)
 
+    def test_template_comments_use_the_workspace_owner_name(self):
+        with paths.use_root(self.home):
+            slug = tutorial.seed("alice")
+            threads = bubbles.list_comments(slug, "the-five-marks")["threads"]
+            deck = talks.talk_detail(slug, talks.list_talks(slug)[0]["id"])
+        self.assertEqual(threads[0]["messages"][0]["author"], "alice")
+        self.assertEqual(threads[0]["messages"][1]["author"], "agent on behalf of alice")
+        authors = {message["author"] for note in deck["notes"] for message in note["messages"]}
+        self.assertIn("alice", authors)
+        self.assertIn("agent on behalf of alice", authors)
+
     def test_no_note_is_born_an_orphan(self):
         slug = self._seeded()
         with paths.use_root(self.home):

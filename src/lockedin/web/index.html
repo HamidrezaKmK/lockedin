@@ -1969,6 +1969,7 @@
   function bindPageMarks(){
     const wrap=$("#previewWrap"), gutter=$("#reviewWrap");
     if(!wrap||!window.LockedInMarks||!S.bubble||!S.page)return;
+    window.LockedInMarks.setUser(S.user);
     if(!S.paneRight)return;   // nothing to paint, nothing to select into
     window.LockedInMarks.paint(wrap,S.comments||[]);
     if(gutter&&!S.commentDraftAnchor)
@@ -4250,7 +4251,7 @@
       // more card put a box inside a box inside a box.
       const homeHost=el("div",{class:"bubble-home-pane"});
       wrap.append(homeHost);
-      window.LockedInTalks.mount(homeHost,slug,{name:b.name,
+      window.LockedInTalks.mount(homeHost,slug,{name:b.name,user:S.user,
         onPage:p=>gotoRoute("bubble/"+slug+"/"+encodeURIComponent(p)),
         // Opening a talk goes a level deeper without changing the route, so the title's glyph
         // has to follow it down and become the way back out.
