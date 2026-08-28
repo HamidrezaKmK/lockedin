@@ -768,11 +768,15 @@
   .review-msg{border-top:1px solid var(--line);padding:8px 9px;font-size:13px;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere}
   .review-actions{display:flex;gap:5px;flex-wrap:wrap;padding:8px 9px;border-top:1px solid var(--line)}
   .review-inline-edit{display:block;width:100%;box-sizing:border-box;min-height:66px;resize:vertical;font:inherit;font-size:13px}
-  ::highlight(lockedin-review){background-color:rgba(245,204,62,.24)}
+  /* Same ink as a slide's pending mark (mark.tk-pending): the accent, mixed thin. One
+     selection colour everywhere — the native drag, the wrapper highlights, the pending
+     draft — and it follows the theme instead of shouting yellow. */
+  ::selection{background:color-mix(in srgb,var(--accent) 30%,transparent)}
+  ::highlight(lockedin-review){background-color:color-mix(in srgb,var(--accent) 22%,transparent)}
   /* The pending selection while a comment is being composed. Opening the review panel moves
      focus to the composer, which clears the browser's own selection, so the range is painted
      here instead to keep the reviewer's target visible. */
-  ::highlight(lockedin-review-draft){background-color:rgba(245,204,62,.38)}
+  ::highlight(lockedin-review-draft){background-color:color-mix(in srgb,var(--accent) 36%,transparent)}
   .review-render-error{margin:14px;padding:12px 14px;border:1px solid var(--danger);border-radius:8px;
     background:color-mix(in srgb,var(--danger) 12%,var(--panel));color:var(--ink);font-family:var(--font-ui)}
   .review-render-error b{display:block;color:var(--danger);margin-bottom:4px}
