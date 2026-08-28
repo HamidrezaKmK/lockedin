@@ -1334,7 +1334,11 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
       const payload = { slide: S.slide, kind: S.kind, text,
                         version: S.talk.slides[S.slide].version };
       if (S.pending.quote) payload.quote = S.pending.quote;
-      if (S.pending.rect) payload.rect = S.pending.rect;
+      if (S.pending.rect) {
+        payload.rect = S.pending.rect;
+        const slideEl = root.querySelector(".tk-slide");
+        if (slideEl) payload.covers = textUnderRect(slideEl, S.pending.rect).filter(Boolean);
+      }
       closePicker(); S.pending = null;
       S.notes = true;
       const created = await api(`/api/bubbles/${S.slug}/talks/${S.talk.talk.id}/notes`,
@@ -1455,6 +1459,91 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
   }
 
   /* ------------------------------------------------------------ freehand ink */
+  // The words under a stroke, in document order. A closed stroke rings its content, so its
+  // interior is sampled too — the loop's own line usually misses the word it surrounds.
+  function textUnderStrokes(slide, paths) {
+    // Region overlays are clickable and sit over the prose; a caret probe through one returns
+    // the box, not the words beneath. Lift them out of hit testing for the duration.
+    const lifted = [...slide.querySelectorAll(".tk-region")].map(el => {
+      const was = el.style.pointerEvents;
+      el.style.pointerEvents = "none";
+      return () => { el.style.pointerEvents = was; };
+    });
+    try {
+      return textUnderStrokesInner(slide, paths);
+    } finally { lifted.forEach(fn => fn()); }
+  }
+  function textUnderStrokesInner(slide, paths) {
+    const r = slide.getBoundingClientRect();
+    const caret = (cx, cy) => {
+      if (document.caretPositionFromPoint) return document.caretPositionFromPoint(cx, cy);
+      const rr = document.caretRangeFromPoint && document.caretRangeFromPoint(cx, cy);
+      return rr ? { offsetNode: rr.startContainer, offset: rr.startOffset } : null;
+    };
+    return paths.map(pts => {
+      // The pointer's own samples are as sparse as the hand was fast; walk each segment at
+      // ~0.8% steps so a quick stroke still touches every word under it.
+      const samples = [];
+      for (let i = 0; i < pts.length; i++) {
+        samples.push(pts[i]);
+        if (i + 1 >= pts.length) break;
+        const d = Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y);
+        const n = Math.min(40, Math.floor(d / 0.8));
+        for (let k = 1; k <= n; k++)
+          samples.push({ x: pts[i].x + (pts[i + 1].x - pts[i].x) * k / (n + 1),
+                         y: pts[i].y + (pts[i + 1].y - pts[i].y) * k / (n + 1) });
+      }
+      const a = pts[0], z = pts[pts.length - 1];
+      if (pts.length > 4 && Math.hypot(a.x - z.x, a.y - z.y) < 12) {
+        // Inside the loop itself, not its bounding box — a live agy session compared the
+        // fallback against the picture and called out the words the box grazed but the ink
+        // never enclosed.
+        const inside = (x, y) => {
+          let hit = false;
+          for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+            const pi = pts[i], pj = pts[j];
+            if ((pi.y > y) !== (pj.y > y) &&
+                x < (pj.x - pi.x) * (y - pi.y) / (pj.y - pi.y) + pi.x) hit = !hit;
+          }
+          return hit;
+        };
+        const xs = pts.map(q => q.x), ys = pts.map(q => q.y);
+        const x1 = Math.min(...xs), x2 = Math.max(...xs);
+        const y1 = Math.min(...ys), y2 = Math.max(...ys);
+        for (let gy = 1; gy <= 5; gy++) for (let gx = 1; gx <= 7; gx++) {
+          const sx = x1 + (x2 - x1) * gx / 8, sy = y1 + (y2 - y1) * gy / 6;
+          if (inside(sx, sy)) samples.push({ x: sx, y: sy });
+        }
+      }
+      const hits = [], seen = new Set();
+      for (const pt of samples) {
+        const pos = caret(r.left + pt.x / 100 * r.width, r.top + pt.y / 100 * r.height);
+        const node = pos && pos.offsetNode;
+        if (!node || node.nodeType !== 3 || !slide.contains(node.parentNode)) continue;
+        const text = node.nodeValue || "";
+        let i = pos.offset, j = pos.offset;
+        while (i > 0 && !/\s/.test(text[i - 1])) i--;
+        while (j < text.length && !/\s/.test(text[j])) j++;
+        const w = text.slice(i, j).trim();
+        const key = (node.parentNode.className || "") + ":" + i + ":" + w;
+        if (w && !seen.has(key)) { seen.add(key); hits.push({ node, i, w }); }
+      }
+      // Reading order, not sampling order — "Five marks, … Nothing else." rather than the
+      // scrambled path the pointer happened to take.
+      hits.sort((p1, p2) => p1.node === p2.node
+        ? p1.i - p2.i
+        : (p1.node.compareDocumentPosition(p2.node) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
+      return hits.map(h2 => h2.w).join(" ").slice(0, 160);
+    });
+  }
+
+  function textUnderRect(slide, rect) {
+    const pts = [];
+    for (let gx = 0; gx <= 5; gx++) for (let gy = 0; gy <= 5; gy++)
+      pts.push({ x: rect.x + rect.w * gx / 5, y: rect.y + rect.h * gy / 5 });
+    return textUnderStrokes(slide, [pts]);
+  }
+
   // Draw anything over the slide — cross a line out, arrow a paragraph somewhere else, circle
   // the weak step, write in the margin. Done pins a single ✍ mark whose snapshot carries the
   // strokes; to the agent the picture IS the feedback.
@@ -1505,12 +1594,14 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
     bar.querySelector("[data-done]").onclick = e => {
       if (!paths.length) { teardown(); return; }
       bar.remove();
+      layer.style.pointerEvents = "none";
+      const covers = textUnderStrokes(slide, paths).filter(Boolean);
       inkComposer(e.clientX, Math.min(e.clientY + 10, innerHeight - 200), async text => {
         teardown();
         S.notes = true;
         const created = await api(`/api/bubbles/${S.slug}/talks/${S.talk.talk.id}/notes`, {
           method: "POST",
-          body: JSON.stringify({ slide: S.slide, kind: "ink", paths, text,
+          body: JSON.stringify({ slide: S.slide, kind: "ink", paths, text, covers,
                                  version: S.talk.slides[S.slide].version }),
         });
         if (innerWidth <= 900) root.classList.add("notes-open");

@@ -321,6 +321,18 @@ def resolve_anchor(source: str, note: dict) -> int:
     return source.find(quote)
 
 
+def _clean_covers(covers) -> list | None:
+    """What the ink or box actually touched, in the reviewer's own layout.
+
+    Sampled client-side at pin time — the server never sees the rendering, so this is the one
+    chance to catch it. It is the text fallback that keeps a drawing legible to an agent that
+    cannot open images."""
+    if not covers:
+        return None
+    out = [str(c)[:200] for c in list(covers)[:200] if str(c).strip()]
+    return out or None
+
+
 def _clean_paths(paths) -> list | None:
     """Normalised freehand strokes: a list of polylines of {x, y} percents of the slide box.
 
@@ -346,10 +358,12 @@ def _clean_paths(paths) -> list | None:
 
 def add_note(slug: str, talk_id: str, *, slide: int, kind: str, author: str,
              quote: str = "", text: str = "", rect: dict | None = None,
-             paths: list | None = None, version: int = 1) -> dict:
+             paths: list | None = None, covers: list | None = None,
+             version: int = 1) -> dict:
     if kind not in KINDS:
         raise ValueError(f"unknown mark: {kind}")
     paths = _clean_paths(paths)
+    covers = _clean_covers(covers)
     if not quote and not rect and not paths:
         raise ValueError("a note must anchor to a quote, a region, or a drawing")
 
@@ -364,7 +378,7 @@ def add_note(slug: str, talk_id: str, *, slide: int, kind: str, author: str,
     data.setdefault("notes", {})[nid] = {
         "id": nid, "slide": slide, "version": version, "kind": kind,
         "quote": quote, "prefix": pre, "suffix": suf, "rect": rect or None,
-        "paths": paths,
+        "paths": paths, "covers": covers,
         "author": author, "created_at": now, "image": "",
         # A mark is the opening of a conversation, not a one-shot. The kind and the anchor are
         # fixed; what gets said about them is a thread.
@@ -784,10 +798,12 @@ def open_notes_for_agent(slug: str) -> list[dict]:
                                   "resolves": resolve_anchor(s.get("source", ""), note) >= 0}
             elif note.get("paths"):
                 # The strokes themselves are browser-geometry noise to an agent; the snapshot
-                # with them drawn on is the message.
+                # with them drawn on is the message, and `touches` is its text fallback.
                 item["anchor"] = {"type": "drawing", "strokes": len(note["paths"])}
             else:
                 item["anchor"] = {"type": "region", **(note.get("rect") or {})}
+            if note.get("covers"):
+                item["anchor"]["touches"] = note["covers"]
             out.append(item)
     return out
 
@@ -907,6 +923,7 @@ def feedback_blocks(slug: str) -> list[str]:
             else:
                 where = _region_phrase(note.get("rect") or {},
                                        has_picture=bool(note.get("image")))
+            touches = note.get("covers") or []
             lines = [f"### {k.get('glyph','')} {k.get('means','')} — slide {i + 1}: "
                      f"{sl.get('title','')}",
                      "",
@@ -914,10 +931,15 @@ def feedback_blocks(slug: str) -> list[str]:
                      f"- **on**: {where}",
                      f"- **slide version when marked**: v{note.get('version', 1)} "
                      f"(now v{sl.get('version', 1)})"]
+            if touches:
+                joined = "; ".join(f"“{t}”" for t in touches[:12])
+                lines.append(f"- **the ink touches**: {joined} — sampled from the reviewer's "
+                             f"screen; if you cannot open images, this is what the drawing "
+                             f"sits on")
             if note.get("image"):
-                lines.append(f"- **picture**: `feedback/shots/{note['id']}.png` — the slide as the "
-                             f"reviewer saw it, with this mark drawn on. Open it: it shows layout "
-                             f"and placement the text cannot.")
+                lines.append(f"- **picture**: `feedback/shots/{_shot_name(tid, note['id'])}` — "
+                             f"the slide as the reviewer saw it, with this mark drawn on. Open "
+                             f"it: it shows layout and placement the text cannot.")
             for m in note.get("messages", []):
                 if m.get("body"):
                     lines += ["", f"**{m.get('author','')}** — {m['body']}"]
@@ -926,7 +948,10 @@ def feedback_blocks(slug: str) -> list[str]:
 
 
 def open_note_images(slug: str) -> dict:
-    """`feedback/shots/<note_id>.png` -> the stored snapshot, for open marks only."""
+    """`feedback/shots/<talk>__<note>.png` -> the stored snapshot, for open marks only.
+
+    The name is talk-qualified because note ids restart at n1 in every deck — flat names
+    collided and shipped the wrong picture."""
     out = {}
     for rec in load_index(slug).get("talks", []):
         tid = rec["id"]
@@ -935,5 +960,5 @@ def open_note_images(slug: str) -> dict:
                 continue
             path = note_image_path(slug, tid, note["id"])
             if path.is_file():
-                out[f"feedback/shots/{note['id']}.png"] = path
+                out[f"feedback/shots/{_shot_name(tid, note['id'])}"] = path
     return out

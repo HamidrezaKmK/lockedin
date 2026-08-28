@@ -341,10 +341,10 @@ def bubbles_command(account: dict) -> list[dict]:
     return rows
 
 
-SKILL_VERSION = 30
+SKILL_VERSION = 31
 
 SKILL_ROUTER = """\
-<!-- lockedin-scientist-skill: 30 -->
+<!-- lockedin-scientist-skill: 31 -->
 # LockedIn Scientist
 
 This project is synchronized with one LockedIn bubble. These rules always apply. The detail
@@ -512,7 +512,9 @@ it points at, and usually a sentence. The kind is the instruction:
 A mark with no sentence is complete: the kind said it.
 
 A `✍` mark is a freehand drawing over the slide, and its `picture:` line is the whole message —
-open it before anything else. Read the strokes the way you would a reviewer's pen: crossed-out
+open it before anything else. If your tooling cannot open images, the mark's **the ink touches**
+line names the words the strokes actually sit on — work from that plus the comment, and say that
+you answered from the fallback rather than the picture. Read the strokes the way you would a reviewer's pen: crossed-out
 text wants rewriting, an arrow wants something moved or reordered, a circle wants attention or
 expansion, handwriting wants reading and doing. Resolve it like any other mark, by naming it in
 the revision that does what the drawing asks.

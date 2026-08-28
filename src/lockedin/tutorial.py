@@ -283,6 +283,8 @@ def _seed() -> str:
                        [{"x": 56, "y": 44}, {"x": 50, "y": 46}],
                        [{"x": 56, "y": 44}, {"x": 55, "y": 51}],
                    ],
+                   covers=["Name what you want to exist afterwards.",
+                           "names the deliverable, not the steps."],
                    text="The ringed phrase is the whole deck — consider opening with it.")
 
     # Deck B: a real resolved-mark history — mark the overclaim, then revise it away with

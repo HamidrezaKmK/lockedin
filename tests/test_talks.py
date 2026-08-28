@@ -645,6 +645,18 @@ class InkNoteTests(unittest.TestCase):
         self.assertIn("no picture was captured", blocks)
         self.assertEqual(payload[0]["anchor"], {"type": "drawing", "strokes": 2})
 
+    def test_covers_ride_along_as_the_text_fallback(self):
+        with paths.use_root(self.home):
+            talks.add_note(self.slug, self.talk, slide=0, kind="ink", author="pi",
+                           paths=self.STROKES,
+                           covers=["Sample the noise level", "uniformly in log-SNR"])
+            blocks = "\n".join(talks.feedback_blocks(self.slug))
+            payload = talks.open_notes_for_agent(self.slug)
+        self.assertIn("the ink touches", blocks)
+        self.assertIn("“Sample the noise level”", blocks)
+        self.assertEqual(payload[0]["anchor"]["touches"],
+                         ["Sample the noise level", "uniformly in log-SNR"])
+
     def test_an_empty_note_is_still_refused(self):
         with paths.use_root(self.home):
             with self.assertRaises(ValueError):
