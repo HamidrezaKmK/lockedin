@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import os
 import re
+import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -90,6 +91,13 @@ def _write_yaml(path: Path, data: dict) -> None:
 _ATTR = re.compile(r"<!--\s*slide:\s*(.*?)\s*-->", re.S)
 _H1 = re.compile(r"^#\s+(.+?)\s*$", re.M)
 _SUB = re.compile(r"^\*([^*].*?)\*\s*$", re.M)
+# A Scientist has files, not an authenticated browser session.  This is its one deliberately
+# narrow write path back into a review thread.  The server consumes the block on push, records
+# the reply, and removes it from the deck before returning the canonical source to the worker.
+_REPLY = re.compile(
+    r"<!--\s*lockedin-reply:\s*([A-Za-z0-9_-]+)\s*-->\s*\n?(.*?)\n?<!--\s*/lockedin-reply\s*-->",
+    re.S,
+)
 
 
 def _parse_attrs(chunk: str) -> dict:
@@ -402,7 +410,8 @@ def add_note(slug: str, talk_id: str, *, slide: int, kind: str, author: str,
     return data["notes"][nid]
 
 
-def reply_note(slug: str, talk_id: str, note_id: str, author: str, body: str) -> dict:
+def reply_note(slug: str, talk_id: str, note_id: str, author: str, body: str,
+               *, source_key: str = "") -> dict:
     """Add a turn to a mark's thread — yours or the agent's."""
     body = str(body or "").strip()
     if not body:
@@ -412,8 +421,15 @@ def reply_note(slug: str, talk_id: str, note_id: str, author: str, body: str) ->
     if not note:
         raise KeyError(note_id)
     msgs = note.setdefault("messages", [])
-    msgs.append({"id": f"m{len(msgs) + 1}", "author": author, "body": body,
-                 "created_at": _now_iso(), "edited_at": ""})
+    # A worker can retry after a dropped response.  Do not turn that transport retry into a
+    # second identical answer in the user's thread.
+    if source_key and any(m.get("source_key") == source_key for m in msgs):
+        return note
+    message = {"id": f"m{len(msgs) + 1}", "author": author, "body": body,
+               "created_at": _now_iso(), "edited_at": ""}
+    if source_key:
+        message["source_key"] = source_key
+    msgs.append(message)
     save_notes(slug, talk_id, data)
     return note
 
@@ -759,6 +775,20 @@ def absorb_push(slug: str, talk_id: str, text: str) -> None:
     `resolves=` attribute in a pushed header — the old mechanism, or an agent trying its luck —
     is parsed and discarded without effect.
     """
+    replies = []
+    for match in _REPLY.finditer(text):
+        note_id, body = match.group(1), match.group(2).strip()
+        if not body:
+            raise ValueError(f"reply for {note_id} is empty")
+        replies.append((note_id, body))
+    # Validate before changing either the deck or a thread: a typo must be a clean rejected
+    # push, not a partially-applied edit.
+    notes = load_notes(slug, talk_id).get("notes", {})
+    unknown = [note_id for note_id, _ in replies if note_id not in notes]
+    if unknown:
+        raise ValueError("no such chalk-talk mark: " + ", ".join(sorted(set(unknown))))
+    text = _REPLY.sub("", text)
+
     old = {s["index"]: s for s in parse_deck(read_deck(slug, talk_id))}
     new = parse_deck(text)
     for slide in new:
@@ -767,6 +797,12 @@ def absorb_push(slug: str, talk_id: str, text: str) -> None:
         if edited:
             slide["date"] = _today()
     _atomic_write(paths.bubble_talk_path(slug, talk_id), render_deck(new))
+    for note_id, body in replies:
+        fingerprint = hashlib.sha256(
+            f"{talk_id}\0{note_id}\0{body}".encode("utf-8")
+        ).hexdigest()
+        reply_note(slug, talk_id, note_id, "LockedIn Scientist", body,
+                   source_key="scientist:" + fingerprint)
 
 
 # --------------------------------------------------------------------------- #

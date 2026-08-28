@@ -18,14 +18,14 @@ DEFAULT_LANDING: dict[str, Any] = {
     # demo visual, not by prose.
     "hero": {
         "kicker_icon": "🔒",
-        "kicker": "Research with AI, without the chat window",
+        "kicker": "Collaborative Research with AI",
         "title_accent": "locked",
         "title_rest": "in",
-        "lede": "Your agent is not a chatbot. Stop treating it like one.",
-        "copy": "Supervise an AI the way you supervise a grad student: it presents, you mark the exact line, and the write-up is what lasts — not the thread.",
+        "lede": "AI should not be limited to chat threads.",
+        "copy": "lockedin was built out of my fascination — and frustration — working with AI for research. More often than not, my sessions turned into walls of text and jargon that neither I nor the agent could follow. Rather than automating research, this focuses on making agents better collaborators and enriching how they express their thinking.",
         "points": [
             {"title": "Chalk talks", "text": "Dated decks, one idea per slide, whenever something needs your judgement."},
-            {"title": "Five marks", "text": "✗ ? → ✓ ✂ on the exact sentence. No prose required."},
+            {"title": "Feedback loop", "text": "Put markers and annotations on the work, the way a PI does for their grad student."},
             {"title": "One bubble", "text": "Papers, figures, TODOs and the manuscript, right where the agent works."},
         ],
     },

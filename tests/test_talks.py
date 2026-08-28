@@ -237,6 +237,49 @@ class ProjectHandoffTests(unittest.TestCase):
             self.assertIn(note["id"], talks.load_notes(self.slug, self.talk)["notes"])
             self.assertNotIn("resolves=", talks.read_deck(self.slug, self.talk))
 
+    def test_a_scientist_reply_is_consumed_into_its_thread_without_resolving_the_mark(self):
+        """The deck is the worker's only write surface; its reply block is self-erasing."""
+        with paths.use_root(self.home):
+            note = talks.add_note(self.slug, self.talk, slide=1, kind="bad", author="pi",
+                                  quote="which kills the variance term", text="Not in the tail.")
+            base = self._deck_bytes()
+        reply = ("\n<!-- lockedin-reply: " + note["id"] + " -->\n"
+                 "The covariance term is exact; I replaced that approximation on slide 2.\n"
+                 "<!-- /lockedin-reply -->\n")
+        write = {"path": f"reports/talks/{self.talk}.md",
+                 "content_b64": base64.b64encode(base + reply.encode()).decode(),
+                 "base_revision": scientist_sync.revision(base)}
+        result = scientist_sync.apply_writes(self.home, self.slug, [write])
+        self.assertEqual(result["conflicts"], [])
+        self.assertIn("content_b64", result["applied"][0])
+        # A lost response retries with an obsolete deck revision. It is rejected before it can
+        # duplicate the answer; the worker adopts the canonical bytes from that conflict.
+        again = scientist_sync.apply_writes(self.home, self.slug, [write])
+        self.assertEqual(len(again["conflicts"]), 1)
+        self.assertEqual(again["conflicts"][0]["reason"], "stale revision")
+        with paths.use_root(self.home):
+            stored = talks.read_deck(self.slug, self.talk)
+            thread = talks.load_notes(self.slug, self.talk)["notes"][note["id"]]
+        self.assertNotIn("lockedin-reply", stored)
+        self.assertEqual([(m["author"], m["body"]) for m in thread["messages"]], [
+            ("pi", "Not in the tail."),
+            ("LockedIn Scientist", "The covariance term is exact; I replaced that approximation on slide 2."),
+        ])
+
+    def test_an_unknown_reply_target_rejects_the_whole_deck_write(self):
+        with paths.use_root(self.home):
+            base = self._deck_bytes()
+        raw = base + b"\n<!-- lockedin-reply: no-such-note -->\nNope.\n<!-- /lockedin-reply -->\n"
+        result = scientist_sync.apply_writes(self.home, self.slug, [{
+            "path": f"reports/talks/{self.talk}.md",
+            "content_b64": base64.b64encode(raw).decode(),
+            "base_revision": scientist_sync.revision(base),
+        }])
+        self.assertEqual(len(result["conflicts"]), 1)
+        self.assertIn("no such chalk-talk mark", result["conflicts"][0]["reason"])
+        with paths.use_root(self.home):
+            self.assertEqual(talks.read_deck(self.slug, self.talk).encode(), base)
+
     def _deck_bytes(self):
         with paths.use_root(self.home):
             return paths.bubble_talk_path(self.slug, self.talk).read_bytes()

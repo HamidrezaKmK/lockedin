@@ -341,10 +341,10 @@ def bubbles_command(account: dict) -> list[dict]:
     return rows
 
 
-SKILL_VERSION = 34
+SKILL_VERSION = 35
 
 SKILL_ROUTER = """\
-<!-- lockedin-scientist-skill: 34 -->
+<!-- lockedin-scientist-skill: 35 -->
 # LockedIn Scientist
 
 This project is synchronized with one LockedIn bubble. These rules always apply. The detail
@@ -574,11 +574,19 @@ document.
 - Open with why it matters, close with what you need. Titles carry the claim, not the
   topic — and never `Slide N:`, the deck numbers itself.
 
-**Answering a mark.** Edit the slide in place and reply in the mark's thread. That is the
-whole of your power over it: **you cannot resolve, remove, or delete a mark — anywhere** — and
-a `resolves=` attribute in a slide header is ignored. The user removes a mark in the app once
-your answer satisfies them. If your edit removes the text a mark points at, the mark goes
-orphan and stays visible; that is normal, not a problem to fix.
+**Answering a mark.** Edit the slide in place. To reply in its thread, append this block anywhere
+outside a code fence in the same deck, using the mark's id from `OPEN.md`:
+
+    <!-- lockedin-reply: n7 -->
+    I replaced the approximation with the exact covariance term on slide 2.
+    <!-- /lockedin-reply -->
+
+On sync, LockedIn adds the text to mark `n7`'s thread and removes the block from the deck. The
+same exact reply is safe to retry. That is the whole of your power over a mark: **you cannot
+resolve, remove, or delete one — anywhere** — and a `resolves=` attribute in a slide header is
+ignored. The user removes a mark in the app once your answer satisfies them. If your edit removes
+the text a mark points at, the mark goes orphan and stays visible; that is normal, not a problem
+to fix.
 """,
 
     'overleaf.md': """\

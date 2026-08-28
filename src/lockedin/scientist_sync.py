@@ -238,6 +238,11 @@ def apply_writes(home: Path, slug: str, writes: list[dict]) -> dict:
                 except UnicodeDecodeError:
                     conflicts.append({"path": rel, "reason": "a deck must be UTF-8 text"})
                     continue
+                except (KeyError, ValueError) as exc:
+                    conflicts.append({"path": rel, "reason": str(exc),
+                                      "revision": revision(current),
+                                      "content_b64": base64.b64encode(current).decode("ascii")})
+                    continue
                 # The deck file is the source of truth; the registry entry is derived from it, so
                 # writing a new file *is* how an agent creates a talk. Nothing else to ask for.
                 talks.register_deck(slug, Path(rel).stem)
