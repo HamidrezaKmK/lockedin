@@ -28,7 +28,7 @@ class LandingConfigTest(unittest.TestCase):
     def test_missing_file_uses_defaults(self):
         cfg = landing.load_landing()
         self.assertEqual(cfg["hero"]["title_accent"], "locked")
-        self.assertEqual(cfg["why"]["title"], "Think Beyond Chat")
+        self.assertEqual(cfg["why"]["title"], "Communicate Like a Fellow Researcher")
         self.assertEqual(
             cfg["why"]["text"],
             "Creative thinking needs more than chat. Lockedin gives agents better ways to collaborate.")

@@ -34,7 +34,7 @@ DEFAULT_LANDING: dict[str, Any] = {
         "note": "Log in, or request access to give your agent somewhere to write.",
     },
     "why": {
-        "title": "Think Beyond Chat",
+        "title": "Communicate Like a Fellow Researcher",
         "text": "Creative thinking needs more than chat. Lockedin gives agents better ways to collaborate.",
         "bullets": [],
     },
