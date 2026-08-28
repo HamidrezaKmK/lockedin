@@ -1061,9 +1061,9 @@
           <p class="landing-lede">AI should not be limited to chat threads.</p>
           <p class="landing-copy">lockedin was built out of my fascination — and frustration — working with AI for research. More often than not, my sessions turned into walls of text and jargon that neither I nor the agent could follow. Rather than automating research, Lockedin focuses on making agents better collaborators and enriching how they express their thinking.</p>
           <div class="landing-points">
-            <div class="landing-point"><b>Chalk talks</b><span>Dated decks, one idea per slide, whenever something needs your judgement.</span></div>
-            <div class="landing-point"><b>Feedback loop</b><span>Put markers and annotations on the work, the way a PI does for their grad student.</span></div>
+            <div class="landing-point"><b>Chalk Talks &amp; Feedback</b><span>Meet with your agent and give clear feedback directly on the work.</span></div>
             <div class="landing-point"><b>Central Research Hub</b><span>Put all of the papers, resources, overleaf, code in one interactive place with agents that can read off their enriched context</span></div>
+            <div class="landing-point"><b>Compatible with Frontier</b><span>Bring your OpenAI, Anthropic, or Google AI subscription.</span></div>
           </div>
         </div>
         <form class="landing-auth-panel col" onsubmit="return false" aria-label="Account access">
@@ -1154,13 +1154,6 @@
           <li>Your key stays yours; your work stays on your disk.</li>
           <li>Switching model never costs you the bubble, the marks or the history.</li>
         </ul>
-      </section>
-
-      <section class="landing-section" aria-labelledby="frontier-title">
-        <div class="landing-section-head">
-          <h2 id="frontier-title">Compatible with Frontier</h2>
-          <p>We do not reconstruct AI, we just make the frontier models better by better context management. Bring your own OpenAI, Anthropic, or Google AI subscription and use Lockedin with it.</p>
-        </div>
       </section>
 
       <section class="landing-section" aria-labelledby="scientist-install-title">
@@ -1480,11 +1473,6 @@
     const whyText=$("#why-title")&&$("#why-title").parentElement.querySelector("p");
     if(whyText&&(c.why||{}).text!=null) whyText.textContent=String(c.why.text).split("\n\n")[0];
     bulletSection(c.pi||{},"#pi-title","#pi-bullets");
-
-    const frontier=c.frontier||{};
-    setText("#frontier-title",frontier.title);
-    const frontierText=$("#frontier-title")&&$("#frontier-title").parentElement.querySelector("p");
-    if(frontierText&&frontier.text!=null)frontierText.textContent=frontier.text;
 
     const privacy=c.privacy||{};
     setText("#privacy-title",privacy.title);

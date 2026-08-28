@@ -24,9 +24,9 @@ DEFAULT_LANDING: dict[str, Any] = {
         "lede": "AI should not be limited to chat threads.",
         "copy": "lockedin was built out of my fascination — and frustration — working with AI for research. More often than not, my sessions turned into walls of text and jargon that neither I nor the agent could follow. Rather than automating research, Lockedin focuses on making agents better collaborators and enriching how they express their thinking.",
         "points": [
-            {"title": "Chalk talks", "text": "Dated decks, one idea per slide, whenever something needs your judgement."},
-            {"title": "Feedback loop", "text": "Put markers and annotations on the work, the way a PI does for their grad student."},
+            {"title": "Chalk Talks & Feedback", "text": "Meet with your agent and give clear feedback directly on the work."},
             {"title": "Central Research Hub", "text": "Put all of the papers, resources, overleaf, code in one interactive place with agents that can read off their enriched context"},
+            {"title": "Compatible with Frontier", "text": "Bring your OpenAI, Anthropic, or Google AI subscription."},
         ],
     },
     "auth": {
@@ -69,11 +69,6 @@ DEFAULT_LANDING: dict[str, Any] = {
             "Your key stays yours; your work stays on your disk.",
             "Switching model never costs you the bubble, the marks or the history.",
         ],
-    },
-    "frontier": {
-        "title": "Compatible with Frontier",
-        "text": "We do not reconstruct AI, we just make the frontier models better by better context management. Bring your own OpenAI, Anthropic, or Google AI subscription and use Lockedin with it.",
-        "bullets": [],
     },
     "privacy": {
         "title": "Open source, yours to shape",
@@ -174,7 +169,6 @@ def normalize_landing(data: Any) -> dict[str, Any]:
         "auth": _section(data.get("auth"), d["auth"]),
         "why": _section(data.get("why"), d["why"]),
         "pi": _section(data.get("pi"), d["pi"]),
-        "frontier": _section(data.get("frontier"), d["frontier"]),
         "workflow": _section(data.get("workflow"), d["workflow"], {
             "steps": {"number": "", "title": "", "text": ""},
         }),

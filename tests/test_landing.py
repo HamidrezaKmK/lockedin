@@ -31,14 +31,15 @@ class LandingConfigTest(unittest.TestCase):
         self.assertEqual(cfg["why"]["title"], "Communicate Like a Fellow Researcher")
         self.assertEqual(
             cfg["why"]["text"],
-            "There are better modes of expression for creative thinking than chats, Lockedin aims to fix that.")
+            "There are better modes of expression for creative thinking than chats, Lockedin aims to tackle that.")
         self.assertEqual(cfg["workflow"]["title"], "From Paper Pile to Working Theory")
         self.assertEqual(cfg["workflow"]["steps"][0]["title"], "Library")
-        self.assertEqual(cfg["hero"]["points"][2]["title"], "Central Research Hub")
+        self.assertEqual(
+            [point["title"] for point in cfg["hero"]["points"]],
+            ["Chalk Talks & Feedback", "Central Research Hub", "Compatible with Frontier"])
         self.assertEqual(
             cfg["pi"]["text"],
             "lockedin does not ship a new model — it integrates with the subscription you already have.")
-        self.assertEqual(cfg["frontier"]["title"], "Compatible with Frontier")
         self.assertGreaterEqual(len(cfg["components"]["features"]), 1)
         # The installer cards were removed from the defaults as clutter; the 🤖 one-liner
         # in the steps is the connect story now.
