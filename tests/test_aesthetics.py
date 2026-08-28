@@ -263,6 +263,12 @@ class AestheticsConfigTests(unittest.TestCase):
         self.assertIn('"Edit chalk talk titles"', spa)
         self.assertIn("editTitles: editTalkTitles", talks_ui)
 
+    def test_chalk_talk_feedback_payload_is_named_and_copyable(self):
+        talks_ui = (Path(server.WEB_DIR) / "talks.js").read_text()
+        self.assertIn("Feedback YAML the agent can address and index", talks_ui)
+        self.assertIn('data-copy="1"', talks_ui)
+        self.assertIn("navigator.clipboard.writeText(payload)", talks_ui)
+
     def test_server_preview_strips_review_markers_before_math_rendering(self):
         html = server._render_preview_html(
             name="Test", page="overview",

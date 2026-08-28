@@ -377,6 +377,10 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
 .tk-json{font-family:var(--font-mono);font-size:12px;line-height:1.55;white-space:pre-wrap;
   background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:14px;
   max-height:60vh;overflow:auto;color:var(--ink)}
+.tk-jsonwrap{position:relative}
+.tk-jsonwrap .tk-json{margin:0;padding-top:40px}
+.tk-json-copy{position:absolute;top:8px;right:8px;z-index:1;min-height:25px!important;padding:3px 8px!important;
+  font-size:11px!important;line-height:1!important}
 
 @media(max-width:900px){
   .tk-gutter{position:fixed;inset:auto 0 0 0;flex:none;border-left:0;border-top:1px solid var(--accent);
@@ -1260,7 +1264,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
                                  messages: (n.messages || []).map(msg => ({ ...msg,
                                    agent: !!msg.agent })) })).join("")}
       <div style="margin-top:auto;padding-top:10px">
-        <button data-payload="1" style="width:100%">🤖 What the agent receives</button></div>
+        <button data-payload="1" style="width:100%">🤖 Feedback YAML</button></div>
     </div>`);
     wireCard(el, {
       onDelete: async id => {
@@ -1866,16 +1870,29 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
 
   async function showPayload() {
     const data = await api(`/api/bubbles/${encodeURIComponent(S.slug)}/talk-notes`);
+    const payload = JSON.stringify(data.open_notes, null, 2);
     const m = h(`<div class="tk-modal"><div class="tk-mcard">
       <button class="tk-x" data-x="1">✕</button>
-      <h3>What the agent receives</h3>
-      <div class="msub">Rides the manifest poll the Scientist worker already makes. No HTML, no
-        pixels — a text mark is a quote the agent can find in its own markdown.</div>
-      <div class="tk-json">${esc(JSON.stringify(data.open_notes, null, 2))}</div>
+      <h3>Feedback YAML the agent can address and index</h3>
+      <div class="msub">The Scientist receives this feedback YAML through its manifest poll and
+        can address these marks in the linked source.</div>
+      <div class="tk-jsonwrap"><button class="tk-json-copy" data-copy="1" title="Copy feedback YAML">Copy</button>
+        <pre class="tk-json">${esc(payload)}</pre></div>
     </div></div>`).firstChild;
     const close = () => m.remove();
     m.onclick = e => { if (e.target === m) close(); };
     m.querySelector("[data-x]").onclick = close;
+    m.querySelector("[data-copy]").onclick = async () => {
+      const copy = m.querySelector("[data-copy]");
+      try { await navigator.clipboard.writeText(payload); }
+      catch (e) {
+        const range = document.createRange(), sel = getSelection();
+        range.selectNodeContents(m.querySelector(".tk-json")); sel.removeAllRanges(); sel.addRange(range);
+        document.execCommand("copy"); sel.removeAllRanges();
+      }
+      copy.textContent = "Copied";
+      setTimeout(() => (copy.textContent = "Copy"), 1400);
+    };
     document.body.append(m);
   }
 
