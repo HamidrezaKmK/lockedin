@@ -925,7 +925,7 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
     if (S.edit) return renderDeckEdit();
     const sl = S.talk.slides[S.slide];
     if (!sl) return h(`<div class="tk-list"><div class="tk-empty">This talk has no slides yet.
-      Hit <b>✎ edit</b> above to add one.</div></div>`).firstChild;
+      <br><br><button class="pri" data-editdeck="1">✎ edit</button></div></div>`).firstChild;
     const mine = notesOn(S.slide);
     const wrap = h(`<div class="tk-stage">
       <div class="tk-col">
@@ -943,7 +943,8 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
               data-i="${i}" title="${esc(s.title)}"></button>`).join("")}</div>
           <span class="tk-cnt">${S.slide + 1} / ${S.talk.slides.length}</span>
           <button data-nav="-1">←</button><button data-nav="1">→</button>
-          <button data-draw="1" title="drag a box over the slide">✎ mark region</button>
+          <button data-draw="1" title="drag a box over the slide">⬚ mark region</button>
+          <button data-editdeck="1" title="edit this slide's markdown by hand">✎ edit</button>
         </div>
       </div>
       <div class="tk-gutter"></div>
@@ -971,7 +972,7 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
         ${openCount() ? `<span class="tk-tag open">${openCount()} open</span>`
                       : `<span class="tk-tag done">all closed</span>`}</div>
       ${mine.length ? "" : `<div class="tk-empty tk-empty-notes" style="font-size:14px">
-        Select any text on the slide — or hit <b>✎ mark region</b> and drag a box —
+        Select any text on the slide — or hit <b>⬚ mark region</b> and drag a box —
         then pick one of <b>✗ ? → ✓ ✂</b>.</div>`}
       ${mine.map(n => noteCard({ ...n, orphanNote: n.anchorLost ? "⚠ text moved · " : "",
                                  image: shot(n),
@@ -1081,6 +1082,7 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
           <span class="tk-sp"></span>
           <button data-add="1" title="insert a blank slide after this one">+ add slide</button>
           <button data-del="1" class="tk-danger" title="delete this slide and its marks">✂ delete slide</button>
+          <button data-editdeck="1" title="leave edit mode">✕ stop editing</button>
         </div>
       </div>
     </div>`).firstChild;
@@ -1412,13 +1414,11 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
       // so a "back to slides" link would be a second door to a room you are already standing in.
       top.innerHTML = `<div class="tk-crumb">
           ${S.view === "sheet" ? "" : `<span class="back" data-sheet="1">all slides</span>`}
-          <span class="dim">${S.view === "sheet" ? "" : " · "}${esc(t.date)} · ${esc(t.title)}</span></div>
-        <span class="tk-sp"></span>
-        ${S.view === "deck" ? `<button data-editdeck="1" class="${S.edit ? "pri" : ""}"
-          title="edit this slide's markdown by hand">${S.edit ? "✕ stop editing" : "✎ edit"}</button>` : ""}`;
+          <span class="dim">${S.view === "sheet" ? "" : " · "}${esc(t.date)} · ${esc(t.title)}</span></div>`;
       body.append(S.view === "sheet" ? renderSheet() : renderDeck());
     }
-    const on = (sel, fn) => { const b = top.querySelector(sel); if (b) b.onclick = fn; };
+    // Root-wide: the edit toggle sits in the deck footer, not the title row.
+    const on = (sel, fn) => { const b = root.querySelector(sel); if (b) b.onclick = fn; };
     on("[data-close]", close);
     on("[data-back]", loadHome);
     on("[data-sheet]", () => {
