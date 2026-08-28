@@ -646,23 +646,59 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
         plain = (n.quote.replace(/[*_`~]/g, "").match(/[A-Za-z][A-Za-z ,.'-]{3,}/) || [""])[0].trim();
       }
       if (!plain) return;
-      const walker = document.createTreeWalker(mdEl, NodeFilter.SHOW_TEXT);
-      let node;
-      while ((node = walker.nextNode())) {
-        const i = node.nodeValue.replace(/\s+/g, " ").indexOf(plain);
-        if (i < 0) continue;
-        const r = document.createRange();
-        r.setStart(node, Math.min(i, node.nodeValue.length));
-        r.setEnd(node, Math.min(i + plain.length, node.nodeValue.length));
-        const mk = document.createElement("mark");
-        mk.className = "tk-anno";
-        mk.dataset.note = n.id;
-        mk.style.setProperty("--kc", KINDS[n.kind].color);
-        try { r.surroundContents(mk); } catch (e) { break; }
-        mk.onclick = ev => { ev.stopPropagation(); focusNote(n.id); };
-        break;
+      if (!highlightQuote(mdEl, plain, n)) {
+        const run = (plain.match(/[A-Za-z][A-Za-z ,.'-]{3,}/) || [""])[0].trim();
+        if (run && run !== plain) highlightQuote(mdEl, run, n);
       }
     });
+  }
+
+  // Wrap a rendered quote in <mark>, wherever its text actually lives. A quote routinely
+  // crosses inline elements — `code`, bold, a citation link — so the container's text nodes
+  // are flattened into one searchable string first, and every intersected segment gets its
+  // own mark. Searching node-by-node silently skipped any quote that touched a code span.
+  function highlightQuote(mdEl, plain, n) {
+    const nodes = [], chars = [];
+    const walker = document.createTreeWalker(mdEl, NodeFilter.SHOW_TEXT);
+    let node;
+    while ((node = walker.nextNode())) nodes.push(node);
+    // Collapsed-whitespace view of the whole container, each character remembering where it
+    // came from, so a match maps straight back to (node, offset) pairs.
+    let pendingSpace = false, started = false;
+    nodes.forEach((nd, ni) => {
+      const text = nd.nodeValue || "";
+      for (let i = 0; i < text.length; i++) {
+        if (/\s/.test(text[i])) { pendingSpace = started; continue; }
+        if (pendingSpace) { chars.push({ c: " ", ni: -1, i: -1 }); pendingSpace = false; }
+        chars.push({ c: text[i], ni, i });
+        started = true;
+      }
+    });
+    const flat = chars.map(ch => ch.c).join("");
+    const at = flat.indexOf(plain);
+    if (at < 0) return false;
+    // First and last *real* characters of the match (synthetic spaces carry no position).
+    let s = at, e = at + plain.length - 1;
+    while (s <= e && chars[s].ni < 0) s++;
+    while (e >= s && chars[e].ni < 0) e--;
+    if (s > e) return false;
+    const start = chars[s], end = chars[e];
+    for (let ni = start.ni; ni <= end.ni; ni++) {
+      const nd = nodes[ni];
+      const from = ni === start.ni ? start.i : 0;
+      const to = ni === end.ni ? end.i + 1 : (nd.nodeValue || "").length;
+      if (to <= from || !(nd.nodeValue || "").slice(from, to).trim()) continue;
+      const r = document.createRange();
+      r.setStart(nd, from);
+      r.setEnd(nd, to);
+      const mk = document.createElement("mark");
+      mk.className = "tk-anno";
+      mk.dataset.note = n.id;
+      mk.style.setProperty("--kc", KINDS[n.kind].color);
+      try { r.surroundContents(mk); } catch (err) { continue; }
+      mk.onclick = ev => { ev.stopPropagation(); focusNote(n.id); };
+    }
+    return true;
   }
   function focusNote(id) {
     const card = root.querySelector(`.tk-note[data-note="${id}"]`);
