@@ -400,6 +400,18 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
   .tk-pop{width:calc(100vw - 24px);left:12px!important}
   .tk-list{padding:14px 13px 30px}
 }
+/* Ink strokes and region boxes are stored as percentages of the slide box, so they ride the
+   box rather than the words. On a phone the same slide reflows to roughly twice the lines, so
+   a circle drawn around a term on a laptop lands in the middle of a different sentence — the
+   mark stops meaning what it meant. Stop replaying them live below tablet width; the note
+   still carries its snapshot, which is the copy that was true when it was drawn. Text marks
+   are quote-anchored, not box-anchored, so they reflow correctly and stay.
+   The :not(.tk-capturing) guard keeps this clear of the capture path, which deliberately
+   reveals exactly one overlay while html2canvas reads the slide. */
+@media(max-width:700px){
+  .tk-slide:not(.tk-capturing) .tk-ink,
+  .tk-slide:not(.tk-capturing) .tk-region{display:none}
+}
 /* Phones. The slide tools are six segments and the pager is another four controls; on one row
    that is ~390px of content in ~270px of space, so the pill was rendering 86px wide with 262px
    of buttons inside it and four of the six were simply off-screen — unreachable, not just ugly.
