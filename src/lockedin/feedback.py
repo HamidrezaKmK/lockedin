@@ -73,7 +73,8 @@ def open_markdown(slug: str) -> bytes | None:
             "than reword. A `→` usually means the expansion belongs in a report page. If you\n"
             "think a mark is mistaken, say so and argue it — do not comply silently. A `✍` is a\n"
             "freehand drawing: its picture carries the whole message, so open it first.\n\n"
-            "A mark disappears from this file once it is genuinely resolved, and the file\n"
+            "A mark disappears from this file when the **user** removes it in the app — you\n"
+            "cannot resolve or delete one, anywhere; answer it and leave it standing. The file\n"
             "disappears once none are left. Never edit this file or anything under `feedback/`:\n"
             "it is generated, and your edits are overwritten on the next sync.\n\n")
     return (head + "\n".join(blocks)).encode()

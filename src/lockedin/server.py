@@ -909,6 +909,7 @@ def build_app():
         rect: Optional[dict] = None
         paths: Optional[list] = None   # freehand strokes, % of the slide box
         covers: Optional[list] = None  # words the ink/box sits on, sampled client-side
+        occurrence: int = 1            # which repeat of the quoted text was selected
 
     class TalkNoteEditIn(BaseModel):
         text: str = ""
@@ -1913,7 +1914,7 @@ def build_app():
             note = service.add_talk_note(home_of(user), slug, talk_id, slide=body.slide,
                                          kind=body.kind, author=user, quote=body.quote,
                                          text=body.text, rect=body.rect, paths=body.paths,
-                                         covers=body.covers)
+                                         covers=body.covers, occurrence=body.occurrence)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
         return {"note": note}

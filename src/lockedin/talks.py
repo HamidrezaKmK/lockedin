@@ -97,8 +97,8 @@ def _parse_attrs(chunk: str) -> dict:
     if not m:
         return {}
     out = {}
-    # Split only on commas that begin the next `key=`, so a list-valued attribute
-    # (`resolves=n1,n2` — which is what an agent writes) survives intact.
+    # Split only on commas that begin the next `key=`, so a legacy list-valued attribute
+    # survives intact enough to be recognised and dropped.
     for part in re.split(r",(?=\s*[A-Za-z_][A-Za-z0-9_]*\s*=)", m.group(1)):
         if "=" in part:
             k, _, v = part.partition("=")
@@ -134,9 +134,9 @@ def parse_deck(text: str) -> list[dict]:
             body = lead[:m.start()] + lead[m.end():]
 
         slides.append({
-            # `v=` and `why=` from the old versioning era are deliberately dropped here, so a
-            # legacy deck self-cleans the first time it is rewritten.
-            **{k: v for k, v in attrs.items() if k == "resolves"},
+            # `v=`, `why=` and `resolves=` are all legacy attributes now, deliberately dropped
+            # so an old deck self-cleans the first time it is rewritten. `resolves=` in
+            # particular is dead on purpose: resolution is the user's act alone, in the app.
             "index": len(slides),
             "kind": attrs.get("kind", "setup"),
             "date": attrs.get("date", ""),
@@ -298,8 +298,19 @@ def save_notes(slug: str, talk_id: str, data: dict) -> None:
     _write_yaml(paths.bubble_talk_notes_path(slug, talk_id), data)
 
 
-def _anchor_context(source: str, quote: str) -> tuple[str, str]:
-    i = source.find(quote)
+def _find_occurrence(source: str, quote: str, occurrence: int) -> int:
+    """Index of the k-th occurrence of `quote`, or the last one that exists, or -1."""
+    i, found = -1, 0
+    while found < max(1, occurrence):
+        j = source.find(quote, i + 1)
+        if j < 0:
+            break
+        i, found = j, found + 1
+    return i
+
+
+def _anchor_context(source: str, quote: str, occurrence: int = 1) -> tuple[str, str]:
+    i = _find_occurrence(source, quote, occurrence)
     if i < 0:
         return "", ""
     return source[max(0, i - CONTEXT):i], source[i + len(quote):i + len(quote) + CONTEXT]
@@ -360,7 +371,8 @@ def _clean_paths(paths) -> list | None:
 
 def add_note(slug: str, talk_id: str, *, slide: int, kind: str, author: str,
              quote: str = "", text: str = "", rect: dict | None = None,
-             paths: list | None = None, covers: list | None = None) -> dict:
+             paths: list | None = None, covers: list | None = None,
+             occurrence: int = 1) -> dict:
     if kind not in KINDS:
         raise ValueError(f"unknown mark: {kind}")
     paths = _clean_paths(paths)
@@ -370,7 +382,7 @@ def add_note(slug: str, talk_id: str, *, slide: int, kind: str, author: str,
 
     slides = parse_deck(read_deck(slug, talk_id))
     source = slides[slide]["source"] if 0 <= slide < len(slides) else ""
-    pre, suf = _anchor_context(source, quote) if quote else ("", "")
+    pre, suf = _anchor_context(source, quote, occurrence) if quote else ("", "")
 
     data = load_notes(slug, talk_id)
     nid = f"n{data.get('next_id', 1)}"
@@ -451,12 +463,12 @@ def read_deck(slug: str, talk_id: str) -> str:
 
 
 def resolve_marks(slug: str, talk_id: str, note_ids: list[str]) -> list[str]:
-    """Delete the named marks — the whole of what resolution is.
+    """Delete the named marks — the whole of what resolution is, and the user's act alone.
 
-    There is deliberately no version history behind this. A slide is a living surface: the
-    agent edits it in place and answers in the mark's thread, and once a mark is genuinely
-    addressed it is clutter — it would sit in every future agent's context and say nothing the
-    current slide does not say better. Working state should end, and end completely.
+    No agent-reachable path calls this: a pushed deck cannot delete a mark, only answer it.
+    The one thing an agent's edit can do to a mark is strand it — remove the text it pointed
+    at and it goes orphan, loudly, still visible. Deleting it happens in the app, by the
+    person who made it, once the answer satisfies them.
     """
     notes = load_notes(slug, talk_id)
     dropped = []
@@ -676,7 +688,12 @@ def talk_detail(slug: str, talk_id: str) -> dict:
     for note in sorted(notes.values(), key=lambda n: n.get("created_at", "")):
         src = slides[note["slide"]]["source"] if 0 <= note["slide"] < len(slides) else ""
         n = dict(note)
-        n["orphan"] = bool(note.get("quote")) and resolve_anchor(src, note) < 0
+        pos = resolve_anchor(src, note) if note.get("quote") else -1
+        n["orphan"] = bool(note.get("quote")) and pos < 0
+        if pos >= 0:
+            # Which occurrence of the quote the anchor sits on — the painter must not light
+            # up the first repeat of a sentence that was marked in its third.
+            n["occurrence"] = src[:pos].count(note["quote"]) + 1
         out_notes.append(n)
 
     for s in slides:
@@ -746,29 +763,20 @@ def open_notes_for_agent(slug: str) -> list[dict]:
 
 
 def absorb_push(slug: str, talk_id: str, text: str) -> None:
-    """Take a deck an agent pushed, and honour what its slide headers ask for.
+    """Take a deck an agent pushed. The slide becomes what was pushed — nothing more.
 
-    A pushed file is the agent's whole interface — it has one editor and no HTTP client, and a
-    workflow that needs a second out-of-band call is a workflow that silently half-completes.
-    So an edited slide may carry its own resolution in the header it already writes:
-
-        <!-- slide: kind=derivation, date=2026-08-27, resolves=n1,n2 -->
-
-    The named marks are deleted with their snapshots; the slide simply becomes what was pushed.
-    Nothing is versioned — the current deck is the record, and the argument that led to it
-    lives in the marks' threads while they are open and nowhere after.
+    Deliberately powerless over marks: an agent can edit the text a mark points at (which may
+    strand it as a loud orphan) and reply in its thread, but it can never delete one. A
+    `resolves=` attribute in a pushed header — the old mechanism, or an agent trying its luck —
+    is parsed and discarded without effect.
     """
     old = {s["index"]: s for s in parse_deck(read_deck(slug, talk_id))}
     new = parse_deck(text)
-    dropped = []
     for slide in new:
         was = old.get(slide["index"])
-        asked = [n.strip() for n in str(slide.pop("resolves", "")).split(",") if n.strip()]
-        dropped.extend(asked)
         edited = was is not None and (was["body"] != slide["body"] or was["title"] != slide["title"])
         if edited:
             slide["date"] = _today()
-    resolve_marks(slug, talk_id, dropped)
     _atomic_write(paths.bubble_talk_path(slug, talk_id), render_deck(new))
 
 
@@ -826,7 +834,8 @@ def feedback_blocks(slug: str) -> list[str]:
             lines = [f"### {k.get('glyph','')} {k.get('means','')} — slide {i + 1}: "
                      f"{sl.get('title','')}",
                      "",
-                     f"- **id**: `{note['id']}` (name this in `resolves` when you revise)",
+                     f"- **id**: `{note['id']}` — answer it; only the user can remove it, "
+                     f"in the app",
                      f"- **on**: {where}",
                      ]
             if touches:

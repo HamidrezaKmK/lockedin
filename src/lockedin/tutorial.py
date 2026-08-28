@@ -85,8 +85,8 @@ What to try on the decks in this bubble:
    as a comment wrapper in the text, moving with your edit.
 4. Use **＋** to add a slide of your own, or **✂** to remove one.
 
-A resolved mark is deleted, not archived — the slide is edited in place and the current text
-is the whole record. Nothing accumulates, and nothing bloats the next agent's context.
+Removing a mark is yours alone — agents can edit the slide and reply in the thread, never
+delete. When an answer satisfies you, hit remove; the current text is the whole record.
 """
 
 CONNECT_PAGE = """\
@@ -176,8 +176,8 @@ A paragraph of feedback has to be interpreted; a mark on a quote does not.
 This slide proves the whole system works perfectly. Marks are always better than prose in
 every situation, and no agent ever misreads one.
 
-The ✗ beside this slide objects to that paragraph. When an agent genuinely fixes it, it will
-edit this slide in place, and the mark will simply vanish — no version history, on purpose.
+The ✗ beside this slide objects to that paragraph. An agent can edit this slide in place and
+answer in the thread — but only you can remove the mark, once the fix satisfies you.
 
 ---
 
@@ -288,8 +288,8 @@ def _seed() -> str:
                                     "not that it is perfect.")
     talks.reply_note(slug, marks_deck, overclaim["id"], "agent",
                      "Agreed — I would rewrite it as: the mark carries the intent and the "
-                     "anchor carries the place. Confirm and I will edit the slide in place "
-                     "and resolve this mark.")
+                     "anchor carries the place. Confirm and I will edit the slide in place; "
+                     "the mark stays yours to remove once it reads right.")
     talks.add_note(slug, marks_deck, slide=2, kind="more", author="you",
                    quote="connect a repo and ask the agent",
                    text="Deep-link this to the Connecting your repo page?")

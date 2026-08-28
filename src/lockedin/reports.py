@@ -257,10 +257,10 @@ already answered would leave that answer replying to words that no longer exist.
 
 ## What happens to a mark
 
-A mark is working state, and working state should end. When the agent has genuinely addressed
-one, it edits the slide, answers in the thread if there is something to say, and names the mark
-as resolved; the mark and its picture are then deleted — completely. Nothing accumulates a list
-of "resolved" items nobody reads, and nothing bloats the next agent's context.
+A mark is working state, and working state should end — but ending it is yours alone. The
+agent answers by editing the slide in place and replying in the thread; it cannot remove a mark,
+anywhere. When the answer satisfies you, hit **remove** and the mark and its picture are deleted
+— completely. Nothing accumulates a list of "resolved" items nobody reads.
 
 If the agent thinks a mark is mistaken, it is told to say so and argue rather than comply.
 

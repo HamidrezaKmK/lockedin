@@ -180,12 +180,12 @@ class ProjectHandoffTests(unittest.TestCase):
         self.assertEqual(listed["2026-08-28-does-cosine-help"]["title"], "Does cosine help?")
         self.assertEqual(listed["2026-08-28-does-cosine-help"]["date"], "2026-08-28")
 
-    def test_a_pushed_slide_resolves_the_marks_its_header_names(self):
-        """The file is the agent's whole interface, so it must be able to finish the job.
+    def test_a_pushed_slide_cannot_resolve_marks(self):
+        """Resolution is the user's act alone; a pushed header carrying `resolves=` is inert.
 
-        A live Claude session revised a slide and wrote `resolves=n1,n2` into the slide header
-        unprompted, then could not clear the marks because resolution needed a second HTTP call
-        it had no way to make. The push honours the header instead.
+        Agents may edit the text a mark points at and reply in its thread — stranding a mark
+        as an orphan is allowed, deleting it is not. The attribute is still consumed from the
+        stored deck so it cannot linger and confuse.
         """
         with paths.use_root(self.home):
             n1 = talks.add_note(self.slug, self.talk, slide=1, kind="bad", author="pi",
@@ -207,21 +207,22 @@ class ProjectHandoffTests(unittest.TestCase):
                 if False else self._deck_bytes())}])
         self.assertEqual(result["conflicts"], [])
         with paths.use_root(self.home):
-            self.assertEqual(talks.load_notes(self.slug, self.talk)["notes"], {})
+            # Both marks survive the push untouched — the edit landed, the deletion did not.
+            kept = talks.load_notes(self.slug, self.talk)["notes"]
+            self.assertEqual(set(kept), {n1["id"], n2["id"]})
             slides = talks.parse_deck(talks.read_deck(self.slug, self.talk))
             self.assertIn("No constancy assumption", slides[1]["body"])
-            # The directive is consumed, not left lying in the stored deck — and neither is
-            # the legacy v= attribute a stale deck may still carry.
+            # The dead directive is consumed, not left lying in the stored deck — and neither
+            # is the legacy v= attribute a stale deck may still carry.
             self.assertNotIn("resolves=", talks.read_deck(self.slug, self.talk))
             self.assertNotIn("v=", talks.read_deck(self.slug, self.talk))
+            # The edit stranded n1's text: an orphan, loudly — never a deletion.
+            detail = talks.talk_detail(self.slug, self.talk)
+            flags = {n["id"]: n["orphan"] for n in detail["notes"]}
+            self.assertTrue(flags[n1["id"]])
 
-    def test_a_header_can_clear_a_mark_an_earlier_revision_already_answered(self):
-        """Resolution must not require inventing a text change.
-
-        A live agent found two marks that the v2/v3 text had already answered but which nobody
-        had ever named in a revision. Consuming the directive and doing nothing left them stuck
-        open forever.
-        """
+    def test_a_no_op_push_with_a_resolves_header_changes_nothing(self):
+        """The old clear-without-editing path is gone: the attribute is dropped, the mark stays."""
         with paths.use_root(self.home):
             note = talks.add_note(self.slug, self.talk, slide=0, kind="q", author="pi",
                                   quote="Sample the noise level", text="Answered ages ago.")
@@ -233,7 +234,8 @@ class ProjectHandoffTests(unittest.TestCase):
             "base_revision": scientist_sync.revision(self._deck_bytes())}])
         self.assertEqual(result["conflicts"], [])
         with paths.use_root(self.home):
-            self.assertEqual(talks.load_notes(self.slug, self.talk)["notes"], {})
+            self.assertIn(note["id"], talks.load_notes(self.slug, self.talk)["notes"])
+            self.assertNotIn("resolves=", talks.read_deck(self.slug, self.talk))
 
     def _deck_bytes(self):
         with paths.use_root(self.home):

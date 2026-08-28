@@ -341,10 +341,10 @@ def bubbles_command(account: dict) -> list[dict]:
     return rows
 
 
-SKILL_VERSION = 32
+SKILL_VERSION = 33
 
 SKILL_ROUTER = """\
-<!-- lockedin-scientist-skill: 32 -->
+<!-- lockedin-scientist-skill: 33 -->
 # LockedIn Scientist
 
 This project is synchronized with one LockedIn bubble. These rules always apply. The detail
@@ -574,14 +574,11 @@ document.
 - Open with why it matters, close with what you need. Titles carry the claim, not the
   topic — and never `Slide N:`, the deck numbers itself.
 
-**Resolving.** Edit the slide in place, reply in the mark's thread if there is something to
-say, and name the marks in the edited slide's header:
-
-    <!-- slide: kind=derivation, date=2026-08-27, resolves=n1,n2 -->
-
-On the next sync those marks are deleted — completely. Nothing is versioned and nothing is
-archived: the current slide is the record, so make it say everything worth keeping before you
-resolve. Never resolve a mark you only replied to or disagreed with.
+**Answering a mark.** Edit the slide in place and reply in the mark's thread. That is the
+whole of your power over it: **you cannot resolve, remove, or delete a mark — anywhere** — and
+a `resolves=` attribute in a slide header is ignored. The user removes a mark in the app once
+your answer satisfies them. If your edit removes the text a mark points at, the mark goes
+orphan and stays visible; that is normal, not a problem to fix.
 """,
 
     'overleaf.md': """\

@@ -636,34 +636,17 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
         return;
       }
       if (n.orphan || !n.quote) return;
-      // The quote is a markdown substring; strip the emphasis characters to find it in the
-      // rendered text, which is what the reader is looking at.
-      // A quote containing math will never appear verbatim in rendered text; fall back to the
-      // longest prose run in it, which is enough to put the highlight in the right place.
-      let plain = n.quote.replace(/\$[^$]*\$/g, " ").replace(/[*_`~]/g, "")
-                         .replace(/\s+/g, " ").trim();
-      if (plain.length < 3) {
-        plain = (n.quote.replace(/[*_`~]/g, "").match(/[A-Za-z][A-Za-z ,.'-]{3,}/) || [""])[0].trim();
-      }
-      if (!plain) return;
-      if (!highlightQuote(mdEl, plain, n)) {
-        const run = (plain.match(/[A-Za-z][A-Za-z ,.'-]{3,}/) || [""])[0].trim();
-        if (run && run !== plain) highlightQuote(mdEl, run, n);
-      }
+      highlightQuote(mdEl, n.quote, n, n.occurrence || 1);
     });
   }
 
-  // Wrap a rendered quote in <mark>, wherever its text actually lives. A quote routinely
-  // crosses inline elements — `code`, bold, a citation link — so the container's text nodes
-  // are flattened into one searchable string first, and every intersected segment gets its
-  // own mark. Searching node-by-node silently skipped any quote that touched a code span.
-  function highlightQuote(mdEl, plain, n) {
+  // Collapsed-whitespace view of a container's text, each character remembering its origin
+  // node and offset, so any match maps straight back to (node, offset) pairs.
+  function flattenText(mdEl) {
     const nodes = [], chars = [];
     const walker = document.createTreeWalker(mdEl, NodeFilter.SHOW_TEXT);
     let node;
     while ((node = walker.nextNode())) nodes.push(node);
-    // Collapsed-whitespace view of the whole container, each character remembering where it
-    // came from, so a match maps straight back to (node, offset) pairs.
     let pendingSpace = false, started = false;
     nodes.forEach((nd, ni) => {
       const text = nd.nodeValue || "";
@@ -674,11 +657,45 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
         started = true;
       }
     });
-    const flat = chars.map(ch => ch.c).join("");
-    const at = flat.indexOf(plain);
-    if (at < 0) return false;
-    // First and last *real* characters of the match (synthetic spaces carry no position).
-    let s = at, e = at + plain.length - 1;
+    return { nodes, chars, flat: chars.map(ch => ch.c).join("") };
+  }
+
+  // A regex that finds a *source* quote inside *rendered* text: markdown's emphasis and code
+  // markers become optional (rendering may have eaten them — but `code_span_here` keeps its
+  // underscores, so deleting them outright broke every code-span quote), whitespace collapses,
+  // and an inline formula becomes a bounded wildcard bridging whatever KaTeX rendered it as.
+  function quotePattern(quote) {
+    const collapsed = String(quote).replace(/\s+/g, " ").trim();
+    let pat = "";
+    let i = 0;
+    while (i < collapsed.length) {
+      const ch = collapsed[i];
+      if (ch === "$") {
+        const close = collapsed.indexOf("$", i + 1);
+        if (close > i) { pat += "[\\s\\S]{0,160}?"; i = close + 1; continue; }
+      }
+      const esc2 = ch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      pat += /[*_`~]/.test(ch) ? esc2 + "?" : esc2;
+      i += 1;
+    }
+    try { return new RegExp(pat, "g"); } catch (e) { return null; }
+  }
+
+  // Wrap the k-th rendered occurrence of a quote in <mark>, wherever its text lives. A quote
+  // routinely crosses inline elements — code, bold, a citation — so every intersected text
+  // segment gets its own mark.
+  function highlightQuote(mdEl, quote, n, occurrence) {
+    const { nodes, chars, flat } = flattenText(mdEl);
+    const re = quotePattern(quote);
+    if (!re) return false;
+    let m = null, k = 0;
+    while ((m = re.exec(flat))) {
+      k += 1;
+      if (k >= (occurrence || 1)) break;
+      if (m.index === re.lastIndex) re.lastIndex++;   // zero-width safety
+    }
+    if (!m) return false;
+    let s = m.index, e = m.index + m[0].length - 1;
     while (s <= e && chars[s].ni < 0) s++;
     while (e >= s && chars[e].ni < 0) e--;
     if (s > e) return false;
@@ -1316,7 +1333,28 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
       return;
     }
     const r = range.getBoundingClientRect();
-    S.pending = { quote };
+    // Which occurrence of this text the reader actually selected. "repeated phrase" marked in
+    // its third appearance must not anchor — or paint — on the first.
+    let occurrence = 1;
+    try {
+      const { nodes, chars, flat } = flattenText(md);
+      const probe = range.cloneRange(); probe.collapse(true);
+      let pos = flat.length;
+      for (let ci = 0; ci < chars.length; ci++) {
+        const ch = chars[ci];
+        if (ch.ni < 0) continue;
+        if (probe.comparePoint(nodes[ch.ni], ch.i) <= 0) { pos = ci; break; }
+      }
+      const re = quotePattern(quote);
+      let m, k = 0;
+      while (re && (m = re.exec(flat))) {
+        if (m.index >= pos + 2) break;   // small tolerance for the leading edge
+        k += 1;
+        if (m.index === re.lastIndex) re.lastIndex++;
+      }
+      occurrence = Math.max(1, k);
+    } catch (e) { /* first occurrence is still a sane default */ }
+    S.pending = { quote, occurrence };
     paintPendingRange(range);
     if (window.getSelection) window.getSelection().removeAllRanges();
     openPicker(r.left, r.bottom + 8);
@@ -1345,7 +1383,10 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
     p.querySelector("[data-pin]").onclick = async () => {
       const text = p.querySelector("textarea").value.trim();
       const payload = { slide: S.slide, kind: S.kind, text };
-      if (S.pending.quote) payload.quote = S.pending.quote;
+      if (S.pending.quote) {
+        payload.quote = S.pending.quote;
+        payload.occurrence = S.pending.occurrence || 1;
+      }
       if (S.pending.rect) {
         payload.rect = S.pending.rect;
         const slideEl = root.querySelector(".tk-slide");
