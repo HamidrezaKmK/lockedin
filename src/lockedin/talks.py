@@ -509,7 +509,7 @@ def resolve_marks(slug: str, talk_id: str, note_ids: list[str]) -> list[str]:
 # use, so the text a mark points at is visible and *moves with your edit* instead of silently
 # orphaning. The tags exist only in the editing surface: storage stays quote-anchored, which is
 # what the agent-facing feedback file is built from.
-_TAG_BEGIN = re.compile(r"<comment-begin=([A-Za-z0-9_-]+)>")
+_TAG_TOKEN = re.compile(r"<comment-(begin|end)=([A-Za-z0-9_-]+)>")
 
 
 def _parse_wrappers(text: str) -> tuple[str, list[dict]]:
@@ -521,35 +521,50 @@ def _parse_wrappers(text: str) -> tuple[str, list[dict]]:
     brace-counted syntax. A begin without its end is left in the text untouched: an editor
     surface must never eat characters it merely failed to understand.
     """
+    # Marks can overlap without being nested: A may start before B but end before B does.
+    # Treat tags as independent range endpoints instead of recursively consuming one wrapper at
+    # a time; otherwise B's end leaks into the editor and only the first mark survives a save.
+    tokens = list(_TAG_TOKEN.finditer(text))
+    by_id: dict[str, dict[str, list]] = {}
+    for token in tokens:
+        kind, nid = token.group(1), token.group(2)
+        by_id.setdefault(nid, {"begin": [], "end": []})[kind].append(token)
+    valid = {
+        nid for nid, ends in by_id.items()
+        if len(ends["begin"]) == len(ends["end"]) == 1
+        and ends["begin"][0].start() < ends["end"][0].start()
+    }
+
     out: list[str] = []
-    found: list[dict] = []
-    i, clean_len = 0, 0
-    while True:
-        m = _TAG_BEGIN.search(text, i)
-        if not m:
-            out.append(text[i:])
-            break
-        nid = m.group(1)
-        end_tag = f"<comment-end={nid}>"
-        k = text.find(end_tag, m.end())
-        out.append(text[i:m.start()])
-        clean_len += m.start() - i
-        if k < 0:                       # unclosed — leave the raw tag alone
-            out.append(m.group(0))
-            clean_len += len(m.group(0))
-            i = m.end()
-            continue
-        body = text[m.end():k]
-        found.append({"id": nid, "body": body, "start": clean_len})
-        out.append(body)
-        clean_len += len(body)
-        i = k + len(end_tag)
-    return "".join(out), found
+    starts: dict[str, int] = {}
+    finished: dict[str, int] = {}
+    order: list[str] = []
+    cursor, clean_len = 0, 0
+    for token in tokens:
+        raw = text[cursor:token.start()]
+        out.append(raw); clean_len += len(raw)
+        kind, nid = token.group(1), token.group(2)
+        if nid not in valid:
+            # A malformed wrapper must remain visible rather than silently eating source.
+            out.append(token.group(0)); clean_len += len(token.group(0))
+        elif kind == "begin":
+            starts[nid] = clean_len; order.append(nid)
+        else:
+            finished[nid] = clean_len
+        cursor = token.end()
+    out.append(text[cursor:])
+    clean = "".join(out)
+    found = [{"id": nid, "body": clean[starts[nid]:finished[nid]], "start": starts[nid]}
+             for nid in order if nid in finished]
+    return clean, found
 
 
 def _wrap_notes(source: str, notes: list[dict]) -> str:
-    """Inject `<comment-begin=id>quote<comment-end=id>` at each anchor. Overlaps keep the
-    first mark only."""
+    """Inject `<comment-begin=id>quote<comment-end=id>` at each anchor.
+
+    A slide can have crossing ranges. The serialized tags deliberately preserve those two
+    independent ranges; :func:`_parse_wrappers` reads them back as such on save.
+    """
     spans = []
     for n in notes:
         quote = n.get("quote") or ""
@@ -558,17 +573,26 @@ def _wrap_notes(source: str, notes: list[dict]) -> str:
         pos = resolve_anchor(source, n)
         if pos >= 0:
             spans.append((pos, pos + len(quote), n["id"]))
-    spans.sort()
-    kept, last_end = [], -1
-    for span in spans:
-        if span[0] >= last_end:
-            kept.append(span)
-            last_end = span[1]
-    out = source
-    for start, end, nid in reversed(kept):
-        out = (f"{out[:start]}<comment-begin={nid}>{out[start:end]}"
-               f"<comment-end={nid}>{out[end:]}")
-    return out
+    if not spans:
+        return source
+    starts: dict[int, list[tuple[int, str]]] = {}
+    ends: dict[int, list[tuple[int, str]]] = {}
+    for start, end, nid in spans:
+        starts.setdefault(start, []).append((end, nid))
+        ends.setdefault(end, []).append((start, nid))
+    out: list[str] = []
+    cursor = 0
+    for pos in sorted(set(starts) | set(ends)):
+        out.append(source[cursor:pos])
+        # Adjacent marks must stay adjacent; at a shared boundary close before opening. For
+        # true nesting, close the innermost first and open the outermost first.
+        for _, nid in sorted(ends.get(pos, []), reverse=True):
+            out.append(f"<comment-end={nid}>")
+        for _, nid in sorted(starts.get(pos, []), reverse=True):
+            out.append(f"<comment-begin={nid}>")
+        cursor = pos
+    out.append(source[cursor:])
+    return "".join(out)
 
 
 def slide_edit_source(slug: str, talk_id: str, slides: list[dict], notes: dict, index: int) -> str:

@@ -523,6 +523,27 @@ class ManualEditTests(unittest.TestCase):
         # No wrapper syntax may leak into the stored deck.
         self.assertNotIn("comment-begin", after["slides"][1]["body"])
 
+    def test_overlapping_wrappers_keep_both_marks_visible_and_saveable(self):
+        with paths.use_root(self.home):
+            talks.add_note(self.slug, self.talk, slide=1, kind="q", author="pi",
+                           quote="I assume $w(\\lambda) \\to \\text{const}$, which kills",
+                           text="This premise needs a condition.")
+            talks.add_note(self.slug, self.talk, slide=1, kind="more", author="pi",
+                           quote="which kills the variance term.",
+                           text="Explain this consequence.")
+            detail = talks.talk_detail(self.slug, self.talk)
+            source = detail["slides"][1]["edit_source"]
+            self.assertIn("<comment-begin=n1>", source)
+            self.assertIn("<comment-begin=n2>", source)
+            # The ranges cross, so the first close appears before the second close.
+            self.assertLess(source.index("<comment-end=n1>"), source.index("<comment-end=n2>"))
+            talks.apply_slide_source(self.slug, self.talk, 1, source)
+            after = talks.talk_detail(self.slug, self.talk)
+        self.assertEqual({note["quote"] for note in after["notes"]}, {
+            "I assume $w(\\lambda) \\to \\text{const}$, which kills",
+            "which kills the variance term."})
+        self.assertTrue(all(not note["orphan"] for note in after["notes"]))
+
     def test_an_unchanged_save_keeps_the_slide_date(self):
         with paths.use_root(self.home):
             detail = talks.talk_detail(self.slug, self.talk)

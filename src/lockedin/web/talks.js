@@ -722,7 +722,17 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
       mk.className = "tk-anno";
       mk.dataset.note = n.id;
       mk.style.setProperty("--kc", KINDS[n.kind].color);
-      try { r.surroundContents(mk); } catch (err) { continue; }
+      try {
+        r.surroundContents(mk);
+      } catch (err) {
+        // A second range may cross a mark already painted into the DOM. Extracting and putting
+        // that fragment inside this mark splits the first mark around the overlap, preserving
+        // both annotations instead of silently dropping the later one.
+        try {
+          mk.appendChild(r.extractContents());
+          r.insertNode(mk);
+        } catch (nestedErr) { continue; }
+      }
       mk.onclick = ev => { ev.stopPropagation(); focusNote(n.id); };
     }
     return true;
