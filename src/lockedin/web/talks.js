@@ -943,7 +943,7 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
               data-i="${i}" title="${esc(s.title)}"></button>`).join("")}</div>
           <span class="tk-cnt">${S.slide + 1} / ${S.talk.slides.length}</span>
           <button data-nav="-1">←</button><button data-nav="1">→</button>
-          <button data-draw="1" title="drag a box over the slide">⬚ mark region</button>
+          <button data-draw="1" title="drag a box over the slide">🖍 mark region</button>
           <button data-editdeck="1" title="edit this slide's markdown by hand">✎ edit</button>
         </div>
       </div>
@@ -972,7 +972,7 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
         ${openCount() ? `<span class="tk-tag open">${openCount()} open</span>`
                       : `<span class="tk-tag done">all closed</span>`}</div>
       ${mine.length ? "" : `<div class="tk-empty tk-empty-notes" style="font-size:14px">
-        Select any text on the slide — or hit <b>⬚ mark region</b> and drag a box —
+        Select any text on the slide — or hit <b>🖍 mark region</b> and drag a box —
         then pick one of <b>✗ ? → ✓ ✂</b>.</div>`}
       ${mine.map(n => noteCard({ ...n, orphanNote: n.anchorLost ? "⚠ text moved · " : "",
                                  image: shot(n),

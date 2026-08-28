@@ -208,7 +208,7 @@ than prose it has to infer intent from.
 
 ## Marking a region
 
-Some marks are about *where things are*, not what they say. Hit **⬚ mark region**, drag a box
+Some marks are about *where things are*, not what they say. Hit **🖍 mark region**, drag a box
 over any part of the slide, and pick a mark. A region mark stores a picture of the slide as you
 saw it, with your box drawn on — which is the only thing that carries layout and placement to an
 agent that cannot see your screen.
