@@ -76,7 +76,13 @@ def create(user: str, name: str, *, kind: str = "shared") -> dict:
            "members": {user: {"role": "admin", "joined_at": _now()}}}
     data.setdefault("workspaces", {})[wid] = rec
     _save(data)
-    _ensure_dirs(wid)
+    root = _ensure_dirs(wid)
+    # Every new workspace opens with the Tutorial bubble: the product explaining itself in its
+    # own medium, deletable like any other bubble. Imported lazily — tutorial pulls in the
+    # bubble and talks machinery, which this module must not depend on at import time.
+    from . import tutorial
+    with paths.use_root(root):
+        tutorial.seed()
     return rec
 
 
