@@ -922,6 +922,13 @@ def build_app():
         sub: Optional[str] = None
         resolves: list[str] = []
 
+    class TalkSlideSourceIn(BaseModel):
+        text: str
+        why: str = ""
+
+    class TalkSlideInsertIn(BaseModel):
+        after: int = -1
+
     class BubbleRenameIn(BaseModel):
         name: str
 
@@ -1979,6 +1986,28 @@ def build_app():
                                                        resolves=body.resolves)}
         except IndexError:
             raise HTTPException(status_code=404, detail="no such slide")
+
+    @app.put("/api/bubbles/{slug}/talks/{talk_id}/slides/{slide}/source")
+    def edit_talk_slide_source(slug: str, talk_id: str, slide: int, body: TalkSlideSourceIn,
+                               user: str = Depends(current_user)):
+        r"""Save a hand-edited slide. `\comment{id}{...}` wrappers re-anchor their marks."""
+        try:
+            return {"slide": service.apply_talk_slide_source(home_of(user), slug, talk_id,
+                                                             slide, body.text, why=body.why)}
+        except IndexError:
+            raise HTTPException(status_code=404, detail="no such slide")
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    @app.post("/api/bubbles/{slug}/talks/{talk_id}/slides")
+    def insert_talk_slide(slug: str, talk_id: str, body: TalkSlideInsertIn,
+                          user: str = Depends(current_user)):
+        return {"index": service.insert_talk_slide(home_of(user), slug, talk_id, body.after)}
+
+    @app.delete("/api/bubbles/{slug}/talks/{talk_id}/slides/{slide}")
+    def delete_talk_slide(slug: str, talk_id: str, slide: int,
+                          user: str = Depends(current_user)):
+        return {"ok": service.delete_talk_slide(home_of(user), slug, talk_id, slide)}
 
     @app.get("/api/bubbles/{slug}/talk-notes")
     def talk_notes_for_agent(slug: str, user: str = Depends(current_user)):

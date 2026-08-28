@@ -356,6 +356,9 @@ class RouteSurfaceTests(unittest.TestCase):
             ("PUT", "/api/bubbles/{slug}/talks/{talk_id}/notes/{note_id}/shot.png"),
             ("GET", "/api/bubbles/{slug}/talks/{talk_id}/notes/{note_id}/shot.png"),
             ("POST", "/api/bubbles/{slug}/talks/{talk_id}/slides/{slide}/revise"),
+            ("PUT", "/api/bubbles/{slug}/talks/{talk_id}/slides/{slide}/source"),
+            ("POST", "/api/bubbles/{slug}/talks/{talk_id}/slides"),
+            ("DELETE", "/api/bubbles/{slug}/talks/{talk_id}/slides/{slide}"),
             ("GET", "/api/bubbles/{slug}/talk-notes"),
             ("PUT", "/api/bubbles/{slug}/premise"),
         ]
@@ -442,3 +445,109 @@ class PageMarkTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ManualEditTests(unittest.TestCase):
+    """The human's pen: hand-editing slides with marks materialised as wrappers."""
+
+    def setUp(self):
+        self.ctx = temp_home()
+        self.home = self.ctx.__enter__()
+        with paths.use_root(self.home):
+            self.slug = bubbles.create_bubble("Diffusion noise schedules")
+            bubbles.approve_bubble(self.slug)
+            bubbles.ensure_pages(self.slug)
+            self.talk = talks.create_talk(self.slug, "Why the variance term doesn't vanish",
+                                          date="2026-08-27", body=DECK)
+
+    def tearDown(self):
+        self.ctx.__exit__(None, None, None)
+
+    def test_edit_source_materialises_marks_as_comment_wrappers(self):
+        with paths.use_root(self.home):
+            talks.add_note(self.slug, self.talk, slide=1, kind="bad", author="pi",
+                           quote="kills the variance term", text="does it?")
+            detail = talks.talk_detail(self.slug, self.talk)
+        src = detail["slides"][1]["edit_source"]
+        self.assertIn("\\comment{n1}{kills the variance term}", src)
+        # The slide header comment is the app's bookkeeping, not the editor's business.
+        self.assertNotIn("<!-- slide:", src)
+
+    def test_saving_a_wrapper_moves_the_mark_with_the_edited_text(self):
+        with paths.use_root(self.home):
+            talks.add_note(self.slug, self.talk, slide=1, kind="bad", author="pi",
+                           quote="kills the variance term", text="does it?")
+            detail = talks.talk_detail(self.slug, self.talk)
+            edited = detail["slides"][1]["edit_source"].replace(
+                "\\comment{n1}{kills the variance term}",
+                "\\comment{n1}{silences the variance term}")
+            talks.apply_slide_source(self.slug, self.talk, 1, edited, why="reworded")
+            after = talks.talk_detail(self.slug, self.talk)
+        note = after["notes"][0]
+        self.assertEqual(note["quote"], "silences the variance term")
+        self.assertFalse(note["orphan"])
+        # No wrapper syntax may leak into the stored deck.
+        self.assertNotIn("\\comment", after["slides"][1]["body"])
+        # A hand edit is a revision like any other: versioned and snapshotted.
+        self.assertEqual(after["slides"][1]["version"], 2)
+        self.assertEqual(after["slides"][1]["history"][0]["why"], "reworded")
+
+    def test_an_unchanged_save_does_not_invent_a_version(self):
+        with paths.use_root(self.home):
+            detail = talks.talk_detail(self.slug, self.talk)
+            talks.apply_slide_source(self.slug, self.talk, 0,
+                                     detail["slides"][0]["edit_source"])
+            after = talks.talk_detail(self.slug, self.talk)
+        self.assertEqual(after["slides"][0]["version"], 1)
+        self.assertEqual(after["slides"][0]["history"], [])
+
+    def test_renaming_the_first_slide_renames_the_talk(self):
+        with paths.use_root(self.home):
+            detail = talks.talk_detail(self.slug, self.talk)
+            # The registry deliberately keeps its own title against agent pushes; a hand
+            # rename of slide 1 is the owner speaking and must win.
+            talks.save_index(self.slug, {"talks": [
+                {**talks.load_index(self.slug)["talks"][0], "title": "What we're changing"}]})
+            edited = detail["slides"][0]["edit_source"].replace(
+                "# What we're changing", "# Uniform in log-SNR")
+            talks.apply_slide_source(self.slug, self.talk, 0, edited)
+            self.assertEqual(talks.load_index(self.slug)["talks"][0]["title"],
+                             "Uniform in log-SNR")
+
+    def test_a_separator_inside_a_slide_is_refused(self):
+        with paths.use_root(self.home):
+            with self.assertRaises(ValueError):
+                talks.apply_slide_source(self.slug, self.talk, 0, "# T\n\nbefore\n\n---\n\nafter")
+
+    def test_insert_slide_shifts_marks_on_later_slides(self):
+        with paths.use_root(self.home):
+            talks.add_note(self.slug, self.talk, slide=1, kind="q", author="pi",
+                           quote="The residual term survives")
+            pos = talks.insert_slide(self.slug, self.talk, after=0)
+            detail = talks.talk_detail(self.slug, self.talk)
+        self.assertEqual(pos, 1)
+        self.assertEqual([s["title"] for s in detail["slides"]],
+                         ["What we're changing", "New slide", "The residual term survives"])
+        note = detail["notes"][0]
+        self.assertEqual(note["slide"], 2)          # followed its slide
+        self.assertFalse(note["orphan"])
+
+    def test_delete_slide_takes_its_marks_and_shifts_the_rest(self):
+        with paths.use_root(self.home):
+            talks.add_note(self.slug, self.talk, slide=0, kind="cut", author="pi",
+                           quote="Sample the noise level")
+            talks.add_note(self.slug, self.talk, slide=1, kind="q", author="pi",
+                           quote="The residual term survives")
+            self.assertTrue(talks.delete_slide(self.slug, self.talk, 0))
+            detail = talks.talk_detail(self.slug, self.talk)
+        self.assertEqual([s["title"] for s in detail["slides"]],
+                         ["The residual term survives"])
+        self.assertEqual(len(detail["notes"]), 1)   # slide 0's mark died with it
+        self.assertEqual(detail["notes"][0]["slide"], 0)
+        self.assertFalse(detail["notes"][0]["orphan"])
+
+    def test_malformed_wrappers_are_left_alone_not_eaten(self):
+        clean, found = talks._parse_wrappers(
+            "a \\comment{n1}{good} b \\comment{broken c \\comment{n2}{unclosed")
+        self.assertEqual(found[0]["id"], "n1")
+        self.assertEqual(clean, "a good b \\comment{broken c \\comment{n2}{unclosed")

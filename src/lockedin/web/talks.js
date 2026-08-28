@@ -23,7 +23,8 @@
   const ORDER = ["bad", "q", "more", "good", "cut"];
 
   const S = { slug: null, name: "", view: "home", talk: null, data: null, bubble: null,
-              slide: 0, kind: "q", pending: null, history: null, editPremise: false };
+              slide: 0, kind: "q", pending: null, history: null, editPremise: false,
+              edit: false, editorObj: null };
   let root = null;
 
   const api = async (path, opts) => {
@@ -53,10 +54,10 @@
 .tk-crumb .dim{color:var(--muted);font-weight:400}
 .tk-crumb .back{color:var(--accent);cursor:pointer}
 .tk-sp{flex:1}
-.tk-overlay button{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--panel2);
+.tk-overlay button:where(:not(.tk-edithost *)){font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--panel2);
   color:var(--ink);border-radius:9px;padding:6px 11px;min-height:34px}
-.tk-overlay button:hover{border-color:var(--accent);background:var(--panel)}
-.tk-overlay button.pri{background:var(--accent);color:#160f2e;border-color:var(--accent);font-weight:600}
+.tk-overlay button:where(:not(.tk-edithost *)):hover{border-color:var(--accent);background:var(--panel)}
+.tk-overlay button.pri:where(:not(.tk-edithost *)){background:var(--accent);color:var(--bg);border-color:var(--accent);font-weight:600}
 .tk-body{flex:1;min-height:0;display:flex;flex-direction:column}
 
 .tk-list{flex:1;overflow:auto;padding:20px 30px 40px;display:flex;flex-direction:column;gap:22px}
@@ -69,7 +70,7 @@
 .tk-premise-top .tk-byline{margin:0;flex:1;min-width:0;font-size:12px;color:var(--muted)}
 .tk-premise-top button{padding:3px 10px;min-height:0;font-size:11.5px}
 .tk-premise .tk-abstract{font-family:var(--font-reading);font-size:16px;line-height:1.6;
-  color:#dbe1ec;overflow:visible}
+  color:var(--ink);overflow:visible}
 .tk-premise .tk-abstract p:last-child,.tk-goal .tk-md p:last-child{margin-bottom:0}
 /* The goal is a different kind of sentence from the abstract — a commitment rather than a
    description — so it is coloured rather than merely indented. */
@@ -109,6 +110,11 @@
 .tk-card{display:flex;gap:15px;border:1px solid var(--line);border-radius:11px;background:var(--panel);
   padding:13px 15px;cursor:pointer}
 .tk-card:hover{border-color:var(--accent);background:var(--panel2)}
+.tk-card{position:relative}
+.tk-card .tk-del{position:absolute;top:9px;right:10px;padding:1px 8px;min-height:0;font-size:12px;
+  color:var(--muted);border-color:transparent;background:none;opacity:0;transition:opacity .15s}
+.tk-card:hover .tk-del{opacity:1}
+.tk-card .tk-del:hover{color:var(--bad);border-color:var(--bad);background:none}
 .tk-card .d{flex:0 0 88px;font:500 12px var(--font-mono);color:var(--muted);padding-top:2px}
 .tk-card .t{font-weight:600;font-size:15px;margin-bottom:4px}
 .tk-card .i{font-family:var(--font-reading);font-size:14px;color:var(--muted);line-height:1.5}
@@ -121,13 +127,14 @@
   font-family:var(--font-reading);font-size:15px;line-height:1.6}
 
 .tk-stage{flex:1;min-height:0;display:flex}
-.tk-col{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;
-  justify-content:center;padding:18px 24px 10px;overflow:auto}
-.tk-slide{width:100%;max-width:720px;background:var(--panel);border:1px solid var(--line);
+.tk-col{flex:1;min-width:0;display:flex;flex-direction:column;padding:18px 24px 10px;overflow:auto}
+/* margin:auto, not justify-content:center — auto margins collapse to zero when the slide
+   overflows, so a tall slide scrolls from its top instead of clipping it. */
+.tk-slide{width:100%;max-width:720px;margin:auto;background:var(--panel);border:1px solid var(--line);
   border-radius:14px;box-shadow:var(--shadow);padding:34px 40px 32px;position:relative;
-  flex:0 1 auto;min-height:0;max-height:100%;display:flex;flex-direction:column}
+  flex:0 0 auto}
 .tk-slide .kind{position:absolute;top:-10px;left:22px;font:500 9.5px var(--font-mono);
-  letter-spacing:.14em;text-transform:uppercase;background:var(--accent);color:#150f2e;
+  letter-spacing:.14em;text-transform:uppercase;background:var(--accent);color:var(--bg);
   padding:3px 9px;border-radius:999px}
 .tk-stamp{position:absolute;top:-10px;right:18px;display:flex;gap:6px}
 .tk-stamp span{font:500 10px var(--font-mono);background:var(--panel2);border:1px solid var(--line);
@@ -170,7 +177,7 @@ mark.tk-anno{background:color-mix(in srgb,var(--kc,var(--accent)) 26%,transparen
 /* Inside the box, not hanging off it: a badge at top:-11px is clipped the moment the region
    sits near the top of the slide or against the scrolling edge. */
 .tk-region b{position:absolute;top:-1px;left:-1px;font:600 9.5px var(--font-mono);background:var(--kc);
-  color:#12151d;border-radius:7px 0 7px 0;padding:1px 5px;line-height:1.5;pointer-events:none}
+  color:var(--bg);border-radius:7px 0 7px 0;padding:1px 5px;line-height:1.5;pointer-events:none}
 /* Overlapping regions must stay individually readable, so the fill stays faint and the border
    carries the colour. The focused one lifts above the rest. */
 .tk-region.focus{background:color-mix(in srgb,var(--kc) 12%,transparent);z-index:2}
@@ -181,12 +188,44 @@ mark.tk-anno{background:color-mix(in srgb,var(--kc,var(--accent)) 26%,transparen
   outline:1.5px dashed color-mix(in srgb,var(--accent) 70%,transparent);outline-offset:-7px}
 .tk-draw::after{content:"drag a box over any part of this slide \u00b7 Esc to cancel";
   position:absolute;left:50%;bottom:9px;transform:translateX(-50%);font:500 11px var(--font-ui);
-  letter-spacing:.02em;background:var(--accent);color:#150f2e;padding:4px 12px;border-radius:999px;
+  letter-spacing:.02em;background:var(--accent);color:var(--bg);padding:4px 12px;border-radius:999px;
   white-space:nowrap;pointer-events:none;box-shadow:var(--shadow-sm)}
 .tk-drawbox{position:absolute;border:1.5px solid var(--accent);border-radius:7px;
   background:color-mix(in srgb,var(--accent) 10%,transparent)}
 
-.tk-foot{display:flex;align-items:center;gap:11px;padding:16px 4px 4px;width:100%;max-width:720px}
+/* Manual editing. The editor card takes the slide's place and its full height: editing is
+   a mode, not a popup, and the deck footer keeps working so you can restructure the whole
+   talk without leaving it. */
+.tk-editcard{width:100%;max-width:720px;margin:0 auto;flex:1;min-height:0;display:flex;flex-direction:column;
+  background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);
+  overflow:hidden;position:relative}
+.tk-edithead{display:flex;align-items:center;gap:9px;padding:11px 14px;border-bottom:1px solid var(--line);
+  background:color-mix(in srgb,var(--panel2) 70%,var(--panel))}
+.tk-edithead .tk-cnt{margin-left:0}
+.tk-ekind{font:500 9.5px var(--font-mono);letter-spacing:.14em;text-transform:uppercase;
+  background:var(--accent);color:var(--bg);padding:3px 10px;border-radius:999px}
+.tk-why{flex:1;min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:8px;
+  color:var(--ink);font:inherit;font-size:12.5px;padding:6px 10px;outline:none}
+.tk-why:focus{border-color:var(--accent)}
+.tk-edithost{flex:1;min-height:0}
+.tk-edithost .toastui-editor-defaultUI{border:0;border-radius:0;height:100%}
+.tk-edithost .toastui-editor-toolbar-icons{width:32px;height:32px;min-height:0;margin:0;padding:0;border:0}
+.tk-editnote{font-size:11.5px;color:var(--muted);padding:7px 14px;border-top:1px solid var(--line)}
+.tk-editnote code{font-family:var(--font-mono);background:var(--panel2);padding:1px 5px;border-radius:5px}
+.tk-danger:hover{border-color:var(--bad);color:var(--bad)}
+.tk-addwrap{position:relative}
+.tk-addmenu{position:absolute;right:0;top:calc(100% + 6px);z-index:30;min-width:250px;
+  background:var(--panel2);border:1px solid var(--line);border-radius:11px;box-shadow:var(--shadow);
+  padding:6px;display:flex;flex-direction:column;gap:4px}
+/* display:flex would silently defeat the hidden attribute — the menu was always open. */
+.tk-addmenu[hidden]{display:none}
+.tk-addmenu button{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;
+  border:0;background:none;padding:9px 11px;border-radius:8px}
+.tk-addmenu button:hover{background:color-mix(in srgb,var(--accent) 14%,transparent);border:0}
+.tk-addmenu button span{font-size:11.5px;color:var(--muted)}
+
+.tk-foot{display:flex;align-items:center;gap:11px;padding:16px 4px 4px;width:100%;max-width:720px;
+  margin:0 auto;flex:0 0 auto}
 .tk-dots{display:flex;gap:6px;align-items:center}
 .tk-overlay .tk-dot{width:9px;height:9px;border-radius:50%;background:var(--line);cursor:pointer;
   border:0;padding:0;min-height:0;flex:0 0 auto}
@@ -195,10 +234,12 @@ mark.tk-anno{background:color-mix(in srgb,var(--kc,var(--accent)) 26%,transparen
 .tk-overlay .tk-dot.note{background:var(--warn)}
 .tk-cnt{font:500 11px var(--font-mono);color:var(--muted);margin-left:auto}
 
-.tk-gutter{flex:0 0 344px;border-left:1px solid var(--line);overflow:auto;padding:20px 18px 28px;
-  display:flex;flex-direction:column;gap:30px;background:color-mix(in srgb,var(--panel) 55%,var(--bg))}
-.tk-gh{font:500 10.5px var(--font-ui);letter-spacing:.18em;text-transform:uppercase;color:var(--muted);
-  display:flex;align-items:center;gap:8px}
+.tk-gutter{flex:0 0 344px;border-left:1px solid var(--line);overflow:auto;padding:0 18px 28px;
+  display:flex;flex-direction:column;gap:18px;background:color-mix(in srgb,var(--panel) 55%,var(--bg))}
+.tk-gh{font:500 10.5px var(--font-ui);letter-spacing:.14em;text-transform:uppercase;color:var(--muted);
+  display:flex;align-items:center;gap:8px;padding:17px 0 13px;margin-bottom:4px;
+  border-bottom:1px solid color-mix(in srgb,var(--line) 80%,transparent)}
+.tk-gh .tk-tag{font-size:10px;letter-spacing:.04em;padding:2px 9px}
 .tk-note{border:1px solid var(--line);border-left:4px solid var(--kc);border-radius:11px;
   background:var(--panel);padding:18px 18px 20px;cursor:pointer;overflow:hidden;min-width:0}
 .tk-note:hover{border-color:var(--accent);border-left-color:var(--kc)}
@@ -637,6 +678,7 @@ mark.tk-anno{background:color-mix(in srgb,var(--kc,var(--accent)) 26%,transparen
 
   /* ------------------------------------------------------------------ views */
   async function loadHome() {
+    S.edit = false;
     const [b, t] = await Promise.all([
       api(`/api/bubbles/${encodeURIComponent(S.slug)}`),
       api(`/api/bubbles/${encodeURIComponent(S.slug)}/talks`),
@@ -672,7 +714,7 @@ mark.tk-anno{background:color-mix(in srgb,var(--kc,var(--accent)) 26%,transparen
             <div class="tk-premise-top">
               <span class="tk-byline">🤖 the agent's understanding${b.premise_revised_at
                 ? ", revised " + esc(b.premise_revised_at.slice(0, 10)) : ""}</span>
-              <button data-editp="1">✎ correct this</button>
+              <button data-editp="1">✎ edit goals</button>
             </div>
             <div class="tk-md tk-abstract"></div>
             ${b.goal ? `<div class="tk-goal"><b title="Goal">✅</b>
@@ -695,7 +737,11 @@ mark.tk-anno{background:color-mix(in srgb,var(--kc,var(--accent)) 26%,transparen
       <div>
         <div class="tk-band"><b>Chalk talks</b><div class="rule"></div>
           <span class="tk-dim">${total} open note${total === 1 ? "" : "s"}</span>
-          <button class="tk-addtalk" data-newtalk="1" title="Ask an agent for a talk">+ ask for one</button></div>
+          <div class="tk-addwrap"><button class="tk-addtalk" data-newtalk="1">+ add chalk talk</button>
+            <div class="tk-addmenu" hidden>
+              <button data-manual="1">✍ Write it yourself<span>opens a blank slide in the editor</span></button>
+              <button data-auto="1">🤖 Ask an agent<span>hands you a prompt to paste</span></button>
+            </div></div></div>
         <div class="tk-talklist"></div>
       </div>
     </div>`).firstChild;
@@ -707,13 +753,37 @@ mark.tk-anno{background:color-mix(in srgb,var(--kc,var(--accent)) 26%,transparen
     if (goal) renderMarkdown(b.goal || "", goal);
     el.querySelector(".tk-talklist").append(renderList());
     const nt = el.querySelector("[data-newtalk]");
-    if (nt) nt.onclick = askForTalk;
+    const menu = el.querySelector(".tk-addmenu");
+    if (nt) nt.onclick = e => { e.stopPropagation(); menu.hidden = !menu.hidden; };
+    if (menu) {
+      if (!S.menuCloser) {   // one global closer, not one per render
+        S.menuCloser = true;
+        document.addEventListener("click", () =>
+          document.querySelectorAll(".tk-addmenu").forEach(mn => (mn.hidden = true)));
+      }
+      menu.querySelector("[data-auto]").onclick = () => { menu.hidden = true; askForTalk(); };
+      menu.querySelector("[data-manual]").onclick = () => { menu.hidden = true; startManualTalk(); };
+    }
     const ep = el.querySelector("[data-editp]");
     if (ep) ep.onclick = () => editPremise();
     el.querySelectorAll(".tk-pg").forEach(p => (p.onclick = () => {
       if (S.onPage) S.onPage(p.dataset.page);
     }));
     return el;
+  }
+
+  // A talk you write yourself: one blank slide, straight into the editor. The registry title
+  // follows the first slide's heading the moment you rename it by hand.
+  async function startManualTalk() {
+    const today = new Date().toISOString().slice(0, 10);
+    const r = await api(`/api/bubbles/${encodeURIComponent(S.slug)}/talks`, {
+      method: "POST",
+      body: JSON.stringify({ title: "Untitled talk",
+        body: `<!-- slide: kind=setup, date=${today}, v=1 -->\n# Untitled talk\n` }),
+    });
+    await loadTalk(r.id);
+    S.edit = true;
+    render();
   }
 
   // The agent is in another window, so the useful thing this button can do is hand you words to
@@ -819,6 +889,7 @@ mark.tk-anno{background:color-mix(in srgb,var(--kc,var(--accent)) 26%,transparen
         trade-off — as a few slides you can mark up, rather than burying it in a report page.
         <br><br>Ask an agent working on this bubble to write one, or seed the demo data.</div>`}
       ${talks.map(t => `<div class="tk-card" data-id="${esc(t.id)}">
+        <button class="tk-del" data-del="${esc(t.id)}" title="delete this talk">✕</button>
         <div class="d">${esc(t.date)}</div>
         <div style="flex:1;min-width:0">
           <div class="t">${esc(t.title)}</div>
@@ -833,12 +904,22 @@ mark.tk-anno{background:color-mix(in srgb,var(--kc,var(--accent)) 26%,transparen
         </div></div>`).join("")}
     </div>`).firstChild;
     body.querySelectorAll(".tk-card").forEach(c => (c.onclick = () => loadTalk(c.dataset.id)));
+    body.querySelectorAll(".tk-del").forEach(b => (b.onclick = async e => {
+      e.stopPropagation();
+      const t = talks.find(x => x.id === b.dataset.del) || {};
+      const notes = t.open ? ` and its ${t.open} open note${t.open === 1 ? "" : "s"}` : "";
+      if (!confirm(`Delete the talk “${t.title}”${notes}? Its slides, marks and history all go.`)) return;
+      await api(`/api/bubbles/${S.slug}/talks/${encodeURIComponent(b.dataset.del)}`, { method: "DELETE" });
+      await loadHome();
+    }));
     return body;
   }
 
   function renderDeck() {
+    if (S.edit) return renderDeckEdit();
     const sl = S.talk.slides[S.slide];
-    if (!sl) return h(`<div class="tk-list"><div class="tk-empty">This talk has no slides yet.</div></div>`).firstChild;
+    if (!sl) return h(`<div class="tk-list"><div class="tk-empty">This talk has no slides yet.
+      Hit <b>✎ edit</b> above to add one.</div></div>`).firstChild;
     const mine = notesOn(S.slide);
     const wrap = h(`<div class="tk-stage">
       <div class="tk-col">
@@ -920,6 +1001,106 @@ mark.tk-anno{background:color-mix(in srgb,var(--kc,var(--accent)) 26%,transparen
     const gh = el.querySelector(".tk-gh");
     gh.onclick = () => root.classList.toggle("notes-open");
     return el;
+  }
+
+
+  /* ------------------------------------------------------------- manual editing */
+  // The same markdown editor the document uses, pointed at one slide. Every open mark arrives
+  // materialised as \comment{id}{...} — the wrapper syntax report pages already use — so the
+  // text a mark points at is visible while you rewrite it, and moves with your edit.
+  function destroyEditor() {
+    if (S.editorObj) { try { S.editorObj.destroy(); } catch (e) {} S.editorObj = null; }
+  }
+  const editDirty = () => {
+    try { return S.editorObj && S.editorObj.getMarkdown() !== (S.editInitial || ""); }
+    catch (e) { return false; }
+  };
+  function leaveEditOk() {
+    return !editDirty() || confirm("Discard the unsaved changes to this slide?");
+  }
+
+  async function addSlideAfter(i) {
+    const r = await api(`/api/bubbles/${S.slug}/talks/${S.talk.talk.id}/slides`,
+                        { method: "POST", body: JSON.stringify({ after: i }) });
+    S.edit = true;
+    await loadTalk(S.talk.talk.id, true);
+    go(r.index);
+  }
+
+  async function deleteSlideAt(i) {
+    const sl = S.talk.slides[i];
+    const n = notesOn(i).length;
+    if (!confirm(`Delete slide ${i + 1} — “${sl.title}”` +
+                 (n ? ` — and its ${n} mark${n === 1 ? "" : "s"}?` : "?"))) return;
+    await api(`/api/bubbles/${S.slug}/talks/${S.talk.talk.id}/slides/${i}`, { method: "DELETE" });
+    await loadTalk(S.talk.talk.id, true);
+  }
+
+  function renderDeckEdit() {
+    const sl = S.talk.slides[S.slide];
+    if (!sl) {
+      const empty = h(`<div class="tk-list"><div class="tk-empty">This talk has no slides.
+        <br><br><button class="pri" data-add0="1">+ add the first slide</button></div></div>`).firstChild;
+      empty.querySelector("[data-add0]").onclick = () => addSlideAfter(-1);
+      return empty;
+    }
+    const wrap = h(`<div class="tk-stage">
+      <div class="tk-col">
+        <div class="tk-editcard">
+          <div class="tk-edithead">
+            <span class="tk-ekind">${esc(sl.kind)}</span>
+            <span class="tk-cnt">v${sl.version}</span>
+            <input class="tk-why" placeholder="why this change — kept in the history (optional)">
+            <button class="pri" data-save="1">Save slide</button>
+          </div>
+          <div class="tk-edithost"></div>
+          <div class="tk-editnote">Marks appear as <code>\\comment{id}{…}</code> — edit the text
+            inside the braces and the mark follows it. First line <code># title</code>, then an
+            optional <code>*subtitle*</code> line.</div>
+        </div>
+        <div class="tk-foot">
+          <div class="tk-dots">${S.talk.slides.map((s, i) =>
+            `<button class="tk-dot${i === S.slide ? " on" : ""}${notesOn(i).length ? " note" : ""}"
+              data-i="${i}" title="${esc(s.title)}"></button>`).join("")}</div>
+          <span class="tk-cnt">${S.slide + 1} / ${S.talk.slides.length}</span>
+          <button data-nav="-1">←</button><button data-nav="1">→</button>
+          <span class="tk-sp"></span>
+          <button data-add="1" title="insert a blank slide after this one">+ add slide</button>
+          <button data-del="1" class="tk-danger" title="delete this slide and its marks">✂ delete slide</button>
+        </div>
+      </div>
+    </div>`).firstChild;
+
+    const host = wrap.querySelector(".tk-edithost");
+    S.editInitial = sl.edit_source || "";
+    S.editorObj = new toastui.Editor({
+      el: host, height: "100%", theme: "dark", initialEditType: "markdown",
+      previewStyle: "tab", initialValue: S.editInitial, usageStatistics: false, autofocus: false,
+      toolbarItems: [["heading", "bold", "italic", "code", "link", "quote", "ul", "ol", "table"]],
+    });
+
+    wrap.querySelector("[data-save]").onclick = async () => {
+      const b = wrap.querySelector("[data-save]");
+      b.disabled = true;
+      try {
+        await api(`/api/bubbles/${S.slug}/talks/${S.talk.talk.id}/slides/${S.slide}/source`, {
+          method: "PUT",
+          body: JSON.stringify({ text: S.editorObj.getMarkdown(),
+                                 why: wrap.querySelector(".tk-why").value.trim() }),
+        });
+        S.edit = false;
+        await loadTalk(S.talk.talk.id, true);
+        toast("Saved");
+      } catch (e) { b.disabled = false; toast(e.message); }
+    };
+    const guarded = fn => () => { if (leaveEditOk()) fn(); };
+    wrap.querySelectorAll("[data-nav]").forEach(b =>
+      (b.onclick = guarded(() => go(S.slide + Number(b.dataset.nav)))));
+    wrap.querySelectorAll(".tk-dot").forEach(d =>
+      (d.onclick = guarded(() => go(Number(d.dataset.i)))));
+    wrap.querySelector("[data-add]").onclick = guarded(() => addSlideAfter(S.slide));
+    wrap.querySelector("[data-del]").onclick = guarded(() => deleteSlideAt(S.slide));
+    return wrap;
   }
 
   function renderSheet() {
@@ -1189,6 +1370,7 @@ mark.tk-anno{background:color-mix(in srgb,var(--kc,var(--accent)) 26%,transparen
     if (S.onView) S.onView(S.view);
     closePicker();
     clearPending();
+    destroyEditor();
     document.querySelectorAll(".tk-modal").forEach(x => x.remove());
     const top = root.querySelector(".tk-top");
     const body = root.querySelector(".tk-body");
@@ -1205,13 +1387,23 @@ mark.tk-anno{background:color-mix(in srgb,var(--kc,var(--accent)) 26%,transparen
       // so a "back to slides" link would be a second door to a room you are already standing in.
       top.innerHTML = `<div class="tk-crumb">
           ${S.view === "sheet" ? "" : `<span class="back" data-sheet="1">all slides</span>`}
-          <span class="dim">${S.view === "sheet" ? "" : " · "}${esc(t.date)} · ${esc(t.title)}</span></div>`;
+          <span class="dim">${S.view === "sheet" ? "" : " · "}${esc(t.date)} · ${esc(t.title)}</span></div>
+        <span class="tk-sp"></span>
+        ${S.view === "deck" ? `<button data-editdeck="1" class="${S.edit ? "pri" : ""}"
+          title="edit this slide's markdown by hand">${S.edit ? "✕ stop editing" : "✎ edit"}</button>` : ""}`;
       body.append(S.view === "sheet" ? renderSheet() : renderDeck());
     }
     const on = (sel, fn) => { const b = top.querySelector(sel); if (b) b.onclick = fn; };
     on("[data-close]", close);
     on("[data-back]", loadHome);
-    on("[data-sheet]", () => { S.view = S.view === "sheet" ? "deck" : "sheet"; render(); });
+    on("[data-sheet]", () => {
+      if (S.edit && !leaveEditOk()) return;
+      S.edit = false; S.view = S.view === "sheet" ? "deck" : "sheet"; render();
+    });
+    on("[data-editdeck]", () => {
+      if (S.edit && !leaveEditOk()) return;
+      S.edit = !S.edit; render();
+    });
     if (S.history !== null && S.history !== undefined && S.view === "deck") renderHistory();
   }
 
@@ -1222,9 +1414,11 @@ mark.tk-anno{background:color-mix(in srgb,var(--kc,var(--accent)) 26%,transparen
       if (document.querySelector(".tk-modal")) {
         document.querySelectorAll(".tk-modal").forEach(x => x.remove()); S.history = null; return;
       }
+      if (S.edit) { if (leaveEditOk()) { S.edit = false; render(); } return; }
       if (S.view === "deck" || S.view === "sheet") loadHome();
       return;
     }
+    if (S.edit) return;   // the editor owns every key, including the arrows
     if (/INPUT|TEXTAREA/.test((document.activeElement || {}).tagName || "")) return;
     if (S.view !== "deck") return;
     if (e.key === "ArrowRight") go(S.slide + 1);

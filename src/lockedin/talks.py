@@ -466,6 +466,214 @@ def revise_slide(slug: str, talk_id: str, slide: int, *, body: str, why: str,
 
 
 # --------------------------------------------------------------------------- #
+# Manual editing (the human's pen)
+# --------------------------------------------------------------------------- #
+# A slide is agent-authored, but the deck is a conversation — and sometimes the fastest reply
+# is to edit the slide yourself. Manual editing shows the slide's markdown with every open mark
+# materialised as a `\comment{id}{...}` wrapper, exactly the syntax report pages use, so the
+# text a mark points at is visible and *moves with your edit* instead of silently orphaning.
+# The wrappers exist only in the editing surface: storage stays quote-anchored, which is what
+# the agent-facing feedback file is built from.
+_WRAP_TOKEN = "\\comment{"
+_WRAP_ID = re.compile(r"[A-Za-z0-9_-]+\Z")
+
+
+def _parse_wrappers(text: str) -> tuple[str, list[dict]]:
+    r"""Strip `\comment{id}{body}` wrappers; return (clean_text, [{id, body, start}]).
+
+    `start` is the body's offset in the *clean* text, so the caller can recompute the
+    prefix/suffix context for exactly the occurrence the wrapper marked — `str.find` would
+    quietly pick the first repeat instead. Malformed wrappers are left in the text untouched:
+    an editor surface must never eat characters it merely failed to understand.
+    """
+    out: list[str] = []
+    found: list[dict] = []
+    i, clean_len = 0, 0
+    while True:
+        j = text.find(_WRAP_TOKEN, i)
+        if j < 0:
+            out.append(text[i:])
+            break
+        out.append(text[i:j])
+        clean_len += j - i
+        id_start = j + len(_WRAP_TOKEN)
+        id_end = text.find("}", id_start)
+        nid = text[id_start:id_end] if id_end > 0 else ""
+        if id_end < 0 or not _WRAP_ID.match(nid) or text[id_end + 1:id_end + 2] != "{":
+            out.append(text[j:id_start])
+            clean_len += id_start - j
+            i = id_start
+            continue
+        depth, k = 1, id_end + 2
+        while k < len(text) and depth:
+            if text[k] == "{":
+                depth += 1
+            elif text[k] == "}":
+                depth -= 1
+            if depth:
+                k += 1
+        if depth:                       # unclosed — leave the raw text alone
+            out.append(text[j:id_start])
+            clean_len += id_start - j
+            i = id_start
+            continue
+        body = text[id_end + 2:k]
+        found.append({"id": nid, "body": body, "start": clean_len})
+        out.append(body)
+        clean_len += len(body)
+        i = k + 1
+    return "".join(out), found
+
+
+def _wrap_notes(source: str, notes: list[dict]) -> str:
+    r"""Inject `\comment{id}{quote}` at each note's anchor. Overlaps keep the first mark only."""
+    spans = []
+    for n in notes:
+        quote = n.get("quote") or ""
+        if not quote:
+            continue
+        pos = resolve_anchor(source, n)
+        if pos >= 0:
+            spans.append((pos, pos + len(quote), n["id"]))
+    spans.sort()
+    kept, last_end = [], -1
+    for span in spans:
+        if span[0] >= last_end:
+            kept.append(span)
+            last_end = span[1]
+    out = source
+    for start, end, nid in reversed(kept):
+        out = f"{out[:start]}\\comment{{{nid}}}{{{out[start:end]}}}{out[end:]}"
+    return out
+
+
+def slide_edit_source(slug: str, talk_id: str, slides: list[dict], notes: dict, index: int) -> str:
+    """The text the editor opens: this slide's markdown, marks materialised as wrappers."""
+    mine = [n for n in notes.values() if n.get("slide") == index and n.get("quote")]
+    wrapped = _wrap_notes(slides[index]["source"], mine)
+    return _ATTR.sub("", wrapped, count=1).lstrip("\n")
+
+
+def apply_slide_source(slug: str, talk_id: str, index: int, text: str, *, why: str = "") -> dict:
+    """Save a hand-edited slide, updating every mark whose wrapper came back.
+
+    A changed slide is versioned and snapshotted exactly like an agent revision — the history
+    must not care whose hand held the pen. Marks whose wrappers survive get their quote and
+    context re-anchored to the new text; a wrapper the editor deleted leaves its mark alone, to
+    orphan loudly if its text is truly gone.
+    """
+    clean, wraps = _parse_wrappers(str(text or "").replace("\r\n", "\n"))
+    if SEPARATOR.search(clean):
+        raise ValueError("a slide cannot contain a --- separator line; use add slide instead")
+    if not clean.strip():
+        raise ValueError("the slide is empty — delete it instead")
+
+    slides = parse_deck(read_deck(slug, talk_id))
+    if not 0 <= index < len(slides):
+        raise IndexError(index)
+    old = slides[index]
+    head = f"<!-- slide: kind={old['kind']}, date={old.get('date', '')}, v={old['version']} -->"
+    parsed = parse_deck(head + "\n" + clean.strip("\n") + "\n")
+    if not parsed:
+        raise ValueError("could not parse the slide")
+    new = parsed[0]
+
+    changed = (new["title"], new["sub"], new["body"]) != (old["title"], old["sub"], old["body"])
+    if changed:
+        hist = load_history(slug, talk_id)
+        hist.setdefault("versions", []).append({
+            "slide": index, "version": old["version"], "date": old.get("date", ""),
+            "title": old["title"], "sub": old["sub"], "body": old["body"],
+            "why": why.strip() or "edited by hand", "marks": [],
+            "superseded_at": _now_iso(),
+        })
+        _write_yaml(paths.bubble_talk_history_path(slug, talk_id), hist)
+        new["version"] = old["version"] + 1
+        new["date"] = _today()
+
+    slides[index] = {**old, **{k: new[k] for k in ("title", "sub", "body", "version", "date")}}
+    _atomic_write(paths.bubble_talk_path(slug, talk_id), render_deck(slides))
+
+    if wraps:
+        data = load_notes(slug, talk_id)
+        for w in wraps:
+            note = data.get("notes", {}).get(w["id"])
+            if note is None or note.get("slide") != index:
+                continue
+            start, body = w["start"], w["body"]
+            note["quote"] = body
+            note["prefix"] = clean[max(0, start - CONTEXT):start]
+            note["suffix"] = clean[start + len(body):start + len(body) + CONTEXT]
+        save_notes(slug, talk_id, data)
+
+    # Renaming the first slide by hand renames the talk — the registry title exists so agent
+    # pushes cannot rename it out from under you, not so your own rename is ignored.
+    if index == 0 and changed and new["title"] != old["title"]:
+        idx = load_index(slug)
+        for rec in idx.get("talks", []):
+            if rec.get("id") == talk_id and rec.get("title") in ("", old["title"]):
+                rec["title"] = new["title"]
+                if rec.get("intent") in ("", old["sub"]):
+                    rec["intent"] = new["sub"]
+                save_index(slug, idx)
+                break
+    return slides[index]
+
+
+def _shift_slide_refs(slug: str, talk_id: str, at: int, delta: int) -> None:
+    """Re-point notes and history after a slide is inserted (+1) or removed (-1) at `at`."""
+    notes = load_notes(slug, talk_id)
+    moved = False
+    for n in notes.get("notes", {}).values():
+        if n.get("slide", 0) >= at:
+            n["slide"] = n["slide"] + delta
+            moved = True
+    if moved:
+        save_notes(slug, talk_id, notes)
+    hist = load_history(slug, talk_id)
+    moved = False
+    for v in hist.get("versions", []):
+        if v.get("slide", 0) >= at:
+            v["slide"] = v["slide"] + delta
+            moved = True
+    if moved:
+        _write_yaml(paths.bubble_talk_history_path(slug, talk_id), hist)
+
+
+def insert_slide(slug: str, talk_id: str, after: int) -> int:
+    """Insert a blank slide after `after` (−1 for the front). Returns the new index."""
+    slides = parse_deck(read_deck(slug, talk_id))
+    pos = max(0, min(len(slides), after + 1))
+    slides.insert(pos, {"index": pos, "kind": "setup", "date": _today(), "version": 1,
+                        "title": "New slide", "sub": "", "body": "", "source": ""})
+    _shift_slide_refs(slug, talk_id, pos, +1)
+    _atomic_write(paths.bubble_talk_path(slug, talk_id), render_deck(slides))
+    return pos
+
+
+def delete_slide(slug: str, talk_id: str, index: int) -> bool:
+    """Remove one slide — and with it every mark, snapshot and history entry it carried."""
+    slides = parse_deck(read_deck(slug, talk_id))
+    if not 0 <= index < len(slides):
+        return False
+    del slides[index]
+    _atomic_write(paths.bubble_talk_path(slug, talk_id), render_deck(slides))
+
+    notes = load_notes(slug, talk_id)
+    for nid, n in list(notes.get("notes", {}).items()):
+        if n.get("slide") == index:
+            del notes["notes"][nid]
+            note_image_path(slug, talk_id, nid).unlink(missing_ok=True)
+    save_notes(slug, talk_id, notes)
+
+    hist = load_history(slug, talk_id)
+    hist["versions"] = [v for v in hist.get("versions", []) if v.get("slide") != index]
+    _write_yaml(paths.bubble_talk_history_path(slug, talk_id), hist)
+    _shift_slide_refs(slug, talk_id, index, -1)
+    return True
+
+
+# --------------------------------------------------------------------------- #
 # Views
 # --------------------------------------------------------------------------- #
 def talk_detail(slug: str, talk_id: str) -> dict:
@@ -485,6 +693,9 @@ def talk_detail(slug: str, talk_id: str) -> dict:
 
     for s in slides:
         s["history"] = [h for h in hist if h.get("slide") == s["index"]]
+        # What the ✎ edit toggle opens: the slide's own markdown, with every open mark
+        # materialised as the same `\comment{id}{...}` wrapper report pages use.
+        s["edit_source"] = slide_edit_source(slug, talk_id, slides, notes, s["index"])
     return {"talk": rec, "slides": slides, "notes": out_notes,
             "open": len(out_notes)}
 

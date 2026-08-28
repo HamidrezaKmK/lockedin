@@ -748,6 +748,22 @@ def revise_talk_slide(home: Path, slug: str, talk_id: str, slide: int, **kw) -> 
         return talks.revise_slide(slug, talk_id, slide, **kw)
 
 
+def apply_talk_slide_source(home: Path, slug: str, talk_id: str, slide: int, text: str,
+                            why: str = "") -> dict:
+    with paths.use_root(home):
+        return talks.apply_slide_source(slug, talk_id, slide, text, why=why)
+
+
+def insert_talk_slide(home: Path, slug: str, talk_id: str, after: int) -> int:
+    with paths.use_root(home):
+        return talks.insert_slide(slug, talk_id, after)
+
+
+def delete_talk_slide(home: Path, slug: str, talk_id: str, slide: int) -> bool:
+    with paths.use_root(home):
+        return talks.delete_slide(slug, talk_id, slide)
+
+
 def save_talk_note_image(home: Path, slug: str, talk_id: str, note_id: str, data: bytes) -> str:
     with paths.use_root(home):
         return talks.save_note_image(slug, talk_id, note_id, data)
