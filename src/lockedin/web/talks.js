@@ -200,21 +200,23 @@ mark.tk-anno{background:color-mix(in srgb,var(--kc,var(--accent)) 26%,transparen
 .tk-gh{font:500 10.5px var(--font-ui);letter-spacing:.18em;text-transform:uppercase;color:var(--muted);
   display:flex;align-items:center;gap:8px}
 .tk-note{border:1px solid var(--line);border-left:4px solid var(--kc);border-radius:11px;
-  background:var(--panel);padding:18px 18px 20px;cursor:pointer}
+  background:var(--panel);padding:18px 18px 20px;cursor:pointer;overflow:hidden;min-width:0}
 .tk-note:hover{border-color:var(--accent);border-left-color:var(--kc)}
 .tk-note.orphan{border-style:dashed}
 .tk-note .hd{display:flex;align-items:center;gap:7px;margin-bottom:14px;font-size:11.5px;color:var(--muted)}
 .tk-badge{font:500 10.5px var(--font-mono);padding:2px 7px;border-radius:999px;letter-spacing:.02em;
   background:color-mix(in srgb,var(--kc) 20%,transparent);color:var(--kc)}
 .tk-note .qt{font-family:var(--font-reading);font-size:12.5px;color:var(--muted);
-  border-left:2px solid var(--line);padding-left:11px;margin-bottom:16px;font-style:italic}
+  border-left:2px solid var(--line);padding-left:11px;margin-bottom:16px;font-style:italic;
+  overflow-wrap:anywhere;word-break:break-word;hyphens:none;min-width:0}
 .tk-turn+.tk-turn{margin-top:16px}
 .tk-turn .tk-who{font:500 11px var(--font-ui);color:var(--muted);margin-bottom:5px}
 .tk-turn.agent .tk-who{color:var(--accent)}
-.tk-turn .tk-said{font-size:13.5px;line-height:1.5}
+.tk-turn .tk-said{font-size:13.5px;line-height:1.5;overflow-wrap:anywhere;word-break:break-word;
+  min-width:0}
 .tk-turn.agent .tk-said{color:var(--muted);border-left:2px solid
   color-mix(in srgb,var(--accent) 45%,transparent);padding-left:10px}
-.tk-note .tx{font-size:13.5px;line-height:1.45}
+.tk-note .tx{font-size:13.5px;line-height:1.45;overflow-wrap:anywhere;word-break:break-word}
 .tk-note .tk-id{margin-left:auto;font:400 10px var(--font-mono);opacity:.55}
 .tk-note .tk-dim{opacity:.5;font-style:italic}
 .tk-note .tk-acts{display:flex;gap:8px;margin-top:18px}
@@ -249,7 +251,7 @@ mark.tk-anno{background:color-mix(in srgb,var(--kc,var(--accent)) 26%,transparen
 .tk-kb.sel .l{color:var(--kc)}
 .tk-pop .qt{font-family:var(--font-reading);font-size:12.5px;color:var(--muted);
   border-left:2px solid var(--accent);padding-left:8px;margin:0 0 9px;font-style:italic;
-  max-height:46px;overflow:hidden}
+  max-height:46px;overflow:hidden;overflow-wrap:anywhere;word-break:break-word}
 .tk-pop textarea{width:100%;height:54px;background:var(--panel);border:1px solid var(--line);
   border-radius:9px;color:var(--ink);font:inherit;font-size:13px;padding:8px;resize:none;outline:none}
 .tk-pop .row{display:flex;gap:8px;margin-top:9px;align-items:center}

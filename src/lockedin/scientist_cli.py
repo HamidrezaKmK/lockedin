@@ -1081,10 +1081,23 @@ class ProjectSync:
         (folder / (stem + ".patch")).write_text(patch)
 
     def _report_paths(self) -> list[str]:
+        """Local report content this sync may carry: pages, flat figures, and chalk-talk decks.
+
+        A deck an agent wrote was scanned nowhere, so it stayed local forever while the server
+        would happily have taken it — writing one file is the whole documented way to create a
+        talk. The generated sidecars beside a deck are excluded: they are the server's.
+        """
         out = []
-        for base in (self.root / "reports" / "pages", self.root / "reports" / "assets"):
-            if base.exists():
-                out.extend(p.relative_to(self.root).as_posix() for p in base.iterdir() if p.is_file() and not p.is_symlink())
+        for base in (self.root / "reports" / "pages", self.root / "reports" / "assets",
+                     self.root / "reports" / "talks"):
+            if not base.exists():
+                continue
+            for p in base.iterdir():
+                if not p.is_file() or p.is_symlink():
+                    continue
+                if base.name == "talks" and not p.name.endswith(".md"):
+                    continue
+                out.append(p.relative_to(self.root).as_posix())
         return sorted(out)
 
     def unsynced_figures(self) -> list[str]:
@@ -1140,7 +1153,8 @@ class ProjectSync:
             if rel not in remote_data: remote_data.update(self._read_remote([rel]))
             return remote_data.get(rel)
 
-        report_remote = {r for r in remote if r.startswith("reports/pages/") or r.startswith("reports/assets/")}
+        pushable = ("reports/pages/", "reports/assets/", "reports/talks/")
+        report_remote = {r for r in remote if r.startswith(pushable)}
         report_local = set(self._report_paths())
         deletes, writes, creates = [], [], []
         for rel, old in list(tracked.items()):
@@ -1230,7 +1244,7 @@ class ProjectSync:
                         try: os.chmod(path, 0o755); path.rmdir()
                         except OSError: pass
         for rel in list(tracked):
-            if rel not in remote and not (rel.startswith("reports/pages/") or rel.startswith("reports/assets/")):
+            if rel not in remote and not rel.startswith(pushable):
                 path = self._local(rel)
                 try: os.chmod(path, 0o644); path.unlink(missing_ok=True)
                 except OSError: pass

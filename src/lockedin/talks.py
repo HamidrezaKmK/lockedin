@@ -218,7 +218,9 @@ def register_deck(slug: str, talk_id: str) -> dict:
     idx = load_index(slug)
     for rec in idx.setdefault("talks", []):
         if rec.get("id") == talk_id:
-            rec["title"] = title
+            # Refresh only what is still blank. Re-deriving the title on every push renamed a
+            # talk to its first slide's heading each time an agent touched the deck.
+            rec["title"] = rec.get("title") or title
             rec["intent"] = rec.get("intent") or first.get("sub", "")
             rec["kicker"] = rec.get("kicker") or first.get("kind", "")
             save_index(slug, idx)

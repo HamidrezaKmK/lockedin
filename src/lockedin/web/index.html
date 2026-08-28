@@ -203,6 +203,9 @@
     border-color:var(--accent2);box-shadow:0 0 0 3px color-mix(in srgb, var(--accent2) 18%, transparent)}
   button.danger{background:transparent;border-color:var(--bad);color:var(--bad)}
   button.danger:hover{background:rgba(255,107,107,.08);border-color:var(--bad)}
+  #helpTabs{display:flex;gap:0;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;
+    border-bottom:1px solid var(--line);flex-shrink:0;padding:0 12px;scrollbar-width:thin}
+  #helpTabs>*{flex:0 0 auto;white-space:nowrap}
   input,textarea,select{font:inherit;background:var(--panel);color:var(--ink);
          border:1px solid var(--line);border-radius:8px;padding:8px 10px;width:100%;
          transition:border-color .15s,box-shadow .15s}
@@ -1165,7 +1168,7 @@
   <div class="diffbox col" style="width:min(900px,97vw);max-height:92vh;padding:0;gap:0;overflow:hidden">
     <div class="hd" style="padding:10px 16px;flex-shrink:0;display:flex;align-items:center;gap:8px"><b>User Guide</b><span class="spacer"></span>
       <button class="ghost small" id="helpClose">✕</button></div>
-    <div id="helpTabs" style="display:flex;gap:0;flex-wrap:wrap;border-bottom:1px solid var(--line);flex-shrink:0;padding:0 12px"></div>
+    <div id="helpTabs"></div>
     <div class="diffbody preview" id="helpBody" style="font-family:inherit;font-size:14px;padding:20px 24px;overflow-y:auto;flex:1;min-height:0"></div>
   </div>
 </div>

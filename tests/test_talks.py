@@ -306,6 +306,34 @@ class SlideCaptionTests(unittest.TestCase):
         self.assertLess(js.index("@@LICAP"), js.index("stashMath(guarded)"))
 
 
+class ClientScanTests(unittest.TestCase):
+    def test_the_client_scans_and_pushes_a_locally_written_deck(self):
+        """Writing one file is the documented way to create a talk, and it did not work.
+
+        The client's notion of pushable report content predated chalk talks, so a deck an agent
+        wrote was never scanned — it stayed local forever while the server would have taken it.
+        """
+        from lockedin import scientist_cli
+        src = Path(scientist_cli.__file__).read_text()
+        scan = src[src.index("def _report_paths"):src.index("def unsynced_figures")]
+        self.assertIn('"talks"', scan)
+        self.assertIn('endswith(".md")', scan)   # sidecars beside a deck stay the server's
+        self.assertIn('"reports/talks/"', src)   # and the push/prune filters know about them
+
+
+class CardOverflowTests(unittest.TestCase):
+    def test_a_quoted_formula_can_break_inside_its_card(self):
+        """Raw LaTeX has almost no break opportunities and ran out of the card.
+
+        The quote is deliberately shown unrendered — rendering it would stop it looking like
+        the text it anchors to — so it must be allowed to break anywhere instead.
+        """
+        js = (Path(__file__).resolve().parents[1] / "src/lockedin/web/talks.js").read_text()
+        block = js[js.index(".tk-note .qt{"):js.index(".tk-note .qt{") + 320]
+        self.assertIn("overflow-wrap:anywhere", block)
+        self.assertIn("word-break:break-word", block)
+
+
 class RouteSurfaceTests(unittest.TestCase):
     def test_every_talk_route_the_ui_calls_exists(self):
         """Two cleanups have now silently deleted a route by cutting a source range.
