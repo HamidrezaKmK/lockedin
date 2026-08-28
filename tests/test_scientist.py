@@ -829,20 +829,23 @@ class ScientistProfileAndWorkersTest(unittest.TestCase):
             login.assert_called_once_with(ACCOUNT["server"])
             self.assertIn("could not be used", out)
 
-    def test_connect_reuses_an_existing_account_and_keeps_its_workspace(self):
-        """Re-running `login` would reset workspace_id to personal and retarget other projects."""
+    def test_connect_ticket_refreshes_an_existing_account_and_keeps_its_workspace(self):
+        """A fresh setup ticket heals a stale token without retargeting other projects."""
         saved = dict(ACCOUNT); saved["workspace_id"] = "chosen-elsewhere"
+        granted = {"user": ACCOUNT["user"], "token": "li_sc_refreshed", "workspace_id": "lab", "bubble": "work"}
         with temp_data_home(), tempfile.TemporaryDirectory() as directory, patch.object(
-                scientist_cli, "request") as request, patch.object(
+                scientist_cli, "request", return_value=granted) as request, patch.object(
                 scientist_cli, "account_request", return_value={"files": []}), patch.object(
                 scientist_cli, "login") as login, patch.object(
                 scientist_cli.shutil, "which", return_value=None), patch.object(
                 scientist_cli, "start_sync") as start:
             scientist_cli.save_config({"accounts": [saved]})
             self._connect(ticket="tkt", project_path=directory)
-            login.assert_not_called(); request.assert_not_called()
+            login.assert_not_called(); request.assert_called_once()
             # The profile is device-global: connecting one project must not retarget the rest.
-            self.assertEqual(scientist_cli.load_config()["accounts"][0]["workspace_id"], "chosen-elsewhere")
+            stored = scientist_cli.load_config()["accounts"][0]
+            self.assertEqual(stored["workspace_id"], "chosen-elsewhere")
+            self.assertEqual(stored["token"], "li_sc_refreshed")
             self.assertEqual(start.call_args.args[0]["workspace_id"], "lab")
 
     def test_connect_resyncs_a_project_already_bound_to_the_same_bubble(self):

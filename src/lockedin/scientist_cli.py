@@ -1475,30 +1475,38 @@ VENDOR_INVOCATION = {
 def _connect_account(server: str, workspace_id: str, ticket: str) -> dict:
     """Authorize this computer for ``server``, preferring the ticket the web page already signed.
 
-    Order matters. An existing account is used as-is — re-running `login` would reset its
-    ``workspace_id`` to personal and silently retarget the user's other projects. Only when there
-    is none do we spend the ticket, and only when that fails do we fall back to the browser.
+    A setup ticket is freshly minted by the page and is therefore a better credential than a
+    cached account, which may have been revoked or may belong to an earlier local server.  Spend
+    it even when the profile already has this server, but retain that account's selected workspace
+    so connecting one project never retargets the user's other projects.  When no ticket was
+    supplied an existing account remains the inexpensive normal path.
     """
     existing = next((item for item in load_config().get("accounts", [])
                      if item.get("server") == server), None)
-    if existing:
-        print(green("✓") + f" Already authorized as {bold(existing['user'])} on {dim(server)}")
-    elif ticket:
+    if ticket:
         try:
             granted = request(server, "GET", f"/api/scientist/v2/setup/{ticket}")
         except RuntimeError as exc:
-            # Expired, already spent, or the server restarted. The browser flow still works.
+            # Expired, already spent, or the server restarted. A usable cached account avoids
+            # an unnecessary browser detour; otherwise the browser flow still works.
             print(orange("•") + f" That setup link could not be used ({exc}).")
-            login(server)
+            if existing:
+                print(green("✓") + f" Already authorized as {bold(existing['user'])} on {dim(server)}")
+            else:
+                login(server)
         else:
             cfg = load_config(); accounts = cfg.setdefault("accounts", [])
+            prior = next((item for item in accounts
+                          if item.get("server") == server and item.get("user") == granted["user"]), None)
             accounts[:] = [a for a in accounts
                            if not (a.get("server") == server and a.get("user") == granted["user"])]
             accounts.append({"server": server, "user": granted["user"], "token": granted["token"],
-                             "workspace_id": granted.get("workspace_id", "")})
+                             "workspace_id": (prior or {}).get("workspace_id", granted.get("workspace_id", ""))})
             save_config(cfg)
-            print(green("✓") + f" Authorized {bold(granted['user'])} on {dim(server)}"
+            print(green("✓") + f" Refreshed authorization for {bold(granted['user'])} on {dim(server)}"
                   + dim(" (no browser needed)"))
+    elif existing:
+        print(green("✓") + f" Already authorized as {bold(existing['user'])} on {dim(server)}")
     else:
         login(server)
     account = next((item for item in load_config().get("accounts", [])
