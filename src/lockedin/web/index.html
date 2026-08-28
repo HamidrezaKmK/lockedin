@@ -5570,7 +5570,7 @@
     try{localStorage.setItem("lockedin:panes:"+S.bubble,
       (S.paneLeft?"L":"")+(S.paneRight?"R":""));}catch(e){}
     applyPanes();
-    updatePreview();          // marks are painted only when their column is open
+    updatePreview();          // repaint after the layout changes; marks are always available
     if(S.editor&&S.editor.setHeight)try{S.editor.setHeight("100%");}catch(e){}
   }
   function snapshotReviewSelection(){
@@ -5646,7 +5646,13 @@
     if(!S.bubble||!S.page||S.reviewMutating)return;
     const bubble=S.bubble,page=S.page,epoch=S.reviewMutationEpoch||0;
     try{const r=await api("/api/bubbles/"+bubble+"/pages/"+page+"/comments");
-      if(S.bubble===bubble&&S.page===page&&!S.reviewMutating&&epoch===(S.reviewMutationEpoch||0)){S.comments=r.threads||[];S.reviewCommentsLoaded=true;refreshCommentSourceState();scheduleEditorCommentHighlights();renderReview();if(S.reviewMarkupError)updatePreview();}}
+      if(S.bubble===bubble&&S.page===page&&!S.reviewMutating&&epoch===(S.reviewMutationEpoch||0)){
+        S.comments=r.threads||[];S.reviewCommentsLoaded=true;refreshCommentSourceState();
+        scheduleEditorCommentHighlights();renderReview();
+        // The first preview is rendered before this asynchronous fetch completes. Rebuild it
+        // now so the Range painter sees the threads immediately, not after a pane toggle.
+        updatePreview();
+      }}
     catch(e){}
   }
   function captureReviewEditorState(){

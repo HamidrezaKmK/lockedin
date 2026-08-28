@@ -246,6 +246,7 @@ class AestheticsConfigTests(unittest.TestCase):
         # them, which also supports crossing comments that HTML <mark> tags cannot represent.
         self.assertIn("s=stripCommentMarkers(s);", source)
         self.assertIn("window.LockedInMarks.paint(wrap,S.comments||[]);", source)
+        self.assertIn("now so the Range painter sees the threads immediately", source)
         self.assertIn('Cannot save: "+error.message', source)
         self.assertNotIn("function addInlineCommentMarker", source)
         self.assertNotIn("await doSave({}); await loadComments()", source)
