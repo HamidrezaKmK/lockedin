@@ -39,14 +39,14 @@ DEFAULT_LANDING: dict[str, Any] = {
         "bullets": [],
     },
     "workflow": {
-        "title": "Focus on better communication",
-        "intro": "Remove the walls of text.",
+        "title": "From Paper Pile to Working Theory",
+        "intro": "Follows the day-to-day work of a researcher",
         "steps": [
-            {"number": "01", "title": "Set up a bubble", "text": "One place for the idea: papers, pages, figures, talks."},
-            {"number": "02", "title": "Set a goal", "text": "One line every agent reads first, every session."},
-            {"number": "03", "title": "Write the document", "text": "Ongoing, together — the record that lasts is not the thread."},
-            {"number": "04", "title": "Get chalk talks", "text": "The parts that need your judgement arrive as slides."},
-            {"number": "05", "title": "Give feedback", "text": "Five marks, drawings, hand edits — on the exact line."},
+            {"number": "01", "title": "Library", "text": "Move in PDFs, papers and resources"},
+            {"number": "02", "title": "Setup a Goal", "text": "Creat a Bubble, which is an idea and an abstract with a goal"},
+            {"number": "03", "title": "Link Documents", "text": "Link papers and resources alongside Overleaf"},
+            {"number": "04", "title": "Setup Chalk Talks", "text": "Meetup with your agent every once in a while for a round of creative-thinking"},
+            {"number": "05", "title": "Feedback Loop", "text": "Give feedback, improve, communicate clearly"},
         ],
     },
     "components": {

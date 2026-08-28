@@ -32,6 +32,8 @@ class LandingConfigTest(unittest.TestCase):
         self.assertEqual(
             cfg["why"]["text"],
             "There are better modes of expression for creative thinking than chats, Lockedin aims to fix that.")
+        self.assertEqual(cfg["workflow"]["title"], "From Paper Pile to Working Theory")
+        self.assertEqual(cfg["workflow"]["steps"][0]["title"], "Library")
         self.assertGreaterEqual(len(cfg["components"]["features"]), 1)
         # The installer cards were removed from the defaults as clutter; the 🤖 one-liner
         # in the steps is the connect story now.
