@@ -22,7 +22,7 @@ DEFAULT_LANDING: dict[str, Any] = {
         "title_accent": "locked",
         "title_rest": "in",
         "lede": "AI should not be limited to chat threads.",
-        "copy": "lockedin was built out of my fascination — and frustration — working with AI for research. More often than not, my sessions turned into walls of text and jargon that neither I nor the agent could follow. Rather than automating research, this focuses on making agents better collaborators and enriching how they express their thinking.",
+        "copy": "lockedin was built out of my fascination — and frustration — working with AI for research. More often than not, my sessions turned into walls of text and jargon that neither I nor the agent could follow. Rather than automating research, Lockedin focuses on making agents better collaborators and enriching how they express their thinking.",
         "points": [
             {"title": "Chalk talks", "text": "Dated decks, one idea per slide, whenever something needs your judgement."},
             {"title": "Feedback loop", "text": "Put markers and annotations on the work, the way a PI does for their grad student."},
