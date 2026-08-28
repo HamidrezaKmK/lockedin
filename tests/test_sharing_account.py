@@ -131,6 +131,17 @@ class Account(unittest.TestCase):
                 self.assertEqual(login.status_code, 403)
                 self.assertEqual(login.json()["detail"], server.DEMO_ACCESS_MESSAGE)
 
+                self.assertEqual(client.post(
+                    "/api/login", json={"username": "owner", "password": "pw12"}).status_code, 200)
+                approved = client.put(
+                    "/api/admin/users/alice/approval", json={"approved": True})
+                self.assertEqual(approved.status_code, 200)
+                self.assertTrue(next(u for u in approved.json()["users"]
+                                     if u["username"] == "alice")["approved"])
+                client.post("/api/logout")
+                self.assertEqual(client.post(
+                    "/api/login", json={"username": "alice", "password": "pw12"}).status_code, 200)
+
     def test_qwen_requires_premium_account(self):
         with temp_base():
             from lockedin import auth, models, paths

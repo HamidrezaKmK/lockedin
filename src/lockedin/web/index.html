@@ -2778,6 +2778,14 @@
             }catch(e){ toast(e.message); }
           }},u.premium?"Remove premium":"Upgrade to premium"));
         if(u.username!==S.user){
+          row.append(el("button",{class:u.approved?"ghost small":"primary small",onclick:async()=>{
+            try{
+              await api("/api/admin/users/"+encodeURIComponent(u.username)+"/approval",
+                {method:"PUT",body:JSON.stringify({approved:!u.approved})});
+              renderUserAccess(main);
+              toast((u.approved?"Revoked demo access for ":"Approved demo access for ")+u.username);
+            }catch(e){ toast(e.message); }
+          }},u.approved?"Revoke access":"Approve demo access"));
           row.append(el("button",{class:"danger small",onclick:async()=>{
             const ok=prompt("Delete @"+u.username+" permanently? Type the username to confirm.");
             if(ok!==u.username)return;
