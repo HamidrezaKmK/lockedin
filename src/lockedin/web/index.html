@@ -283,6 +283,7 @@
   .feature-icon{width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;
     background:color-mix(in srgb,var(--accent) 13%,var(--panel2));border:1px solid color-mix(in srgb,var(--accent) 30%,var(--line));
     margin-bottom:12px}
+  .feature-icon img{display:block;width:25px;height:25px;object-fit:contain}
   .open-source-panel{position:relative;overflow:hidden;display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,.8fr);gap:26px;align-items:center;
     background:linear-gradient(135deg,color-mix(in srgb,var(--accent2) 13%,var(--panel)),var(--panel));border:1px solid color-mix(in srgb,var(--accent2) 35%,var(--line));
     border-radius:14px;padding:clamp(20px,3vw,30px);box-shadow:var(--shadow)}
@@ -1140,8 +1141,8 @@
           <div class="feature-card"><div class="feature-icon">📚</div><b>Library</b><br><span>Papers with notes, tags and BibTeX — indexed for you and for the agent.</span></div>
           <div class="feature-card"><div class="feature-icon">🫧</div><b>Idea bubbles</b><br><span>One idea: its pages, figures, talks and open questions together.</span></div>
           <div class="feature-card"><div class="feature-icon">💬</div><b>Chalk talks</b><br><span>Dated decks you mark up instead of replying in prose.</span></div>
-          <div class="feature-card"><div class="feature-icon">🔗</div><b>Overleaf</b><br><span>The manuscript stays bound to the notes it grew from.</span></div>
-          <div class="feature-card"><div class="feature-icon">🗨️</div><b>Slack</b><br><span>Papers and TODOs from the channel your group already lives in.</span></div>
+          <div class="feature-card"><div class="feature-icon"><img src="/brand/overleaf.svg" alt="" aria-hidden="true"></div><b>Overleaf</b><br><span>The manuscript stays bound to the notes it grew from.</span></div>
+          <div class="feature-card"><div class="feature-icon"><img src="/brand/slack.svg" alt="" aria-hidden="true"></div><b>Slack</b><br><span>Papers and TODOs from the channel your group already lives in.</span></div>
           <div class="feature-card"><div class="feature-icon">📋</div><b>TODOs</b><br><span>Open tasks, referenced from pages GitHub-issue style.</span></div>
         </div>
       </section>
@@ -1459,8 +1460,15 @@
     setText("#components-title",components.title);
     const componentsIntro=$("#components-title")&&$("#components-title").parentElement.querySelector("p");
     if(componentsIntro&&components.intro!=null) componentsIntro.textContent=components.intro;
+    const featureIcon=(f)=>{
+      const name=String(f.title||"").trim().toLowerCase();
+      const icon=el("div",{class:"feature-icon"});
+      if(name==="overleaf"||name==="slack") icon.append(el("img",{src:"/brand/"+name+".svg",alt:"","aria-hidden":"true"}));
+      else icon.append(f.icon||"");
+      return icon;
+    };
     cards(".feature-grid",components.features,(f)=>el("div",{class:"feature-card"},
-      el("div",{class:"feature-icon"},f.icon||""),
+      featureIcon(f),
       el("b",{},f.title||""),
       el("br"),
       el("span",{},f.text||"")));

@@ -1157,6 +1157,14 @@ def build_app():
         return FileResponse(WEB_DIR / "talks.js", media_type="application/javascript",
                             headers={"Cache-Control": "no-store"})
 
+    @app.get("/brand/{filename}")
+    def brand_asset(filename: str):
+        safe = Path(filename).name
+        if safe != filename or safe not in {"overleaf.svg", "slack.svg"}:
+            raise HTTPException(status_code=404, detail="No such brand asset.")
+        return FileResponse(WEB_DIR / "brand" / safe, media_type="image/svg+xml",
+                            headers={"Cache-Control": "public, max-age=86400"})
+
     @app.get("/api/landing")
     def get_landing():
         # This is deliberately read at request time: landing.yaml is the site's editable public
