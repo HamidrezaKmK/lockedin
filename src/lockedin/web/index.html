@@ -4333,17 +4333,64 @@
     container.append(quick);
   }
 
+  // One button factory for both editors' undo/redo; editorHistoryCmd already targets whichever
+  // editor is active.
+  function editorHistButton(label,title,redo){
+    const b=document.createElement("button");
+    b.type="button"; b.textContent=label; b.title=title;
+    b.style.cssText="font:inherit;font-size:16px;line-height:1;background:none;border:none;color:inherit;cursor:pointer;margin:0;padding:0 2px";
+    b.addEventListener("mousedown",e=>e.preventDefault());
+    b.addEventListener("click",e=>{ e.preventDefault(); editorHistoryCmd(redo); });
+    return b;
+  }
+
+  // The image renderer both editors share: `assets/<name>` is the portable report syntax, and
+  // Toast's preview/WYSIWYG would otherwise resolve it against the site root and 404.
+  function editorImageRenderer(bubbleOf){
+    return {
+      image(node,context){
+        const result=context.origin(), src=String(node.destination||"");
+        const slug=bubbleOf();
+        if(result&&result.attributes&&/^assets\//.test(src)&&slug)
+          result.attributes.src=workspaceUrl("/api/bubbles/"+encodeURIComponent(slug)
+            +"/assets/"+encodeURIComponent(src.slice("assets/".length)));
+        return result;
+      }
+    };
+  }
+
+  // The slide editor is the document's editor pointed at one slide: same Toast UI build, same
+  // color/center/undo tools, same image upload and asset resolution. Only the page-machinery
+  // tools (sync state, visibility) stay behind — a slide has neither.
+  window.LockedInEditor={
+    create(host,opts){
+      opts=opts||{};
+      const bubbleOf=()=>opts.bubble||S.bubble;
+      const ed=new toastui.Editor({
+        el:host, height:opts.height||"100%", theme:"dark", initialEditType:"markdown",
+        previewStyle:"tab", initialValue:opts.initialValue||"", usageStatistics:false,
+        autofocus:false,
+        toolbarItems:[[
+          'heading','bold','italic','code',
+          'image','table',
+          {name:"text-color",tooltip:"Color selected text",el:buildColorTool()},
+          {name:"center-text",tooltip:"Center selected text",el:buildCenterTextTool()},
+          'link','quote','ul','ol',
+          {name:"undo",tooltip:"Undo (Ctrl+Z)",el:editorHistButton("↶","Undo",false)},
+          {name:"redo",tooltip:"Redo (Ctrl+Shift+Z)",el:editorHistButton("↷","Redo",true)}
+        ]],
+        hooks:{ addImageBlobHook:(blob,cb)=>uploadImage(bubbleOf(),blob,cb) },
+        customHTMLRenderer:editorImageRenderer(bubbleOf),
+      });
+      S.slideEd=ed;
+      return { editor:ed,
+               dispose(){ if(S.slideEd===ed)S.slideEd=null; try{ed.destroy();}catch(e){} } };
+    }
+  };
+
   function initEditor(host, initialValue){
     // Toast UI's built-in toolbar accepts custom DOM controls alongside standard items. Keeping
     // the complete sequence here avoids fragile post-construction index insertion.
-    const histBtn=(label,title,redo)=>{
-      const b=document.createElement("button");
-      b.type="button"; b.textContent=label; b.title=title;
-      b.style.cssText="font:inherit;font-size:16px;line-height:1;background:none;border:none;color:inherit;cursor:pointer;margin:0;padding:0 2px";
-      b.addEventListener("mousedown",e=>e.preventDefault());
-      b.addEventListener("click",e=>{ e.preventDefault(); editorHistoryCmd(redo); });
-      return b;
-    };
     S.editor=new toastui.Editor({
       el:host, height:"100%", theme:"dark", initialEditType:"markdown",
       previewStyle:"tab", initialValue, usageStatistics:false,
@@ -4357,22 +4404,11 @@
         'link',
         {name:"page-visibility",tooltip:"Toggle page visibility",el:buildPageVisibilityTool()},
         {name:"hidden-pages",tooltip:"Show hidden pages",el:buildHiddenPagesTool()},
-        {name:"undo",tooltip:"Undo (Ctrl+Z)",el:histBtn("↶","Undo",false)},
-        {name:"redo",tooltip:"Redo (Ctrl+Shift+Z)",el:histBtn("↷","Redo",true)}
+        {name:"undo",tooltip:"Undo (Ctrl+Z)",el:editorHistButton("↶","Undo",false)},
+        {name:"redo",tooltip:"Redo (Ctrl+Shift+Z)",el:editorHistButton("↷","Redo",true)}
       ]],
       hooks:{ addImageBlobHook:(blob,cb)=>uploadImage(S.bubble,blob,cb) },
-      // Toast UI's own preview/WYSIWYG render `assets/<name>` relative to the site root, so
-      // every figure 404s there (the server log shows the bare `/assets/…` bursts). Resolve the
-      // portable report syntax against this bubble, like renderMarkdown does for our panes.
-      customHTMLRenderer:{
-        image(node,context){
-          const result=context.origin(), src=String(node.destination||"");
-          if(result&&result.attributes&&/^assets\//.test(src)&&S.bubble)
-            result.attributes.src=workspaceUrl("/api/bubbles/"+encodeURIComponent(S.bubble)
-              +"/assets/"+encodeURIComponent(src.slice("assets/".length)));
-          return result;
-        }
-      },
+      customHTMLRenderer:editorImageRenderer(()=>S.bubble),
     });
     installReferenceAutocomplete(host);
     installEditorCommentHighlights(host);
@@ -4403,8 +4439,11 @@
     setTimeout(resetEditorHistory,250);
   }
 
+  // The document's editor and the slide editor share every tool below; this pointer decides
+  // which instance a tool acts on. The slide editor registers itself while it is mounted.
+  function activeEd(){ return S.slideEd||S.editor; }
   function editorView(){
-    try{ const me=S.editor&&S.editor.getCurrentModeEditor&&S.editor.getCurrentModeEditor();
+    try{ const ed=activeEd(); const me=ed&&ed.getCurrentModeEditor&&ed.getCurrentModeEditor();
       return me&&me.view; }catch(e){ return null; }
   }
 
@@ -4448,7 +4487,8 @@
   function applyTextColor(hex){
     hex=normalizeHex(hex);
     if(!hex)return;
-    const md=S.editor&&S.editor.getMarkdown?S.editor.getMarkdown():"";
+    const ed=activeEd();
+    const md=ed&&ed.getMarkdown?ed.getMarkdown():"";
     const sel=(S.colorSelection&&S.colorSelection.from!==S.colorSelection.to)
       ? S.colorSelection : currentEditorSelectionOffsets();
     if(!sel||sel.from===sel.to){ toast("Select text first"); const v=editorView(); if(v)v.focus(); return; }
@@ -4470,11 +4510,12 @@
     restoreScroll();
     setTimeout(restoreScroll,0);
     S.colorSelection=null;
-    markStale(); scheduleAutosave(); refreshReferenceAutocomplete(); updatePreview();
+    if(!S.slideEd){ markStale(); scheduleAutosave(); refreshReferenceAutocomplete(); updatePreview(); }
   }
 
   function applyCenterText(){
-    const md=S.editor&&S.editor.getMarkdown?S.editor.getMarkdown():"";
+    const ed=activeEd();
+    const md=ed&&ed.getMarkdown?ed.getMarkdown():"";
     const sel=currentEditorSelectionOffsets();
     if(!sel||sel.from===sel.to){ toast("Select the text or block to center first"); const v=editorView(); if(v)v.focus(); return; }
     const from=Math.max(0,Math.min(sel.from,md.length));
@@ -4484,7 +4525,7 @@
     const restoreScroll=preserveEditorScroll();
     replaceEditorRange(from,to,replacement);
     restoreScroll(); setTimeout(restoreScroll,0);
-    markStale(); scheduleAutosave(); refreshReferenceAutocomplete(); updatePreview();
+    if(!S.slideEd){ markStale(); scheduleAutosave(); refreshReferenceAutocomplete(); updatePreview(); }
   }
 
   function preserveEditorScroll(){
@@ -4504,11 +4545,12 @@
   }
 
   function currentEditorSelectionOffsets(){
+    const ed=activeEd();
     try{
-      if(S.editor&&S.editor.getSelection){
-        const r=S.editor.getSelection();
+      if(ed&&ed.getSelection){
+        const r=ed.getSelection();
         if(r&&r[0]&&r[1]){
-          const md=S.editor.getMarkdown();
+          const md=ed.getMarkdown();
           const from=editorPosToOffset(md,r[0]), to=editorPosToOffset(md,r[1]);
           if(from!==to)return {from:Math.min(from,to),to:Math.max(from,to)};
         }
@@ -4544,11 +4586,12 @@
       }
     }catch(e){}
     try{
-      const md=S.editor.getMarkdown();
-      S.editor.setMarkdown(md.slice(0,from)+replacement+md.slice(to),false);
-      const pos=_srcPosFromOffset(S.editor.getMarkdown(),from+replacement.length);
-      S.editor.setSelection(pos,pos);
-      try{ S.editor.focus(); }catch(e){}
+      const ed=activeEd();
+      const md=ed.getMarkdown();
+      ed.setMarkdown(md.slice(0,from)+replacement+md.slice(to),false);
+      const pos=_srcPosFromOffset(ed.getMarkdown(),from+replacement.length);
+      ed.setSelection(pos,pos);
+      try{ ed.focus(); }catch(e){}
     }catch(e){}
   }
 
@@ -4693,9 +4736,10 @@
 
   // Trigger the editor's own undo/redo via its keymap (no public API for it otherwise).
   function editorHistoryCmd(redo){
-    if(!S.editor)return;
+    const ed=activeEd();
+    if(!ed)return;
     try{
-      const me=S.editor.getCurrentModeEditor&&S.editor.getCurrentModeEditor();
+      const me=ed.getCurrentModeEditor&&ed.getCurrentModeEditor();
       const dom=me&&me.view&&me.view.dom; if(!dom)return;
       try{ dom.focus({preventScroll:true}); }catch(e){ dom.focus(); }
       const MAC=/Mac|iPhone|iPad/.test(navigator.platform||navigator.userAgent||"");

@@ -508,7 +508,11 @@ mark.tk-anno{background:color-mix(in srgb,var(--kc,var(--accent)) 26%,transparen
       captions.push(cap);
       return `![@@LICAP${captions.length - 1}@@]`;
     });
-    const { text, found } = stashMath(guarded);
+    // The shared editor's colour tool writes the same \textcolor wrapper pages use; render it
+    // the same way. After the math stash, so a coloured formula keeps its placeholder intact.
+    const { text: stashed, found } = stashMath(guarded);
+    const text = stashed.replace(/\\textcolor\{(#[0-9a-fA-F]{3,8})\}\{([^{}]*)\}/g,
+      (_, c, t) => `<span style="color:${c}">${t}</span>`);
     let html;
     try { html = window.marked ? window.marked.parse(text, { breaks: false }) : esc(text); }
     catch (e) { html = esc(text); }
@@ -1009,7 +1013,9 @@ mark.tk-anno{background:color-mix(in srgb,var(--kc,var(--accent)) 26%,transparen
   // materialised as \comment{id}{...} — the wrapper syntax report pages already use — so the
   // text a mark points at is visible while you rewrite it, and moves with your edit.
   function destroyEditor() {
-    if (S.editorObj) { try { S.editorObj.destroy(); } catch (e) {} S.editorObj = null; }
+    if (S.editorHandle) { try { S.editorHandle.dispose(); } catch (e) {} S.editorHandle = null; }
+    else if (S.editorObj) { try { S.editorObj.destroy(); } catch (e) {} }
+    S.editorObj = null;
   }
   const editDirty = () => {
     try { return S.editorObj && S.editorObj.getMarkdown() !== (S.editInitial || ""); }
@@ -1073,11 +1079,20 @@ mark.tk-anno{background:color-mix(in srgb,var(--kc,var(--accent)) 26%,transparen
 
     const host = wrap.querySelector(".tk-edithost");
     S.editInitial = sl.edit_source || "";
-    S.editorObj = new toastui.Editor({
-      el: host, height: "100%", theme: "dark", initialEditType: "markdown",
-      previewStyle: "tab", initialValue: S.editInitial, usageStatistics: false, autofocus: false,
-      toolbarItems: [["heading", "bold", "italic", "code", "link", "quote", "ul", "ol", "table"]],
-    });
+    // The document's editor, pointed at one slide: index.html owns the construction so the two
+    // surfaces cannot drift. The bare fallback exists only for a standalone mount.
+    if (window.LockedInEditor) {
+      S.editorHandle = window.LockedInEditor.create(host, { initialValue: S.editInitial,
+                                                            bubble: S.slug });
+      S.editorObj = S.editorHandle.editor;
+    } else {
+      S.editorHandle = null;
+      S.editorObj = new toastui.Editor({
+        el: host, height: "100%", theme: "dark", initialEditType: "markdown",
+        previewStyle: "tab", initialValue: S.editInitial, usageStatistics: false, autofocus: false,
+        toolbarItems: [["heading", "bold", "italic", "code", "link", "quote", "ul", "ol", "table"]],
+      });
+    }
 
     wrap.querySelector("[data-save]").onclick = async () => {
       const b = wrap.querySelector("[data-save]");

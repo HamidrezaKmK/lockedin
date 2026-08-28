@@ -551,3 +551,47 @@ class ManualEditTests(unittest.TestCase):
             "a \\comment{n1}{good} b \\comment{broken c \\comment{n2}{unclosed")
         self.assertEqual(found[0]["id"], "n1")
         self.assertEqual(clean, "a good b \\comment{broken c \\comment{n2}{unclosed")
+
+
+class DeckPushEchoTests(unittest.TestCase):
+    """A deck push must report the *stored* deck, not the raw bytes it absorbed.
+
+    absorb_push rewrites the file (headers canonicalised, resolves= consumed), so echoing
+    revision(raw) left the worker tracking a revision the manifest never shows. Every cycle
+    after a deck push then read as "remote changed" — and an agent's follow-up edit in that
+    window was stashed as a conflict and overwritten with the server copy. A live haiku run
+    lost its `resolves=` write to exactly this.
+    """
+
+    def setUp(self):
+        self.ctx = temp_home()
+        self.home = self.ctx.__enter__()
+        with paths.use_root(self.home):
+            self.slug = bubbles.create_bubble("Diffusion noise schedules")
+            bubbles.approve_bubble(self.slug)
+            bubbles.ensure_pages(self.slug)
+            self.talk = talks.create_talk(self.slug, "Why the variance term doesn't vanish",
+                                          date="2026-08-27", body=DECK)
+
+    def tearDown(self):
+        self.ctx.__exit__(None, None, None)
+
+    def test_push_echo_matches_manifest_and_returns_canonical_bytes(self):
+        rel = f"reports/talks/{self.talk}.md"
+        raw = DECK.replace("Here I assume", "Now I assume").encode()
+        pushed = base64.b64encode(raw).decode()
+        with paths.use_root(self.home):
+            base = scientist_sync.revision(
+                talks.read_deck(self.slug, self.talk).encode())
+        result = scientist_sync.apply_writes(self.home, self.slug, [
+            {"path": rel, "base_revision": base, "content_b64": pushed}])
+        self.assertEqual(result["conflicts"], [])
+        entry = result["applied"][0]
+        with paths.use_root(self.home):
+            stored = talks.read_deck(self.slug, self.talk).encode()
+        # The echoed revision is the manifest's revision, and the canonical bytes ride along
+        # whenever they differ from what was pushed — the client adopts them, so the next
+        # cycle sees neither "local changed" nor "remote changed".
+        self.assertEqual(entry["revision"], scientist_sync.revision(stored))
+        if stored != raw:
+            self.assertEqual(base64.b64decode(entry["content_b64"]), stored)

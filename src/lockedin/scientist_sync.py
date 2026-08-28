@@ -241,7 +241,16 @@ def apply_writes(home: Path, slug: str, writes: list[dict]) -> dict:
                 # The deck file is the source of truth; the registry entry is derived from it, so
                 # writing a new file *is* how an agent creates a talk. Nothing else to ask for.
                 talks.register_deck(slug, Path(rel).stem)
-                applied.append({"path": rel, "revision": revision(raw)})
+                # absorb_push stores a canonical render — headers rewritten, resolves= consumed —
+                # so hand the stored bytes and THEIR revision back, exactly as save_page does.
+                # Reporting revision(raw) left every client tracking a revision the manifest
+                # would never show, which read as "remote changed" on the next cycle and turned
+                # an agent's follow-up edit into a conflict that restored the server copy over it.
+                stored = target.read_bytes()
+                entry = {"path": rel, "revision": revision(stored)}
+                if stored != raw:
+                    entry["content_b64"] = base64.b64encode(stored).decode("ascii")
+                applied.append(entry)
                 continue
             if Path(rel).parts[1] == "pages":
                 try:
