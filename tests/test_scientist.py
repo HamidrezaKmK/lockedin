@@ -203,7 +203,7 @@ class ScientistServerBoundaryTest(unittest.TestCase):
                 self.assertNotIn("reports/comments/overview.json", names)
                 payload = scientist_sync.read_files(home, slug, ["feedback/pages/overview.json"])["files"][0]
                 review = json.loads(base64.b64decode(payload["content_b64"]))
-                item = next(iter(review["marks"].values()))
+                item = next(iter(review["by_id"].values()))
                 self.assertEqual(item["page"], "overview")
                 self.assertEqual(item["anchor_state"], "attached")
                 self.assertEqual(item["selected_text"], "Current claim")
@@ -346,7 +346,7 @@ class ScientistServerBoundaryTest(unittest.TestCase):
             self.assertIn(marker.encode(), service.get_page(home, slug, "overview").encode())
             payload = scientist_sync.read_files(home, slug, ["feedback/pages/overview.json"])["files"][0]
             review = json.loads(base64.b64decode(payload["content_b64"]))
-            self.assertEqual(next(iter(review["marks"].values()))["selected_text"],
+            self.assertEqual(next(iter(review["by_id"].values()))["selected_text"],
                              "this is a NEW highlight")
 
     def test_scientist_wrapper_removal_makes_review_unanchored_without_guessing(self):
@@ -371,7 +371,7 @@ class ScientistServerBoundaryTest(unittest.TestCase):
             self.assertEqual(result["conflicts"], [])
             payload = scientist_sync.read_files(home, slug, ["feedback/pages/overview.json"])["files"][0]
             review = json.loads(base64.b64decode(payload["content_b64"]))
-            item = next(iter(review["marks"].values()))
+            item = next(iter(review["by_id"].values()))
             self.assertEqual(item["anchor_state"], "unanchored")
             self.assertNotIn("offsets", item)
             self.assertNotIn(marker, service.get_page(home, slug, "overview"))
@@ -1088,6 +1088,7 @@ class ScientistProfileAndWorkersTest(unittest.TestCase):
         # Same instruction, tighter wording: a mark is not an order.
         self.assertIn("say so and argue it; do not comply silently", scientist_cli.SKILL_RULES)
         self.assertIn("Make the smallest change", scientist_cli.SKILL_RULES)
+        self.assertIn("'.by_id[$id]' <detail_path>", scientist_cli.SKILL_RULES)
         self.assertIn("never reply to, edit, delete, or resolve", scientist_cli.SKILL_RULES)
         self.assertIn("never create, copy, fabricate, rename, or move one", scientist_cli.SKILL_RULES)
         self.assertIn("Never guess where an unanchored review belongs", scientist_cli.SKILL_RULES)

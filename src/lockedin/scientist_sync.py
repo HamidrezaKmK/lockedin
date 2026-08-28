@@ -105,7 +105,7 @@ def _indexed_context(slug: str) -> dict[str, bytes]:
         marks_path = f"reports/talks/{sync_id}/marks.json"
         slides_path = f"reports/talks/{sync_id}/slides.md"
         out[marks_path] = _json_bytes({"version": 1, "talk_id": sync_id,
-                                       "marks": {item["note_id"]: item for item in compact_marks}})
+                                       "by_id": {item["note_id"]: item for item in compact_marks}})
         talk_index[sync_id] = {
             "id": sync_id, "title": rec.get("title", ""), "summary": rec.get("intent", ""),
             "date": rec.get("date", ""), "slides": len(detail.get("slides", [])),
@@ -120,7 +120,7 @@ def _indexed_context(slug: str) -> dict[str, bytes]:
         page_marks = [item for item in page_feedback if item.get("page") == slug_id]
         out[f"feedback/pages/{slug_id}.json"] = _json_bytes({
             "version": 1, "page": slug_id,
-            "marks": {str(item.get("id") or ""): item for item in page_marks},
+            "by_id": {str(item.get("id") or ""): item for item in page_marks},
         })
         page_index[slug_id] = {"id": slug_id, "title": page.get("title", slug_id),
                                "path": f"reports/pages/{slug_id}.md",

@@ -347,10 +347,10 @@ def bubbles_command(account: dict) -> list[dict]:
     return rows
 
 
-SKILL_VERSION = 36
+SKILL_VERSION = 37
 
 SKILL_ROUTER = """\
-<!-- lockedin-scientist-skill: 36 -->
+<!-- lockedin-scientist-skill: 37 -->
 # LockedIn Scientist
 
 This project is synchronized with one LockedIn bubble. These rules always apply. The detail
@@ -433,8 +433,9 @@ with `jq`; do not `cat` an index or scan `.lockedin/` to discover content. Examp
     jq --arg id 'n7' '.by_local_id[$id] // []' .lockedin/indexes/marks.json
     jq --arg id 'talk-ab12cd34ef56' '.by_id[$id]' .lockedin/indexes/chalk-talks.json
 
-When a mark lookup returns one key, read that key from `.by_key`, then open only its
-`detail_path` entry and the named source. When it returns several keys, use the talk/page named
+When a mark lookup returns one key, read that key from `.by_key`, then read the selected detail
+with `jq --arg id '<mark-id>' '.by_id[$id]' <detail_path>` and open only the named source. Every
+scoped feedback file uses this same `.by_id` shape. When a lookup returns several keys, use the talk/page named
 by the user to choose; ask only if that context is genuinely ambiguous. When a talk is named,
 query `indexes/chalk-talks.json` by id or title, then open only that talk folder.
 

@@ -233,7 +233,7 @@ class ProjectHandoffTests(unittest.TestCase):
         after = scientist_sync._files(self.home, self.slug)
         self.assertEqual(json.loads(after["index.json"])["counts"]["open_marks"], 0)
         self.assertEqual(json.loads(after["feedback/all.json"])["marks"], [])
-        self.assertEqual(json.loads(after[self._talk_marks_rel()])["marks"], {})
+        self.assertEqual(json.loads(after[self._talk_marks_rel()])["by_id"], {})
 
     def test_duplicate_local_mark_ids_route_without_loading_unrelated_talks(self):
         with paths.use_root(self.home):
