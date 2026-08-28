@@ -26,7 +26,7 @@ DEFAULT_LANDING: dict[str, Any] = {
         "points": [
             {"title": "Chalk talks", "text": "Dated decks, one idea per slide, whenever something needs your judgement."},
             {"title": "Feedback loop", "text": "Put markers and annotations on the work, the way a PI does for their grad student."},
-            {"title": "One bubble", "text": "Papers, figures, TODOs and the manuscript, right where the agent works."},
+            {"title": "Central Research Hub", "text": "Put all of the papers, resources, overleaf, code in one interactive place with agents that can read off their enriched context"},
         ],
     },
     "auth": {
@@ -62,13 +62,9 @@ DEFAULT_LANDING: dict[str, Any] = {
         ],
     },
     "pi": {
-        "title": "Bring your own AI sub",
-        "text": "lockedin does not ship a new model — it integrates with the subscription you already have, or a local model.",
-        "bullets": [
-            "Claude, Codex, Gemini — or Qwen on your own GPU.",
-            "Your key stays yours; your work stays on your disk.",
-            "Switching model never costs you the bubble, the marks or the history.",
-        ],
+        "title": "Compatible with Frontier",
+        "text": "We do not reconstruct AI, we just make the frontier models better by better context management. Bring your own OpenAI, Anthropic, or Google AI subscription and use Lockedin with it.",
+        "bullets": [],
     },
     "privacy": {
         "title": "Open source, yours to shape",

@@ -259,6 +259,9 @@
   .landing-auth-panel button{flex:1 1 120px}
   .landing-section{padding:54px 0;border-top:1px solid color-mix(in srgb,var(--line) 72%,transparent)}
   .home-landing .landing-section:first-of-type{border-top:0}
+  /* The signed-in Home keeps the landing introduction but has no access panel or wordmark, so it
+     uses the full row rather than reserving an empty second column. */
+  .home-landing .home-hero{min-height:0;grid-template-columns:minmax(0,1fr);padding:42px 0 48px}
   .landing-section-head{display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1fr);gap:30px;align-items:end;margin-bottom:24px}
   /* Balanced wrapping and a size that fits the column: a headline that breaks as
      "…like a / PI" reads like a typo. */
@@ -1060,7 +1063,7 @@
           <div class="landing-points">
             <div class="landing-point"><b>Chalk talks</b><span>Dated decks, one idea per slide, whenever something needs your judgement.</span></div>
             <div class="landing-point"><b>Feedback loop</b><span>Put markers and annotations on the work, the way a PI does for their grad student.</span></div>
-            <div class="landing-point"><b>One bubble</b><span>Papers, figures, TODOs and the manuscript, right where the agent works.</span></div>
+            <div class="landing-point"><b>Central Research Hub</b><span>Put all of the papers, resources, overleaf, code in one interactive place with agents that can read off their enriched context</span></div>
           </div>
         </div>
         <form class="landing-auth-panel col" onsubmit="return false" aria-label="Account access">
@@ -1143,14 +1146,9 @@
 
       <section class="landing-section" aria-labelledby="pi-title">
         <div class="landing-section-head">
-          <h2 id="pi-title">Bring your own AI sub</h2>
-          <p>lockedin does not ship a new model — it integrates with the subscription you already have, or a local model.</p>
+          <h2 id="pi-title">Compatible with Frontier</h2>
+          <p>We do not reconstruct AI, we just make the frontier models better by better context management. Bring your own OpenAI, Anthropic, or Google AI subscription and use Lockedin with it.</p>
         </div>
-        <ul class="landing-bullets" id="pi-bullets">
-          <li>Claude, Codex, Gemini — or Qwen on your own GPU.</li>
-          <li>Your key stays yours; your work stays on your disk.</li>
-          <li>Switching model never costs you the bubble, the marks or the history.</li>
-        </ul>
       </section>
 
       <section class="landing-section" aria-labelledby="scientist-install-title">
@@ -2829,7 +2827,12 @@
     const source=$("#auth .landing"); if(!source)return;
     const home=source.cloneNode(true);
     home.classList.add("home-landing");
-    const hero=home.querySelector(".landing-hero"); if(hero)hero.remove();
+    const hero=home.querySelector(".landing-hero");
+    if(hero){
+      hero.classList.add("home-hero");
+      hero.removeAttribute("aria-labelledby");
+      const wordmark=hero.querySelector("#landing-title"); if(wordmark)wordmark.remove();
+    }
     const authPanel=home.querySelector(".landing-auth-panel"); if(authPanel)authPanel.remove();
     const footer=home.querySelector(".landing-footer"); if(footer)footer.remove();
     home.removeAttribute("aria-labelledby");
