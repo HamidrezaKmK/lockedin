@@ -82,7 +82,7 @@ DEFAULT_LANDING: dict[str, Any] = {
         "steps": [
             {"title": "Hit 🤖 on the bubble", "text": "It hands you one command, pre-signed for this machine.",
              "command": ""},
-            {"title": "Paste it in your repo", "text": "Installs the client, signs you in, binds the folder, starts the sync.",
+            {"title": "Paste it in your repo", "text": "Installs the clients and binds the folder.",
              "command": "curl -fsSL https://lockedin.codes/setup/‹ticket›.sh | bash"},
             {"title": "Run your agent as usual", "text": "claude, codex, agy — the skill is in place, and reports, talks and feedback sync every few seconds.",
              "command": ""},
