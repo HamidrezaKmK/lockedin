@@ -67,7 +67,7 @@ DEFAULT_LANDING: dict[str, Any] = {
         "bullets": [
             "Claude, Codex, Gemini — or Qwen on your own GPU.",
             "Your key stays yours; your work stays on your disk.",
-            "Switching model never costs you the bubble, the marks or the history.",
+            "Switching model costs nothing, Lockedin keeps a persistant history across models.",
         ],
     },
     "privacy": {
