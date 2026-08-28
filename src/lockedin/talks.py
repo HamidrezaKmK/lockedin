@@ -45,6 +45,7 @@ KIND_ORDER = ["bad", "q", "more", "good", "cut", "ink"]
 
 SLIDE_KINDS = ["setup", "derivation", "evidence", "comparison", "implementation", "ask"]
 _SLIDE_KIND_RE = re.compile(r"[A-Za-z][A-Za-z0-9 _&/+-]{0,47}$")
+_SYNC_ID_RE = re.compile(r"talk-[a-z0-9][a-z0-9-]{5,63}$")
 
 # Slides are separated by a horizontal rule on its own line. Chosen because it is what a human
 # writing markdown slides reaches for anyway, and because every markdown renderer already
@@ -194,6 +195,44 @@ def save_index(slug: str, data: dict) -> None:
     _write_yaml(_index_path(slug), data)
 
 
+def _default_sync_id(talk_id: str) -> str:
+    """Stable opaque local folder id; deliberately unrelated to the visible title."""
+    return "talk-" + hashlib.sha256(str(talk_id).encode("utf-8")).hexdigest()[:12]
+
+
+def valid_sync_id(value: str) -> bool:
+    """Whether ``value`` is a valid stable Scientist talk-folder id."""
+    return bool(_SYNC_ID_RE.fullmatch(str(value or "")))
+
+
+def ensure_sync_ids(slug: str) -> list[dict]:
+    """Backfill stable Scientist folder ids for pre-index-layout talks."""
+    idx = load_index(slug)
+    changed = False
+    used: set[str] = set()
+    for rec in idx.get("talks", []):
+        sync_id = str(rec.get("sync_id") or "")
+        if not valid_sync_id(sync_id) or sync_id in used:
+            base = _default_sync_id(str(rec.get("id") or "talk"))
+            sync_id = base
+            suffix = 2
+            while sync_id in used:
+                sync_id = f"{base}-{suffix}"; suffix += 1
+            rec["sync_id"] = sync_id
+            changed = True
+        used.add(sync_id)
+    if changed:
+        save_index(slug, idx)
+    return idx.get("talks", [])
+
+
+def talk_id_from_sync_id(slug: str, sync_id: str) -> str | None:
+    for rec in ensure_sync_ids(slug):
+        if rec.get("sync_id") == sync_id:
+            return str(rec.get("id") or "") or None
+    return None
+
+
 def _record(slug: str, talk_id: str) -> dict | None:
     for rec in load_index(slug).get("talks", []):
         if rec.get("id") == talk_id:
@@ -215,6 +254,7 @@ def create_talk(slug: str, title: str, *, intent: str = "", kicker: str = "",
         n += 1
     idx.setdefault("talks", []).insert(0, {
         "id": talk_id, "title": title, "date": date,
+        "sync_id": _default_sync_id(talk_id),
         "intent": intent, "kicker": kicker, "landed": "", "created_at": _now_iso(),
     })
     save_index(slug, idx)
@@ -222,7 +262,7 @@ def create_talk(slug: str, title: str, *, intent: str = "", kicker: str = "",
     return talk_id
 
 
-def register_deck(slug: str, talk_id: str) -> dict:
+def register_deck(slug: str, talk_id: str, *, sync_id: str = "") -> dict:
     """Index a deck file that appeared on disk, or refresh what the index says about it.
 
     Everything the registry holds is readable from the deck: the date is the id's prefix, the
@@ -244,9 +284,13 @@ def register_deck(slug: str, talk_id: str) -> dict:
             rec["title"] = rec.get("title") or title
             rec["intent"] = rec.get("intent") or first.get("sub", "")
             rec["kicker"] = rec.get("kicker") or first.get("kind", "")
+            if valid_sync_id(sync_id):
+                rec["sync_id"] = rec.get("sync_id") or sync_id
+            rec["sync_id"] = rec.get("sync_id") or _default_sync_id(talk_id)
             save_index(slug, idx)
             return rec
     rec = {"id": talk_id, "title": title, "date": date, "intent": first.get("sub", ""),
+           "sync_id": sync_id if valid_sync_id(sync_id) else _default_sync_id(talk_id),
            "kicker": first.get("kind", ""), "landed": "", "created_at": _now_iso()}
     idx["talks"].insert(0, rec)
     save_index(slug, idx)

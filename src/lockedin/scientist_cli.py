@@ -55,10 +55,16 @@ Read `<project-root>/.lockedin/SKILL.md` in full before making any change, where
 git rev-parse --path-format=absolute --git-common-dir   # -> <project-root>/.git
 ```
 
+Run that command with the tool's working directory set to the **active workspace directory shown
+by the current agent session**. Some CLI agents start command tools in their own scratch folder;
+that scratch folder is not the project. Do not run the locator there, reuse a previous project,
+or guess a project from the user's home directory.
+
 Use that command rather than assuming the current directory. In an ordinary checkout it names that
 checkout; in a **git worktree** it names the main checkout, which is where `.lockedin/` lives —
 the directory is untracked, so it never appears in a worktree. This is a normal setup, not a
-problem to report. Do not search the repository, home directory, or other projects for the guide.
+problem to report. Read exactly the one path resolved by the command. Never use `find`, a glob,
+`grep`, or a home-directory search to locate other `.lockedin` directories or guides.
 It contains the current bubble's editing guide, paper context, math conventions, permitted write
 paths, conflict recovery rules, and—when present—rules for the local Overleaf checkout. Follow it
 as the source of truth.
@@ -341,10 +347,10 @@ def bubbles_command(account: dict) -> list[dict]:
     return rows
 
 
-SKILL_VERSION = 35
+SKILL_VERSION = 36
 
 SKILL_ROUTER = """\
-<!-- lockedin-scientist-skill: 35 -->
+<!-- lockedin-scientist-skill: 36 -->
 # LockedIn Scientist
 
 This project is synchronized with one LockedIn bubble. These rules always apply. The detail
@@ -355,7 +361,7 @@ turn out not to need costs the user real money and crowds out what you are reaso
 
 | guide | read it | size |
 |---|---|---|
-| `guides/feedback.md` | before acting on `feedback/OPEN.md`, or writing a chalk talk | small |
+| `guides/feedback.md` | before acting on a feedback index hit, or writing a chalk talk | small |
 | `guides/paths.md` | before looking for anything under `.lockedin/` | small |
 | `guides/reports.md` | before creating, deleting or submitting a report page | small |
 | `guides/macros.md` | before using a `\\\\`-macro in maths | tiny |
@@ -390,7 +396,7 @@ The rules below apply **only inside `.lockedin/`**:
 
 - Edit or create Markdown pages only under `.lockedin/reports/pages/`.
 - Add or edit figures only under `.lockedin/reports/assets/`.
-- `pages.yaml` is a server-generated manifest: never edit it. To add a page, create a new
+- `indexes/pages.json` is the generated page catalog: never edit it. To add a page, create a new
   lowercase, hyphenated `pages/<slug>.md` file; the sync worker registers it automatically.
 - To delete a page, delete its `pages/<slug>.md` file; the sync worker removes it from the
   server manifest automatically. The overview/home page cannot be deleted.
@@ -400,8 +406,8 @@ The rules below apply **only inside `.lockedin/`**:
 `.lockedin/assets/` and `.lockedin/config/` are synchronized from LockedIn and must never be
 edited, moved, deleted, or permission-changed. This does not restrict similarly named directories
 elsewhere in the repository. Read paper information only from
-`.lockedin/reports/_lockedin_papers.md` and the listed asset directories. Prefer higher relevance
-papers first.
+`.lockedin/indexes/papers.json`, then open only the selected asset directory. Prefer higher
+relevance papers first.
 
 ## Sync and conflicts
 
@@ -418,11 +424,23 @@ It is generated and read-only. If it is wrong, stale, or narrower than the work 
 done, say so and propose better wording rather than working around it; the user applies it in
 the app.
 
-## When the user has left feedback
+## Indexed retrieval — do not scan first
 
-If `.lockedin/feedback/OPEN.md` exists, the user has marked something and that file is the whole
-of the request. Read it, then read `guides/feedback.md` before acting — the five marks each mean
-something specific, and complying with the wrong one wastes both your work and their review.
+`.lockedin/index.json` is the small router for synchronized context. Read individual JSON keys
+with `jq`; do not `cat` an index or scan `.lockedin/` to discover content. Examples:
+
+    jq '.counts' .lockedin/index.json
+    jq --arg id 'n7' '.by_local_id[$id] // []' .lockedin/indexes/marks.json
+    jq --arg id 'talk-ab12cd34ef56' '.by_id[$id]' .lockedin/indexes/chalk-talks.json
+
+When a mark lookup returns one key, read that key from `.by_key`, then open only its
+`detail_path` entry and the named source. When it returns several keys, use the talk/page named
+by the user to choose; ask only if that context is genuinely ambiguous. When a talk is named,
+query `indexes/chalk-talks.json` by id or title, then open only that talk folder.
+
+If an index is missing, invalid, points to a missing id/path, or cannot disambiguate a referenced
+mark, use `.lockedin/feedback/all.json` as the fallback. It is intentionally complete and
+expensive; do not read it during a healthy indexed lookup.
 """
 
 
@@ -439,17 +457,16 @@ the project for an alternative copy:
 - `.lockedin/config/math.yaml` — workspace math macros; the generated macro table below is the
   preferred ready-to-use form.
 - `.lockedin/config/aesthetics.yaml` — report appearance configuration.
-- `.lockedin/config/reviews.yaml` — open private review feedback, only when present.
 - `.lockedin/config/overleaf.yaml` — website-linked Overleaf metadata, only when present.
 - `.lockedin/config/conflicts/` — rejected local report edits to recover manually, only when
   present.
-- `.lockedin/reports/_lockedin_papers.md` — bubble paper index.
+- `.lockedin/indexes/papers.json` — keyed bubble paper index; query it before opening one paper.
 - `.lockedin/assets/<pdf-id>/` — the selected paper's PDF, metadata, extracted text, and summary.
 
 For any report-related search, search only inside `.lockedin/`: use
 `.lockedin/reports/pages/` for report source, `.lockedin/reports/assets/` for report figures,
-`.lockedin/reports/_lockedin_papers.md` for attached-paper discovery, and `.lockedin/assets/` for
-paper material. Do not search the surrounding repository for report content unless the user
+`.lockedin/indexes/papers.json` for attached-paper discovery, and `.lockedin/assets/` for
+the one selected paper's material. Do not search the surrounding repository unless the user
 explicitly asks to combine it with project code or files.""",
 
     'reports.md': """\
@@ -497,8 +514,9 @@ worktree they fail with "No valid `.lockedin/config/binding.json` in this projec
 
 ## The five marks
 
-`.lockedin/feedback/OPEN.md` lists every open mark. Each names a kind, the exact text or region
-it points at, and usually a sentence. The kind is the instruction:
+`.lockedin/indexes/marks.json` routes every open mark by exact key. Read only the selected entry
+from its `detail_path`; it names the kind, exact text or region, and conversation. The kind is
+the instruction:
 
 | mark | means | do |
 |---|---|---|
@@ -516,8 +534,7 @@ open it before anything else. If your tooling cannot open images, the mark's **t
 line names the words the strokes actually sit on — work from that plus the comment, and say that
 you answered from the fallback rather than the picture. Read the strokes the way you would a reviewer's pen: crossed-out
 text wants rewriting, an arrow wants something moved or reordered, a circle wants attention or
-expansion, handwriting wants reading and doing. Resolve it like any other mark, by naming it in
-the revision that does what the drawing asks.
+expansion, handwriting wants reading and doing. Address it like any other mark.
 
 Work through them **with the user, not for them** — propose, agree, then change.
 Make the smallest change that answers the mark: do not reorganise unrelated material,
@@ -527,37 +544,39 @@ If you think a mark is mistaken, say so and argue it; do not comply silently. An
 points at a PNG of the slide with the mark drawn on: open it, since it carries layout a quote
 cannot, and for a region mark it is the whole message.
 
-Never edit `OPEN.md`, `shots/`, or a deck's sidecars — they are generated and overwritten.
+Never edit `indexes/`, `feedback/`, or a deck's `marks.json` — they are generated and overwritten.
 
 ## Marks on report pages
 
 A page mark is anchored by a `<comment-begin=id>…<comment-end=id>` tag pair in the page
-source; the id in `OPEN.md` is that id. Match it to its tags, then make the smallest useful edit
+source; the selected page-feedback JSON gives that id. Match it to its tags, then make the smallest useful edit
 between them and leave both tags in place — removing them unanchors the mark.
 
 The tags are managed by LockedIn: never create, copy, fabricate, rename, or move one, and never
 add a pair for an unanchored mark. Never guess where an unanchored review belongs — ask.
-`config/reviews.yaml` holds the full threads and is read-only —
-never reply to, edit, delete, or resolve a page mark there. The user resolves those in the app.
+The selected page-feedback JSON is read-only; never reply to, edit, delete, or resolve a page
+mark there. The user resolves those in the app.
 
 Colored passages use `\\textcolor{<color>}{text}`; keep each wrapper balanced and never nest them.
 Markup that fails to parse inside a code span or fence is literal text, not an error.
 
 ## Chalk talks
 
-A chalk talk is a dated deck at `reports/talks/<id>.md` explaining one idea whose correctness
+A chalk talk is a stable folder at `reports/talks/<talk-id>/`; its editable deck is `slides.md`
+and its generated open feedback is `marks.json`. Folder ids are opaque and never change when a
+title changes. The deck explains one idea whose correctness
 needs the user's judgement. Slides are separated by `---`; each has a
 `<!-- slide: kind=…, date=… -->` header, a `# Title`, an optional one-line *italic
 subtitle*, then Markdown with `$…$` maths and `\\cite{key}` citations. `kind` is one of
 `setup, derivation, evidence, comparison, implementation, ask` — nothing else renders.
 
-**Reading them without drowning.** Start with `IDEA.md`, then `OPEN.md`. Open a deck only when a
-mark points into it, the user names it, or you are about to write on the same idea — what is on
-disk is the whole record: there is no version history, and `talks.yaml` is not published. When a
-mark names a slide, read that slide and its neighbours, not the whole talk.
+**Reading them without drowning.** Start with `IDEA.md`, then query the JSON indexes. Open a
+deck only when an index hit points into it, the user names it, or you are about to write on the
+same idea. When a mark names a slide, read that slide and its neighbours, not every talk.
 
-**Writing one.** Write the file; the bubble indexes it on arrival, taking the date from the
-filename, the title from the first `#`, and the summary from its subtitle. Write one when asked,
+**Writing one.** Create `reports/talks/talk-<stable-id>/slides.md`, where the id is lowercase,
+opaque, and unrelated to the title (a timestamp or random hex is fine). The bubble indexes it on
+arrival, taking the title from the first `#` and summary from its subtitle. Write one when asked,
 or offer one when you reach something needing judgement. Never for status — status is the
 document.
 
@@ -577,7 +596,7 @@ document.
   topic — and never `Slide N:`, the deck numbers itself.
 
 **Answering a mark.** Edit the slide in place. To reply in its thread, append this block anywhere
-outside a code fence in the same deck, using the mark's id from `OPEN.md`:
+outside a code fence in the same deck, using the mark's id from its `marks.json`:
 
     <!-- lockedin-reply: n7 -->
     I replaced the approximation with the exact covariance term on slide 2.
@@ -1082,8 +1101,10 @@ class ProjectSync:
         self._protect(item["path"], target)
 
     def _protect(self, rel: str, path: Path) -> None:
-        if rel.startswith("assets/") or rel in {"config/math.yaml", "config/aesthetics.yaml",
-                                                 "config/overleaf.yaml", "config/reviews.yaml", "reports/pages.yaml", "reports/_lockedin_papers.md"}:
+        if (rel.startswith("assets/") or rel.startswith("indexes/") or rel.startswith("feedback/")
+                or rel.endswith("/marks.json") or rel == "index.json"
+                or rel in {"config/math.yaml", "config/aesthetics.yaml",
+                           "config/overleaf.yaml"}):
             try: os.chmod(path, 0o444)
             except OSError: pass
         if rel.startswith("assets/"):
@@ -1108,16 +1129,18 @@ class ProjectSync:
         talk. The generated sidecars beside a deck are excluded: they are the server's.
         """
         out = []
-        for base in (self.root / "reports" / "pages", self.root / "reports" / "assets",
-                     self.root / "reports" / "talks"):
+        for base in (self.root / "reports" / "pages", self.root / "reports" / "assets"):
             if not base.exists():
                 continue
             for p in base.iterdir():
                 if not p.is_file() or p.is_symlink():
                     continue
-                if base.name == "talks" and not p.name.endswith(".md"):
-                    continue
                 out.append(p.relative_to(self.root).as_posix())
+        talks_root = self.root / "reports" / "talks"
+        if talks_root.exists():
+            for p in talks_root.glob("talk-*/slides.md"):
+                if p.is_file() and not p.is_symlink():
+                    out.append(p.relative_to(self.root).as_posix())
         return sorted(out)
 
     def unsynced_figures(self) -> list[str]:
@@ -1173,12 +1196,37 @@ class ProjectSync:
             if rel not in remote_data: remote_data.update(self._read_remote([rel]))
             return remote_data.get(rel)
 
-        pushable = ("reports/pages/", "reports/assets/", "reports/talks/")
-        report_remote = {r for r in remote if r.startswith(pushable)}
+        # Layout v1 used title-derived flat deck filenames. Existing server talks receive a
+        # deterministic opaque id, so migrate tracked files without fetching title/index content
+        # and preserve their last-known revision plus any unsynced local edits.
+        for legacy in list(tracked):
+            parts = Path(legacy).parts
+            if len(parts) != 3 or parts[:2] != ("reports", "talks") or not legacy.endswith(".md"):
+                continue
+            old_id = Path(parts[2]).stem
+            sync_id = "talk-" + self._rev(old_id.encode("utf-8"))[:12]
+            current = f"reports/talks/{sync_id}/slides.md"
+            if current not in remote:
+                continue
+            old_path, new_path = self._local(legacy), self._local(current)
+            if old_path.exists() and not new_path.exists():
+                new_path.parent.mkdir(parents=True, exist_ok=True)
+                old_path.replace(new_path)
+            tracked[current] = tracked.pop(legacy)
+
+        def pushable_path(rel: str) -> bool:
+            parts = Path(rel).parts
+            return bool(
+                len(parts) == 3 and parts[:2] in (("reports", "pages"), ("reports", "assets"))
+                or len(parts) == 4 and parts[:2] == ("reports", "talks")
+                and parts[3] == "slides.md"
+            )
+
+        report_remote = {r for r in remote if pushable_path(r)}
         report_local = set(self._report_paths())
         deletes, writes, creates = [], [], []
         for rel, old in list(tracked.items()):
-            if not rel.startswith("reports/"): continue
+            if not pushable_path(rel): continue
             path = self._local(rel); local = path.read_bytes() if path.exists() else b""
             if rel not in remote:
                 if path.exists() and self._rev(local) != old.get("revision", ""):
@@ -1264,7 +1312,7 @@ class ProjectSync:
                         try: os.chmod(path, 0o755); path.rmdir()
                         except OSError: pass
         for rel in list(tracked):
-            if rel not in remote and not rel.startswith(pushable):
+            if rel not in remote and not pushable_path(rel):
                 path = self._local(rel)
                 try: os.chmod(path, 0o644); path.unlink(missing_ok=True)
                 except OSError: pass

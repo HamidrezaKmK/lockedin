@@ -1,15 +1,15 @@
 """Bubble-scoped filesystem primitives for project-local Scientist clients.
 
-The v2 protocol exports one approved bubble at a time.  Paper assets and editing
-configuration are read-only; only report pages and figures accept client writes.
+The v2 protocol exports one approved bubble at a time. Paper assets, indexes, and
+configuration are read-only; report pages, figures, and chalk-talk decks accept writes.
 """
 from __future__ import annotations
 
 import base64
 import hashlib
+import json
 from pathlib import Path
 
-import yaml
 from slugify import slugify
 
 from . import assets, bubbles, feedback, paths, talks
@@ -28,39 +28,145 @@ def _safe_rel(rel: str) -> bool:
     return bool(parts) and not any(part in ("", ".", "..") for part in parts)
 
 
-def _review_feedback(slug: str) -> bytes | None:
-    """Serialize open private review threads as Scientist's read-only feedback context."""
-    threads = []
+def _json_bytes(value) -> bytes:
+    return (json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode("utf-8")
+
+
+def _page_feedback_items(slug: str) -> list[dict]:
+    """Full open page feedback for keyed retrieval and the recovery file."""
+    items = []
     for page in bubbles.list_pages(slug):
         page_slug = page["page_slug"]
         for thread in bubbles.list_comments(slug, page_slug).get("threads", []):
             if thread.get("status") != "open":
                 continue
-            anchor = dict(thread.get("anchor") or {})
-            state = "attached" if thread.get("anchor_state") == "attached" else "unanchored"
-            selected = str(anchor.get("quote") or "")
-            exported = {
-                "id": str(thread.get("id") or ""),
-                "page_slug": page_slug,
-                "status": "open",
-                "anchor_state": state,
-                "selected_text": selected,
-                "created_at": thread.get("created_at", ""),
-                "updated_at": thread.get("updated_at", ""),
-                "context": {
-                    "prefix": str(anchor.get("prefix") or ""),
-                    "suffix": str(anchor.get("suffix") or ""),
-                },
-                "messages": [dict(message) for message in thread.get("messages", [])],
-            }
-            if state == "attached":
-                start = int(anchor.get("start") or 0)
-                exported["offsets"] = {"start": start, "end": start + len(selected)}
-            threads.append(exported)
-    if not threads:
-        return None
-    payload = {"version": 2, "threads": threads}
-    return yaml.safe_dump(payload, allow_unicode=True, sort_keys=False).encode("utf-8")
+            item = dict(thread)
+            item.update({"surface": "page", "page": page_slug,
+                         "page_title": page.get("title", page_slug),
+                         "source_path": f"reports/pages/{page_slug}.md"})
+            anchor = item.get("anchor") or {}
+            quote = str(anchor.get("quote") or "")
+            item["selected_text"] = quote
+            if item.get("anchor_state") == "attached" and isinstance(anchor.get("start"), int):
+                item["offsets"] = {"start": anchor["start"],
+                                   "end": anchor["start"] + len(quote)}
+            items.append(item)
+    return items
+
+
+def _indexed_context(slug: str) -> dict[str, bytes]:
+    """Generated JSON routing layer for token-bounded Scientist discovery."""
+    records = talks.ensure_sync_ids(slug)
+    sync_by_talk = {str(rec["id"]): str(rec["sync_id"]) for rec in records}
+    talk_details = {str(rec["id"]): talks.talk_detail(slug, str(rec["id"])) for rec in records}
+    talk_feedback = []
+    for item in talks.open_notes_for_agent(slug):
+        item = dict(item)
+        sync_id = sync_by_talk.get(str(item.get("talk") or ""), "")
+        item.update({"surface": "chalk_talk", "talk_id": sync_id,
+                     "source_path": f"reports/talks/{sync_id}/slides.md",
+                     "marks_path": f"reports/talks/{sync_id}/marks.json"})
+        if item.get("screenshot"):
+            item["screenshot"] = {**item["screenshot"],
+                                  "file": "feedback/shots/" + Path(item["screenshot"]["file"]).name}
+        talk_feedback.append(item)
+    page_feedback = _page_feedback_items(slug)
+    all_feedback = page_feedback + talk_feedback
+
+    marks_by_key: dict[str, dict] = {}
+    by_local_id: dict[str, list[str]] = {}
+    for item in all_feedback:
+        local_id = str(item.get("note_id") or item.get("id") or "")
+        if item["surface"] == "chalk_talk":
+            key = f"{item['talk_id']}:{local_id}"
+            pointer = {"surface": "chalk_talk", "id": local_id,
+                       "talk_id": item["talk_id"], "talk_title": item.get("talk_title", ""),
+                       "slide": item.get("slide", 0), "slide_title": item.get("slide_title", ""),
+                       "mark": item.get("mark", ""), "source_path": item["source_path"],
+                       "detail_path": item["marks_path"]}
+        else:
+            key = f"page:{item['page']}:{local_id}"
+            pointer = {"surface": "page", "id": local_id, "page": item["page"],
+                       "page_title": item.get("page_title", ""), "kind": item.get("kind", ""),
+                       "source_path": item["source_path"],
+                       "detail_path": f"feedback/pages/{item['page']}.json"}
+        marks_by_key[key] = pointer
+        by_local_id.setdefault(local_id, []).append(key)
+
+    talk_index = {}
+    out: dict[str, bytes] = {}
+    for rec in records:
+        server_id, sync_id = str(rec["id"]), str(rec["sync_id"])
+        detail = talk_details[server_id]
+        mark_items = [item for item in talk_feedback if item.get("talk_id") == sync_id]
+        # The deck is already next door. Do not duplicate every slide into marks.json.
+        compact_marks = [{k: v for k, v in item.items() if k != "slide_source"}
+                         for item in mark_items]
+        marks_path = f"reports/talks/{sync_id}/marks.json"
+        slides_path = f"reports/talks/{sync_id}/slides.md"
+        out[marks_path] = _json_bytes({"version": 1, "talk_id": sync_id,
+                                       "marks": {item["note_id"]: item for item in compact_marks}})
+        talk_index[sync_id] = {
+            "id": sync_id, "title": rec.get("title", ""), "summary": rec.get("intent", ""),
+            "date": rec.get("date", ""), "slides": len(detail.get("slides", [])),
+            "slide_titles": [slide.get("title", "") for slide in detail.get("slides", [])],
+            "open_mark_ids": [item["note_id"] for item in mark_items],
+            "slides_path": slides_path, "marks_path": marks_path,
+        }
+
+    page_index = {}
+    for page in bubbles.list_pages(slug):
+        slug_id = page["page_slug"]
+        page_marks = [item for item in page_feedback if item.get("page") == slug_id]
+        out[f"feedback/pages/{slug_id}.json"] = _json_bytes({
+            "version": 1, "page": slug_id,
+            "marks": {str(item.get("id") or ""): item for item in page_marks},
+        })
+        page_index[slug_id] = {"id": slug_id, "title": page.get("title", slug_id),
+                               "path": f"reports/pages/{slug_id}.md",
+                               "marks_path": f"feedback/pages/{slug_id}.json",
+                               "open_mark_ids": [str(item.get("id") or "") for item in page_marks]}
+    out["indexes/chalk-talks.json"] = _json_bytes({"version": 1, "by_id": talk_index,
+                                                     "order": list(talk_index)})
+    out["indexes/marks.json"] = _json_bytes({"version": 1, "by_key": marks_by_key,
+                                              "by_local_id": by_local_id})
+    out["indexes/pages.json"] = _json_bytes({"version": 1, "by_id": page_index})
+    paper_index = {}
+    for meta in bubbles.pdfs_for_bubble(slug):
+        pdf_id = str(meta.get("pdf_id") or "")
+        if not pdf_id:
+            continue
+        paper_index[pdf_id] = {
+            "id": pdf_id, "title": meta.get("title") or meta.get("name") or pdf_id,
+            "authors": meta.get("authors") or "", "tags": meta.get("tags") or [],
+            "relevance": meta.get("relevance") or meta.get("why") or "",
+            "summary_path": f"assets/{pdf_id}/summary.md",
+            "text_path": f"assets/{pdf_id}/text.txt",
+            "metadata_path": f"assets/{pdf_id}/meta.yaml",
+            "pdf_path": f"assets/{pdf_id}/paper.pdf",
+        }
+    report_assets = {}
+    asset_root = paths.bubble_assets_dir(slug)
+    if asset_root.exists():
+        for path in sorted(asset_root.iterdir()):
+            if path.is_file() and not path.name.endswith(".tmp"):
+                report_assets[path.name] = {"name": path.name,
+                                            "path": f"reports/assets/{path.name}"}
+    out["indexes/papers.json"] = _json_bytes({"version": 1, "by_id": paper_index})
+    out["indexes/report-assets.json"] = _json_bytes({"version": 1, "by_name": report_assets})
+    out["feedback/all.json"] = _json_bytes({"version": 1, "marks": all_feedback})
+    entry = bubbles.load_registry().get(slug, {})
+    out["index.json"] = _json_bytes({
+        "version": 1, "bubble": {"slug": slug, "name": entry.get("name", slug)},
+        "counts": {"chalk_talks": len(talk_index), "pages": len(page_index),
+                   "papers": len(paper_index), "report_assets": len(report_assets),
+                   "open_marks": len(all_feedback)},
+        "indexes": {"chalk_talks": "indexes/chalk-talks.json",
+                    "marks": "indexes/marks.json", "pages": "indexes/pages.json",
+                    "papers": "indexes/papers.json", "report_assets": "indexes/report-assets.json"},
+        "feedback_fallback": "feedback/all.json",
+    })
+    return out
 
 
 def _idea_markdown(slug: str) -> bytes | None:
@@ -96,7 +202,7 @@ def _files(home: Path, slug: str) -> dict[str, Path | bytes]:
     with paths.use_root(home):
         if not _approved(slug):
             raise KeyError(slug)
-        out: dict[str, Path] = {}
+        out: dict[str, Path | bytes] = {}
         report = paths.bubble_dir(slug)
         if report.exists():
             for path in report.rglob("*"):
@@ -106,15 +212,11 @@ def _files(home: Path, slug: str) -> dict[str, Path | bytes]:
                 # Private review comments (and legacy chats/ dirs) do not belong in an agent project.
                 if rel.parts and rel.parts[0] in {"chats", "comments"}:
                     continue
-                # Chalk talks: the decks themselves are published (the agent revises them), but
-                # the marks' sidecar, the snapshots, and the version history are not. Raw YAML
-                # of every note ever left would sit in the agent's context forever; the
-                # generated feedback/OPEN.md below carries only what is still open, and
-                # disappears entirely once nothing is.
-                if rel.parts[:1] == ("talks",) and (
-                        rel.name.endswith((".notes.yaml", ".history.yaml"))
-                        or rel.name == "talks.yaml"
-                        or rel.parts[1:2] == ("shots",)):
+                # Chalk talks are exported below into stable, title-independent folders. The
+                # server's flat storage names are implementation details, not agent addresses.
+                if rel.parts[:1] == ("talks",):
+                    continue
+                if rel.as_posix() in {"pages.yaml", "_lockedin_papers.md"}:
                     continue
                 # Report figures are flat by contract: they are stored flat, listed flat, and
                 # served through /api/bubbles/<slug>/assets/{filename}, a single path segment that
@@ -142,13 +244,12 @@ def _files(home: Path, slug: str) -> dict[str, Path | bytes]:
         idea = _idea_markdown(slug)
         if idea is not None:
             out["IDEA.md"] = idea
-        reviews = _review_feedback(slug)
-        if reviews is not None:
-            out["config/reviews.yaml"] = reviews
-        marks = feedback.open_markdown(slug)
-        if marks is not None:
-            out["feedback/OPEN.md"] = marks
-            out.update(feedback.images(slug))
+        out.update(feedback.images(slug))
+        # JSON indexes are always present, even in a clean bubble. Their tiny counts tell an
+        # agent whether deeper retrieval is needed without loading any deck or feedback body.
+        out.update(_indexed_context(slug))
+        for rec in talks.ensure_sync_ids(slug):
+            out[f"reports/talks/{rec['sync_id']}/slides.md"] = paths.bubble_talk_path(slug, rec["id"])
         return out
 
 
@@ -173,27 +274,26 @@ def read_files(home: Path, slug: str, wanted: list[str]) -> dict:
     return {"files": files}
 
 
-def writable_path(slug: str, rel: str, *, existing_pages: bool = True) -> bool:
+def writable_path(slug: str, rel: str) -> bool:
     """Whether a local v2 report file can be pushed to this exact bubble."""
     if not _safe_rel(rel):
         return False
     parts = Path(rel).parts
-    if len(parts) != 3 or parts[0] != "reports":
+    if len(parts) not in (3, 4) or parts[0] != "reports":
         return False
     if parts[1] == "assets":
         # ``.tmp`` is reserved. ``apply_writes`` stages through a temp file and ``_files`` hides
         # that suffix from the manifest, so an asset actually named ``*.tmp`` would push
         # successfully, stay invisible to every surface, and then be deleted locally on the next
         # sync as "no longer on the server". Refuse it here so the client is told instead.
-        return Path(parts[2]).name == parts[2] and not parts[2].endswith(".tmp")
+        return (len(parts) == 3 and Path(parts[2]).name == parts[2]
+                and not parts[2].endswith(".tmp"))
     if parts[1] == "talks":
         # The sidecars are generated (marks, snapshots, version history) and must not be pushed;
         # only the deck itself is the agent's to write.
-        name = Path(parts[2]).name
-        return (rel.endswith(".md") and name == parts[2]
-                and not name.endswith((".notes.yaml", ".history.yaml"))
-                and name != "talks.yaml")
-    if parts[1] != "pages" or not rel.endswith(".md"):
+        return bool(len(parts) == 4 and parts[3] == "slides.md"
+                    and talks.valid_sync_id(parts[2]))
+    if len(parts) != 3 or parts[1] != "pages" or not rel.endswith(".md"):
         return False
     page_slug = Path(parts[2]).stem
     return bool(page_slug and slugify(page_slug) == page_slug)
@@ -204,7 +304,8 @@ def _server_path(slug: str, rel: str) -> Path:
     if parts[1] == "assets":
         return paths.bubble_assets_dir(slug) / parts[2]
     if parts[1] == "talks":
-        return paths.bubble_talk_path(slug, Path(parts[2]).stem)
+        talk_id = talks.talk_id_from_sync_id(slug, parts[2]) or parts[2]
+        return paths.bubble_talk_path(slug, talk_id)
     return paths.bubble_page_path(slug, Path(parts[2]).stem)
 
 
@@ -233,8 +334,12 @@ def apply_writes(home: Path, slug: str, writes: list[dict], *, actor: str = "") 
                                   "revision": revision(current), "content_b64": base64.b64encode(current).decode("ascii")}); continue
             target.parent.mkdir(parents=True, exist_ok=True)
             if Path(rel).parts[1] == "talks":
+                parts = Path(rel).parts
+                sync_id = parts[2]
+                talk_id = talks.talk_id_from_sync_id(slug, sync_id)
+                talk_id = talk_id or sync_id
                 try:
-                    talks.absorb_push(slug, Path(rel).stem, raw.decode("utf-8"),
+                    talks.absorb_push(slug, talk_id, raw.decode("utf-8"),
                                        actor=actor or "the connected user")
                 except UnicodeDecodeError:
                     conflicts.append({"path": rel, "reason": "a deck must be UTF-8 text"})
@@ -246,7 +351,7 @@ def apply_writes(home: Path, slug: str, writes: list[dict], *, actor: str = "") 
                     continue
                 # The deck file is the source of truth; the registry entry is derived from it, so
                 # writing a new file *is* how an agent creates a talk. Nothing else to ask for.
-                talks.register_deck(slug, Path(rel).stem)
+                talks.register_deck(slug, talk_id, sync_id=sync_id)
                 # absorb_push stores a canonical render — headers rewritten, resolves= consumed —
                 # so hand the stored bytes and THEIR revision back, exactly as save_page does.
                 # Reporting revision(raw) left every client tracking a revision the manifest
@@ -326,6 +431,11 @@ def apply_deletes(home: Path, slug: str, deletes: list[dict]) -> dict:
                 except ValueError as exc:
                     conflicts.append({"path": rel, "reason": str(exc), "revision": revision(current),
                                       "content_b64": base64.b64encode(current).decode("ascii")}); continue
+            elif Path(rel).parts[1] == "talks":
+                parts = Path(rel).parts
+                sync_id = parts[2]
+                talk_id = talks.talk_id_from_sync_id(slug, sync_id)
+                removed = talks.delete_talk(slug, talk_id or sync_id)
             else:
                 removed = bubbles.delete_bubble_asset(slug, Path(rel).name)
                 if removed: bubbles.touch_bubble(slug)

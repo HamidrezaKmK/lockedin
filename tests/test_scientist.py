@@ -186,7 +186,7 @@ class ScientistServerBoundaryTest(unittest.TestCase):
         self.assertNotIn(f"assets/{detached}/paper.pdf", names)
         self.assertNotIn("reports/chats/private.md", names)
 
-    def test_open_review_threads_are_exported_as_read_only_feedback_context(self):
+    def test_open_review_threads_are_exported_as_indexed_read_only_feedback(self):
         with workspace() as (home, slug):
             content = "Before Current claim after"
             service.save_page(home, slug, "overview", content)
@@ -198,21 +198,21 @@ class ScientistServerBoundaryTest(unittest.TestCase):
                      "prefix": "Before ", "suffix": " after"})
                 reply_review_thread(slug, "overview", thread["id"], "author", "Will revise it.")
                 names = {item["path"] for item in scientist_sync.manifest(home, slug)["files"]}
-                self.assertIn("config/reviews.yaml", names)
+                self.assertIn("feedback/pages/overview.json", names)
+                self.assertIn("indexes/marks.json", names)
                 self.assertNotIn("reports/comments/overview.json", names)
-                payload = scientist_sync.read_files(home, slug, ["config/reviews.yaml"])["files"][0]
-                review = yaml.safe_load(base64.b64decode(payload["content_b64"]))
-                self.assertEqual(review["version"], 2)
-                self.assertEqual(review["threads"][0]["page_slug"], "overview")
-                self.assertEqual(review["threads"][0]["anchor_state"], "attached")
-                self.assertEqual(review["threads"][0]["selected_text"], "Current claim")
-                self.assertEqual(review["threads"][0]["offsets"]["end"] -
-                                 review["threads"][0]["offsets"]["start"], len("Current claim"))
-                self.assertEqual([m["body"] for m in review["threads"][0]["messages"]],
+                payload = scientist_sync.read_files(home, slug, ["feedback/pages/overview.json"])["files"][0]
+                review = json.loads(base64.b64decode(payload["content_b64"]))
+                item = next(iter(review["marks"].values()))
+                self.assertEqual(item["page"], "overview")
+                self.assertEqual(item["anchor_state"], "attached")
+                self.assertEqual(item["selected_text"], "Current claim")
+                self.assertEqual(item["offsets"]["end"] - item["offsets"]["start"], len("Current claim"))
+                self.assertEqual([m["body"] for m in item["messages"]],
                                  ["Clarify this claim.", "Will revise it."])
                 resolve_review_thread(slug, "overview", thread["id"], "author")
                 names = {item["path"] for item in scientist_sync.manifest(home, slug)["files"]}
-        self.assertNotIn("config/reviews.yaml", names)
+        self.assertIn("feedback/pages/overview.json", names)
 
     def test_only_report_pages_and_flat_report_assets_are_writable(self):
         with workspace() as (home, slug):
@@ -344,9 +344,10 @@ class ScientistServerBoundaryTest(unittest.TestCase):
             }])
             self.assertEqual(result["conflicts"], [])
             self.assertIn(marker.encode(), service.get_page(home, slug, "overview").encode())
-            payload = scientist_sync.read_files(home, slug, ["config/reviews.yaml"])["files"][0]
-            review = yaml.safe_load(base64.b64decode(payload["content_b64"]))
-            self.assertEqual(review["threads"][0]["selected_text"], "this is a NEW highlight")
+            payload = scientist_sync.read_files(home, slug, ["feedback/pages/overview.json"])["files"][0]
+            review = json.loads(base64.b64decode(payload["content_b64"]))
+            self.assertEqual(next(iter(review["marks"].values()))["selected_text"],
+                             "this is a NEW highlight")
 
     def test_scientist_wrapper_removal_makes_review_unanchored_without_guessing(self):
         with workspace() as (home, slug):
@@ -368,10 +369,11 @@ class ScientistServerBoundaryTest(unittest.TestCase):
                 "content_b64": base64.b64encode(unwrapped).decode(),
             }])
             self.assertEqual(result["conflicts"], [])
-            payload = scientist_sync.read_files(home, slug, ["config/reviews.yaml"])["files"][0]
-            review = yaml.safe_load(base64.b64decode(payload["content_b64"]))
-            self.assertEqual(review["threads"][0]["anchor_state"], "unanchored")
-            self.assertNotIn("offsets", review["threads"][0])
+            payload = scientist_sync.read_files(home, slug, ["feedback/pages/overview.json"])["files"][0]
+            review = json.loads(base64.b64decode(payload["content_b64"]))
+            item = next(iter(review["marks"].values()))
+            self.assertEqual(item["anchor_state"], "unanchored")
+            self.assertNotIn("offsets", item)
             self.assertNotIn(marker, service.get_page(home, slug, "overview"))
 
     def test_scientist_cannot_fabricate_or_nest_review_wrappers(self):
@@ -398,6 +400,27 @@ class ScientistServerBoundaryTest(unittest.TestCase):
 
 
 class ScientistProjectSyncTest(unittest.TestCase):
+    def test_flat_talk_migration_preserves_and_pushes_unsynced_edits(self):
+        old_id = "2026-08-28-old-title"
+        legacy = f"reports/talks/{old_id}.md"
+        current = "reports/talks/talk-" + scientist_sync.revision(old_id.encode())[:12] + "/slides.md"
+        base = b"# Old title\n\nBase text.\n"
+        fake = FakeBubbleServer({legacy: base})
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+                scientist_cli, "request", side_effect=fake.request):
+            sync = scientist_cli.ProjectSync(ACCOUNT, Path(directory), "work")
+            sync.sync_once()
+            old_path = sync.root / legacy
+            self.assertTrue(old_path.exists())
+            old_path.write_bytes(b"# Renamed title\n\nUnsynced local edit.\n")
+            del fake.files[legacy]
+            fake.files[current] = base
+            sync.sync_once()
+            self.assertFalse(old_path.exists())
+            self.assertEqual((sync.root / current).read_bytes(),
+                             b"# Renamed title\n\nUnsynced local edit.\n")
+            self.assertEqual(fake.files[current], b"# Renamed title\n\nUnsynced local edit.\n")
+
     def test_initialization_creates_required_layout_and_binding(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(
                 scientist_cli, "request", return_value={"guide": "## Markdown\n\nCanonical guidance."}):
@@ -456,8 +479,10 @@ class ScientistProjectSyncTest(unittest.TestCase):
 
     def test_pull_only_assets_are_restored_and_detached_assets_removed(self):
         files = {"assets/paper/paper.pdf": b"server pdf", "assets/paper/summary.md": b"server summary",
-                 "config/math.yaml": b"math", "config/reviews.yaml": b"threads: []\n", "config/overleaf.yaml": b'{"overleaf_project_id":"abcDEF123"}', "reports/pages.yaml": b"pages: []\n",
-                 "reports/_lockedin_papers.md": b"# Papers\n", "reports/pages/overview.md": b"# Overview\n"}
+                 "config/math.yaml": b"math", "feedback/pages/overview.json": b'{"marks":{}}\n',
+                 "indexes/papers.json": b'{"by_id":{}}\n', "index.json": b'{"counts":{}}\n',
+                 "config/overleaf.yaml": b'{"overleaf_project_id":"abcDEF123"}',
+                 "reports/pages/overview.md": b"# Overview\n"}
         fake = FakeBubbleServer(files)
         with tempfile.TemporaryDirectory() as directory, patch.object(scientist_cli, "request", side_effect=fake.request):
             sync = scientist_cli.ProjectSync(ACCOUNT, Path(directory), "work")
@@ -470,11 +495,11 @@ class ScientistProjectSyncTest(unittest.TestCase):
             self.assertEqual(pdf.read_bytes(), b"server pdf")
             self.assertFalse(stale.exists())
             self.assertFalse(os.stat(pdf).st_mode & 0o222)
-            self.assertTrue((sync.root / "reports" / "pages.yaml").exists())
-            self.assertTrue((sync.root / "reports" / "_lockedin_papers.md").exists())
+            self.assertTrue((sync.root / "indexes" / "papers.json").exists())
+            self.assertTrue((sync.root / "index.json").exists())
             self.assertTrue((sync.root / "config" / "overleaf.yaml").exists())
-            reviews = sync.root / "config" / "reviews.yaml"
-            self.assertEqual(reviews.read_bytes(), b"threads: []\n")
+            reviews = sync.root / "feedback" / "pages" / "overview.json"
+            self.assertEqual(reviews.read_bytes(), b'{"marks":{}}\n')
             self.assertFalse(os.stat(reviews).st_mode & 0o222)
             self.assertFalse((sync.root / "overleaf").exists())
             self.assertIn("`\\bmu`", (sync.root / "guides" / "macros.md").read_text())
@@ -491,19 +516,19 @@ class ScientistProjectSyncTest(unittest.TestCase):
             self.assertEqual(page.read_bytes(), b"# New server\n")
             self.assertTrue(list((sync.root / "config" / "conflicts").rglob("*.patch")))
 
-    def test_resolved_review_feedback_is_removed_locally_without_uploading(self):
+    def test_removed_generated_feedback_is_removed_locally_without_uploading(self):
         files = {"reports/pages/overview.md": b"# Overview\n",
-                 "config/reviews.yaml": b"version: 2\nthreads: []\n"}
+                 "feedback/pages/overview.json": b'{"marks":{}}\n'}
         fake = FakeBubbleServer(files)
         with tempfile.TemporaryDirectory() as directory, patch.object(scientist_cli, "request", side_effect=fake.request):
             sync = scientist_cli.ProjectSync(ACCOUNT, Path(directory), "work")
             sync.sync_once()
-            review = sync.root / "config" / "reviews.yaml"
+            review = sync.root / "feedback" / "pages" / "overview.json"
             self.assertTrue(review.exists())
-            del fake.files["config/reviews.yaml"]
+            del fake.files["feedback/pages/overview.json"]
             sync.sync_once()
             self.assertFalse(review.exists())
-            self.assertNotIn("config/reviews.yaml", fake.files)
+            self.assertNotIn("feedback/pages/overview.json", fake.files)
 
     def test_new_page_and_delete_are_sent_to_server(self):
         files = {"reports/pages/overview.md": b"# Overview\n"}
@@ -1101,7 +1126,8 @@ class ScientistProfileAndWorkersTest(unittest.TestCase):
                 # to reach codex and agy exactly as it reaches claude.
                 self.assertIn("--git-common-dir", content)
                 self.assertIn("worktree", content)
-                self.assertIn("Do not search the repository, home directory", content)
+                self.assertIn("Never use `find`, a glob", content)
+                self.assertIn("active workspace directory", content)
             bodies = {next(p for p in t if p.name == "SKILL.md").read_text()
                       for t in (codex, claude, agy)}
             self.assertEqual(len(bodies), 1, "every vendor must get the identical bootstrap")

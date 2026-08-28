@@ -5,6 +5,7 @@ Deterministic — no network, no LLM. Every case here is a bug this feature actu
 from __future__ import annotations
 
 import base64
+import json
 import unittest
 from unittest.mock import patch
 from pathlib import Path
@@ -47,6 +48,14 @@ class TalkTests(unittest.TestCase):
 
     def tearDown(self):
         self.ctx.__exit__(None, None, None)
+
+    def _talk_rel(self):
+        with paths.use_root(self.home):
+            rec = next(item for item in talks.list_talks(self.slug) if item["id"] == self.talk)
+        return f"reports/talks/{rec['sync_id']}/slides.md"
+
+    def _talk_marks_rel(self):
+        return self._talk_rel().replace("slides.md", "marks.json")
 
     # -- parsing ---------------------------------------------------------------
     def test_a_deck_round_trips_through_parse_and_render(self):
@@ -91,12 +100,15 @@ class TalkTests(unittest.TestCase):
     def test_talk_card_title_and_explanation_can_change_without_rewriting_slides(self):
         with paths.use_root(self.home):
             before = talks.read_deck(self.slug, self.talk)
+            before_id = talks.ensure_sync_ids(self.slug)[0]["sync_id"]
             updated = talks.update_talk_metadata(self.slug, self.talk,
                                                  title="Variance survives", intent="The short version.")
             after = talks.read_deck(self.slug, self.talk)
+            after_id = talks.ensure_sync_ids(self.slug)[0]["sync_id"]
         self.assertEqual(updated["title"], "Variance survives")
         self.assertEqual(updated["intent"], "The short version.")
         self.assertEqual(before, after)
+        self.assertEqual(before_id, after_id)
 
     def test_a_title_and_subtitle_are_markable_slide_source(self):
         with paths.use_root(self.home):
@@ -171,13 +183,24 @@ class ProjectHandoffTests(unittest.TestCase):
     def tearDown(self):
         self.ctx.__exit__(None, None, None)
 
+    def _talk_rel(self):
+        with paths.use_root(self.home):
+            rec = next(item for item in talks.list_talks(self.slug) if item["id"] == self.talk)
+        return f"reports/talks/{rec['sync_id']}/slides.md"
+
+    def _talk_marks_rel(self):
+        return self._talk_rel().replace("slides.md", "marks.json")
+
     def test_generated_sidecars_never_reach_the_project(self):
         with paths.use_root(self.home):
             talks.add_note(self.slug, self.talk, slide=0, kind="q", author="pi",
                            quote="Sample the noise level", text="Uniformly in what?")
         names = set(scientist_sync._files(self.home, self.slug))
-        self.assertIn(f"reports/talks/{self.talk}.md", names)
-        self.assertIn("feedback/OPEN.md", names)
+        self.assertIn(self._talk_rel(), names)
+        self.assertIn(self._talk_marks_rel(), names)
+        self.assertIn("indexes/chalk-talks.json", names)
+        self.assertIn("indexes/marks.json", names)
+        self.assertIn("feedback/all.json", names)
         # Raw marks, history and snapshots would sit in every future agent's context forever.
         for leaked in (f"reports/talks/{self.talk}.notes.yaml",
                        f"reports/talks/{self.talk}.history.yaml",
@@ -198,19 +221,45 @@ class ProjectHandoffTests(unittest.TestCase):
             self.assertIn("see the picture", body)
             self.assertNotIn("no picture was captured", body)
 
-    def test_feedback_disappears_entirely_once_nothing_is_open(self):
+    def test_feedback_indexes_become_empty_once_nothing_is_open(self):
         with paths.use_root(self.home):
             note = talks.add_note(self.slug, self.talk, slide=0, kind="q", author="pi",
                                   quote="Sample the noise level", text="Uniformly in what?")
-        self.assertIn("feedback/OPEN.md", scientist_sync._files(self.home, self.slug))
+        before = scientist_sync._files(self.home, self.slug)
+        self.assertEqual(json.loads(before["index.json"])["counts"]["open_marks"], 1)
         with paths.use_root(self.home):
             talks.resolve_marks(self.slug, self.talk, [note["id"]])
             self.assertIsNone(feedback.open_markdown(self.slug))
-        # An agent opening a clean bubble should see no feedback machinery at all.
-        self.assertNotIn("feedback/OPEN.md", scientist_sync._files(self.home, self.slug))
+        after = scientist_sync._files(self.home, self.slug)
+        self.assertEqual(json.loads(after["index.json"])["counts"]["open_marks"], 0)
+        self.assertEqual(json.loads(after["feedback/all.json"])["marks"], [])
+        self.assertEqual(json.loads(after[self._talk_marks_rel()])["marks"], {})
+
+    def test_duplicate_local_mark_ids_route_without_loading_unrelated_talks(self):
+        with paths.use_root(self.home):
+            first = talks.add_note(self.slug, self.talk, slide=0, kind="q", author="pi",
+                                   quote="Sample the noise level", text="FIRST PRIVATE BODY")
+            other = talks.create_talk(self.slug, "A second deck", date="2026-08-28", body=DECK)
+            second = talks.add_note(self.slug, other, slide=1, kind="more", author="pi",
+                                    quote="which kills the variance term", text="SECOND PRIVATE BODY")
+            files = scientist_sync._files(self.home, self.slug)
+            records = {item["id"]: item for item in talks.ensure_sync_ids(self.slug)}
+        self.assertEqual(first["id"], second["id"], "mark ids are deliberately talk-local")
+        marks_index = json.loads(files["indexes/marks.json"])
+        keys = marks_index["by_local_id"][first["id"]]
+        self.assertEqual(len(keys), 2)
+        self.assertNotIn("PRIVATE BODY", files["indexes/marks.json"].decode())
+        first_marks = f"reports/talks/{records[self.talk]['sync_id']}/marks.json"
+        second_marks = f"reports/talks/{records[other]['sync_id']}/marks.json"
+        self.assertIn("FIRST PRIVATE BODY", files[first_marks].decode())
+        self.assertNotIn("SECOND PRIVATE BODY", files[first_marks].decode())
+        self.assertIn("SECOND PRIVATE BODY", files[second_marks].decode())
+        fallback = files["feedback/all.json"].decode()
+        self.assertIn("FIRST PRIVATE BODY", fallback)
+        self.assertIn("SECOND PRIVATE BODY", fallback)
 
     def test_an_agent_creates_a_talk_by_writing_one_file(self):
-        rel = "reports/talks/2026-08-28-does-cosine-help.md"
+        rel = "reports/talks/talk-20260828-120000/slides.md"
         deck = b"<!-- slide: kind=setup, date=2026-08-28, v=1 -->\n# Does cosine help?\n\n*A test.*\n"
         self.assertTrue(scientist_sync.writable_path(self.slug, rel))
         result = scientist_sync.apply_writes(self.home, self.slug, [{
@@ -220,9 +269,9 @@ class ProjectHandoffTests(unittest.TestCase):
         with paths.use_root(self.home):
             listed = {t["id"]: t for t in talks.list_talks(self.slug)}
         # The registry entry is derived from the file, so there is no second step to forget.
-        self.assertIn("2026-08-28-does-cosine-help", listed)
-        self.assertEqual(listed["2026-08-28-does-cosine-help"]["title"], "Does cosine help?")
-        self.assertEqual(listed["2026-08-28-does-cosine-help"]["date"], "2026-08-28")
+        created = next(item for item in listed.values() if item["sync_id"] == "talk-20260828-120000")
+        self.assertEqual(created["title"], "Does cosine help?")
+        self.assertEqual(created["date"], "2026-08-28")
 
     def test_a_pushed_slide_cannot_resolve_marks(self):
         """Resolution is the user's act alone; a pushed header carrying `resolves=` is inert.
@@ -242,7 +291,7 @@ class ProjectHandoffTests(unittest.TestCase):
             f"resolves={n1['id']},{n2['id']} -->"
         ).replace("2. Here I assume $w(\\lambda) \\to \\text{const}$, which kills the variance term.",
                   "2. No constancy assumption is needed; the covariance term is exact.")
-        rel = f"reports/talks/{self.talk}.md"
+        rel = self._talk_rel()
         result = scientist_sync.apply_writes(self.home, self.slug, [{
             "path": rel, "content_b64": base64.b64encode(revised.encode()).decode(),
             "base_revision": scientist_sync.revision(
@@ -273,7 +322,7 @@ class ProjectHandoffTests(unittest.TestCase):
         revised = DECK.replace("<!-- slide: kind=setup, date=2026-08-27, v=1 -->",
                                f"<!-- slide: kind=setup, date=2026-08-27, resolves={note['id']} -->")
         result = scientist_sync.apply_writes(self.home, self.slug, [{
-            "path": f"reports/talks/{self.talk}.md",
+            "path": self._talk_rel(),
             "content_b64": base64.b64encode(revised.encode()).decode(),
             "base_revision": scientist_sync.revision(self._deck_bytes())}])
         self.assertEqual(result["conflicts"], [])
@@ -290,7 +339,7 @@ class ProjectHandoffTests(unittest.TestCase):
         reply = ("\n<!-- lockedin-reply: " + note["id"] + " -->\n"
                  "The covariance term is exact; I replaced that approximation on slide 2.\n"
                  "<!-- /lockedin-reply -->\n")
-        write = {"path": f"reports/talks/{self.talk}.md",
+        write = {"path": self._talk_rel(),
                  "content_b64": base64.b64encode(base + reply.encode()).decode(),
                  "base_revision": scientist_sync.revision(base)}
         result = scientist_sync.apply_writes(self.home, self.slug, [write], actor="talks")
@@ -316,7 +365,7 @@ class ProjectHandoffTests(unittest.TestCase):
             base = self._deck_bytes()
         raw = base + b"\n<!-- lockedin-reply: no-such-note -->\nNope.\n<!-- /lockedin-reply -->\n"
         result = scientist_sync.apply_writes(self.home, self.slug, [{
-            "path": f"reports/talks/{self.talk}.md",
+            "path": self._talk_rel(),
             "content_b64": base64.b64encode(raw).decode(),
             "base_revision": scientist_sync.revision(base),
         }])
@@ -330,7 +379,10 @@ class ProjectHandoffTests(unittest.TestCase):
             return paths.bubble_talk_path(self.slug, self.talk).read_bytes()
 
     def test_an_agent_cannot_push_the_generated_sidecars(self):
-        for rel in (f"reports/talks/{self.talk}.notes.yaml",
+        sync_dir = self._talk_rel().rsplit("/", 1)[0]
+        for rel in (f"{sync_dir}/marks.json",
+                    f"reports/talks/{self.talk}.md",
+                    f"reports/talks/{self.talk}.notes.yaml",
                     f"reports/talks/{self.talk}.history.yaml",
                     "reports/talks/talks.yaml",
                     "reports/talks/nested/deck.md"):
@@ -396,8 +448,8 @@ class ClientScanTests(unittest.TestCase):
         src = Path(scientist_cli.__file__).read_text()
         scan = src[src.index("def _report_paths"):src.index("def unsynced_figures")]
         self.assertIn('"talks"', scan)
-        self.assertIn('endswith(".md")', scan)   # sidecars beside a deck stay the server's
-        self.assertIn('"reports/talks/"', src)   # and the push/prune filters know about them
+        self.assertIn('glob("talk-*/slides.md")', scan)
+        self.assertIn('("reports", "talks")', src)  # push/prune filters know about them
 
 
 class CardOverflowTests(unittest.TestCase):
@@ -678,7 +730,10 @@ class DeckPushEchoTests(unittest.TestCase):
         self.ctx.__exit__(None, None, None)
 
     def test_push_echo_matches_manifest_and_returns_canonical_bytes(self):
-        rel = f"reports/talks/{self.talk}.md"
+        with paths.use_root(self.home):
+            sync_id = next(item["sync_id"] for item in talks.list_talks(self.slug)
+                           if item["id"] == self.talk)
+        rel = f"reports/talks/{sync_id}/slides.md"
         raw = DECK.replace("Here I assume", "Now I assume").encode()
         pushed = base64.b64encode(raw).decode()
         with paths.use_root(self.home):
