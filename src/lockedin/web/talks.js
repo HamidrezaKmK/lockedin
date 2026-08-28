@@ -232,11 +232,12 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
 .tk-editnote{font-size:11.5px;color:var(--muted);padding:7px 14px;border-top:1px solid var(--line)}
 .tk-editnote code{font-family:var(--font-mono);background:var(--panel2);padding:1px 5px;border-radius:5px}
 .tk-danger:hover{border-color:var(--bad);color:var(--bad)}
-/* The slide tools are one instrument, so they get one body — six segments, one border. */
-.tk-seg{display:inline-flex;align-items:stretch;border:1px solid var(--line);border-radius:11px;
+/* The slide tools are one instrument, so they get one body — the same pill grammar as the
+   presence cluster: glyph-only segments, dividers as borders, words in the tooltips. */
+.tk-seg{display:inline-flex;align-items:stretch;border:1px solid var(--line);border-radius:999px;
   overflow:hidden;background:var(--panel2)}
-.tk-seg button{border:0;border-radius:0;background:none;min-height:34px;padding:6px 13px;
-  white-space:nowrap}
+.tk-seg button{border:0;border-radius:0;background:none;min-height:34px;padding:6px 14px;
+  font-size:15px;line-height:1;white-space:nowrap}
 .tk-seg button+button{border-left:1px solid var(--line)}
 .tk-seg button:hover{border-color:var(--line);background:color-mix(in srgb,var(--accent) 13%,transparent)}
 .tk-seg button.tk-danger:hover{background:color-mix(in srgb,var(--bad) 13%,transparent);color:var(--bad);
@@ -1023,11 +1024,11 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
           <span class="tk-cnt">${S.slide + 1} / ${S.talk.slides.length}</span>
           <button data-nav="-1">←</button><button data-nav="1">→</button>
           <div class="tk-seg">
-            <button data-draw="1" title="drag a box over the slide">🖍 mark region</button>
-            <button data-ink="1" title="draw freely on the slide — the drawing becomes the feedback">✍ draw</button>
-            <button data-editdeck="1" title="edit this slide's markdown by hand">✎ edit</button>
-            <button data-add="1" title="insert a blank slide after this one">+ add slide</button>
-            <button data-del="1" class="tk-danger" title="delete this slide and its marks">✂ delete slide</button>
+            <button data-draw="1" title="mark region — drag a box over the slide">🖍</button>
+            <button data-ink="1" title="draw — freehand strokes become the feedback">✍</button>
+            <button data-editdeck="1" title="edit this slide's markdown by hand">✎</button>
+            <button data-add="1" title="add a blank slide after this one">＋</button>
+            <button data-del="1" class="tk-danger" title="delete this slide and its marks">✂</button>
             <button data-notes="1" class="${S.notes ? "" : "off"}"
               title="${S.notes ? "hide" : "show"} the notes pane and the marks on the slide">${S.notes ? "◨" : "◧"}</button>
           </div>
