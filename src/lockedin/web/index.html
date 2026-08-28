@@ -232,8 +232,8 @@
       linear-gradient(180deg,var(--bg) 0%,color-mix(in srgb,var(--panel) 76%,var(--bg)) 58%,var(--bg) 100%)}
   .landing{width:100%;min-height:100vh}
   .landing-inner{width:min(1160px,calc(100vw - 40px));margin:0 auto}
-  .landing-hero{min-height:min(760px,100vh);display:grid;grid-template-columns:minmax(0,1.1fr) minmax(310px,.82fr);
-    gap:42px;align-items:center;padding:42px 0 54px}
+  .landing-hero{min-height:min(560px,92vh);display:grid;grid-template-columns:minmax(0,1.1fr) minmax(310px,.82fr);
+    gap:42px;align-items:center;padding:56px 0 44px}
   .landing-kicker{display:inline-flex;align-items:center;gap:8px;color:var(--accent2);font-size:12px;
     font-weight:700;text-transform:uppercase;letter-spacing:.12em;margin-bottom:14px}
   .landing-lock{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;
@@ -293,6 +293,36 @@
     color:#fff;background:var(--accent2);padding:10px 13px;border-radius:8px;transition:transform .15s ease,filter .15s ease}
   .clone-link:hover{color:#fff;transform:translateY(-1px);filter:brightness(1.08)}
   .landing-footer{padding:24px 0 38px;color:var(--muted);font-size:12px}
+  /* The demo board: a slide and a mark card drawn in DOM, so it costs nothing, scales, and
+     recolours with every theme. */
+  .demo-board{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(250px,.8fr);gap:20px;align-items:start}
+  .demo-slide{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    box-shadow:var(--shadow);padding:28px 30px 22px;position:relative}
+  .demo-kind{position:absolute;top:-10px;left:20px;font:600 9.5px var(--font-mono);
+    letter-spacing:.13em;text-transform:uppercase;background:var(--accent);color:var(--bg);
+    padding:3px 10px;border-radius:999px}
+  .demo-slide h4{margin:4px 0 14px;font-size:18px;letter-spacing:-.01em}
+  .demo-slide p{margin:0 0 12px;font-size:14.5px;line-height:1.65;color:var(--ink)}
+  .demo-slide code{font-size:.9em;background:var(--panel2);padding:1px 6px;border-radius:5px}
+  .demo-slide mark{background:color-mix(in srgb,var(--bad) 22%,transparent);color:inherit;
+    box-shadow:0 1px 0 var(--bad);border-radius:3px;padding:0 2px}
+  .demo-dim{color:var(--muted)}
+  .demo-note{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--bad);
+    border-radius:12px;padding:16px 17px;box-shadow:var(--shadow-sm)}
+  .demo-badge{display:inline-block;font:500 10.5px var(--font-mono);padding:2px 8px;margin-bottom:10px;
+    border-radius:999px;background:color-mix(in srgb,var(--bad) 18%,transparent);color:var(--bad)}
+  .demo-quote{font-size:12.5px;color:var(--muted);font-style:italic;border-left:2px solid var(--line);
+    padding-left:10px;margin-bottom:12px}
+  .demo-say{font-size:13px;line-height:1.55;margin-bottom:11px}
+  .demo-say b{display:block;font:500 10.5px var(--font-ui);letter-spacing:.06em;color:var(--muted);
+    margin-bottom:2px}
+  .demo-say.agent{color:var(--muted);border-left:2px solid color-mix(in srgb,var(--accent) 45%,transparent);
+    padding-left:10px;margin-bottom:0}
+  .demo-say.agent b{color:var(--accent)}
+  .demo-legend{display:flex;gap:9px;flex-wrap:wrap;margin-top:18px}
+  .demo-legend span{font:500 11.5px var(--font-mono);color:var(--kc);border:1px solid
+    color-mix(in srgb,var(--kc) 45%,var(--line));background:color-mix(in srgb,var(--kc) 8%,transparent);
+    padding:3px 11px;border-radius:999px}
   /* Installed Scientist client — commands stay copyable as a single shell line.
      Narrow screens scroll the command itself instead of wrapping it. */
   .scientist-install{position:relative;background:linear-gradient(135deg,color-mix(in srgb,var(--accent) 13%,var(--panel)),var(--panel));
@@ -990,6 +1020,8 @@
     .landing-lede{font-size:18px}
     .landing-points{grid-template-columns:minmax(0,1fr)}
     .landing-section{padding:36px 0}
+    .demo-board{display:block}
+    .demo-note{margin-top:14px}
     .landing-section-head{display:block;margin-bottom:18px}
     .landing-section h2{font-size:23px;margin-bottom:8px}
     .workflow-grid,.feature-grid,.scientist-platforms,.scientist-steps{grid-template-columns:minmax(0,1fr)}
@@ -1016,11 +1048,11 @@
           <div class="landing-kicker"><span class="landing-lock">🔒</span> Research with AI, without the chat window</div>
           <h1 id="landing-title"><span class="lock">locked</span>in</h1>
           <p class="landing-lede">Your agent is not a chatbot. Stop treating it like one.</p>
-          <p class="landing-copy">We work with capable research collaborators through a chat thread — the one interface that cannot hold an argument, a figure, or a record. lockedin is an implementation of how it should work instead: the agent gives you a chalk talk, you write the document together, and you drop to the exact sentence when something is wrong.</p>
+          <p class="landing-copy">Supervise an AI the way you supervise a grad student: it presents, you mark the exact line, and the write-up is what lasts — not the thread.</p>
           <div class="landing-points">
-            <div class="landing-point"><b>Organize Research</b><span>Keep PDFs, notes, tags, summaries, and BibTeX in a fully indexed library.</span></div>
-            <div class="landing-point"><b>Math Help with AI</b><span>Build bubbles and math-aware reports that evolve with your project.</span></div>
-            <div class="landing-point"><b>Keep Connected</b><span>Use Slack and your preferred models without losing the context of your work.</span></div>
+            <div class="landing-point"><b>Chalk talks</b><span>Dated decks, one idea per slide, whenever something needs your judgement.</span></div>
+            <div class="landing-point"><b>Five marks</b><span>✗ ? → ✓ ✂ on the exact sentence. No prose required.</span></div>
+            <div class="landing-point"><b>One bubble</b><span>Papers, figures, TODOs and the manuscript, right where the agent works.</span></div>
           </div>
         </div>
         <form class="landing-auth-panel col" onsubmit="return false" aria-label="Account access">
@@ -1039,52 +1071,69 @@
       <section class="landing-section" aria-labelledby="why-title">
         <div class="landing-section-head">
           <h2 id="why-title">Chat is the wrong shape for this work</h2>
-          <p>The models became good collaborators. The interface did not move: we still talk to them in a thread of messages, which is how you ask a question, not how you supervise research.</p>
+          <p>A good student does not send you a wall of text — they take you to the board, and you interrupt at the step that does not hold. lockedin is that arrangement, built for an agent.</p>
         </div>
-        <ul class="landing-bullets" id="why-bullets">
-          <li>It gives a chalk talk — a dated deck, one idea per slide, when something needs your judgement.</li>
-          <li>You write the document together, and it is the document that lasts, not the thread.</li>
-          <li>You drop to the low level when it matters: mark the exact sentence, and the argument happens there.</li>
-        </ul>
+        <!-- Static by design: this is a picture drawn in DOM, not copy — it stays correct in
+             every theme and is not touched by landing.yaml hydration. -->
+        <div class="demo-board" aria-hidden="true">
+          <div class="demo-slide">
+            <span class="demo-kind">derivation · slide 3</span>
+            <h4>The residual term survives</h4>
+            <p>Splitting the loss gives <code>L = E[g]·E[ℓ] + R</code>.</p>
+            <p><mark>Step 3 assumes w(λ) → const, which makes R vanish.</mark> Every other step is an identity.</p>
+            <p class="demo-dim">So the claim rests on R — measurable, not yet measured.</p>
+          </div>
+          <div class="demo-note">
+            <div class="demo-badge">✗ this is wrong</div>
+            <div class="demo-quote">“Step 3 assumes w(λ) → const…”</div>
+            <div class="demo-say"><b>you</b> Only true in the high-SNR tail. Re-derive without it.</div>
+            <div class="demo-say agent"><b>🤖 agent</b> Re-derived — the covariance identity splits L exactly, no assumption. v2 is up, your objection is in its history.</div>
+          </div>
+        </div>
+        <div class="demo-legend">
+          <span style="--kc:var(--bad)">✗ wrong</span><span style="--kc:var(--warn)">? unclear</span>
+          <span style="--kc:var(--accent2)">→ go deeper</span><span style="--kc:var(--good)">✓ keep</span>
+          <span style="--kc:var(--muted)">✂ cut</span>
+        </div>
       </section>
 
       <section class="landing-section" aria-labelledby="workflow-title">
         <div class="landing-section-head">
           <h2 id="workflow-title">How a week actually goes</h2>
-          <p>Not a demo flow — the loop you repeat while an idea is being worked out.</p>
+          <p>The loop you repeat while an idea is being worked out.</p>
         </div>
         <div class="workflow-grid">
-          <div class="workflow-step"><span class="workflow-num">01</span><b>Bubble</b><span>Create a theme or idea you would like to research on</span></div>
-          <div class="workflow-step"><span class="workflow-num">02</span><b>Library</b><span>Enrich the context of that research bubble with papers and use AI-assisted summaries</span></div>
-          <div class="workflow-step"><span class="workflow-num">03</span><b>Editing + AI-Assist</b><span>Start editing the bubble, add pages, equations, figures, like an Overleaf environment. Open up the CLI and start editing with AI, ask for relevant literature, validate theorems, and keep up-to-date.</span></div>
-          <div class="workflow-step"><span class="workflow-num">04</span><b>Share</b><span>Share ideas with team-members or compose blogposts to share with the public.</span></div>
+          <div class="workflow-step"><span class="workflow-num">01</span><b>You set the question</b><span>One paragraph on what you are trying to establish.</span></div>
+          <div class="workflow-step"><span class="workflow-num">02</span><b>It goes and works</b><span>Experiments, figures, derivations — kept in the bubble, not in a scrollback.</span></div>
+          <div class="workflow-step"><span class="workflow-num">03</span><b>It presents</b><span>A short deck with the soft spots named, when it needs your judgement.</span></div>
+          <div class="workflow-step"><span class="workflow-num">04</span><b>You mark up</b><span>It re-derives, argues back, and the history keeps your objection.</span></div>
         </div>
       </section>
 
       <section class="landing-section" aria-labelledby="components-title">
         <div class="landing-section-head">
-          <h2 id="components-title">Library</h2>
-          <p>Every view is built around repeated research work.</p>
+          <h2 id="components-title">Everything the work needs, in one place</h2>
+          <p>An agent is only as good as what it can see. Context is something you keep, not something you re-paste every session.</p>
         </div>
         <div class="feature-grid">
-          <div class="feature-card"><div class="feature-icon">📚</div><b>Library</b><br><span>Keep track of your papers, books, and other research materials with appropriate notes and links to idea bubbles and bibtex entries.</span></div>
-          <div class="feature-card"><div class="feature-icon">🫧</div><b>Idea Bubbles</b><br><span>Create idea bubbles to organize your research ideas and connect them to your papers and other research materials.</span></div>
-          <div class="feature-card"><div class="feature-icon">🔗</div><b>Share Latex</b><br><span>Share your latex code with your collaborators and get feedback on your writing.</span></div>
-          <div class="feature-card"><div class="feature-icon">🤖</div><b>AI-powered help</b><br><span>Use your favourite LLM models to help with your research from your CLI and power it with a better context.</span></div>
-          <div class="feature-card"><div class="feature-icon">💬</div><b>Slack Sync</b><br><span>Sync papers and research notes across devices using Slack.</span></div>
-          <div class="feature-card"><div class="feature-icon">📋</div><b>TODOs</b><br><span>Track open research tasks and link them from your report pages with Github issue style referencing.</span></div>
+          <div class="feature-card"><div class="feature-icon">📚</div><b>Library</b><br><span>Papers with notes, tags and BibTeX — indexed for you and for the agent.</span></div>
+          <div class="feature-card"><div class="feature-icon">🫧</div><b>Idea bubbles</b><br><span>One idea: its pages, figures, talks and open questions together.</span></div>
+          <div class="feature-card"><div class="feature-icon">💬</div><b>Chalk talks</b><br><span>Dated decks you mark up instead of replying in prose.</span></div>
+          <div class="feature-card"><div class="feature-icon">🔗</div><b>Overleaf</b><br><span>The manuscript stays bound to the notes it grew from.</span></div>
+          <div class="feature-card"><div class="feature-icon">🗨️</div><b>Slack</b><br><span>Papers and TODOs from the channel your group already lives in.</span></div>
+          <div class="feature-card"><div class="feature-icon">📋</div><b>TODOs</b><br><span>Open tasks, referenced from pages GitHub-issue style.</span></div>
         </div>
       </section>
 
       <section class="landing-section" aria-labelledby="pi-title">
         <div class="landing-section-head">
           <h2 id="pi-title">No compromise on the model</h2>
-          <p>lockedin is an interface, not a model, and not a wrapper that resells you one. Bring the subscription you already pay for.</p>
+          <p>lockedin is an interface, not a model wrapper. Bring the subscription you already pay for, or a local model.</p>
         </div>
         <ul class="landing-bullets" id="pi-bullets">
-          <li>Works with the agent you already use, in the terminal you already use.</li>
-          <li>Self-hostable and open source: run the whole thing locally if you want to.</li>
-          <li>Nothing is locked to a vendor — least of all the record of what you decided.</li>
+          <li>Claude, Codex, Gemini, GPT — or Qwen on your own GPU.</li>
+          <li>Your key stays yours; your work stays on your disk.</li>
+          <li>Switching model never costs you the bubble, the marks or the history.</li>
         </ul>
       </section>
 
@@ -1092,7 +1141,7 @@
         <div class="scientist-install">
         <div class="landing-section-head">
           <h2 id="scientist-install-title">Connecting a project takes one line</h2>
-          <p>In the app, the 🤖 button on any bubble gives you a single command to paste. The steps below are only for setting it up by hand.</p>
+          <p>The 🤖 button on any bubble hands you a single command to paste. The steps below are only for doing it by hand.</p>
         </div>
         <div class="scientist-platforms">
           <article class="scientist-platform">
@@ -1120,7 +1169,7 @@
         <div class="open-source-panel">
           <div>
             <h2 id="privacy-title">Open source, yours to shape</h2>
-            <p>Run lockedin on your own machine, adapt it to your research group, and keep ownership of the workbench where your ideas take shape.</p>
+            <p>Run it on your own machine, adapt it to your group, and own the record of what you decided.</p>
           </div>
           <div class="clone-box">
             <small>Make it your own</small>
@@ -1415,7 +1464,9 @@
       if(host&&data.text!=null) host.textContent=String(data.text).split("\n\n")[0];
       cards(listSel,data.bullets,(b)=>el("li",{},String(b||"")));
     };
-    bulletSection(c.why||{},"#why-title","#why-bullets");
+    setText("#why-title",(c.why||{}).title);
+    const whyText=$("#why-title")&&$("#why-title").parentElement.querySelector("p");
+    if(whyText&&(c.why||{}).text!=null) whyText.textContent=String(c.why.text).split("\n\n")[0];
     bulletSection(c.pi||{},"#pi-title","#pi-bullets");
 
     const privacy=c.privacy||{};
@@ -4032,7 +4083,7 @@
     });
     }
     if(view==="workers"){
-    menu.append(el("div",{class:"presence-group"},"Scientist workers"));
+    menu.append(el("div",{class:"presence-group"},"Agent workers"));
     if(!workers.length){
       menu.append(el("div",{class:"presence-empty"},"No project directory is syncing this bubble."));
       // The one actionable thing from here, and the reason the robot sits in the same card.
