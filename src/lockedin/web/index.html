@@ -1063,12 +1063,12 @@
         </div>
         <form class="landing-auth-panel col" onsubmit="return false" aria-label="Account access">
           <h2>Enter your workspace</h2>
-          <div class="auth-note">Log in, or create an account and give your agent somewhere to write.</div>
+          <div class="auth-note">Log in, or request access to give your agent somewhere to write.</div>
           <input id="au_user" placeholder="username" autocomplete="username">
           <input id="au_pass" type="password" placeholder="password" autocomplete="current-password">
           <div class="row">
             <button class="primary" id="au_login">Log in</button>
-            <button id="au_signup">Sign up</button>
+            <button id="au_signup">Request Demo</button>
           </div>
           <div class="err" id="au_err"></div>
         </form>
@@ -2196,15 +2196,34 @@
   }
 
   // ================= AUTH =================
+  const DEMO_ACCESS_MESSAGE="Lockedin is an experimental project and currently on demo, to be able to login and play with our project, email kamkarih@mit.edu";
+  function showDemoRequest(){
+    const overlay=el("div",{class:"overlay",role:"dialog","aria-modal":"true","aria-label":"Request Demo"});
+    const close=()=>overlay.remove();
+    const message=el("p",{class:"muted"},
+      "Lockedin is an experimental project and currently on demo, to be able to login and play with our project, email ",
+      el("a",{href:"mailto:kamkarih@mit.edu"},"kamkarih@mit.edu"));
+    const done=el("button",{class:"primary",onclick:close},"Got it");
+    overlay.onclick=e=>{if(e.target===overlay)close();};
+    overlay.append(el("div",{class:"diffbox create-dialog"},
+      el("div",{class:"create-dialog-header"},el("b",{},"Request Demo")),
+      el("div",{class:"create-dialog-body"},message),
+      el("div",{class:"create-dialog-footer"},done)));
+    document.body.append(overlay);
+    done.focus();
+  }
   async function doAuth(kind){
     const username=$("#au_user").value.trim(), password=$("#au_pass").value;
     $("#au_err").textContent="";
     try{
       const r=await api("/api/"+kind,{method:"POST",body:JSON.stringify({username,password})});
-      if(r&&r.pending){ $("#au_err").textContent=r.message||"Account created. Waiting for approval."; return; }
+      if(r&&r.pending){ showDemoRequest(); return; }
       await boot();
     }
-    catch(e){ $("#au_err").textContent=e.message; }
+    catch(e){
+      if(e.message===DEMO_ACCESS_MESSAGE){ showDemoRequest(); return; }
+      $("#au_err").textContent=e.message;
+    }
   }
   $("#au_login").onclick=()=>doAuth("login");
   $("#au_signup").onclick=()=>doAuth("signup");

@@ -104,15 +104,32 @@ class Sharing(unittest.TestCase):
 
 
 class Account(unittest.TestCase):
-    def test_new_accounts_are_auto_approved_but_not_premium_by_default(self):
+    def test_only_the_first_account_is_approved_by_default(self):
         with temp_base():
             from lockedin import auth, models, paths
             auth.create_user("owner", "pw12")
             auth.create_user("alice", "pw12")
 
-            self.assertTrue(auth.is_approved("alice"))
+            self.assertTrue(auth.is_approved("owner"))
+            self.assertFalse(auth.is_approved("alice"))
             self.assertFalse(auth.is_premium("alice"))
             self.assertEqual(models.load_config(paths.user_home("alice"))["active"], "openai")
+
+    def test_unapproved_signup_and_login_explain_how_to_request_demo_access(self):
+        with temp_base():
+            from fastapi.testclient import TestClient
+            from lockedin import auth, server
+
+            auth.create_user("owner", "pw12")
+            with TestClient(server.build_app(), base_url="https://testserver") as client:
+                signup = client.post("/api/signup", json={"username": "alice", "password": "pw12"})
+                self.assertEqual(signup.status_code, 200)
+                self.assertEqual(signup.json(), {
+                    "pending": True, "message": server.DEMO_ACCESS_MESSAGE})
+
+                login = client.post("/api/login", json={"username": "alice", "password": "pw12"})
+                self.assertEqual(login.status_code, 403)
+                self.assertEqual(login.json()["detail"], server.DEMO_ACCESS_MESSAGE)
 
     def test_qwen_requires_premium_account(self):
         with temp_base():

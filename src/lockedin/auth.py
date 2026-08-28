@@ -107,7 +107,7 @@ def create_user(username: str, password: str) -> str:
     first_user = not users
     salt = secrets.token_hex(16)
     users[username] = {"salt": salt, "hash": _hash_password(password, salt),
-                       "created_at": _now_iso(), "approved": True,
+                       "created_at": _now_iso(), "approved": first_user,
                        "admin": first_user, "premium": first_user}
     save_accounts(users)
     paths.ensure_user_dirs(username)

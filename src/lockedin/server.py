@@ -39,6 +39,10 @@ _WORKER_PATH_RE = re.compile(r"^/api/scientist/v2/bubbles/([^/]+)(?:/|$)")
 # release needs an installed client refresh; the dependency-free installed client cannot import
 # package metadata from this server.
 SCIENTIST_CLIENT_VERSION = "2026.08.26.2"
+DEMO_ACCESS_MESSAGE = (
+    "Lockedin is an experimental project and currently on demo, to be able to login "
+    "and play with our project, email kamkarih@mit.edu"
+)
 
 
 def _build_refs(pages: "list[dict]", bibliography: "dict | None" = None) -> dict:
@@ -1245,6 +1249,8 @@ def build_app():
         rec = auth.load_accounts().get(user, {})
         personal = workspaces.ensure_personal(user, rec)
         service.ensure_workspace(workspaces.workspace_home(personal["id"]))
+        if not auth.is_approved(user):
+            return {"pending": True, "message": DEMO_ACCESS_MESSAGE}
         return _auth_response(user)
 
     @app.post("/api/login")
@@ -1253,7 +1259,7 @@ def build_app():
         if not auth.verify_password(username, creds.password):
             raise HTTPException(status_code=401, detail="Invalid username or password.")
         if not auth.is_approved(username):
-            raise HTTPException(status_code=403, detail="Account is waiting for admin approval.")
+            raise HTTPException(status_code=403, detail=DEMO_ACCESS_MESSAGE)
         return _auth_response(username)
 
     @app.post("/api/slack/link")
