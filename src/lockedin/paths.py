@@ -150,10 +150,6 @@ def bubble_talk_notes_path(slug: str, talk_id: str) -> Path:
     return bubble_talks_dir(slug) / f"{talk_id}.notes.yaml"
 
 
-def bubble_talk_history_path(slug: str, talk_id: str) -> Path:
-    return bubble_talks_dir(slug) / f"{talk_id}.history.yaml"
-
-
 def bubble_talk_shots_dir(slug: str) -> Path:
     """Rendered snapshots of a marked slide, one per note.
 

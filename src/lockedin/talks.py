@@ -134,11 +134,12 @@ def parse_deck(text: str) -> list[dict]:
             body = lead[:m.start()] + lead[m.end():]
 
         slides.append({
-            **{k: v for k, v in attrs.items() if k in ("resolves", "why")},
+            # `v=` and `why=` from the old versioning era are deliberately dropped here, so a
+            # legacy deck self-cleans the first time it is rewritten.
+            **{k: v for k, v in attrs.items() if k == "resolves"},
             "index": len(slides),
             "kind": attrs.get("kind", "setup"),
             "date": attrs.get("date", ""),
-            "version": int(attrs.get("v", 1) or 1),
             "title": title,
             "sub": sub,
             "body": body.strip("\n"),
@@ -148,10 +149,10 @@ def parse_deck(text: str) -> list[dict]:
 
 
 def render_deck(slides: list[dict]) -> str:
-    """Inverse of `parse_deck`, used when a revision rewrites one slide in place."""
+    """Inverse of `parse_deck`, used when an edit rewrites one slide in place."""
     out = []
     for s in slides:
-        head = f"<!-- slide: kind={s.get('kind','setup')}, date={s.get('date','')}, v={s.get('version',1)} -->"
+        head = f"<!-- slide: kind={s.get('kind','setup')}, date={s.get('date','')} -->"
         parts = [head, f"# {s.get('title','')}".rstrip()]
         if s.get("sub"):
             parts.append(f"*{s['sub']}*")
@@ -246,7 +247,8 @@ def delete_talk(slug: str, talk_id: str) -> bool:
         note_image_path(slug, talk_id, note_id).unlink(missing_ok=True)
     for p in (paths.bubble_talk_path(slug, talk_id),
               paths.bubble_talk_notes_path(slug, talk_id),
-              paths.bubble_talk_history_path(slug, talk_id)):
+              # versioning is gone; this only sweeps a leftover from decks that predate that
+              paths.bubble_talk_path(slug, talk_id).with_name(f"{talk_id}.history.yaml")):
         p.unlink(missing_ok=True)
     return True
 
@@ -358,8 +360,7 @@ def _clean_paths(paths) -> list | None:
 
 def add_note(slug: str, talk_id: str, *, slide: int, kind: str, author: str,
              quote: str = "", text: str = "", rect: dict | None = None,
-             paths: list | None = None, covers: list | None = None,
-             version: int = 1) -> dict:
+             paths: list | None = None, covers: list | None = None) -> dict:
     if kind not in KINDS:
         raise ValueError(f"unknown mark: {kind}")
     paths = _clean_paths(paths)
@@ -376,7 +377,7 @@ def add_note(slug: str, talk_id: str, *, slide: int, kind: str, author: str,
     data["next_id"] = data.get("next_id", 1) + 1
     now = _now_iso()
     data.setdefault("notes", {})[nid] = {
-        "id": nid, "slide": slide, "version": version, "kind": kind,
+        "id": nid, "slide": slide, "kind": kind,
         "quote": quote, "prefix": pre, "suffix": suf, "rect": rect or None,
         "paths": paths, "covers": covers,
         "author": author, "created_at": now, "image": "",
@@ -442,69 +443,31 @@ def delete_note(slug: str, talk_id: str, note_id: str) -> bool:
 
 
 # --------------------------------------------------------------------------- #
-# Revisions
+# Reading and resolving
 # --------------------------------------------------------------------------- #
 def read_deck(slug: str, talk_id: str) -> str:
     p = paths.bubble_talk_path(slug, talk_id)
     return p.read_text() if p.exists() else ""
 
 
-def load_history(slug: str, talk_id: str) -> dict:
-    return _read_yaml(paths.bubble_talk_history_path(slug, talk_id), {"versions": []})
+def resolve_marks(slug: str, talk_id: str, note_ids: list[str]) -> list[str]:
+    """Delete the named marks — the whole of what resolution is.
 
-
-def revise_slide(slug: str, talk_id: str, slide: int, *, body: str, why: str,
-                 title: str | None = None, sub: str | None = None,
-                 resolves: "list[str] | None" = None) -> dict:
-    """Replace one slide's body, snapshotting the old one with *why* it changed.
-
-    `why` is the point of the whole record: a revision that does not say which mark caused it
-    is just a diff, and a diff does not tell you later why the argument has the shape it has.
-
-    `resolves` names the marks this revision answers, and they are **deleted** — sidecar entry
-    and snapshot both. That is deliberate. An addressed mark that lingers is clutter: it sits in
-    every future agent's context, is re-read on every sync, and says nothing the revision does
-    not already say better. The durable record is the version history, which keeps *what the
-    mark asked for* in `marks`; the mark itself is working state and working state should end.
+    There is deliberately no version history behind this. A slide is a living surface: the
+    agent edits it in place and answers in the mark's thread, and once a mark is genuinely
+    addressed it is clutter — it would sit in every future agent's context and say nothing the
+    current slide does not say better. Working state should end, and end completely.
     """
-    slides = parse_deck(read_deck(slug, talk_id))
-    if not 0 <= slide < len(slides):
-        raise IndexError(slide)
-    old = slides[slide]
-
     notes = load_notes(slug, talk_id)
-    consumed = []
-    for note_id in (resolves or []):
-        note = notes.get("notes", {}).get(note_id)
-        if note is None:
-            continue
-        said = [m.get("body", "") for m in note.get("messages", []) if m.get("body")]
-        consumed.append({"mark": note["kind"], "means": KINDS[note["kind"]]["means"],
-                         "quote": note.get("quote", ""), "comment": said[0] if said else "",
-                         "conversation": said, "region": note.get("rect") or None,
-                         "by": note.get("author", "")})
-
-    hist = load_history(slug, talk_id)
-    hist.setdefault("versions", []).append({
-        "slide": slide, "version": old["version"], "date": old.get("date", ""),
-        "title": old["title"], "sub": old["sub"], "body": old["body"],
-        "why": why, "marks": consumed, "superseded_at": _now_iso(),
-    })
-    _write_yaml(paths.bubble_talk_history_path(slug, talk_id), hist)
-
-    for note_id in (resolves or []):
+    dropped = []
+    for note_id in (note_ids or []):
         if note_id in notes.get("notes", {}):
             del notes["notes"][note_id]
             note_image_path(slug, talk_id, note_id).unlink(missing_ok=True)
-    if resolves:
+            dropped.append(note_id)
+    if dropped:
         save_notes(slug, talk_id, notes)
-
-    slides[slide] = {**old, "version": old["version"] + 1, "date": _today(),
-                     "title": title if title is not None else old["title"],
-                     "sub": sub if sub is not None else old["sub"],
-                     "body": body}
-    _atomic_write(paths.bubble_talk_path(slug, talk_id), render_deck(slides))
-    return slides[slide]
+    return dropped
 
 
 # --------------------------------------------------------------------------- #
@@ -596,14 +559,13 @@ def slide_edit_source(slug: str, talk_id: str, slides: list[dict], notes: dict, 
     return _ATTR.sub("", wrapped, count=1).lstrip("\n")
 
 
-def apply_slide_source(slug: str, talk_id: str, index: int, text: str, *, why: str = "",
+def apply_slide_source(slug: str, talk_id: str, index: int, text: str, *,
                        kind: str | None = None) -> dict:
-    """Save a hand-edited slide, updating every mark whose wrapper came back.
+    """Save a hand-edited slide in place, updating every mark whose wrapper came back.
 
-    A changed slide is versioned and snapshotted exactly like an agent revision — the history
-    must not care whose hand held the pen. Marks whose wrappers survive get their quote and
-    context re-anchored to the new text; a wrapper the editor deleted leaves its mark alone, to
-    orphan loudly if its text is truly gone.
+    Marks whose wrappers survive get their quote and context re-anchored to the new text; a
+    wrapper the editor deleted leaves its mark alone, to orphan loudly if its text is truly
+    gone. No version is kept — the slide is a living surface and the current text is the record.
     """
     clean, wraps = _parse_wrappers(str(text or "").replace("\r\n", "\n"))
     if SEPARATOR.search(clean):
@@ -618,7 +580,7 @@ def apply_slide_source(slug: str, talk_id: str, index: int, text: str, *, why: s
     if kind and kind not in SLIDE_KINDS:
         raise ValueError(f"kind must be one of {', '.join(SLIDE_KINDS)}")
     kind = kind or old["kind"]
-    head = f"<!-- slide: kind={kind}, date={old.get('date', '')}, v={old['version']} -->"
+    head = f"<!-- slide: kind={kind}, date={old.get('date', '')} -->"
     parsed = parse_deck(head + "\n" + clean.strip("\n") + "\n")
     if not parsed:
         raise ValueError("could not parse the slide")
@@ -627,19 +589,10 @@ def apply_slide_source(slug: str, talk_id: str, index: int, text: str, *, why: s
     changed = ((new["title"], new["sub"], new["body"]) != (old["title"], old["sub"], old["body"])
                or kind != old["kind"])
     if changed:
-        hist = load_history(slug, talk_id)
-        hist.setdefault("versions", []).append({
-            "slide": index, "version": old["version"], "date": old.get("date", ""),
-            "title": old["title"], "sub": old["sub"], "body": old["body"],
-            "why": why.strip() or "edited by hand", "marks": [],
-            "superseded_at": _now_iso(),
-        })
-        _write_yaml(paths.bubble_talk_history_path(slug, talk_id), hist)
-        new["version"] = old["version"] + 1
         new["date"] = _today()
 
     slides[index] = {**old, "kind": kind,
-                     **{k: new[k] for k in ("title", "sub", "body", "version", "date")}}
+                     **{k: new[k] for k in ("title", "sub", "body", "date")}}
     _atomic_write(paths.bubble_talk_path(slug, talk_id), render_deck(slides))
 
     if wraps:
@@ -669,7 +622,7 @@ def apply_slide_source(slug: str, talk_id: str, index: int, text: str, *, why: s
 
 
 def _shift_slide_refs(slug: str, talk_id: str, at: int, delta: int) -> None:
-    """Re-point notes and history after a slide is inserted (+1) or removed (-1) at `at`."""
+    """Re-point notes after a slide is inserted (+1) or removed (-1) at `at`."""
     notes = load_notes(slug, talk_id)
     moved = False
     for n in notes.get("notes", {}).values():
@@ -678,21 +631,13 @@ def _shift_slide_refs(slug: str, talk_id: str, at: int, delta: int) -> None:
             moved = True
     if moved:
         save_notes(slug, talk_id, notes)
-    hist = load_history(slug, talk_id)
-    moved = False
-    for v in hist.get("versions", []):
-        if v.get("slide", 0) >= at:
-            v["slide"] = v["slide"] + delta
-            moved = True
-    if moved:
-        _write_yaml(paths.bubble_talk_history_path(slug, talk_id), hist)
 
 
 def insert_slide(slug: str, talk_id: str, after: int) -> int:
     """Insert a blank slide after `after` (−1 for the front). Returns the new index."""
     slides = parse_deck(read_deck(slug, talk_id))
     pos = max(0, min(len(slides), after + 1))
-    slides.insert(pos, {"index": pos, "kind": "setup", "date": _today(), "version": 1,
+    slides.insert(pos, {"index": pos, "kind": "setup", "date": _today(),
                         "title": "New slide", "sub": "", "body": "", "source": ""})
     _shift_slide_refs(slug, talk_id, pos, +1)
     _atomic_write(paths.bubble_talk_path(slug, talk_id), render_deck(slides))
@@ -700,7 +645,7 @@ def insert_slide(slug: str, talk_id: str, after: int) -> int:
 
 
 def delete_slide(slug: str, talk_id: str, index: int) -> bool:
-    """Remove one slide — and with it every mark, snapshot and history entry it carried."""
+    """Remove one slide — and with it every mark and snapshot it carried."""
     slides = parse_deck(read_deck(slug, talk_id))
     if not 0 <= index < len(slides):
         return False
@@ -713,10 +658,6 @@ def delete_slide(slug: str, talk_id: str, index: int) -> bool:
             del notes["notes"][nid]
             note_image_path(slug, talk_id, nid).unlink(missing_ok=True)
     save_notes(slug, talk_id, notes)
-
-    hist = load_history(slug, talk_id)
-    hist["versions"] = [v for v in hist.get("versions", []) if v.get("slide") != index]
-    _write_yaml(paths.bubble_talk_history_path(slug, talk_id), hist)
     _shift_slide_refs(slug, talk_id, index, -1)
     return True
 
@@ -730,7 +671,6 @@ def talk_detail(slug: str, talk_id: str) -> dict:
         raise KeyError(talk_id)
     slides = parse_deck(read_deck(slug, talk_id))
     notes = load_notes(slug, talk_id).get("notes", {})
-    hist = load_history(slug, talk_id).get("versions", [])
 
     out_notes = []
     for note in sorted(notes.values(), key=lambda n: n.get("created_at", "")):
@@ -740,7 +680,6 @@ def talk_detail(slug: str, talk_id: str) -> dict:
         out_notes.append(n)
 
     for s in slides:
-        s["history"] = [h for h in hist if h.get("slide") == s["index"]]
         # What the ✎ edit toggle opens: the slide's own markdown, with every open mark
         # materialised as the same `\comment{id}{...}` wrapper report pages use.
         s["edit_source"] = slide_edit_source(slug, talk_id, slides, notes, s["index"])
@@ -783,8 +722,6 @@ def open_notes_for_agent(slug: str) -> list[dict]:
                 "mark": note["kind"], "means": KINDS[note["kind"]]["means"],
                 "conversation": [{"by": m.get("author", ""), "said": m.get("body", "")}
                                  for m in note.get("messages", [])],
-                "on_version": note.get("version", 1),
-                "current_version": s.get("version", 1),
             }
             if note.get("image"):
                 item["screenshot"] = {
@@ -813,63 +750,25 @@ def absorb_push(slug: str, talk_id: str, text: str) -> None:
 
     A pushed file is the agent's whole interface — it has one editor and no HTTP client, and a
     workflow that needs a second out-of-band call is a workflow that silently half-completes.
-    So a revised slide may carry its own resolution in the header it already writes:
+    So an edited slide may carry its own resolution in the header it already writes:
 
-        <!-- slide: kind=derivation, date=2026-08-27, v=2, resolves=n1,n2, why=re-derived -->
+        <!-- slide: kind=derivation, date=2026-08-27, resolves=n1,n2 -->
 
-    Slides whose body changed are versioned and snapshotted here rather than trusting the `v=`
-    the agent typed, and any marks named in `resolves=` are deleted with their snapshots — the
-    same ending the app's own revise path gives them.
+    The named marks are deleted with their snapshots; the slide simply becomes what was pushed.
+    Nothing is versioned — the current deck is the record, and the argument that led to it
+    lives in the marks' threads while they are open and nowhere after.
     """
     old = {s["index"]: s for s in parse_deck(read_deck(slug, talk_id))}
     new = parse_deck(text)
-    notes = load_notes(slug, talk_id)
-    hist = load_history(slug, talk_id)
-    dropped, changed = [], False
-
+    dropped = []
     for slide in new:
         was = old.get(slide["index"])
         asked = [n.strip() for n in str(slide.pop("resolves", "")).split(",") if n.strip()]
-        why = str(slide.pop("why", "")).strip()
+        dropped.extend(asked)
         edited = was is not None and (was["body"] != slide["body"] or was["title"] != slide["title"])
-        if was is not None:
-            slide["version"] = was["version"]
-        if not edited and not asked:
-            continue
-        if not edited:
-            # A mark can be answered by an *earlier* revision and only cleared now. Honour the
-            # directive without inventing a version: there is no new text to record.
-            for note_id in asked:
-                if note_id in notes.get("notes", {}):
-                    dropped.append(note_id)
-            continue
-        changed = True
-        why = why or "revised by the agent"
-        marks = []
-        for note_id in asked:
-            note = notes.get("notes", {}).get(note_id)
-            if note is None:
-                continue
-            said = [m.get("body", "") for m in note.get("messages", []) if m.get("body")]
-            marks.append({"mark": note["kind"], "means": KINDS[note["kind"]]["means"],
-                          "quote": note.get("quote", ""), "comment": said[0] if said else "",
-                          "conversation": said, "region": note.get("rect") or None,
-                          "by": note.get("author", "")})
-            dropped.append(note_id)
-        hist.setdefault("versions", []).append({
-            "slide": slide["index"], "version": was["version"], "date": was.get("date", ""),
-            "title": was["title"], "sub": was["sub"], "body": was["body"],
-            "why": why, "marks": marks, "superseded_at": _now_iso()})
-        slide["version"] = was["version"] + 1
-        slide["date"] = _today()
-
-    if changed:
-        _write_yaml(paths.bubble_talk_history_path(slug, talk_id), hist)
-    for note_id in dropped:
-        notes.get("notes", {}).pop(note_id, None)
-        note_image_path(slug, talk_id, note_id).unlink(missing_ok=True)
-    if dropped:
-        save_notes(slug, talk_id, notes)
+        if edited:
+            slide["date"] = _today()
+    resolve_marks(slug, talk_id, dropped)
     _atomic_write(paths.bubble_talk_path(slug, talk_id), render_deck(new))
 
 
@@ -929,8 +828,7 @@ def feedback_blocks(slug: str) -> list[str]:
                      "",
                      f"- **id**: `{note['id']}` (name this in `resolves` when you revise)",
                      f"- **on**: {where}",
-                     f"- **slide version when marked**: v{note.get('version', 1)} "
-                     f"(now v{sl.get('version', 1)})"]
+                     ]
             if touches:
                 joined = "; ".join(f"“{t}”" for t in touches[:12])
                 lines.append(f"- **the ink touches**: {joined} — sampled from the reviewer's "

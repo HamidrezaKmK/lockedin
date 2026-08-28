@@ -906,7 +906,6 @@ def build_app():
         kind: str = "q"
         quote: str = ""
         text: str = ""
-        version: int = 1
         rect: Optional[dict] = None
         paths: Optional[list] = None   # freehand strokes, % of the slide box
         covers: Optional[list] = None  # words the ink/box sits on, sampled client-side
@@ -917,16 +916,8 @@ def build_app():
     class TalkShotIn(BaseModel):
         image_b64: str
 
-    class TalkReviseIn(BaseModel):
-        body: str
-        why: str
-        title: Optional[str] = None
-        sub: Optional[str] = None
-        resolves: list[str] = []
-
     class TalkSlideSourceIn(BaseModel):
         text: str
-        why: str = ""
         kind: str = ""
 
     class TalkSlideInsertIn(BaseModel):
@@ -1922,7 +1913,7 @@ def build_app():
             note = service.add_talk_note(home_of(user), slug, talk_id, slide=body.slide,
                                          kind=body.kind, author=user, quote=body.quote,
                                          text=body.text, rect=body.rect, paths=body.paths,
-                                         covers=body.covers, version=body.version)
+                                         covers=body.covers)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
         return {"note": note}
@@ -1980,24 +1971,13 @@ def build_app():
                          user: str = Depends(current_user)):
         return {"ok": service.delete_talk_note(home_of(user), slug, talk_id, note_id)}
 
-    @app.post("/api/bubbles/{slug}/talks/{talk_id}/slides/{slide}/revise")
-    def revise_talk_slide(slug: str, talk_id: str, slide: int, body: TalkReviseIn,
-                          user: str = Depends(current_user)):
-        try:
-            return {"slide": service.revise_talk_slide(home_of(user), slug, talk_id, slide,
-                                                       body=body.body, why=body.why,
-                                                       title=body.title, sub=body.sub,
-                                                       resolves=body.resolves)}
-        except IndexError:
-            raise HTTPException(status_code=404, detail="no such slide")
-
     @app.put("/api/bubbles/{slug}/talks/{talk_id}/slides/{slide}/source")
     def edit_talk_slide_source(slug: str, talk_id: str, slide: int, body: TalkSlideSourceIn,
                                user: str = Depends(current_user)):
         r"""Save a hand-edited slide. `\comment{id}{...}` wrappers re-anchor their marks."""
         try:
             return {"slide": service.apply_talk_slide_source(home_of(user), slug, talk_id,
-                                                             slide, body.text, why=body.why,
+                                                             slide, body.text,
                                                              kind=body.kind or None)}
         except IndexError:
             raise HTTPException(status_code=404, detail="no such slide")

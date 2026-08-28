@@ -341,10 +341,10 @@ def bubbles_command(account: dict) -> list[dict]:
     return rows
 
 
-SKILL_VERSION = 31
+SKILL_VERSION = 32
 
 SKILL_ROUTER = """\
-<!-- lockedin-scientist-skill: 31 -->
+<!-- lockedin-scientist-skill: 32 -->
 # LockedIn Scientist
 
 This project is synchronized with one LockedIn bubble. These rules always apply. The detail
@@ -547,14 +547,14 @@ Markup that fails to parse inside a code span or fence is literal text, not an e
 
 A chalk talk is a dated deck at `reports/talks/<id>.md` explaining one idea whose correctness
 needs the user's judgement. Slides are separated by `---`; each has a
-`<!-- slide: kind=…, date=…, v=N -->` header, a `# Title`, an optional one-line *italic
+`<!-- slide: kind=…, date=… -->` header, a `# Title`, an optional one-line *italic
 subtitle*, then Markdown with `$…$` maths and `\\cite{key}` citations. `kind` is one of
 `setup, derivation, evidence, comparison, implementation, ask` — nothing else renders.
 
 **Reading them without drowning.** Start with `IDEA.md`, then `OPEN.md`. Open a deck only when a
-mark points into it, the user names it, or you are about to write on the same idea — `talks.yaml`
-is not published, and version history is not either, so what is on disk is what the slide says
-now. When a mark names a slide, read that slide and its neighbours, not the whole talk.
+mark points into it, the user names it, or you are about to write on the same idea — what is on
+disk is the whole record: there is no version history, and `talks.yaml` is not published. When a
+mark names a slide, read that slide and its neighbours, not the whole talk.
 
 **Writing one.** Write the file; the bubble indexes it on arrival, taking the date from the
 filename, the title from the first `#`, and the summary from its subtitle. Write one when asked,
@@ -574,14 +574,14 @@ document.
 - Open with why it matters, close with what you need. Titles carry the claim, not the
   topic — and never `Slide N:`, the deck numbers itself.
 
-**Resolving.** Name the marks in the slide header of the revision that answers them:
+**Resolving.** Edit the slide in place, reply in the mark's thread if there is something to
+say, and name the marks in the edited slide's header:
 
-    <!-- slide: kind=derivation, date=2026-08-27, v=2, resolves=n1,n2, why=re-derived -->
+    <!-- slide: kind=derivation, date=2026-08-27, resolves=n1,n2 -->
 
-On the next sync that versions the slide, records `why` and what each mark asked for in the
-history, and deletes those marks. The attributes are consumed; you need not set `v=`. A mark an
-earlier revision already answered can be cleared the same way with no text change. Never resolve
-one you only replied to or disagreed with.
+On the next sync those marks are deleted — completely. Nothing is versioned and nothing is
+archived: the current slide is the record, so make it say everything worth keeping before you
+resolve. Never resolve a mark you only replied to or disagreed with.
 """,
 
     'overleaf.md': """\

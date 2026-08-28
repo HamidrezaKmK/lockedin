@@ -71,8 +71,9 @@ class TalkTests(unittest.TestCase):
             # The context is stored so a repeated sentence resolves to the right occurrence.
             self.assertTrue(note["prefix"])
 
-            talks.revise_slide(self.slug, self.talk, 1, why="rewritten",
-                               body="No constancy assumption is made.")
+            talks.apply_slide_source(self.slug, self.talk, 1,
+                                     "# The residual term survives\n\n"
+                                     "No constancy assumption is made.")
             detail = talks.talk_detail(self.slug, self.talk)
             # Losing a reviewer's objection silently is the one unacceptable failure.
             self.assertTrue(detail["notes"][0]["orphan"])
@@ -95,26 +96,20 @@ class TalkTests(unittest.TestCase):
             self.assertEqual([m["body"] for m in msgs], ["Uniformly in what?", "In log-SNR space."])
 
     # -- resolution ------------------------------------------------------------
-    def test_a_revision_deletes_the_marks_it_answers_and_keeps_why(self):
+    def test_resolving_deletes_the_mark_completely(self):
         with paths.use_root(self.home):
             note = talks.add_note(self.slug, self.talk, slide=1, kind="bad", author="pi",
                                   quote="which kills the variance term", text="Not in the tail.")
             talks.save_note_image(self.slug, self.talk, note["id"], b"\x89PNG\r\n\x1a\nfake")
             self.assertTrue(talks.note_image_path(self.slug, self.talk, note["id"]).exists())
 
-            talks.revise_slide(self.slug, self.talk, 1, why="you marked it wrong",
-                               body="The residual is O(1) there.", resolves=[note["id"]])
+            talks.resolve_marks(self.slug, self.talk, [note["id"]])
 
-            # Gone: sidecar entry and snapshot both. An addressed mark that lingers is the
-            # clutter this design exists to avoid.
+            # Gone: sidecar entry and snapshot both, and nothing archived anywhere. An
+            # addressed mark that lingers — even as history — is context bloat for every
+            # future agent.
             self.assertEqual(talks.load_notes(self.slug, self.talk)["notes"], {})
             self.assertFalse(talks.note_image_path(self.slug, self.talk, note["id"]).exists())
-            # Kept: what the mark asked for, in the version history.
-            version = talks.load_history(self.slug, self.talk)["versions"][-1]
-            self.assertEqual(version["marks"][0]["mark"], "bad")
-            self.assertEqual(version["marks"][0]["comment"], "Not in the tail.")
-            self.assertIn("you marked it wrong", version["why"])
-            self.assertEqual(talks.parse_deck(talks.read_deck(self.slug, self.talk))[1]["version"], 2)
 
 
 class ProjectHandoffTests(unittest.TestCase):
@@ -165,8 +160,7 @@ class ProjectHandoffTests(unittest.TestCase):
                                   quote="Sample the noise level", text="Uniformly in what?")
         self.assertIn("feedback/OPEN.md", scientist_sync._files(self.home, self.slug))
         with paths.use_root(self.home):
-            talks.revise_slide(self.slug, self.talk, 0, why="answered", body="Now explained.",
-                               resolves=[note["id"]])
+            talks.resolve_marks(self.slug, self.talk, [note["id"]])
             self.assertIsNone(feedback.open_markdown(self.slug))
         # An agent opening a clean bubble should see no feedback machinery at all.
         self.assertNotIn("feedback/OPEN.md", scientist_sync._files(self.home, self.slug))
@@ -200,8 +194,8 @@ class ProjectHandoffTests(unittest.TestCase):
                                 quote="Here I assume", text="Where did that come from?")
         revised = DECK.replace(
             "<!-- slide: kind=derivation, date=2026-08-27, v=1 -->",
-            f"<!-- slide: kind=derivation, date=2026-08-27, v=1, "
-            f"resolves={n1['id']},{n2['id']}, why=re-derived without the assumption -->"
+            f"<!-- slide: kind=derivation, date=2026-08-27, "
+            f"resolves={n1['id']},{n2['id']} -->"
         ).replace("2. Here I assume $w(\\lambda) \\to \\text{const}$, which kills the variance term.",
                   "2. No constancy assumption is needed; the covariance term is exact.")
         rel = f"reports/talks/{self.talk}.md"
@@ -215,13 +209,11 @@ class ProjectHandoffTests(unittest.TestCase):
         with paths.use_root(self.home):
             self.assertEqual(talks.load_notes(self.slug, self.talk)["notes"], {})
             slides = talks.parse_deck(talks.read_deck(self.slug, self.talk))
-            self.assertEqual(slides[1]["version"], 2)
-            self.assertEqual(slides[0]["version"], 1)   # untouched slides are not bumped
-            version = talks.load_history(self.slug, self.talk)["versions"][-1]
-            self.assertIn("re-derived", version["why"])
-            self.assertEqual({m["mark"] for m in version["marks"]}, {"bad", "q"})
-            # The directive is consumed, not left lying in the stored deck.
+            self.assertIn("No constancy assumption", slides[1]["body"])
+            # The directive is consumed, not left lying in the stored deck — and neither is
+            # the legacy v= attribute a stale deck may still carry.
             self.assertNotIn("resolves=", talks.read_deck(self.slug, self.talk))
+            self.assertNotIn("v=", talks.read_deck(self.slug, self.talk))
 
     def test_a_header_can_clear_a_mark_an_earlier_revision_already_answered(self):
         """Resolution must not require inventing a text change.
@@ -234,7 +226,7 @@ class ProjectHandoffTests(unittest.TestCase):
             note = talks.add_note(self.slug, self.talk, slide=0, kind="q", author="pi",
                                   quote="Sample the noise level", text="Answered ages ago.")
         revised = DECK.replace("<!-- slide: kind=setup, date=2026-08-27, v=1 -->",
-                               f"<!-- slide: kind=setup, date=2026-08-27, v=1, resolves={note['id']} -->")
+                               f"<!-- slide: kind=setup, date=2026-08-27, resolves={note['id']} -->")
         result = scientist_sync.apply_writes(self.home, self.slug, [{
             "path": f"reports/talks/{self.talk}.md",
             "content_b64": base64.b64encode(revised.encode()).decode(),
@@ -242,9 +234,6 @@ class ProjectHandoffTests(unittest.TestCase):
         self.assertEqual(result["conflicts"], [])
         with paths.use_root(self.home):
             self.assertEqual(talks.load_notes(self.slug, self.talk)["notes"], {})
-            # No text changed, so no version is invented and no history entry is fabricated.
-            self.assertEqual(talks.parse_deck(talks.read_deck(self.slug, self.talk))[0]["version"], 1)
-            self.assertEqual(talks.load_history(self.slug, self.talk).get("versions", []), [])
 
     def _deck_bytes(self):
         with paths.use_root(self.home):
@@ -355,7 +344,6 @@ class RouteSurfaceTests(unittest.TestCase):
             ("DELETE", "/api/bubbles/{slug}/talks/{talk_id}/notes/{note_id}"),
             ("PUT", "/api/bubbles/{slug}/talks/{talk_id}/notes/{note_id}/shot.png"),
             ("GET", "/api/bubbles/{slug}/talks/{talk_id}/notes/{note_id}/shot.png"),
-            ("POST", "/api/bubbles/{slug}/talks/{talk_id}/slides/{slide}/revise"),
             ("PUT", "/api/bubbles/{slug}/talks/{talk_id}/slides/{slide}/source"),
             ("POST", "/api/bubbles/{slug}/talks/{talk_id}/slides"),
             ("DELETE", "/api/bubbles/{slug}/talks/{talk_id}/slides/{slide}"),
@@ -481,25 +469,21 @@ class ManualEditTests(unittest.TestCase):
             edited = detail["slides"][1]["edit_source"].replace(
                 "\\comment{n1}{kills the variance term}",
                 "\\comment{n1}{silences the variance term}")
-            talks.apply_slide_source(self.slug, self.talk, 1, edited, why="reworded")
+            talks.apply_slide_source(self.slug, self.talk, 1, edited)
             after = talks.talk_detail(self.slug, self.talk)
         note = after["notes"][0]
         self.assertEqual(note["quote"], "silences the variance term")
         self.assertFalse(note["orphan"])
         # No wrapper syntax may leak into the stored deck.
         self.assertNotIn("\\comment", after["slides"][1]["body"])
-        # A hand edit is a revision like any other: versioned and snapshotted.
-        self.assertEqual(after["slides"][1]["version"], 2)
-        self.assertEqual(after["slides"][1]["history"][0]["why"], "reworded")
 
-    def test_an_unchanged_save_does_not_invent_a_version(self):
+    def test_an_unchanged_save_keeps_the_slide_date(self):
         with paths.use_root(self.home):
             detail = talks.talk_detail(self.slug, self.talk)
             talks.apply_slide_source(self.slug, self.talk, 0,
                                      detail["slides"][0]["edit_source"])
             after = talks.talk_detail(self.slug, self.talk)
-        self.assertEqual(after["slides"][0]["version"], 1)
-        self.assertEqual(after["slides"][0]["history"], [])
+        self.assertEqual(after["slides"][0]["date"], "2026-08-27")
 
     def test_renaming_the_first_slide_renames_the_talk(self):
         with paths.use_root(self.home):

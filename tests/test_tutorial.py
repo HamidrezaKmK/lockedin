@@ -56,17 +56,16 @@ class TutorialSeedTests(unittest.TestCase):
         self.assertEqual(len(threads), 1)
         self.assertEqual(len(threads[0]["messages"]), 2)
 
-    def test_the_history_carries_a_resolved_mark(self):
+    def test_the_loop_is_seeded_mid_flight(self):
         slug = self._seeded()
         with paths.use_root(self.home):
             deck = [t for t in talks.list_talks(slug) if "marks-beat" in t["id"]][0]
             detail = talks.talk_detail(slug, deck["id"])
-        s2 = detail["slides"][1]
-        self.assertEqual(s2["version"], 2)
-        self.assertEqual(len(s2["history"]), 1)
-        self.assertEqual(s2["history"][0]["marks"][0]["mark"], "bad")
-        # the resolved ✗ is deleted, not archived
-        self.assertFalse([n for n in detail["notes"] if n["slide"] == 1])
+        # The ✗ on the overclaim is open, with the agent's proposal already in its thread —
+        # the loop caught in the middle, ready for the user to close it.
+        cross = [n for n in detail["notes"] if n["slide"] == 1 and n["kind"] == "bad"]
+        self.assertEqual(len(cross), 1)
+        self.assertEqual(len(cross[0]["messages"]), 2)
 
     def test_no_note_is_born_an_orphan(self):
         slug = self._seeded()

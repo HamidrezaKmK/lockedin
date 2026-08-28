@@ -2,7 +2,7 @@
 
 A blank workspace teaches nothing: the first thing a new user sees should be the product
 explaining itself in its own medium — a bubble whose premise, document and chalk talks are
-*about* working with an agent, already carrying the marks, drawings and history the real
+*about* working with an agent, already carrying the marks, drawings and threads the real
 workflow produces. Everything in it is safe to edit, mark up, or delete; the Overview says so.
 
 Seeded once, at workspace creation. Deleting the bubble is the ordinary bubble deletion —
@@ -33,7 +33,7 @@ OVERVIEW = """\
 
 Welcome. This bubble is the product explaining itself in its own medium — the premise above,
 this multi-page document, and the chalk talks below are all **about interacting with agents**,
-and they already carry the marks, drawings and history the real workflow produces.
+and they already carry the marks, drawings and threads the real workflow produces.
 
 Where to look:
 
@@ -79,14 +79,14 @@ or good.
 What to try on the decks in this bubble:
 
 1. Open *How to ask your agent for work* — it has open marks of every kind, including a drawing.
-2. Open *Why marks beat paragraphs* and click the **v2 · ◷** stamp on slide one: the history
-   records the mark that caused the revision, and what it asked for.
+2. Open *Why marks beat paragraphs* — slide two carries a ✗ mid-argument, with the agent's
+   answer in its thread. That is the loop, caught in the middle.
 3. Hit **✎ edit** on any slide — the document's editor opens on it, with every open mark shown
    as a comment wrapper in the text, moving with your edit.
 4. Use **＋** to add a slide of your own, or **✂** to remove one.
 
-A resolved mark is deleted, not archived: what it asked for lives on in the slide's history,
-and nothing accumulates.
+A resolved mark is deleted, not archived — the slide is edited in place and the current text
+is the whole record. Nothing accumulates, and nothing bloats the next agent's context.
 """
 
 CONNECT_PAGE = """\
@@ -108,7 +108,7 @@ agent.
 """
 
 DECK_ASK = """\
-<!-- slide: kind=setup, date={d0}, v=1 -->
+<!-- slide: kind=setup, date={d0} -->
 # A good ask beats a good prompt
 
 *The claim this deck defends, in four slides.*
@@ -121,7 +121,7 @@ An agent does its best work when the ask names the deliverable, not the steps.
 
 ---
 
-<!-- slide: kind=comparison, date={d0}, v=1 -->
+<!-- slide: kind=comparison, date={d0} -->
 # Two asks, same wish
 
 *Left is a prompt. Right is an ask.*
@@ -134,7 +134,7 @@ The second one can *fail*, which is exactly what makes it answerable.
 
 ---
 
-<!-- slide: kind=implementation, date={d0}, v=1 -->
+<!-- slide: kind=implementation, date={d0} -->
 # Where the ask lives
 
 *Not in the chat scrollback.*
@@ -145,7 +145,7 @@ The second one can *fail*, which is exactly what makes it answerable.
 
 ---
 
-<!-- slide: kind=ask, date={d0}, v=1 -->
+<!-- slide: kind=ask, date={d0} -->
 # What I need from you
 
 *The last slide of a deck is always this one.*
@@ -155,7 +155,7 @@ agent connected to this bubble will find them on its next sync.
 """
 
 DECK_MARKS = """\
-<!-- slide: kind=derivation, date={d2}, v=1 -->
+<!-- slide: kind=derivation, date={d2} -->
 # Marks survive; paragraphs dissolve
 
 *Why the feedback vocabulary is five glyphs and not a text box.*
@@ -168,30 +168,25 @@ A paragraph of feedback has to be interpreted; a mark on a quote does not.
 
 ---
 
-<!-- slide: kind=evidence, date={d2}, v=1 -->
+<!-- slide: kind=evidence, date={d2} -->
 # The loop, on one slide
 
-*You are looking at the start state of one.*
+*You are looking at the middle of one.*
 
 This slide proves the whole system works perfectly. Marks are always better than prose in
 every situation, and no agent ever misreads one.
 
+The ✗ beside this slide objects to that paragraph. When an agent genuinely fixes it, it will
+edit this slide in place, and the mark will simply vanish — no version history, on purpose.
+
 ---
 
-<!-- slide: kind=ask, date={d2}, v=1 -->
+<!-- slide: kind=ask, date={d2} -->
 # Try the loop yourself
 
 Leave a ? on anything above, then connect a repo and ask the agent to address your feedback on
 this bubble. Watch the mark disappear when it genuinely answers.
 """
-
-# What the seeded revision replaces the overclaiming slide with — the ✗ below is consumed by
-# this exact rewrite, so the version history carries a true story on day one.
-DECK_MARKS_SLIDE2_FINAL = """\
-This slide was revised once: a ✗ said the old version overclaimed. The mark is gone — resolved
-marks are deleted, not archived — but click the **v2 · ◷** stamp above and the history shows
-what it asked for and why the slide changed."""
-
 
 def _today() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -255,7 +250,7 @@ def _seed() -> str:
                            quote='"Look into whether the schedule matters"',
                            text="Too kind — this one is not even a wish, it is a deflection.")
     talks.reply_note(slug, ask, wrong["id"], "agent",
-                     "Fair. v2 will call it what it is; the contrast lands harder.")
+                     "Fair — I will call it what it is; the contrast lands harder.")
     talks.add_note(slug, ask, slide=1, kind="good", author="you",
                    quote="The second one can *fail*, which is exactly what makes it answerable.")
     talks.add_note(slug, ask, slide=2, kind="q", author="you",
@@ -282,8 +277,8 @@ def _seed() -> str:
     if shot.is_file():
         talks.save_note_image(slug, ask, ink["id"], shot.read_bytes())
 
-    # Deck B: a real resolved-mark history — mark the overclaim, then revise it away with
-    # resolves=, exactly as an agent would — plus one mark left open on purpose.
+    # Deck B: the loop caught mid-flight — a ✗ on an overclaim with the agent's answer in the
+    # thread, waiting to be resolved by an edit-in-place. Plus one → left open on purpose.
     marks_deck = talks.create_talk(slug, "Why marks beat paragraphs",
                                    intent="Why the feedback vocabulary is five glyphs.",
                                    date=d2, body=DECK_MARKS.format(d2=d2))
@@ -291,10 +286,10 @@ def _seed() -> str:
                                quote="Marks are always better than prose in",
                                text="Overclaimed. Say what the mechanism buys, "
                                     "not that it is perfect.")
-    talks.revise_slide(slug, marks_deck, 1, body=DECK_MARKS_SLIDE2_FINAL,
-                       sub="You are looking at the end state of one.",
-                       why="dropped the overclaim; the loop is the evidence",
-                       resolves=[overclaim["id"]])
+    talks.reply_note(slug, marks_deck, overclaim["id"], "agent",
+                     "Agreed — I would rewrite it as: the mark carries the intent and the "
+                     "anchor carries the place. Confirm and I will edit the slide in place "
+                     "and resolve this mark.")
     talks.add_note(slug, marks_deck, slide=2, kind="more", author="you",
                    quote="connect a repo and ask the agent",
                    text="Deep-link this to the Connecting your repo page?")

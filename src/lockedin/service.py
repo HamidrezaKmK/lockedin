@@ -743,15 +743,10 @@ def delete_talk_note(home: Path, slug: str, talk_id: str, note_id: str) -> bool:
         return talks.delete_note(slug, talk_id, note_id)
 
 
-def revise_talk_slide(home: Path, slug: str, talk_id: str, slide: int, **kw) -> dict:
-    with paths.use_root(home):
-        return talks.revise_slide(slug, talk_id, slide, **kw)
-
-
 def apply_talk_slide_source(home: Path, slug: str, talk_id: str, slide: int, text: str,
-                            why: str = "", kind: str | None = None) -> dict:
+                            kind: str | None = None) -> dict:
     with paths.use_root(home):
-        return talks.apply_slide_source(slug, talk_id, slide, text, why=why, kind=kind)
+        return talks.apply_slide_source(slug, talk_id, slide, text, kind=kind)
 
 
 def insert_talk_slide(home: Path, slug: str, talk_id: str, after: int) -> int:

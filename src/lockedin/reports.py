@@ -186,9 +186,9 @@ Click a talk to open it. **←** and **→** or the dot strip move between slide
 slide you have marked. **all slides** shows the whole deck as a contact sheet, so you can see at
 a glance where your ink is; click any card to jump there.
 
-Each slide carries its kind (setup, derivation, evidence, comparison, implementation, ask), its
-date, and its version. A slide revised after your marks shows **◷** — click it for the history,
-which records each version alongside the mark that caused it.
+Each slide carries its kind (setup, derivation, evidence, comparison, implementation, ask) and
+its date. A slide is a living surface: the agent edits it in place, and the current text is the
+whole record — there is no version history to dig through, on purpose.
 
 ## The five marks
 
@@ -235,7 +235,7 @@ the editor.
 
 On any open talk, **✎ edit** switches the current slide to the same Markdown editor the document
 uses. The first line is the `# title`, an optional `*subtitle*` line follows, then the body.
-Every open mark appears as a `\comment{id}{…}` wrapper — the same syntax report pages use — and
+Every open mark appears as a `\\comment{id}{…}` wrapper — the same syntax report pages use — and
 the mark follows the text inside the braces when you rewrite it. Deleting a wrapper leaves the
 mark to orphan loudly rather than silently vanishing.
 
@@ -243,10 +243,9 @@ The toolbar is the document editor's — same image upload, tables, text colour,
 undo — and the same coloured chip on its left shows the save state: ✓ saved, ✎ unsaved; click it
 to save in place, or **Save slide** to save and return to the deck.
 
-A hand edit is a revision like any other: it bumps the slide's version, and the one-line **why**
-you optionally give is kept in the history. **+ add slide** inserts a blank slide after the
-current one; **✂ delete slide** removes the slide with its marks and history; the ✕ on a talk
-card on the bubble page deletes the whole talk.
+A hand edit lands in place — the slide simply becomes what you saved. **＋** inserts a blank
+slide after the current one; **✂** removes the slide with its marks; the ✕ on a talk card on
+the bubble page deletes the whole talk.
 
 ## Marks are conversations
 
@@ -259,9 +258,9 @@ already answered would leave that answer replying to words that no longer exist.
 ## What happens to a mark
 
 A mark is working state, and working state should end. When the agent has genuinely addressed
-one, it revises the slide and names the mark; the mark and its picture are deleted, and what it
-asked for is kept in the slide's version history instead. Nothing accumulates a list of
-"resolved" items nobody reads.
+one, it edits the slide, answers in the thread if there is something to say, and names the mark
+as resolved; the mark and its picture are then deleted — completely. Nothing accumulates a list
+of "resolved" items nobody reads, and nothing bloats the next agent's context.
 
 If the agent thinks a mark is mistaken, it is told to say so and argue rather than comply.
 

@@ -25,7 +25,7 @@
   const ORDER = ["bad", "q", "more", "good", "cut"];
 
   const S = { slug: null, name: "", view: "home", talk: null, data: null, bubble: null,
-              slide: 0, kind: "q", pending: null, history: null, editPremise: false,
+              slide: 0, kind: "q", pending: null, editPremise: false,
               edit: false, editorObj: null, notes: true };
   let root = null;
 
@@ -141,8 +141,6 @@
 .tk-stamp{position:absolute;top:-10px;right:18px;display:flex;gap:6px}
 .tk-stamp span{font:500 10px var(--font-mono);background:var(--panel2);border:1px solid var(--line);
   color:var(--muted);padding:3px 9px;border-radius:999px}
-.tk-stamp .rev{border-color:color-mix(in srgb,var(--accent2) 55%,var(--line));color:var(--accent2);
-  cursor:pointer}
 .tk-slide h2{font-size:20px;font-weight:600;letter-spacing:-.015em;margin:2px 0 8px;line-height:1.3}
 .tk-slide .sub{font-family:var(--font-reading);color:var(--muted);font-size:14px;line-height:1.5;
   margin-bottom:24px}
@@ -224,9 +222,6 @@ select.tk-ekind{width:auto;flex:0 0 auto;font:500 9.5px var(--font-mono);letter-
   border-radius:999px;border:0;cursor:pointer;appearance:none;outline:none;
   transition:none;box-shadow:none}
 select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:none}
-.tk-why{width:auto;flex:1;min-width:0;background:var(--panel);border:1px solid var(--line);
-  border-radius:8px;color:var(--ink);font:inherit;font-size:12.5px;padding:6px 10px;outline:none}
-.tk-why:focus{border-color:var(--accent)}
 .tk-edithost{flex:1;min-height:0}
 .tk-edithost .toastui-editor-defaultUI{border:0;border-radius:0;height:100%}
 .tk-editnote{font-size:11.5px;color:var(--muted);padding:7px 14px;border-top:1px solid var(--line)}
@@ -355,20 +350,6 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
   position:relative}
 .tk-mcard h3{margin:0 0 4px;font-size:17px;font-weight:600}
 .tk-mcard .msub{color:var(--muted);font-size:13px;margin-bottom:16px}
-.tk-ver{border-left:2px solid var(--line);padding:0 0 18px 16px;position:relative}
-.tk-ver::before{content:"";position:absolute;left:-6px;top:4px;width:10px;height:10px;
-  border-radius:50%;background:var(--line)}
-.tk-ver.now::before{background:var(--accent2)}
-.tk-ver .vh{display:flex;gap:9px;align-items:center;margin-bottom:6px}
-.tk-ver .vn{font:600 11px var(--font-mono)}
-.tk-ver .vd{font:400 11px var(--font-mono);color:var(--muted)}
-.tk-ver .why{font-family:var(--font-reading);font-size:14.5px;color:var(--muted);line-height:1.5}
-.tk-ver .vmark{margin:7px 0 0;font-size:12.5px;color:var(--muted);border-left:2px solid var(--kc);
-  padding-left:9px;overflow-wrap:anywhere}
-.tk-ver .vmark b{color:var(--kc);font-weight:600;margin-right:2px}
-.tk-ver .snap{margin-top:8px;border:1px solid var(--line);border-radius:9px;background:var(--panel2);
-  padding:10px 12px;font-family:var(--font-reading);font-size:13.5px;color:var(--muted);line-height:1.5;
-  white-space:pre-wrap}
 .tk-x{position:absolute;top:14px;right:16px}
 .tk-json{font-family:var(--font-mono);font-size:12px;line-height:1.55;white-space:pre-wrap;
   background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:14px;
@@ -1000,7 +981,7 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
       e.stopPropagation();
       const t = talks.find(x => x.id === b.dataset.del) || {};
       const notes = t.open ? ` and its ${t.open} open note${t.open === 1 ? "" : "s"}` : "";
-      if (!confirm(`Delete the talk “${t.title}”${notes}? Its slides, marks and history all go.`)) return;
+      if (!confirm(`Delete the talk “${t.title}”${notes}? Its slides and marks all go.`)) return;
       await api(`/api/bubbles/${S.slug}/talks/${encodeURIComponent(b.dataset.del)}`, { method: "DELETE" });
       await loadHome();
     }));
@@ -1017,8 +998,7 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
       <div class="tk-col">
         <div class="tk-slide">
           <span class="kind">${esc(sl.kind)}</span>
-          <span class="tk-stamp"><span>${esc(sl.date || "")}</span>
-            <span class="rev" data-hist="1">v${sl.version}${(sl.history || []).length ? ` · ◷ ${sl.history.length + 1}` : " · ◷"}</span></span>
+          <span class="tk-stamp"><span>${esc(sl.date || "")}</span></span>
           <h2>${esc(sl.title)}</h2>
           ${sl.sub ? `<div class="sub">${esc(sl.sub)}</div>` : ""}
           <div class="tk-md"></div>
@@ -1048,7 +1028,6 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
     paintAnchors(md, sl, mine);
     md.addEventListener("mouseup", onSelect);
 
-    wrap.querySelector("[data-hist]").onclick = () => { S.history = S.slide; render(); };
     wrap.querySelectorAll("[data-nav]").forEach(b =>
       (b.onclick = () => go(S.slide + Number(b.dataset.nav))));
     wrap.querySelector("[data-draw]").onclick = startDraw;
@@ -1162,8 +1141,7 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
               ${["setup","derivation","evidence","comparison","implementation","ask"].map(k =>
                 `<option value="${k}"${k === sl.kind ? " selected" : ""}>${k}</option>`).join("")}
             </select>
-            <span class="tk-cnt">v${sl.version}</span>
-            <input class="tk-why" placeholder="why this change — kept in the history (optional)">
+            <span class="tk-sp"></span>
             <button class="pri" data-save="1">Save slide</button>
           </div>
           <div class="tk-edithost"></div>
@@ -1196,7 +1174,6 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
         await api(`/api/bubbles/${S.slug}/talks/${S.talk.talk.id}/slides/${S.slide}/source`, {
           method: "PUT",
           body: JSON.stringify({ text: S.editorObj.getMarkdown(),
-                                 why: wrap.querySelector(".tk-why").value.trim(),
                                  kind: wrap.querySelector(".tk-ekind").value }),
         });
         S.edit = !exit;
@@ -1242,7 +1219,7 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
         const by = {};
         notesOn(i).forEach(n => (by[n.kind] = (by[n.kind] || 0) + 1));
         return `<div class="tk-mini${i === S.slide ? " cur" : ""}" data-i="${i}">
-          <div class="n">${String(i + 1).padStart(2, "0")} · ${esc(s.kind)}${s.version > 1 ? ` · v${s.version}` : ""}</div>
+          <div class="n">${String(i + 1).padStart(2, "0")} · ${esc(s.kind)}</div>
           <div class="t">${esc(s.title)}</div>
           <div class="s">${esc(s.sub || "")}</div>
           <div class="nb">${Object.entries(by).map(([k, c]) =>
@@ -1331,8 +1308,7 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
     p.querySelector("[data-cancel]").onclick = dismissPicker;
     p.querySelector("[data-pin]").onclick = async () => {
       const text = p.querySelector("textarea").value.trim();
-      const payload = { slide: S.slide, kind: S.kind, text,
-                        version: S.talk.slides[S.slide].version };
+      const payload = { slide: S.slide, kind: S.kind, text };
       if (S.pending.quote) payload.quote = S.pending.quote;
       if (S.pending.rect) {
         payload.rect = S.pending.rect;
@@ -1601,8 +1577,7 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
         S.notes = true;
         const created = await api(`/api/bubbles/${S.slug}/talks/${S.talk.talk.id}/notes`, {
           method: "POST",
-          body: JSON.stringify({ slide: S.slide, kind: "ink", paths, text, covers,
-                                 version: S.talk.slides[S.slide].version }),
+          body: JSON.stringify({ slide: S.slide, kind: "ink", paths, text, covers }),
         });
         if (innerWidth <= 900) root.classList.add("notes-open");
         await loadTalk(S.talk.talk.id, true);
@@ -1649,34 +1624,6 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
       z-index:980;font-size:13.5px;box-shadow:var(--shadow)">${esc(msg)}</div>`).firstChild;
     document.body.append(t);
     setTimeout(() => t.remove(), 3200);
-  }
-
-  function renderHistory() {
-    const sl = S.talk.slides[S.history];
-    const vers = [...(sl.history || []), { version: sl.version, date: sl.date, title: sl.title,
-                                           sub: sl.sub, body: sl.body, why: "current", now: true }];
-    const m = h(`<div class="tk-modal"><div class="tk-mcard">
-      <button class="tk-x" data-x="1">✕</button>
-      <h3>${esc(sl.title)}</h3>
-      <div class="msub">${vers.length} version${vers.length === 1 ? "" : "s"}</div>
-      ${vers.map((v, i) => `<div class="tk-ver${i === vers.length - 1 ? " now" : ""}">
-        <div class="vh"><span class="vn">v${v.version}</span><span class="vd">${esc(v.date || "")}</span>
-          ${i === vers.length - 1 ? `<span class="tk-tag done">current</span>` : ""}</div>
-        <div class="why">${v.now ? "" : esc(v.why || "")}</div>
-        ${(v.marks || []).map(mk => {
-          const k = KINDS[mk.mark] || {};
-          const at = mk.quote ? "\u201c" + esc(mk.quote) + "\u201d"
-                              : (mk.region ? "a region of the slide" : "a drawing on the slide");
-          return `<div class="vmark" style="--kc:${k.color || "var(--muted)"}">
-            <b>${k.glyph || ""}</b> ${at}${mk.comment ? " — " + esc(mk.comment) : ""}</div>`;
-        }).join("")}
-        <div class="snap">${esc((v.body || "").slice(0, 400))}${(v.body || "").length > 400 ? "…" : ""}</div>
-      </div>`).join("")}
-    </div></div>`).firstChild;
-    const close = () => { m.remove(); S.history = null; };
-    m.onclick = e => { if (e.target === m) close(); };
-    m.querySelector("[data-x]").onclick = close;
-    document.body.append(m);
   }
 
   async function showPayload() {
@@ -1732,7 +1679,6 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
       if (S.edit && !leaveEditOk()) return;
       S.edit = !S.edit; render();
     });
-    if (S.history !== null && S.history !== undefined && S.view === "deck") renderHistory();
   }
 
   function onKey(e) {
@@ -1740,7 +1686,7 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
     if (e.key === "Escape") {
       if (document.querySelector(".tk-pop")) { dismissPicker(); return; }
       if (document.querySelector(".tk-modal")) {
-        document.querySelectorAll(".tk-modal").forEach(x => x.remove()); S.history = null; return;
+        document.querySelectorAll(".tk-modal").forEach(x => x.remove()); return;
       }
       if (S.edit) { if (leaveEditOk()) { S.edit = false; render(); } return; }
       if (S.view === "deck" || S.view === "sheet") loadHome();
@@ -1770,7 +1716,6 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
     S.name = (opts && opts.name) || slug;
     S.onPage = (opts && opts.onPage) || null;
     S.onView = (opts && opts.onView) || null;
-    S.history = null;
     S.view = "home";
     host.innerHTML = "";
     root = h(`<div class="tk-overlay tk-inline"><div class="tk-top"></div>
