@@ -1674,27 +1674,6 @@
     validateEditorCommentMarkup(value);
     return parseTextColorWrappers(value);
   }
-  const CMT_OPEN=id=>`@@LICMS${id}LICMS@@`, CMT_CLOSE="@@LICME@@";
-  function markCommentWrappers(value){
-    const source=String(value||""), wrappers=parseCommentWrappers(source);
-    if(!wrappers.length)return source;
-    // Tag-by-tag, back to front: with nesting legal, slicing whole spans in sequence would
-    // shift an outer span's offsets the moment an inner one was rewritten.
-    const edits=[];
-    wrappers.forEach(w=>{edits.push([w.openStart,w.bodyStart,CMT_OPEN(w.id)]);
-                         edits.push([w.bodyEnd,w.closeEnd,CMT_CLOSE]);});
-    edits.sort((x,y)=>y[0]-x[0]);
-    let out=source;
-    edits.forEach(([s0,e0,rep])=>{out=out.slice(0,s0)+rep+out.slice(e0);});
-    return out;
-  }
-  function commentTokensToHtml(html){
-    // The id charset is already constrained by the pattern (wrapper ids are token_urlsafe), so
-    // it needs no escaping — and this runs at top level, where escAttr is not in scope.
-    return String(html)
-      .replace(/@@LICMS([A-Za-z0-9_-]+)LICMS@@/g,(_,id)=>'<mark class="tk-anno" data-note="'+id+'">')
-      .replace(/@@LICME@@/g,"</mark>");
-  }
   function stripCommentMarkers(value){
     const source=String(value||""), wrappers=parseCommentWrappers(source); if(!wrappers.length)return source;
     const edits=[];
@@ -1724,11 +1703,14 @@
   function renderMarkdown(md,opts){
     opts=opts||{}; const refs=opts.refs;
     const store=[], captionStore=[]; let s=md||"";
-    // Inline review delimiters are source-only. Strip them before math/KaTeX processing and
-    // before marked.js renders the preview, while leaving the markers visible in Markdown mode.
-    try{ s=opts.markComments?markCommentWrappers(s):stripCommentMarkers(s); parseTextColorWrappers(s); }
+    // Inline review delimiters are source-only. Give structural blocks their offsets while tags
+    // are still present, then strip tags before Markdown becomes HTML. Crossing annotation
+    // ranges are painted by LockedInMarks after render; crossing HTML <mark> elements are not
+    // valid and caused the later comment to disappear.
+    try{ parseCommentWrappers(s); parseTextColorWrappers(s); }
     catch(error){if(error&&(error.name==="CommentMarkupError"||error.name==="TextColorMarkupError"))return reviewMarkupErrorHtml(error);throw error;}
     if(opts.sourceMarkers) s=withSourceMarkers(s);
+    s=stripCommentMarkers(s);
     // Stored report Markdown predates workspaces. Add the active workspace capability at render
     // time so existing report figures keep working after a workspace switch or in a new tab.
     // `assets/<filename>` is the portable report syntax; resolve it against this bubble rather
@@ -1928,7 +1910,7 @@
     // Restore inline code LAST and globally (placeholders can land inside theorem HTML too).
     // Escape HTML so the literal source shows verbatim; unescape \| like marked does in tables.
     html=html.replace(/@@IC(\d+)@@/g,(_,i)=>'<code>'+escHtml(icStore[+i].replace(/\\\|/g,"|"))+'</code>');
-    return opts.markComments?commentTokensToHtml(html):html;
+    return html;
   }
 
   function withSourceMarkers(md){
@@ -1973,9 +1955,7 @@
     // The marks column controls visibility, not whether a reader can start a mark. In reading
     // mode the selection picker must still open; otherwise the most direct feedback gesture
     // appears broken until someone discovers the unrelated right-pane toggle.
-    if(S.paneRight){
-      window.LockedInMarks.paint(wrap,S.comments||[]);
-    }
+    window.LockedInMarks.paint(wrap,S.comments||[]);
     if(S.paneRight&&gutter&&!S.commentDraftAnchor)
       window.LockedInMarks.gutter(gutter,S.comments||[],
         {onDelete:id=>markDelete(id),onEdit:(id,text)=>markEdit(id,text),
@@ -4860,7 +4840,7 @@
       }
       throw error;
     }
-    S.previewEl.innerHTML=renderMarkdown(markdown,{refs:S.refs,pageSlug:S.page,citationPdfLinks:true,sourceMarkers:true,markComments:!!S.paneRight});
+    S.previewEl.innerHTML=renderMarkdown(markdown,{refs:S.refs,pageSlug:S.page,citationPdfLinks:true,sourceMarkers:true});
     bindPreviewSourceOffsets(S.previewEl);
     decorateFigures(S.previewEl);
     linkifyWikilinks(S.previewEl);
@@ -5585,10 +5565,15 @@
   function findInBlockSource(hay,want){
     const direct=hay.indexOf(want);
     if(direct>=0)return {start:direct,end:direct+want.length};
-    const pattern=want.split("").map(ch=>{
+    // Source-only comment tags may sit between two visibly adjacent characters. Treat them as
+    // zero-width for selection matching, but retain them inside the returned source span so a
+    // new range can cross an existing one without slicing a tag in half.
+    const commentTags="(?:<comment-(?:begin|end)=[A-Za-z0-9_-]+>)*";
+    const pattern=want.split("").map((ch,index)=>{
       const c=ch.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
-      return ch===" "?"[\\s]+":c;
-    }).join("[*_`~]*");
+      const visible=ch===" "?"[\\s]+":c;
+      return (index?"[*_`~]*"+commentTags:"")+visible;
+    }).join("");
     const m=new RegExp(pattern).exec(hay);
     return m?{start:m.index,end:m.index+m[0].length}:null;
   }

@@ -1215,6 +1215,29 @@ class PrivateReviewComments(unittest.TestCase):
                     selection_end=tag_middle + 10)
             self.assertEqual(caught.exception.code, "invalid_selection")
 
+    def test_overlapping_creation_keeps_crossing_comment_ranges(self):
+        with temp_home() as home:
+            slug = make_bubble(home)
+            content = "alpha beta gamma"
+            mtime = service.save_page(home, slug, "overview", content)
+            first = service.create_comment_state(
+                home, slug, "overview", "alice", "First", content=content, base_mtime=mtime,
+                selection_start=0, selection_end=10)  # alpha beta
+            marked = first["content"]
+            second = service.create_comment_state(
+                home, slug, "overview", "alice", "Second", content=marked,
+                base_mtime=first["page_mtime"], selection_start=marked.index("beta"),
+                selection_end=marked.index("gamma") + len("gamma"))
+            source = second["content"]
+            spans = bubbles.parse_comment_wrappers(source)
+        self.assertEqual(len(spans), 2)
+        self.assertLess(source.index(bubbles.comment_begin(spans[0].thread_id)),
+                        source.index(bubbles.comment_begin(spans[1].thread_id)))
+        self.assertLess(source.index(bubbles.comment_end(spans[0].thread_id)),
+                        source.index(bubbles.comment_end(spans[1].thread_id)))
+        self.assertEqual({thread["anchor"]["quote"] for thread in second["threads"]},
+                         {"alpha beta", "beta gamma"})
+
     def test_comment_creation_honors_page_revision_guard(self):
         with temp_home() as home:
             slug = make_bubble(home)

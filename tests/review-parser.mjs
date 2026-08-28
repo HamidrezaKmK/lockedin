@@ -32,6 +32,14 @@ const nested = wrap("outer", "head " + wrap("inner", "middle") + " tail");
 const both = context.parseCommentWrappers(nested);
 assert.deepEqual(Array.from(both, w => w.id).sort(), ["inner", "outer"]);
 
+// Crossing ranges are also valid paired tags. They cannot be represented by nested HTML marks,
+// so the document preview paints them with the same range renderer used by chalk talks.
+const crossing = `<comment-begin=first>alpha <comment-begin=second>beta<comment-end=first> gamma<comment-end=second>`;
+const crossed = context.parseCommentWrappers(crossing);
+assert.deepEqual(Array.from(crossed, w => w.id), ["first", "second"]);
+assert.equal(crossed[0].body, "alpha <comment-begin=second>beta");
+assert.equal(crossed[1].body, "beta<comment-end=first> gamma");
+
 // adjacency still fine
 assert.equal(context.parseCommentWrappers(wrap("left", "one") + wrap("right", "two")).length, 2);
 

@@ -646,7 +646,7 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
         return;
       }
       if (n.orphan || !n.quote) return;
-      highlightQuote(mdEl, n.quote, n, n.occurrence || 1);
+      highlightQuote(mdEl, n.quote, n, n.occurrence || 1, id => focusNote(id));
     });
   }
 
@@ -694,7 +694,7 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
   // Wrap the k-th rendered occurrence of a quote in <mark>, wherever its text lives. A quote
   // routinely crosses inline elements — code, bold, a citation — so every intersected text
   // segment gets its own mark.
-  function highlightQuote(mdEl, quote, n, occurrence) {
+  function highlightQuote(mdEl, quote, n, occurrence, onFocus) {
     const { nodes, chars, flat } = flattenText(mdEl);
     const re = quotePattern(quote);
     if (!re) return false;
@@ -721,7 +721,7 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
       const mk = document.createElement("mark");
       mk.className = "tk-anno";
       mk.dataset.note = n.id;
-      mk.style.setProperty("--kc", KINDS[n.kind].color);
+      mk.style.setProperty("--kc", (KINDS[n.kind] || KINDS.q).color);
       try {
         r.surroundContents(mk);
       } catch (err) {
@@ -733,7 +733,7 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
           r.insertNode(mk);
         } catch (nestedErr) { continue; }
       }
-      mk.onclick = ev => { ev.stopPropagation(); focusNote(n.id); };
+      mk.onclick = ev => { ev.stopPropagation(); if (onFocus) onFocus(n.id); };
     }
     return true;
   }
@@ -1875,25 +1875,26 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
     addEventListener("keydown", esc2, true);
   }
 
-  // The wrappers are already rendered as <mark data-note="id">; all this does is colour them by
-  // kind and wire them to their card. Nothing is searched for, so nothing can fail to match.
+  // Pages and slides deliberately share this painter. Page source tags are stripped before
+  // Markdown becomes HTML, then their quote anchors are painted here. That matters because two
+  // ranges can cross: HTML cannot express crossing <mark> tags, whereas Range extraction below
+  // preserves both visible annotations.
   function paintMarks(previewEl, threads) {
     injectStyles();   // a page view may never have opened a deck
     if (!previewEl || !previewEl.isConnected) return;
-    const byId = {};
-    (threads || []).forEach(t => (byId[t.id] = t));
-    previewEl.querySelectorAll("mark.tk-anno[data-note]").forEach(mk => {
-      const t = byId[mk.dataset.note];
-      const kind = (t && KINDS[t.kind]) ? t.kind : "q";
-      mk.style.setProperty("--kc", KINDS[kind].color);
-      mk.onclick = ev => {
-        ev.stopPropagation();
-        const card = M.gutter && M.gutter.querySelector(`.tk-note[data-note="${mk.dataset.note}"]`);
-        if (!card) return;
+    const focusPageNote = id => {
+      const card = M.gutter && M.gutter.querySelector(`.tk-note[data-note="${id}"]`);
+      if (!card) return;
         card.scrollIntoView({ block: "center", behavior: "smooth" });
         card.style.borderColor = "var(--accent)";
         setTimeout(() => (card.style.borderColor = ""), 900);
-      };
+    };
+    (threads || []).forEach(thread => {
+      const anchor = thread.anchor || {};
+      if (thread.status === "resolved" || thread.anchor_state === "unanchored" || !anchor.quote) return;
+      highlightQuote(previewEl, anchor.quote,
+        {id: thread.id, kind: (KINDS[thread.kind] ? thread.kind : "q")}, anchor.occurrence || 1,
+        focusPageNote);
     });
   }
 
