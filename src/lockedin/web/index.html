@@ -260,8 +260,10 @@
   .landing-section{padding:54px 0;border-top:1px solid color-mix(in srgb,var(--line) 72%,transparent)}
   .home-landing .landing-section:first-of-type{border-top:0}
   .landing-section-head{display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1fr);gap:30px;align-items:end;margin-bottom:24px}
-  .landing-section h2{font-size:28px;line-height:1.15;margin:0;letter-spacing:0}
-  .landing-section-head p{margin:0;color:var(--muted)}
+  /* Balanced wrapping and a size that fits the column: a headline that breaks as
+     "…like a / PI" reads like a typo. */
+  .landing-section h2{font-size:23px;line-height:1.2;margin:0;letter-spacing:0;text-wrap:balance}
+  .landing-section-head p{margin:0;color:var(--muted);text-wrap:pretty}
   .workflow-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}
   .workflow-step,.feature-card{background:var(--panel);border:1px solid var(--line);
     border-radius:8px;padding:16px;box-shadow:var(--shadow-sm)}
@@ -1078,23 +1080,23 @@
         <div class="demo-board" aria-hidden="true">
           <div class="demo-slide">
             <span class="demo-kind">derivation · slide 3</span>
-            <h4>The residual term survives</h4>
-            <p>Splitting the loss gives <code>L = E[g]·E[ℓ] + R</code>.</p>
-            <p><mark class="dm-bad">Step 3 assumes w(λ) → const, which makes R vanish.</mark>
-              <mark class="dm-keep">Every other step is an identity.</mark></p>
-            <p class="demo-dim">So the claim rests on R — <mark class="dm-q">measurable, not yet measured</mark>.</p>
+            <h4>Mass is bottled energy</h4>
+            <p>Start from <code>E = mc²</code>.</p>
+            <p><mark class="dm-bad">Because c is huge, any mass converts easily into usable energy.</mark>
+              <mark class="dm-keep">The units check out.</mark></p>
+            <p class="demo-dim">So <mark class="dm-q">a teaspoon of water could power a city</mark>.</p>
             <!-- A hand-drawn stroke: the ✍ mark, sketched in theme ink. Decoration only. -->
             <svg class="demo-ink" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-              <path d="M44.5 34 C 49 33, 50 41, 48 46 C 46 51, 41.5 50, 41 44 C 40.6 38, 42.5 34.5, 45 34" fill="none"/>
-              <path d="M32 68 C 36 62, 40 56, 43.5 50" fill="none"/>
-              <path d="M43.5 50 l -3.4 1.2 M43.5 50 l 0.4 5.5" fill="none"/>
+              <path d="M22.5 35 C 26.5 34.5, 27.5 41, 25.5 45.5 C 23.5 50, 19.5 49, 19.2 43.5 C 19 38.5, 20.5 35.3, 23 35" fill="none"/>
+              <path d="M36 66 C 32 60, 28.5 55, 25 49.5" fill="none"/>
+              <path d="M25 49.5 l 3.3 0.6 M25 49.5 l 1.6 4.6" fill="none"/>
             </svg>
           </div>
           <div class="demo-note">
             <div class="demo-badge">✗ this is wrong</div>
-            <div class="demo-quote">“Step 3 assumes w(λ) → const…”</div>
-            <div class="demo-say"><b>you</b> Only true in the high-SNR tail. Re-derive without it.</div>
-            <div class="demo-say agent"><b>🤖 agent</b> Re-derived — the covariance identity splits L exactly, no assumption. v2 is up, your objection is in its history.</div>
+            <div class="demo-quote">“Because c is huge, any mass converts easily…”</div>
+            <div class="demo-say"><b>you</b> A big exchange rate is not an easy exchange. Re-derive.</div>
+            <div class="demo-say agent"><b>🤖 agent</b> Re-derived — c² sets the rate, not the ease; conversion needs a mechanism. v2 is up, your objection is in its history.</div>
           </div>
         </div>
         <div class="demo-legend">
@@ -3824,9 +3826,13 @@
             + "folder the agent is working in.")),
         step(4,"Troubleshoot if needed",
           el("div",{class:"muted setup-hint"},
+            "The one-liner above installed a command, ",
             chip("lockedin-scientist"),
-            " keeps one small background worker per folder. The chip at the top of this page "
-            + "lists every folder syncing this bubble — a green dot means they are all healthy."),
+            ". Its sole purpose is syncing: it keeps one small background worker per folder, "
+            + "carrying this bubble's pages, talks and your marks to the agent and its reports "
+            + "back — it never edits your project files. It is an ordinary CLI, safe to run "
+            + "yourself; the useful commands are below. The chip at the top of this page lists "
+            + "every folder syncing this bubble — a green dot means they are all healthy."),
           troubleshootBody)));
     overlay.append(box); overlay.onclick=e=>{if(e.target===overlay)close();}; document.body.append(overlay);
     render(); mint();

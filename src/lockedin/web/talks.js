@@ -271,8 +271,11 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
 
 .tk-gutter{flex:0 0 344px;border-left:1px solid var(--line);overflow:auto;padding:0 18px 28px;
   display:flex;flex-direction:column;gap:18px;background:color-mix(in srgb,var(--panel) 55%,var(--bg))}
+/* A full-width band at the very top of the pane, not a floating label under a void — the
+   negative margins pull it over the gutter's padding so it reads as the pane's own header. */
 .tk-gh{font:500 10.5px var(--font-ui);letter-spacing:.14em;text-transform:uppercase;color:var(--muted);
-  display:flex;align-items:center;gap:8px;padding:17px 0 13px;margin-bottom:4px;
+  display:flex;align-items:center;gap:8px;padding:14px 18px 12px;margin:0 -18px 6px;
+  background:color-mix(in srgb,var(--panel2) 55%,transparent);
   border-bottom:1px solid color-mix(in srgb,var(--line) 80%,transparent)}
 .tk-gh .tk-tag{font-size:10px;letter-spacing:.04em;padding:2px 9px}
 .tk-note{flex:0 0 auto;border:1px solid var(--line);border-left:4px solid var(--kc);border-radius:11px;
@@ -360,6 +363,9 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
 .tk-ver .vn{font:600 11px var(--font-mono)}
 .tk-ver .vd{font:400 11px var(--font-mono);color:var(--muted)}
 .tk-ver .why{font-family:var(--font-reading);font-size:14.5px;color:var(--muted);line-height:1.5}
+.tk-ver .vmark{margin:7px 0 0;font-size:12.5px;color:var(--muted);border-left:2px solid var(--kc);
+  padding-left:9px;overflow-wrap:anywhere}
+.tk-ver .vmark b{color:var(--kc);font-weight:600;margin-right:2px}
 .tk-ver .snap{margin-top:8px;border:1px solid var(--line);border-radius:9px;background:var(--panel2);
   padding:10px 12px;font-family:var(--font-reading);font-size:13.5px;color:var(--muted);line-height:1.5;
   white-space:pre-wrap}
@@ -1566,6 +1572,13 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
         <div class="vh"><span class="vn">v${v.version}</span><span class="vd">${esc(v.date || "")}</span>
           ${i === vers.length - 1 ? `<span class="tk-tag done">current</span>` : ""}</div>
         <div class="why">${v.now ? "" : esc(v.why || "")}</div>
+        ${(v.marks || []).map(mk => {
+          const k = KINDS[mk.mark] || {};
+          const at = mk.quote ? "\u201c" + esc(mk.quote) + "\u201d"
+                              : (mk.region ? "a region of the slide" : "a drawing on the slide");
+          return `<div class="vmark" style="--kc:${k.color || "var(--muted)"}">
+            <b>${k.glyph || ""}</b> ${at}${mk.comment ? " — " + esc(mk.comment) : ""}</div>`;
+        }).join("")}
         <div class="snap">${esc((v.body || "").slice(0, 400))}${(v.body || "").length > 400 ? "…" : ""}</div>
       </div>`).join("")}
     </div></div>`).firstChild;
