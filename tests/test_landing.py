@@ -35,7 +35,10 @@ class LandingConfigTest(unittest.TestCase):
         self.assertEqual(cfg["workflow"]["title"], "From Paper Pile to Working Theory")
         self.assertEqual(cfg["workflow"]["steps"][0]["title"], "Library")
         self.assertEqual(cfg["hero"]["points"][2]["title"], "Central Research Hub")
-        self.assertEqual(cfg["pi"]["title"], "Compatible with Frontier")
+        self.assertEqual(
+            cfg["pi"]["text"],
+            "lockedin does not ship a new model — it integrates with the subscription you already have.")
+        self.assertEqual(cfg["frontier"]["title"], "Compatible with Frontier")
         self.assertGreaterEqual(len(cfg["components"]["features"]), 1)
         # The installer cards were removed from the defaults as clutter; the 🤖 one-liner
         # in the steps is the connect story now.

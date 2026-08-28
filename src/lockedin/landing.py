@@ -62,6 +62,15 @@ DEFAULT_LANDING: dict[str, Any] = {
         ],
     },
     "pi": {
+        "title": "Bring your own AI sub",
+        "text": "lockedin does not ship a new model — it integrates with the subscription you already have.",
+        "bullets": [
+            "Claude, Codex, Gemini — or Qwen on your own GPU.",
+            "Your key stays yours; your work stays on your disk.",
+            "Switching model never costs you the bubble, the marks or the history.",
+        ],
+    },
+    "frontier": {
         "title": "Compatible with Frontier",
         "text": "We do not reconstruct AI, we just make the frontier models better by better context management. Bring your own OpenAI, Anthropic, or Google AI subscription and use Lockedin with it.",
         "bullets": [],
@@ -165,6 +174,7 @@ def normalize_landing(data: Any) -> dict[str, Any]:
         "auth": _section(data.get("auth"), d["auth"]),
         "why": _section(data.get("why"), d["why"]),
         "pi": _section(data.get("pi"), d["pi"]),
+        "frontier": _section(data.get("frontier"), d["frontier"]),
         "workflow": _section(data.get("workflow"), d["workflow"], {
             "steps": {"number": "", "title": "", "text": ""},
         }),

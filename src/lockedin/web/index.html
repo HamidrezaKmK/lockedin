@@ -1146,7 +1146,19 @@
 
       <section class="landing-section" aria-labelledby="pi-title">
         <div class="landing-section-head">
-          <h2 id="pi-title">Compatible with Frontier</h2>
+          <h2 id="pi-title">Bring your own AI sub</h2>
+          <p>lockedin does not ship a new model — it integrates with the subscription you already have.</p>
+        </div>
+        <ul class="landing-bullets" id="pi-bullets">
+          <li>Claude, Codex, Gemini — or Qwen on your own GPU.</li>
+          <li>Your key stays yours; your work stays on your disk.</li>
+          <li>Switching model never costs you the bubble, the marks or the history.</li>
+        </ul>
+      </section>
+
+      <section class="landing-section" aria-labelledby="frontier-title">
+        <div class="landing-section-head">
+          <h2 id="frontier-title">Compatible with Frontier</h2>
           <p>We do not reconstruct AI, we just make the frontier models better by better context management. Bring your own OpenAI, Anthropic, or Google AI subscription and use Lockedin with it.</p>
         </div>
       </section>
@@ -1468,6 +1480,11 @@
     const whyText=$("#why-title")&&$("#why-title").parentElement.querySelector("p");
     if(whyText&&(c.why||{}).text!=null) whyText.textContent=String(c.why.text).split("\n\n")[0];
     bulletSection(c.pi||{},"#pi-title","#pi-bullets");
+
+    const frontier=c.frontier||{};
+    setText("#frontier-title",frontier.title);
+    const frontierText=$("#frontier-title")&&$("#frontier-title").parentElement.querySelector("p");
+    if(frontierText&&frontier.text!=null)frontierText.textContent=frontier.text;
 
     const privacy=c.privacy||{};
     setText("#privacy-title",privacy.title);
