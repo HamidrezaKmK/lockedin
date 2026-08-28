@@ -24,13 +24,18 @@
   };
   const ORDER = ["bad", "q", "more", "good", "cut"];
 
-  const S = { slug: null, name: "", view: "home", talk: null, data: null, bubble: null,
+  const S = { slug: null, name: "", owner: "", workspaceId: "", view: "home", talk: null, data: null, bubble: null,
               slide: 0, kind: "q", pending: null, editPremise: false, suppressRoute: false,
               edit: false, editorObj: null, notes: true, user: "" };
   let root = null;
 
-  const api = async (path, opts) => {
-    const r = await fetch(path, Object.assign({ headers: { "Content-Type": "application/json" } }, opts));
+  const api = async (path, opts = {}) => {
+    // Chalk talks live in the active workspace just like pages do. Without this header the
+    // browser falls back to each account's Personal workspace, so collaborators see different
+    // copies of the same-looking talk and replies appear to vanish between accounts.
+    const headers = { "Content-Type": "application/json", ...(opts.headers || {}) };
+    if (S.workspaceId) headers["X-LockedIn-Workspace"] = S.workspaceId;
+    const r = await fetch(path, { credentials: "include", ...opts, headers });
     if (!r.ok) throw new Error((await r.text()) || r.status);
     return r.json();
   };
@@ -39,10 +44,11 @@
   const h = (html) => { const d = document.createElement("div"); d.innerHTML = html; return d; };
   const displayAuthor = author => {
     const name = String(author || "");
-    const user = S.user || M.user || "";
-    if (!user) return name;
-    if (name === "you") return user;
-    if (name === "agent on behalf of you") return "agent on behalf of " + user;
+    // "you" exists only in old seeded data. It means the workspace owner, not the person
+    // currently reading a shared workspace.
+    const owner = S.owner || M.owner || "";
+    if (name === "you") return owner || name;
+    if (name === "agent on behalf of you") return owner ? "agent on behalf of " + owner : name;
     return name;
   };
 
@@ -1825,6 +1831,8 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     S.slug = slug;
     S.name = (opts && opts.name) || slug;
     S.user = (opts && opts.user) || "";
+    S.owner = (opts && opts.owner) || "";
+    S.workspaceId = (opts && opts.workspaceId) || "";
     S.onPage = (opts && opts.onPage) || null;
     S.onView = (opts && opts.onView) || null;
     S.onRoute = (opts && opts.onRoute) || null;
@@ -1865,7 +1873,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
    * This file owns the vocabulary and the look. Offsets, the wrapper and its storage stay in
    * the SPA, which already has all three.
    * ===================================================================================== */
-  const M = { kind: "q", gutter: null, preview: null, handlers: null, user: "" };
+  const M = { kind: "q", gutter: null, preview: null, handlers: null, user: "", owner: "" };
 
   function markPicker(x, y, quote, onPick) {
     injectStyles();   // a page view may never have opened a deck
@@ -1952,6 +1960,6 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
 
   window.LockedInTalks = { mount, close, home: loadHome };
   window.LockedInMarks = { picker: markPicker, paint: paintMarks, gutter: markGutter,
-                           setUser: user => { M.user = String(user || ""); },
+                           setUser: (user, owner) => { M.user = String(user || ""); M.owner = String(owner || ""); },
                            pendingRange: paintPendingRange, clearPending };
 })();

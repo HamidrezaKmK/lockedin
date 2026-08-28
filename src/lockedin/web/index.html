@@ -1957,7 +1957,7 @@
   function bindPageMarks(){
     const wrap=$("#previewWrap"), gutter=$("#reviewWrap");
     if(!wrap||!window.LockedInMarks||!S.bubble||!S.page)return;
-    window.LockedInMarks.setUser(S.user);
+    window.LockedInMarks.setUser(S.user,activeWorkspaceOwner());
     // The marks column controls visibility, not whether a reader can start a mark. In reading
     // mode the selection picker must still open; otherwise the most direct feedback gesture
     // appears broken until someone discovers the unrelated right-pane toggle.
@@ -2119,7 +2119,7 @@
   const WORKSPACE_STORAGE_KEY="li_workspace";
   const S = { user:null, model:null, premium:false, premiumRequestedAt:"", admin:false,
     workspaceId:null, workspaces:[],
-    mathMacros:{}, refs:null, view:"assets", bubble:null,
+    mathMacros:{}, refs:null, view:"assets", bubble:null, workspaceOwner:"",
     editor:null, slideEd:null, slideSave:null, page:null, pages:[], home:null, bubbleAssets:[],
     todos:[], todosById:{}, todoFilter:"open", bubbleFilter:"active",
     pollTimer:null, lastPageMtime:null, lastManifestMtime:null, lastAssetsMtime:null,
@@ -2141,6 +2141,10 @@
     return path+(path.includes("?")?"&":"?")+"workspace="+encodeURIComponent(S.workspaceId);
   }
   function workspaceAssetRoute(pdfId){ return routeHref("asset/"+encodeURIComponent(pdfId)); }
+  function activeWorkspaceOwner(){
+    const current=(S.workspaces||[]).find(w=>w.id===S.workspaceId);
+    return (current&&current.owner_user)||S.workspaceOwner||S.user||"";
+  }
 
   // Every main-screen render owns a monotonically increasing version. Async requests from a
   // screen that has since been replaced can finish, but they are no longer allowed to repaint it.
@@ -2289,14 +2293,15 @@
   async function switchWorkspace(id){
     if(id===S.workspaceId)return;
     if(S.saving){toast("Finish saving before switching workspaces.");return;}
-    const old=S.workspaceId; S.workspaceId=id;
+    const old=S.workspaceId, oldOwner=S.workspaceOwner; S.workspaceId=id;
+    S.workspaceOwner=((S.workspaces||[]).find(w=>w.id===id)||{}).owner_user||"";
     try{
       const math=await api("/api/settings/math"); S.mathMacros=math.macros||{};
       S.bubble=null; S.page=null; S.pages=[]; S.todos=[]; S.todosById={};
       localStorage.setItem(WORKSPACE_STORAGE_KEY,id);
       refreshAccountButton(); $("#accountMenu").classList.add("hide"); switchView("assets");
       toast("Switched workspace");
-    }catch(e){ S.workspaceId=old; toast(e.message); }
+    }catch(e){ S.workspaceId=old; S.workspaceOwner=oldOwner; toast(e.message); }
   }
   document.addEventListener("click",e=>{
     const wrap=document.querySelector(".account-quick");
@@ -2379,6 +2384,7 @@
     }
     S.user=me.user; S.model=me.model; S.premium=!!me.premium;
     S.workspaceId=me.workspace_id||null;
+    S.workspaceOwner=me.workspace_owner_user||"";
     if(S.workspaceId)localStorage.setItem(WORKSPACE_STORAGE_KEY,S.workspaceId);
     S.premiumRequestedAt=me.premium_requested_at||""; S.admin=!!me.admin;
     S.availableThemes=Array.isArray(me.themes)?me.themes:THEMES.slice();
@@ -2398,7 +2404,8 @@
       }catch(e){ toast("Scientist authorization failed: "+e.message); }
     }
     api("/api/settings/math").then(d=>{ S.mathMacros=d.macros||{}; }).catch(()=>{});
-    api("/api/workspaces").then(d=>{ S.workspaces=d.workspaces||[]; refreshAccountButton(); }).catch(()=>{});
+    api("/api/workspaces").then(d=>{ S.workspaces=d.workspaces||[];
+      S.workspaceOwner=activeWorkspaceOwner(); refreshAccountButton(); }).catch(()=>{});
   }
 
   // ================= MODEL SWITCHER =================
@@ -4242,6 +4249,7 @@
       const homeHost=el("div",{class:"bubble-home-pane"});
       wrap.append(homeHost);
       window.LockedInTalks.mount(homeHost,slug,{name:b.name,user:S.user,
+        owner:activeWorkspaceOwner(),workspaceId:S.workspaceId,
         onPage:p=>gotoRoute("bubble/"+slug+"/"+encodeURIComponent(p)),
         talkId:talk, slide, edit,
         // A talk is part of the bubble route, not an overlay. Replace rather than push while

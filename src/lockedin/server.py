@@ -1306,12 +1306,14 @@ def build_app():
     @app.get("/api/me")
     def me(user: str = Depends(current_user)):
         rec = auth.load_accounts().get(user, {})
+        workspace = workspaces.get(active_workspace_id(user)) or {}
         return {"user": user, "model": service.get_model_config(home_of(user)),
                 "premium": auth.is_premium(user),
                 "premium_requested_at": rec.get("premium_requested_at", ""),
                 "admin": auth.is_admin(user),
                 "themes": service.load_aesthetics_config(home_of(user))["themes"],
                 "workspace_id": active_workspace_id(user),
+                "workspace_owner_user": workspace.get("owner_user", ""),
                 "personal_workspace_id": rec.get("personal_workspace_id", "")}
 
     # ---- workspaces ----------------------------------------------------------

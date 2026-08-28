@@ -242,13 +242,19 @@ class AestheticsConfigTests(unittest.TestCase):
         self.assertIn("function applyAuthoritativeReviewResponse(result,state,", source)
         self.assertIn("epoch===(S.reviewMutationEpoch||0)", source)
         self.assertIn("That selection cuts through a comment tag", source)
-        # The preview renders wrappers as highlights rather than stripping them; only a surface
-        # with no marks column (share pages, previews) strips.
-        self.assertIn("s=opts.markComments?markCommentWrappers(s):stripCommentMarkers(s);", source)
+        # Tags are stripped before Markdown becomes HTML; the shared Range painter then draws
+        # them, which also supports crossing comments that HTML <mark> tags cannot represent.
+        self.assertIn("s=stripCommentMarkers(s);", source)
+        self.assertIn("window.LockedInMarks.paint(wrap,S.comments||[]);", source)
         self.assertIn('Cannot save: "+error.message', source)
         self.assertNotIn("function addInlineCommentMarker", source)
         self.assertNotIn("await doSave({}); await loadComments()", source)
         self.assertNotIn("caretPositionFromPoint", source)
+
+    def test_chalk_talk_requests_keep_the_selected_workspace(self):
+        source = (Path(server.WEB_DIR) / "talks.js").read_text()
+        self.assertIn('headers["X-LockedIn-Workspace"] = S.workspaceId', source)
+        self.assertIn("workspaceId:S.workspaceId", (Path(server.WEB_DIR) / "index.html").read_text())
 
     def test_server_preview_strips_review_markers_before_math_rendering(self):
         html = server._render_preview_html(
