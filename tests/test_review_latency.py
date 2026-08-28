@@ -39,7 +39,7 @@ class ReviewSaveLatencyTests(unittest.TestCase):
                     )
                     chunks.append(
                         ("Background material " + ("x" * 900) + "\n\n")
-                        + f"\\comment{{{thread_id}}}{{{body}}}\n\n"
+                        + f"<comment-begin={thread_id}>{body}<comment-end={thread_id}>\n\n"
                     )
                     threads.append(
                         {

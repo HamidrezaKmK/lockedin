@@ -341,10 +341,10 @@ def bubbles_command(account: dict) -> list[dict]:
     return rows
 
 
-SKILL_VERSION = 33
+SKILL_VERSION = 34
 
 SKILL_ROUTER = """\
-<!-- lockedin-scientist-skill: 33 -->
+<!-- lockedin-scientist-skill: 34 -->
 # LockedIn Scientist
 
 This project is synchronized with one LockedIn bubble. These rules always apply. The detail
@@ -531,12 +531,12 @@ Never edit `OPEN.md`, `shots/`, or a deck's sidecars — they are generated and 
 
 ## Marks on report pages
 
-A page mark is anchored by the `\\comment{id}{…}` wrapper in the page source; the id in
-`OPEN.md` is that id. Match it to the wrapper, then make the smallest useful edit inside its body
-and leave the wrapper in place — removing it unanchors the mark.
+A page mark is anchored by a `<comment-begin=id>…<comment-end=id>` tag pair in the page
+source; the id in `OPEN.md` is that id. Match it to its tags, then make the smallest useful edit
+between them and leave both tags in place — removing them unanchors the mark.
 
-Wrappers are managed by LockedIn: never create, copy, fabricate, rename, nest, or move one, and
-never add one for an unanchored mark. Never guess where an unanchored review belongs — ask.
+The tags are managed by LockedIn: never create, copy, fabricate, rename, or move one, and never
+add a pair for an unanchored mark. Never guess where an unanchored review belongs — ask.
 `config/reviews.yaml` holds the full threads and is read-only —
 never reply to, edit, delete, or resolve a page mark there. The user resolves those in the app.
 

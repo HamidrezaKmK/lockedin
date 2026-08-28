@@ -1016,7 +1016,7 @@ class PrivateReviewComments(unittest.TestCase):
                 self.assertEqual(state["threads"][0]["anchor"]["quote"], "beta")
                 malformed = client.put(
                     f"/api/bubbles/{slug}/pages/{page}",
-                    json={"content": r"\comment{broken}{no close",
+                    json={"content": "<comment-begin=broken>no close",
                           "base_mtime": state["page_mtime"]})
                 self.assertEqual(malformed.status_code, 422)
                 self.assertEqual(malformed.json()["detail"]["code"], "unclosed_comment")
@@ -1026,7 +1026,7 @@ class PrivateReviewComments(unittest.TestCase):
                           "base_mtime": state["page_mtime"]})
                 self.assertEqual(resolved.status_code, 200)
                 resolved_state = resolved.json()
-                self.assertNotIn("\\comment{", resolved_state["content"])
+                self.assertNotIn("comment-begin", resolved_state["content"])
                 deleted = client.request(
                     "DELETE", f"/api/bubbles/{slug}/pages/{page}/comments/{tid}",
                     json={"content": resolved_state["content"],
@@ -1046,7 +1046,8 @@ class PrivateReviewComments(unittest.TestCase):
             thread = result["thread"]
             self.assertEqual(
                 result["content"],
-                "Before " + bubbles.comment_marker(thread["id"]) + "selected material} after.")
+                "Before " + bubbles.comment_begin(thread["id"]) + "selected material"
+                + bubbles.comment_end(thread["id"]) + " after.")
             self.assertEqual(result["threads"][0]["anchor_state"], "attached")
             self.assertEqual(result["threads"][0]["anchor"]["quote"], "selected material")
             self.assertEqual(result["threads"][0]["anchor"]["end"],
@@ -1066,43 +1067,46 @@ class PrivateReviewComments(unittest.TestCase):
                 before = (page_path.read_text(), page_path.stat().st_mtime)
             comments = service.list_comments(home, slug, "overview")
             self.assertEqual(comments["threads"][0]["anchor_state"], "unanchored")
-            self.assertNotIn(bubbles.comment_marker(thread["id"]), service.get_page(home, slug, "overview"))
+            self.assertNotIn(bubbles.comment_begin(thread["id"]), service.get_page(home, slug, "overview"))
             with paths.use_root(home):
                 self.assertEqual(before, (page_path.read_text(), page_path.stat().st_mtime))
 
     def test_comment_markers_strip_without_changing_math_source(self):
-        marker = bubbles.comment_marker("abc")
-        source = marker + "$x^2$}"
+        source = bubbles.comment_begin("abc") + "$x^2$" + bubbles.comment_end("abc")
         self.assertEqual(bubbles.strip_comment_markers(source), "$x^2$")
 
     def test_standalone_preview_shows_safe_error_for_unclosed_comment(self):
         html = server._render_preview_html(
             name="Review", page="overview",
             all_pages=[{"page_slug": "overview", "title": "Overview"}],
-            content=r"\comment{broken}{unfinished $x^2$", slug="review",
+            content="<comment-begin=broken>unfinished $x^2$", slug="review",
             link_base="/preview", asset_base="/assets", show_back=False)
         self.assertIn("Review markup error", html)
         self.assertIn("line 1, column 1", html)
         self.assertNotIn("unfinished $x^2$", html)
 
     def test_balanced_parser_supports_latex_multiline_and_adjacent_comments(self):
-        source = (r"\comment{x}{First $\frac{a}{b}$ and \{literal\}}" + "\n"
-                  r"\comment{long-id_123}{second line}")
+        wrap = lambda i, b: bubbles.comment_begin(i) + b + bubbles.comment_end(i)
+        source = (wrap("x", r"First $\frac{a}{b}$ and even { a lone unbalanced brace") + "\n"
+                  + wrap("long-id_123", "second line"))
         spans = bubbles.parse_comment_wrappers(source)
         self.assertEqual([span.thread_id for span in spans], ["x", "long-id_123"])
         self.assertEqual(source[spans[0].body_start:spans[0].body_end],
-                         r"First $\frac{a}{b}$ and \{literal\}")
+                         r"First $\frac{a}{b}$ and even { a lone unbalanced brace")
         self.assertEqual(bubbles.strip_comment_markers(source),
-                         "First $\\frac{a}{b}$ and \\{literal\\}\nsecond line")
-        escaped = r"\\comment{x}{this is literal source}"
-        self.assertEqual(bubbles.parse_comment_wrappers(escaped), [])
-        self.assertEqual(bubbles.strip_comment_markers(escaped), escaped)
+                         "First $\\frac{a}{b}$ and even { a lone unbalanced brace\nsecond line")
+        # a nested comment parses cleanly, and the outer anchor body sheds the inner's tags
+        nested = wrap("outer", "head " + wrap("inner", "middle") + " tail")
+        spans = bubbles.parse_comment_wrappers(nested)
+        self.assertEqual({s.thread_id for s in spans}, {"outer", "inner"})
+        self.assertEqual(bubbles.strip_comment_markers(nested), "head middle tail")
 
     def test_parser_rejects_unclosed_duplicate_and_nested_comments(self):
+        wrap = lambda i, b: bubbles.comment_begin(i) + b + bubbles.comment_end(i)
         cases = [
-            (r"\comment{x}{open", "unclosed_comment"),
-            (r"\comment{x}{one} \comment{x}{two}", "duplicate_comment"),
-            (r"\comment{x}{one \comment{y}{two}}", "intersecting_comments"),
+            ("<comment-begin=x>open", "unclosed_comment"),
+            (wrap("x", "one") + " " + wrap("x", "two"), "duplicate_comment"),
+            ("stray <comment-end=zz> end", "stray_comment_end"),
         ]
         for source, code in cases:
             with self.subTest(code=code), self.assertRaises(bubbles.ReviewMarkupError) as caught:
@@ -1153,7 +1157,9 @@ class PrivateReviewComments(unittest.TestCase):
             service.save_page(home, slug, "overview", "Review target")
             original = service.get_page(home, slug, "overview")
             with self.assertRaises(bubbles.ReviewMarkupError) as caught:
-                service.save_page(home, slug, "overview", r"\comment{made-up}{Review target}")
+                service.save_page(home, slug, "overview",
+                                  bubbles.comment_begin("made-up") + "Review target"
+                                  + bubbles.comment_end("made-up"))
             self.assertEqual(caught.exception.code, "unknown_comment")
             self.assertEqual(service.get_page(home, slug, "overview"), original)
             thread = create_review_comment(home, slug, "overview", "alice", "Review", {
@@ -1161,7 +1167,8 @@ class PrivateReviewComments(unittest.TestCase):
             set_review_status(home, slug, "overview", thread["id"], "resolved", "alice")
             with self.assertRaises(bubbles.ReviewMarkupError) as caught:
                 service.save_page(home, slug, "overview",
-                                  bubbles.comment_marker(thread["id"]) + "Review target}")
+                                  bubbles.comment_begin(thread["id"]) + "Review target"
+                                  + bubbles.comment_end(thread["id"]))
             self.assertEqual(caught.exception.code, "resolved_comment")
 
     def test_save_rejects_manual_reattachment_of_an_unanchored_thread(self):
@@ -1177,27 +1184,36 @@ class PrivateReviewComments(unittest.TestCase):
                 service.save_page(home, slug, "overview", marked)
             self.assertEqual(caught.exception.code, "reattached_comment")
 
-    def test_overlapping_creation_is_rejected_but_adjacent_is_allowed(self):
+    def test_overlapping_creation_now_nests_but_may_not_split_a_tag(self):
+        """The paired-tag syntax makes containment legal — the point of adopting it."""
         with temp_home() as home:
             slug = make_bubble(home)
             content = "alpha beta gamma"
             mtime = service.save_page(home, slug, "overview", content)
             first = service.create_comment_state(
                 home, slug, "overview", "alice", "First", content=content, base_mtime=mtime,
-                selection_start=0, selection_end=5)
+                selection_start=0, selection_end=len(content))
             marked = first["content"]
+            # a second comment wholly inside the first: legal, nested, both anchored —
+            # and neither anchor quote carries the other's tags
+            inner = service.create_comment_state(
+                home, slug, "overview", "alice", "Inner", content=marked,
+                base_mtime=first["page_mtime"],
+                selection_start=marked.index("beta"),
+                selection_end=marked.index("beta") + 4)
+            self.assertEqual(len(inner["threads"]), 2)
+            quotes = {t["anchor"]["quote"] for t in inner["threads"]}
+            self.assertIn("beta", quotes)
+            self.assertIn("alpha beta gamma", quotes)
+            self.assertTrue(all(t["anchor_state"] == "attached" for t in inner["threads"]))
+            # ...but a selection edge inside a tag's own characters must be refused
+            tag_middle = inner["content"].index("<comment-begin=") + 4
             with self.assertRaises(bubbles.ReviewMarkupError) as caught:
                 service.create_comment_state(
-                    home, slug, "overview", "alice", "Overlap", content=marked,
-                    base_mtime=first["page_mtime"], selection_start=0,
-                    selection_end=marked.index("beta") + 4)
-            self.assertEqual(caught.exception.code, "intersecting_comments")
-            gamma = marked.index("gamma")
-            adjacent = service.create_comment_state(
-                home, slug, "overview", "alice", "Adjacent", content=marked,
-                base_mtime=first["page_mtime"], selection_start=gamma,
-                selection_end=gamma + len("gamma"))
-            self.assertEqual(len(adjacent["threads"]), 2)
+                    home, slug, "overview", "alice", "Split", content=inner["content"],
+                    base_mtime=inner["page_mtime"], selection_start=tag_middle,
+                    selection_end=tag_middle + 10)
+            self.assertEqual(caught.exception.code, "invalid_selection")
 
     def test_comment_creation_honors_page_revision_guard(self):
         with temp_home() as home:
@@ -1250,7 +1266,7 @@ class PrivateReviewComments(unittest.TestCase):
             state = service.save_page_state(home, slug, "overview", emptied,
                                             state["page_mtime"])
             self.assertEqual(state["threads"][0]["anchor_state"], "unanchored")
-            self.assertNotIn(bubbles.comment_marker(thread["id"]), state["content"])
+            self.assertNotIn(bubbles.comment_begin(thread["id"]), state["content"])
 
     def test_thread_lifecycle_and_author_only_message_editing(self):
         with temp_home() as home:
@@ -1264,11 +1280,11 @@ class PrivateReviewComments(unittest.TestCase):
                 edit_review_message(home, slug, "overview", thread["id"], reply["id"], "alice", "Changed")
             edited = edit_review_message(home, slug, "overview", thread["id"], reply["id"], "bob", "Citation added")
             self.assertEqual(edited["body"], "Citation added")
-            self.assertIn(bubbles.comment_marker(thread["id"]), service.get_page(home, slug, "overview"))
+            self.assertIn(bubbles.comment_begin(thread["id"]), service.get_page(home, slug, "overview"))
             set_review_status(home, slug, "overview", thread["id"], "resolved", "alice")
             data = service.list_comments(home, slug, "overview")
             self.assertEqual(data["threads"][0]["status"], "resolved")
-            self.assertNotIn(bubbles.comment_marker(thread["id"]), service.get_page(home, slug, "overview"))
+            self.assertNotIn(bubbles.comment_begin(thread["id"]), service.get_page(home, slug, "overview"))
             self.assertTrue(delete_review_comment(home, slug, "overview", thread["id"]))
             self.assertEqual(service.list_comments(home, slug, "overview")["threads"], [])
 
@@ -1300,8 +1316,10 @@ class PrivateReviewComments(unittest.TestCase):
         with temp_home() as home:
             slug = make_bubble(home)
             resolved_id, open_id = "resolved-1", "open-1"
-            source = (bubbles.comment_marker(resolved_id) + "resolved text} "
-                      + bubbles.comment_marker("unknown-1") + "unknown text} open target")
+            source = (bubbles.comment_begin(resolved_id) + "resolved text"
+                      + bubbles.comment_end(resolved_id) + " "
+                      + bubbles.comment_begin("unknown-1") + "unknown text"
+                      + bubbles.comment_end("unknown-1") + " open target")
             now = "2026-01-01T00:00:00+00:00"
             data = {"version": 1, "threads": [
                 {"id": resolved_id, "page_slug": "overview", "status": "resolved",
@@ -1333,7 +1351,7 @@ class PrivateReviewComments(unittest.TestCase):
     def test_review_migration_reports_malformed_source_without_rewriting_it(self):
         with temp_home() as home:
             slug = make_bubble(home)
-            source = r"\comment{broken}{never closes"
+            source = "<comment-begin=broken>never closes"
             with paths.use_root(home):
                 path = paths.bubble_page_path(slug, "overview")
                 path.write_text(source)
@@ -1487,7 +1505,7 @@ class PrivateReviewComments(unittest.TestCase):
                 service.save_page_state(home, slug, "overview", source)
             self.assertEqual(comments_read.call_count, 1)
             self.assertEqual(parses.call_count, 1)
-            self.assertIn(bubbles.comment_marker(thread["id"]), service.get_page(home, slug, "overview"))
+            self.assertIn(bubbles.comment_begin(thread["id"]), service.get_page(home, slug, "overview"))
 
     def test_http_review_mutations_require_base_mtime_without_writing(self):
         with tempfile.TemporaryDirectory() as directory, patch.dict(
@@ -1521,7 +1539,8 @@ class PrivateReviewComments(unittest.TestCase):
             threads, pieces = [], []
             for index in range(300):
                 tid = f"review-{index}"
-                pieces.append(bubbles.comment_marker(tid) + f"selected text {index}}}")
+                pieces.append(bubbles.comment_begin(tid) + f"selected text {index}"
+                              + bubbles.comment_end(tid))
                 threads.append({"id": tid, "page_slug": "overview", "status": "open",
                                 "anchor_state": "attached",
                                 "anchor": {"quote": f"selected text {index}", "start": 0},
@@ -1594,33 +1613,39 @@ class ChatSurfaceStaysRemoved(unittest.TestCase):
 class DocumentedMarkupInCodeIsNotMarkup(unittest.TestCase):
     """Review/color syntax shown inside code is an example, not a broken wrapper.
 
-    The in-app guide documents `\\comment{<comment-id>}{...}`, which made two of its tabs render
-    an "Invalid comment markup" banner instead of their content, and made any report page that
-    explained the syntax impossible to save.
+    The in-app guide documents the tag pair inside code spans; a broken example there must be
+    documentation, not a save-blocking error — while a *well-formed* pair keeps meaning a real
+    comment wherever it sits.
     """
 
     def test_documented_syntax_inside_code_parses_as_text(self):
         for source in (
-            "Wrap a review in `\\comment{<comment-id>}{...}` like so.",
-            "```\n\\comment{<comment-id>}{body}\n```",
-            "~~~md\n\\comment{not valid}{body}\n~~~",
+            "Wrap a review in `<comment-begin=your-id> … <comment-end=your-id>` like so.",
+            "```\n<comment-begin=broken>body with no end\n```",
+            "~~~md\n<comment-end=stray>\n~~~",
             "Colors use `\\textcolor{<color>}{text}`.",
             "```\n\\textcolor{<color>}{text}\n```",
         ):
-            self.assertEqual(bubbles.parse_comment_wrappers(source), [], source)
+            if "comment-begin=your-id" in source:
+                # the documented pair is well-formed, so it parses — as a span, harmlessly
+                self.assertEqual([s.thread_id for s in bubbles.parse_comment_wrappers(source)],
+                                 ["your-id"], source)
+            else:
+                self.assertEqual(bubbles.parse_comment_wrappers(source), [], source)
             self.assertEqual(bubbles.parse_textcolor_wrappers(source), [], source)
 
     def test_a_well_formed_wrapper_inside_code_still_anchors(self):
         """Commenting on a code block must keep working — no stored page may change meaning."""
-        spans = bubbles.parse_comment_wrappers("```\n\\comment{ok}{code}\n```")
+        spans = bubbles.parse_comment_wrappers(
+            "```\n<comment-begin=ok>code<comment-end=ok>\n```")
         self.assertEqual([span.thread_id for span in spans], ["ok"])
         colors = bubbles.parse_textcolor_wrappers("```\n\\textcolor{red}{code}\n```")
         self.assertEqual([span.color for span in colors], ["red"])
 
     def test_broken_markup_in_prose_still_reports_its_position(self):
         with self.assertRaises(bubbles.ReviewMarkupError) as caught:
-            bubbles.parse_comment_wrappers("a \\comment{not valid}{body}")
-        self.assertEqual(caught.exception.code, "invalid_comment_id")
+            bubbles.parse_comment_wrappers("a <comment-begin=lost>never ends")
+        self.assertEqual(caught.exception.code, "unclosed_comment")
         with self.assertRaises(bubbles.TextColorMarkupError) as caught:
             bubbles.parse_textcolor_wrappers("a \\textcolor{<bad>}{x}")
         self.assertEqual(caught.exception.code, "invalid_textcolor")
@@ -1640,7 +1665,9 @@ class DocumentedMarkupInCodeIsNotMarkup(unittest.TestCase):
                     "/api/signup", json={"username": "docs", "password": "testpass"}).status_code, 200)
                 slug = client.post("/api/bubbles", json={"name": "Docs"}).json()["slug"]
                 page = client.post(f"/api/bubbles/{slug}/pages", json={"title": "How to review"}).json()["page_slug"]
-                body = "Reviews are stored as `\\comment{<comment-id>}{...}` in the Markdown."
+                # The placeholder id uses an ellipsis on purpose: an invalid id charset can
+                # never parse as a real tag, so documentation stays inert everywhere.
+                body = "Reviews are stored as `<comment-begin=…> body <comment-end=…>` pairs."
                 saved = client.put(f"/api/bubbles/{slug}/pages/{page}", json={"content": body})
                 self.assertEqual(saved.status_code, 200, saved.text)
                 self.assertEqual(saved.json()["content"], body)

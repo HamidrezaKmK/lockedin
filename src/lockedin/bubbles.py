@@ -678,7 +678,9 @@ def list_pages(slug: str) -> list[dict]:
 
 def get_page(slug: str, page_slug: str) -> str:
     p = paths.bubble_page_path(slug, page_slug)
-    return p.read_text() if p.exists() else ""
+    # Migrated on read: a page written in the retired \comment{}{} era hands out the paired-tag
+    # syntax immediately, and the next save persists it.
+    return migrate_comment_syntax(p.read_text()) if p.exists() else ""
 
 
 # --------------------------------------------------------------------------- #
@@ -738,7 +740,31 @@ def _save_comments(slug: str, page_slug: str, data: dict) -> float:
 
 
 _COMMENT_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
-_COMMENT_COMMAND = "\\comment"
+_COMMENT_COMMAND = "\\comment"          # legacy syntax, recognised only to migrate it
+_COMMENT_BEGIN_RE = re.compile(r"<comment-begin=([A-Za-z0-9_-]+)>")
+_COMMENT_END_RE = re.compile(r"<comment-end=([A-Za-z0-9_-]+)>")
+
+
+def comment_begin(thread_id: str) -> str:
+    return f"<comment-begin={thread_id}>"
+
+
+def comment_end(thread_id: str) -> str:
+    return f"<comment-end={thread_id}>"
+
+
+def _comment_tag_ranges(content: str) -> list[tuple[int, int]]:
+    """Character ranges of every begin/end tag — the zones a selection must not split."""
+    out = []
+    for regex in (_COMMENT_BEGIN_RE, _COMMENT_END_RE):
+        out.extend((m.start(), m.end()) for m in regex.finditer(content))
+    return sorted(out)
+
+
+def strip_comment_tags(text: str) -> str:
+    """Remove any comment tags from a slice of source — a nested comment's tags must not leak
+    into another comment's anchor quote."""
+    return _COMMENT_END_RE.sub("", _COMMENT_BEGIN_RE.sub("", text))
 _TEXTCOLOR_COMMAND = "\\textcolor"
 _FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
 _TEXTCOLOR_VALUE_RE = re.compile(r"^(?:#[0-9A-Fa-f]{3}(?:[0-9A-Fa-f]{3})?|[A-Za-z][A-Za-z0-9-]{0,63})$")
@@ -746,7 +772,12 @@ _TEXTCOLOR_VALUE_RE = re.compile(r"^(?:#[0-9A-Fa-f]{3}(?:[0-9A-Fa-f]{3})?|[A-Za-
 
 @dataclass(frozen=True)
 class CommentSpan:
-    """Exact source offsets for one ``\\comment{id}{body}`` wrapper."""
+    """Exact source offsets for one ``<comment-begin=id>…<comment-end=id>`` pair.
+
+    ``open_start`` is where the begin tag starts, ``body_start``/``body_end`` bound the text
+    between the tags, ``close_end`` is just past the end tag. Because the tags pair by id, a
+    comment may cleanly contain another — the brace-counting syntax this replaced could not
+    even parse a body with an unbalanced ``{`` in it."""
 
     thread_id: str
     open_start: int
@@ -892,89 +923,100 @@ class _DocumentationCheck:
 
 
 def parse_comment_wrappers(content: str) -> list[CommentSpan]:
-    """Parse review wrappers in one linear pass.
+    """Parse review tags in one linear pass.
 
-    Ordinary balanced braces inside a body (including LaTeX arguments) are supported. A
-    ``\\comment`` inside another comment is rejected because comment ranges may never overlap
-    or contain one another. Adjacent wrappers remain valid.
+    ``<comment-begin=id>`` pairs with the first ``<comment-end=id>`` after it. Bodies may
+    contain anything — unbalanced braces, LaTeX, even other complete comments (nesting is
+    fine, since the tags pair by id). Tags inside code spans or fences are documentation and
+    are ignored, so the editing guide stays saveable.
     """
+    # Broken markup inside a code span or fence is documentation, not an error — the guide
+    # shows the syntax that way. A *well-formed* pair is still a comment wherever it sits, so
+    # no existing comment changes meaning when its surroundings get fenced.
+    documented = _DocumentationCheck(content)
+    begins = list(_COMMENT_BEGIN_RE.finditer(content))
+    ends = list(_COMMENT_END_RE.finditer(content))
+    ends_by_id: dict[str, list] = {}
+    for m in ends:
+        ends_by_id.setdefault(m.group(1), []).append(m)
+
     spans: list[CommentSpan] = []
     seen: set[str] = set()
-    pos = 0
-    size = len(content)
-    # Markup that fails to parse inside a code span or fence is documentation, not a broken
-    # wrapper: the app's own editing guide shows `\comment{<comment-id>}{...}` that way, and a
-    # report page explaining the syntax has to stay saveable. A *well-formed* wrapper is still a
-    # wrapper wherever it sits, so no existing comment changes meaning, and a genuine typo in
-    # prose still reports its line and column.
-    documented = _DocumentationCheck(content)
+    paired_ends: set[int] = set()
+    for m in begins:
+        thread_id = m.group(1)
+        if thread_id in seen:
+            if documented(m.start()):
+                continue
+            raise ReviewMarkupError("duplicate_comment", "A comment ID may appear only once on a page.",
+                                    content, m.start(), thread_id=thread_id)
+        closers = [e for e in ends_by_id.get(thread_id, [])
+                   if e.start() >= m.end() and e.start() not in paired_ends]
+        if not closers:
+            if documented(m.start()):
+                continue
+            raise ReviewMarkupError("unclosed_comment",
+                                    "This comment-begin tag has no matching comment-end tag.",
+                                    content, m.start(), thread_id=thread_id)
+        close = closers[0]
+        seen.add(thread_id)
+        paired_ends.add(close.start())
+        spans.append(CommentSpan(thread_id=thread_id, open_start=m.start(), body_start=m.end(),
+                                 body_end=close.start(), close_end=close.end()))
+    for m in ends:
+        if m.start() not in paired_ends and not documented(m.start()):
+            raise ReviewMarkupError("stray_comment_end",
+                                    "This comment-end tag has no matching comment-begin tag.",
+                                    content, m.start(), thread_id=m.group(1))
+    return spans
+
+
+def migrate_comment_syntax(content: str) -> str:
+    """Convert legacy ``\\comment{id}{body}`` wrappers to the paired-tag syntax.
+
+    The old form parsed by counting braces, so a body with an unbalanced ``{`` — ordinary in
+    LaTeX-heavy prose — broke the page. Every read path funnels through this, so a page
+    migrates the first time it is touched and the new syntax is the only one anything else
+    ever sees.
+    """
+    if _COMMENT_COMMAND + "{" not in content:
+        return content
+    out, pos, size = [], 0, len(content)
     while pos < size:
-        start = content.find(_COMMENT_COMMAND, pos)
-        if start < 0:
-            break
-        if _is_escaped(content, start):
+        start = content.find(_COMMENT_COMMAND + "{", pos)
+        if start < 0 or _is_escaped(content, start):
+            if start < 0:
+                out.append(content[pos:])
+                break
+            out.append(content[pos:start + len(_COMMENT_COMMAND)])
             pos = start + len(_COMMENT_COMMAND)
             continue
-        arg = start + len(_COMMENT_COMMAND)
-        # Do not treat commands such as \commentary as review markup.
-        if arg >= size or content[arg] != "{":
-            pos = arg
+        id_start = start + len(_COMMENT_COMMAND) + 1
+        id_end = content.find("}", id_start)
+        thread_id = content[id_start:id_end] if id_end > 0 else ""
+        if (id_end < 0 or not _COMMENT_ID_RE.fullmatch(thread_id)
+                or id_end + 1 >= size or content[id_end + 1] != "{"):
+            out.append(content[pos:id_start])
+            pos = id_start
             continue
-        try:
-            id_start = arg + 1
-            i = id_start
-            while i < size and content[i] != "}":
-                if content[i] == "{" and not _is_escaped(content, i):
-                    raise ReviewMarkupError("invalid_comment_id", "Comment IDs cannot contain braces.",
-                                            content, i)
-                i += 1
-            if i >= size:
-                raise ReviewMarkupError("unclosed_comment_id", "The comment ID is missing its closing brace.",
-                                        content, start)
-            thread_id = content[id_start:i]
-            if not _COMMENT_ID_RE.fullmatch(thread_id):
-                raise ReviewMarkupError(
-                    "invalid_comment_id",
-                    "Comment IDs may contain only letters, numbers, hyphens, and underscores.",
-                    content, id_start, thread_id=thread_id)
-            if thread_id in seen:
-                raise ReviewMarkupError("duplicate_comment", "A comment ID may appear only once on a page.",
-                                        content, start, thread_id=thread_id)
-            body_open = i + 1
-            if body_open >= size or content[body_open] != "{":
-                raise ReviewMarkupError("missing_comment_body", "The comment wrapper is missing its body.",
-                                        content, body_open, thread_id=thread_id)
-            body_start = body_open + 1
-            depth = 1
-            i = body_start
-            while i < size:
-                if (content.startswith(_COMMENT_COMMAND + "{", i)
-                        and not _is_escaped(content, i) and not documented(i)):
-                    raise ReviewMarkupError(
-                        "intersecting_comments",
-                        "Comments cannot overlap, contain, or intersect another comment.",
-                        content, i, thread_id=thread_id)
-                char = content[i]
-                if char == "{" and not _is_escaped(content, i):
-                    depth += 1
-                elif char == "}" and not _is_escaped(content, i):
-                    depth -= 1
-                    if depth == 0:
-                        break
-                i += 1
-            if depth:
-                raise ReviewMarkupError("unclosed_comment", "The comment wrapper is missing its closing brace.",
-                                        content, start, thread_id=thread_id)
-        except ReviewMarkupError:
-            if documented(start):
-                pos = start + len(_COMMENT_COMMAND)
-                continue
-            raise
-        seen.add(thread_id)
-        spans.append(CommentSpan(thread_id=thread_id, open_start=start, body_start=body_start,
-                                 body_end=i, close_end=i + 1))
+        depth, i = 1, id_end + 2
+        while i < size and depth:
+            if content[i] == "{" and not _is_escaped(content, i):
+                depth += 1
+            elif content[i] == "}" and not _is_escaped(content, i):
+                depth -= 1
+                if not depth:
+                    break
+            i += 1
+        if depth:                        # unclosed legacy wrapper: leave it alone
+            out.append(content[pos:id_start])
+            pos = id_start
+            continue
+        body = content[id_end + 2:i]
+        out.append(content[pos:start])
+        out.append(comment_begin(thread_id) + body + comment_end(thread_id))
         pos = i + 1
-    return spans
+    return "".join(out)
 
 
 def parse_textcolor_wrappers(content: str) -> list[TextColorSpan]:
@@ -1052,16 +1094,18 @@ def parse_textcolor_wrappers(content: str) -> list[TextColorSpan]:
     return spans
 
 
-def comment_marker(thread_id: str) -> str:
-    return f"\\comment{{{thread_id}}}{{"
-
-
 def strip_comment_markers(content: str) -> str:
-    """Remove validated review wrappers while preserving their Markdown bodies."""
-    spans = parse_comment_wrappers(content)
-    for span in reversed(spans):
-        content = (content[:span.open_start] + content[span.body_start:span.body_end]
-                   + content[span.close_end:])
+    """Remove validated review tags while preserving their Markdown bodies.
+
+    Removed as one flat set of tag ranges, back to front — with nesting legal, peeling whole
+    spans in sequence would shift an outer span's offsets the moment an inner one vanished.
+    """
+    ranges = []
+    for span in parse_comment_wrappers(content):
+        ranges.append((span.open_start, span.body_start))
+        ranges.append((span.body_end, span.close_end))
+    for a, b in sorted(ranges, reverse=True):
+        content = content[:a] + content[b:]
     return content
 
 
@@ -1171,7 +1215,7 @@ def _reconcile_comments(content: str, data: dict, *,
         if span is None:
             thread["anchor_state"] = "unanchored"
             continue
-        body = content[span.body_start:span.body_end]
+        body = strip_comment_tags(content[span.body_start:span.body_end])
         thread["anchor_state"] = "attached"
         anchor["quote"] = body
         anchor["start"] = span.body_start
@@ -1299,12 +1343,15 @@ def create_comment_state(slug: str, page_slug: str, author: str, body: str, *,
         if start < 0 or end > len(content) or start >= end:
             raise ReviewMarkupError("invalid_selection", "Select non-empty report text to comment on.",
                                     content, max(0, start))
-        for span in spans:
-            if start < span.close_end and end > span.open_start:
-                raise ReviewMarkupError(
-                    "intersecting_comments",
-                    "Comments cannot overlap, contain, or intersect another comment.",
-                    content, start, thread_id=span.thread_id)
+        # Nesting is legal with paired tags; the only illegal selection is one whose edge
+        # falls *inside* a tag's own characters, which would split the tag when we insert.
+        for t0, t1 in _comment_tag_ranges(content):
+            for edge in (start, end):
+                if t0 < edge < t1:
+                    raise ReviewMarkupError(
+                        "invalid_selection",
+                        "Select whole text — this selection cuts through a comment tag.",
+                        content, edge)
         quote = content[start:end]
         known_ids = {str(t.get("id") or "") for t in data.get("threads", [])}
         while True:
@@ -1320,7 +1367,8 @@ def create_comment_state(slug: str, page_slug: str, author: str, body: str, *,
                            "suffix": content[end:end + 96]},
                 "messages": ([{"id": secrets.token_urlsafe(12), "author": author, "body": body,
                                "created_at": now, "edited_at": ""}] if body else [])}
-        marked = content[:start] + comment_marker(thread_id) + quote + "}" + content[end:]
+        marked = (content[:start] + comment_begin(thread_id) + quote
+                  + comment_end(thread_id) + content[end:])
         data.setdefault("threads", []).append(item)
         normalized = normalize_display_math(normalize_wikilinks(slug, marked))
         normalized, data, _ = _reconcile_comments(normalized, data)
@@ -1446,9 +1494,14 @@ def migrate_review_comments() -> dict:
                 continue
             with _page_lock(slug, page_slug):
                 try:
-                    source = page_path.read_text()
+                    # Legacy \comment{}{} syntax converts to paired tags on the way through,
+                    # so one sweep modernises both the anchors and the markers.
+                    original = page_path.read_text()
+                    source = migrate_comment_syntax(original)
                     data = _copy_comments(_comments(slug, page_slug))
-                    before_source = source
+                    # The syntax conversion alone must persist, even when every thread is
+                    # already in its final state.
+                    before_source = original
                     before_data = _json.dumps(data, ensure_ascii=False, sort_keys=True)
                     spans = parse_comment_wrappers(source)
                     legacy_sidecar = data.get("version") != 2
@@ -1602,7 +1655,7 @@ def save_page_state(slug: str, page_slug: str, content: str,
         path = paths.bubble_page_path(slug, page_slug)
         _check_page_conflict(path, base_mtime)
         data = _copy_comments(_comments(slug, page_slug))
-        normalized = normalize_display_math(normalize_wikilinks(slug, content))
+        normalized = normalize_display_math(normalize_wikilinks(slug, migrate_comment_syntax(content)))
         normalized, data, comments_changed = _reconcile_comments(normalized, data)
         if comments_changed:
             _write_page_and_comments(slug, page_slug, normalized, data)

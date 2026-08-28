@@ -459,7 +459,7 @@ class ManualEditTests(unittest.TestCase):
                            quote="kills the variance term", text="does it?")
             detail = talks.talk_detail(self.slug, self.talk)
         src = detail["slides"][1]["edit_source"]
-        self.assertIn("\\comment{n1}{kills the variance term}", src)
+        self.assertIn("<comment-begin=n1>kills the variance term<comment-end=n1>", src)
         # The slide header comment is the app's bookkeeping, not the editor's business.
         self.assertNotIn("<!-- slide:", src)
 
@@ -469,15 +469,15 @@ class ManualEditTests(unittest.TestCase):
                            quote="kills the variance term", text="does it?")
             detail = talks.talk_detail(self.slug, self.talk)
             edited = detail["slides"][1]["edit_source"].replace(
-                "\\comment{n1}{kills the variance term}",
-                "\\comment{n1}{silences the variance term}")
+                "<comment-begin=n1>kills the variance term<comment-end=n1>",
+                "<comment-begin=n1>silences the variance term<comment-end=n1>")
             talks.apply_slide_source(self.slug, self.talk, 1, edited)
             after = talks.talk_detail(self.slug, self.talk)
         note = after["notes"][0]
         self.assertEqual(note["quote"], "silences the variance term")
         self.assertFalse(note["orphan"])
         # No wrapper syntax may leak into the stored deck.
-        self.assertNotIn("\\comment", after["slides"][1]["body"])
+        self.assertNotIn("comment-begin", after["slides"][1]["body"])
 
     def test_an_unchanged_save_keeps_the_slide_date(self):
         with paths.use_root(self.home):
@@ -534,9 +534,14 @@ class ManualEditTests(unittest.TestCase):
 
     def test_malformed_wrappers_are_left_alone_not_eaten(self):
         clean, found = talks._parse_wrappers(
-            "a \\comment{n1}{good} b \\comment{broken c \\comment{n2}{unclosed")
+            "a <comment-begin=n1>good<comment-end=n1> b <comment-begin=n2>unclosed")
         self.assertEqual(found[0]["id"], "n1")
-        self.assertEqual(clean, "a good b \\comment{broken c \\comment{n2}{unclosed")
+        self.assertEqual(clean, "a good b <comment-begin=n2>unclosed")
+        # unbalanced braces in a body are unremarkable now
+        clean, found = talks._parse_wrappers(
+            "<comment-begin=n3>a { lone } brace { mess<comment-end=n3>")
+        self.assertEqual(found[0]["body"], "a { lone } brace { mess")
+        self.assertEqual(clean, "a { lone } brace { mess")
 
 
 class DeckPushEchoTests(unittest.TestCase):

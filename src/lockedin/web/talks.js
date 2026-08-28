@@ -1143,7 +1143,7 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
 
   /* ------------------------------------------------------------- manual editing */
   // The same markdown editor the document uses, pointed at one slide. Every open mark arrives
-  // materialised as \comment{id}{...} — the wrapper syntax report pages already use — so the
+  // materialised as <comment-begin=id>…<comment-end=id> — the tag pair report pages use — so the
   // text a mark points at is visible while you rewrite it, and moves with your edit.
   function destroyEditor() {
     if (S.editorHandle) { try { S.editorHandle.dispose(); } catch (e) {} S.editorHandle = null; }
@@ -1198,9 +1198,9 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
             <button class="pri" data-save="1">Save slide</button>
           </div>
           <div class="tk-edithost"></div>
-          <div class="tk-editnote">Marks appear as <code>\\comment{id}{…}</code> — edit the text
-            inside the braces and the mark follows it. First line <code># title</code>, then an
-            optional <code>*subtitle*</code> line.</div>
+          <div class="tk-editnote">Marks appear as <code>&lt;comment-begin=id&gt;…&lt;comment-end=id&gt;</code>
+            — edit the text between the tags and the mark follows it. First line
+            <code># title</code>, then an optional <code>*subtitle*</code> line.</div>
         </div>
         <div class="tk-foot">
           <div class="tk-dots">${S.talk.slides.map((s, i) =>
@@ -1343,7 +1343,9 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
       for (let ci = 0; ci < chars.length; ci++) {
         const ch = chars[ci];
         if (ch.ni < 0) continue;
-        if (probe.comparePoint(nodes[ch.ni], ch.i) <= 0) { pos = ci; break; }
+        // comparePoint: -1 before the collapsed probe, 0 at it, 1 after — the first
+        // character at-or-after the selection start is the first non-negative one.
+        if (probe.comparePoint(nodes[ch.ni], ch.i) >= 0) { pos = ci; break; }
       }
       const re = quotePattern(quote);
       let m, k = 0;
@@ -1810,7 +1812,7 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
    * Marks on report pages.
    *
    * Same five kinds, same picker, same gutter card as a chalk-talk slide — but the anchor is
-   * the `\\comment{id}{…}` wrapper already in the page source, not a quoted string in a
+   * the `<comment-begin=id>…<comment-end=id>` pair already in the page source, not a quoted string in a
    * sidecar. That difference is deliberate and it is the whole reason pages differ from slides:
    * a page is hand-edited constantly, and a wrapper *moves with the text it surrounds* while a
    * quote silently stops matching. The id in the wrapper is the mark's identity.

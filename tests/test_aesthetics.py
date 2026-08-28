@@ -241,7 +241,7 @@ class AestheticsConfigTests(unittest.TestCase):
         self.assertIn("selection_start:offsets.start,selection_end:offsets.end", source)
         self.assertIn("function applyAuthoritativeReviewResponse(result,state,", source)
         self.assertIn("epoch===(S.reviewMutationEpoch||0)", source)
-        self.assertIn("Marks cannot overlap or nest.", source)
+        self.assertIn("That selection cuts through a comment tag", source)
         # The preview renders wrappers as highlights rather than stripping them; only a surface
         # with no marks column (share pages, previews) strips.
         self.assertIn("s=opts.markComments?markCommentWrappers(s):stripCommentMarkers(s);", source)
@@ -254,11 +254,11 @@ class AestheticsConfigTests(unittest.TestCase):
         html = server._render_preview_html(
             name="Test", page="overview",
             all_pages=[{"page_slug": "overview", "title": "Overview"}],
-            content="See \\comment{thread-1}{$x^2$}.",
+            content="See <comment-begin=thread-1>$x^2$<comment-end=thread-1>.",
             slug="test", link_base="/api/bubbles/test/preview",
             asset_base="/api/bubbles/test/assets", show_back=False,
         )
-        self.assertNotIn("\\comment{", html)
+        self.assertNotIn("comment-begin", html)
         self.assertIn("x^2", html)
 
     def test_library_card_attention_action_uses_compact_labels(self):

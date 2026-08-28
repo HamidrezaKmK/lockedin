@@ -235,9 +235,9 @@ the editor.
 
 On any open talk, **✎ edit** switches the current slide to the same Markdown editor the document
 uses. The first line is the `# title`, an optional `*subtitle*` line follows, then the body.
-Every open mark appears as a `\\comment{id}{…}` wrapper — the same syntax report pages use — and
-the mark follows the text inside the braces when you rewrite it. Deleting a wrapper leaves the
-mark to orphan loudly rather than silently vanishing.
+Every open mark appears as a `<comment-begin=…> … <comment-end=…>` pair — the same syntax
+report pages use — and the mark follows the text between the tags when you rewrite it. Deleting
+the tags leaves the mark to orphan loudly rather than silently vanishing.
 
 The toolbar is the document editor's — same image upload, tables, text colour, centering and
 undo — and the same coloured chip on its left shows the save state: ✓ saved, ✎ unsaved; click it
@@ -280,9 +280,9 @@ and pick one; the highlight appears where you read. Open the marks column with *
 row.
 
 The one difference is the anchor. A page is hand-edited constantly, so a page mark wraps the
-text it points at — you will see `\\comment{id}{…}` in the Markdown — and moves with it when you
-edit around it. A slide mark remembers the quoted text instead, and says so plainly if that text
-later disappears.
+text it points at — you will see `<comment-begin=…> … <comment-end=…>` in the Markdown — and
+moves with it when you edit around it. A slide mark remembers the quoted text instead, and says
+so plainly if that text later disappears.
 """,
     },
     {
@@ -530,9 +530,9 @@ writable by Scientist.
 
 Open private report reviews are available read-only at `.lockedin/config/reviews.yaml`. Each entry
 includes its page, current `anchor_state`, selected or last-known text, and complete conversation.
-An attached review maps to the exact Markdown body in `\\comment{<comment-id>}{...}`. The wrapper is
-server-owned: an agent may make the smallest requested edit inside its existing body, but must not
-create, copy, rename, nest, move, or reinsert a wrapper. It should read the entire thread, question
+An attached review maps to the Markdown between its `<comment-begin=…>` and `<comment-end=…>`
+tags. The tags are server-owned: an agent may make the smallest requested edit between them, but
+must not create, copy, rename, move, or reinsert a tag. It should read the entire thread, question
 vague or unsupported feedback, and avoid unrelated rewrites. Unanchored reviews must never be
 guessed back into the report; replying, resolving, and deleting remain website actions.
 
@@ -685,9 +685,9 @@ toolbar. In Edit mode, Review appears beside the source editor; in Split mode it
 the editor and preview. Read, focused, and mobile views stay free of review UI.
 
 To start a review, select source text and click the coloured **+** in the Review header. The
-selected text receives a subtle yellow highlight in the editor. The source is wrapped in
-`\\comment{<comment-id>}{...}` markers. LockedIn creates and removes those markers together with
-the review thread in one save; do not type, copy, nest, or rename them yourself. Click the
+selected text receives a subtle highlight in the editor. The source is wrapped in
+`<comment-begin=…> … <comment-end=…>` tags. LockedIn creates and removes those tags together with
+the review thread in one save; do not type, copy, or rename them yourself. Click the
 highlighted body text to open its thread. Threads are collapsed by default; opening one collapses
 the others. Markers are removed from rendered previews and KaTeX, so they are source-only
 bookkeeping. A missing closing brace is shown as a source error and must be repaired before the

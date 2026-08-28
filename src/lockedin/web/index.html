@@ -1556,43 +1556,43 @@
   // Canonical, single-pass parser shared by live validation, preview stripping, highlighting,
   // and click hit-testing. Comment wrappers may contain ordinary balanced LaTeX braces, but a
   // comment may never contain another comment wrapper.
+  const CMT_BEGIN_RE=/<comment-begin=([A-Za-z0-9_-]+)>/g;
+  const CMT_END_RE=/<comment-end=([A-Za-z0-9_-]+)>/g;
+  function commentBeginTag(id){return "<comment-begin="+id+">";}
+  function commentEndTag(id){return "<comment-end="+id+">";}
+  // Canonical, single-pass parser shared by live validation, preview stripping, highlighting,
+  // and click hit-testing. Tags pair by id, so a body may contain anything — unbalanced
+  // braces, LaTeX, even a whole nested comment. Broken markup inside code spans/fences is
+  // documentation, not an error; a well-formed pair is a comment wherever it sits.
   function parseCommentWrappers(value){
-    const source=String(value||""), token="\\comment{", wrappers=[], ids=new Set(); let cursor=0;
-    // Markup that fails to parse inside a code span or fence is documentation, not a broken
-    // wrapper: the app's own editing guide shows `\comment{<comment-id>}{...}` that way, and a
-    // report page explaining the syntax has to stay saveable. A *well-formed* wrapper is still a
-    // wrapper wherever it sits, so no existing comment changes meaning, and a genuine typo in
-    // prose still reports its line and column.
-    const cache={};
-    while(cursor<source.length){
-      const open=source.indexOf(token,cursor); if(open<0)break;
-      if(commentCharIsEscaped(source,open)){cursor=open+token.length;continue;}
-      try{
-        const idStart=open+token.length, idEnd=source.indexOf("}",idStart);
-        if(idEnd<0)throw commentMarkupError(source,open,"unclosed_comment_id","The comment ID is missing its closing brace.");
-        const id=source.slice(idStart,idEnd);
-        if(!/^[A-Za-z0-9_-]+$/.test(id))throw commentMarkupError(source,idStart,"invalid_comment_id","Comment IDs may contain only letters, numbers, hyphens, and underscores.",id);
-        if(source[idEnd+1]!=="{")throw commentMarkupError(source,idEnd+1,"missing_comment_body","The comment wrapper is missing its body.",id);
-        if(ids.has(id))throw commentMarkupError(source,open,"duplicate_comment","A comment ID may appear only once on a page.",id);
-        const bodyStart=idEnd+2; let depth=1, i=bodyStart, slashRun=0;
-        for(;i<source.length;i++){
-          const escaped=slashRun%2===1;
-          if(source.startsWith(token,i)&&!escaped&&!markupIsDocumentation(source,i,cache))
-            throw commentMarkupError(source,i,"intersecting_comments","Comments cannot overlap, contain, or intersect another comment.",id);
-          if(!escaped&&source[i]==="{")depth++;
-          else if(!escaped&&source[i]==="}"&&--depth===0)break;
-          slashRun=source[i]==="\\"?slashRun+1:0;
-        }
-        if(depth!==0)throw commentMarkupError(source,open,"unclosed_comment","The comment wrapper is missing its closing brace.",id);
-        ids.add(id); wrappers.push({id,openStart:open,idStart,idEnd,bodyStart,bodyEnd:i,closeEnd:i+1,body:source.slice(bodyStart,i)});
-        cursor=i+1;
-      }catch(error){
-        if(error&&error.name==="CommentMarkupError"&&markupIsDocumentation(source,open,cache)){
-          cursor=open+token.length; continue;
-        }
-        throw error;
+    const source=String(value||""), cache={};
+    const doc=i=>markupIsDocumentation(source,i,cache);
+    const begins=[...source.matchAll(/<comment-begin=([A-Za-z0-9_-]+)>/g)];
+    const ends=[...source.matchAll(/<comment-end=([A-Za-z0-9_-]+)>/g)];
+    const endsById={}; ends.forEach(m=>{(endsById[m[1]]=endsById[m[1]]||[]).push(m);});
+    const wrappers=[], seen=new Set(), pairedEnds=new Set();
+    for(const m of begins){
+      const id=m[1];
+      if(seen.has(id)){
+        if(doc(m.index))continue;
+        throw commentMarkupError(source,m.index,"duplicate_comment","A comment ID may appear only once on a page.",id);
       }
+      const closers=(endsById[id]||[]).filter(e=>e.index>=m.index+m[0].length&&!pairedEnds.has(e.index));
+      if(!closers.length){
+        if(doc(m.index))continue;
+        throw commentMarkupError(source,m.index,"unclosed_comment","This comment-begin tag has no matching comment-end tag.",id);
+      }
+      const close=closers[0];
+      seen.add(id); pairedEnds.add(close.index);
+      wrappers.push({id,openStart:m.index,idStart:m.index+15,idEnd:m.index+m[0].length-1,
+        bodyStart:m.index+m[0].length,bodyEnd:close.index,closeEnd:close.index+close[0].length,
+        body:source.slice(m.index+m[0].length,close.index)});
     }
+    for(const m of ends){
+      if(!pairedEnds.has(m.index)&&!doc(m.index))
+        throw commentMarkupError(source,m.index,"stray_comment_end","This comment-end tag has no matching comment-begin tag.",m[1]);
+    }
+    wrappers.sort((x,y)=>x.openStart-y.openStart);
     return wrappers;
   }
   function validateEditorCommentMarkup(value){
@@ -1663,12 +1663,15 @@
   function markCommentWrappers(value){
     const source=String(value||""), wrappers=parseCommentWrappers(source);
     if(!wrappers.length)return source;
-    let out="",cursor=0;
-    wrappers.forEach(w=>{
-      out+=source.slice(cursor,w.openStart)+CMT_OPEN(w.id)+source.slice(w.bodyStart,w.bodyEnd)+CMT_CLOSE;
-      cursor=w.closeEnd;
-    });
-    return out+source.slice(cursor);
+    // Tag-by-tag, back to front: with nesting legal, slicing whole spans in sequence would
+    // shift an outer span's offsets the moment an inner one was rewritten.
+    const edits=[];
+    wrappers.forEach(w=>{edits.push([w.openStart,w.bodyStart,CMT_OPEN(w.id)]);
+                         edits.push([w.bodyEnd,w.closeEnd,CMT_CLOSE]);});
+    edits.sort((x,y)=>y[0]-x[0]);
+    let out=source;
+    edits.forEach(([s0,e0,rep])=>{out=out.slice(0,s0)+rep+out.slice(e0);});
+    return out;
   }
   function commentTokensToHtml(html){
     // The id charset is already constrained by the pattern (wrapper ids are token_urlsafe), so
@@ -1679,14 +1682,17 @@
   }
   function stripCommentMarkers(value){
     const source=String(value||""), wrappers=parseCommentWrappers(source); if(!wrappers.length)return source;
-    let out="",cursor=0;
-    wrappers.forEach(w=>{out+=source.slice(cursor,w.openStart)+source.slice(w.bodyStart,w.bodyEnd);cursor=w.closeEnd;});
-    return out+source.slice(cursor);
+    const edits=[];
+    wrappers.forEach(w=>{edits.push([w.openStart,w.bodyStart]);edits.push([w.bodyEnd,w.closeEnd]);});
+    edits.sort((x,y)=>y[0]-x[0]);
+    let out=source;
+    edits.forEach(([s0,e0])=>{out=out.slice(0,s0)+out.slice(e0);});
+    return out;
   }
   function reviewMarkupErrorHtml(error){
     const isColor=error&&error.name==="TextColorMarkupError";
     const safe=String(error&&error.message||(isColor?"Invalid text-color markup":"Invalid comment markup")).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-    const syntax=isColor?"\\textcolor{color}{…}":"\\comment{id}{…}";
+    const syntax=isColor?"\\textcolor{color}{…}":"<comment-begin=…> … <comment-end=…>";
     const noun=isColor?"text-color":"review";
     return '<div class="review-render-error" role="alert"><b>'+noun+' markup error</b>'+safe+'<br>Close or remove the broken <code>'+syntax+'</code> wrapper before saving.</div>';
   }
@@ -1697,7 +1703,7 @@
     const banner=existing||el("div",{id:"reviewMarkupError",class:"review-render-error review-editor-error",role:"alert"});
     const isColor=error&&error.name==="TextColorMarkupError";
     banner.replaceChildren(el("b",{},isColor?"Text-color markup error":"Review markup error"),document.createTextNode(error.message),el("br"),
-      document.createTextNode("Close or remove the broken "),el("code",{},isColor?"\\textcolor{color}{…}":"\\comment{id}{…}"),document.createTextNode(" wrapper before saving."));
+      document.createTextNode("Close or remove the broken "),el("code",{},isColor?"\\textcolor{color}{…}":"<comment-begin=…> … <comment-end=…>"),document.createTextNode(" wrapper before saving."));
     if(!existing)host.append(banner);
   }
   function renderMarkdown(md,opts){
@@ -1993,7 +1999,7 @@
       applyAuthoritativeReviewResponse(result,state);
     }catch(e){toast(e.message);}finally{setReviewMutationBusy(false);}
   }
-  // Select rendered text -> five marks -> a real \comment{id}{…} wrapper in the source. The id
+  // Select rendered text -> five marks -> a real <comment-begin=id>…<comment-end=id> pair in the source. The id
   // is the mark's identity, and because the wrapper surrounds the text it survives the editing
   // a report page gets constantly, where a remembered quote would quietly stop matching.
   function startMarkFromPreview(){
@@ -2014,8 +2020,13 @@
       if(content.slice(found.start,found.end)!==found.quote){toast("The text changed. Select it again.");return;}
       if(S.baseMtime==null){toast("Still loading the page revision — try again in a moment.");primeSync();return;}
       try{
-        const overlap=parseCommentWrappers(content).some(w=>found.start<w.closeEnd&&found.end>w.openStart);
-        if(overlap){toast("Marks cannot overlap or nest.");return;}
+        // Nesting is legal now — the only refused selection is one whose edge would land
+        // inside a tag's own characters and split it.
+        const tags=[];
+        parseCommentWrappers(content).forEach(w=>{tags.push([w.openStart,w.bodyStart]);
+                                                  tags.push([w.bodyEnd,w.closeEnd]);});
+        const splits=tags.some(([t0,t1])=>(found.start>t0&&found.start<t1)||(found.end>t0&&found.end<t1));
+        if(splits){toast("That selection cuts through a comment tag — select whole text.");return;}
       }catch(error){toast(error.message);return;}
       const offsets=serverSelectionOffsets(content,found.start,found.end);
       const state=captureReviewEditorState(); setReviewMutationBusy(true);

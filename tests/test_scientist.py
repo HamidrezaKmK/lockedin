@@ -333,8 +333,9 @@ class ScientistServerBoundaryTest(unittest.TestCase):
                     {"quote": "this is a highlight", "start": start,
                      "prefix": "Before ", "suffix": " after"})
             base = service.get_page(home, slug, "overview").encode()
-            marker = bubbles.comment_marker(thread["id"])
-            self.assertIn(marker.encode() + b"this is a highlight}", base)
+            marker = bubbles.comment_begin(thread["id"])
+            self.assertIn(marker.encode() + b"this is a highlight"
+                          + bubbles.comment_end(thread["id"]).encode(), base)
             updated = base.replace(b"this is a highlight", b"this is a NEW highlight")
             result = scientist_sync.apply_writes(home, slug, [{
                 "path": "reports/pages/overview.md",
@@ -357,7 +358,7 @@ class ScientistServerBoundaryTest(unittest.TestCase):
                     slug, "overview", "reviewer", "Please tighten this.",
                     {"quote": "selected passage", "start": start})
             marked = service.get_page(home, slug, "overview").encode()
-            marker = bubbles.comment_marker(thread["id"])
+            marker = bubbles.comment_begin(thread["id"])
             unwrapped = marked.replace(marker.encode(), b"", 1)
             body_end = unwrapped.index(b" after.")
             unwrapped = unwrapped[:body_end - 1] + unwrapped[body_end:]
@@ -376,7 +377,7 @@ class ScientistServerBoundaryTest(unittest.TestCase):
     def test_scientist_cannot_fabricate_or_nest_review_wrappers(self):
         with workspace() as (home, slug):
             page = service.get_page(home, slug, "overview").encode()
-            fabricated = page + b"\\comment{made-up}{Do not accept this.}\n"
+            fabricated = page + b"<comment-begin=made-up>Do not accept this.<comment-end=made-up>\n"
             result = scientist_sync.apply_writes(home, slug, [{
                 "path": "reports/pages/overview.md",
                 "base_revision": scientist_sync.revision(page),
@@ -1060,9 +1061,9 @@ class ScientistProfileAndWorkersTest(unittest.TestCase):
         self.assertIn("say so and argue it; do not comply silently", scientist_cli.SKILL_RULES)
         self.assertIn("Make the smallest change", scientist_cli.SKILL_RULES)
         self.assertIn("never reply to, edit, delete, or resolve", scientist_cli.SKILL_RULES)
-        self.assertIn("never create, copy, fabricate, rename, nest, or move one", scientist_cli.SKILL_RULES)
+        self.assertIn("never create, copy, fabricate, rename, or move one", scientist_cli.SKILL_RULES)
         self.assertIn("Never guess where an unanchored review belongs", scientist_cli.SKILL_RULES)
-        self.assertIn("make the smallest useful edit inside its body", scientist_cli.SKILL_RULES)
+        self.assertIn("make the smallest useful edit", scientist_cli.SKILL_RULES)
         self.assertIn("Colored passages use", scientist_cli.SKILL_RULES)
         self.assertIn("Direct LockedIn paths — do not search for them", scientist_cli.SKILL_RULES)
         self.assertIn("For any report-related search, search only inside `.lockedin/`", scientist_cli.SKILL_RULES)

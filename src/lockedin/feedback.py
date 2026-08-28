@@ -21,10 +21,11 @@ KINDS = talks.KINDS
 def _page_blocks(slug: str) -> list[str]:
     """The report-page half of the file.
 
-    A page mark is anchored by the `\\comment{id}{…}` wrapper in the page source rather than by a
-    remembered quote. That is the one place pages must differ from slides: a report page is
-    hand-edited constantly, and a wrapper moves with the text it surrounds while a quote quietly
-    stops matching. The id below is the id in the wrapper — the agent can grep for it.
+    A page mark is anchored by the `<comment-begin=id>…<comment-end=id>` pair in the page
+    source rather than by a remembered quote. That is the one place pages must differ from
+    slides: a report page is hand-edited constantly, and the tags move with the text they
+    surround while a quote quietly stops matching. The id below is the id in the tags — the
+    agent can grep for it.
     """
     blocks = []
     for page in bubbles.list_pages(slug):
@@ -42,8 +43,8 @@ def _page_blocks(slug: str) -> list[str]:
             attached = t.get("anchor_state") == "attached"
             lines = [f"### {head} — {page.get('title', page_slug)}",
                      "",
-                     f"- **id**: `{t.get('id','')}` — find `\\comment{{{t.get('id','')}}}{{…}}` "
-                     f"in the page source; that wrapper *is* the anchor",
+                     f"- **id**: `{t.get('id','')}` — find `<comment-begin={t.get('id','')}>` "
+                     f"in the page source; the tag pair *is* the anchor",
                      "- **on**: " + (f"the text `{anchor.get('quote','')}`" if anchor.get("quote")
                                      else "the page as a whole")]
             if not attached:

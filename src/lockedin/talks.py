@@ -487,63 +487,51 @@ def resolve_marks(slug: str, talk_id: str, note_ids: list[str]) -> list[str]:
 # --------------------------------------------------------------------------- #
 # A slide is agent-authored, but the deck is a conversation — and sometimes the fastest reply
 # is to edit the slide yourself. Manual editing shows the slide's markdown with every open mark
-# materialised as a `\comment{id}{...}` wrapper, exactly the syntax report pages use, so the
-# text a mark points at is visible and *moves with your edit* instead of silently orphaning.
-# The wrappers exist only in the editing surface: storage stays quote-anchored, which is what
-# the agent-facing feedback file is built from.
-_WRAP_TOKEN = "\\comment{"
-_WRAP_ID = re.compile(r"[A-Za-z0-9_-]+\Z")
+# materialised as a `<comment-begin=id>…<comment-end=id>` pair, exactly the syntax report pages
+# use, so the text a mark points at is visible and *moves with your edit* instead of silently
+# orphaning. The tags exist only in the editing surface: storage stays quote-anchored, which is
+# what the agent-facing feedback file is built from.
+_TAG_BEGIN = re.compile(r"<comment-begin=([A-Za-z0-9_-]+)>")
 
 
 def _parse_wrappers(text: str) -> tuple[str, list[dict]]:
-    r"""Strip `\comment{id}{body}` wrappers; return (clean_text, [{id, body, start}]).
+    """Strip `<comment-begin=id>body<comment-end=id>` pairs; return (clean_text, entries).
 
-    `start` is the body's offset in the *clean* text, so the caller can recompute the
-    prefix/suffix context for exactly the occurrence the wrapper marked — `str.find` would
-    quietly pick the first repeat instead. Malformed wrappers are left in the text untouched:
-    an editor surface must never eat characters it merely failed to understand.
+    Each entry is {id, body, start}, `start` being the body's offset in the *clean* text so
+    the caller can recompute prefix/suffix for exactly the occurrence the tags marked. The
+    tags pair by id, so a body may contain any braces at all — the flaw that retired the old
+    brace-counted syntax. A begin without its end is left in the text untouched: an editor
+    surface must never eat characters it merely failed to understand.
     """
     out: list[str] = []
     found: list[dict] = []
     i, clean_len = 0, 0
     while True:
-        j = text.find(_WRAP_TOKEN, i)
-        if j < 0:
+        m = _TAG_BEGIN.search(text, i)
+        if not m:
             out.append(text[i:])
             break
-        out.append(text[i:j])
-        clean_len += j - i
-        id_start = j + len(_WRAP_TOKEN)
-        id_end = text.find("}", id_start)
-        nid = text[id_start:id_end] if id_end > 0 else ""
-        if id_end < 0 or not _WRAP_ID.match(nid) or text[id_end + 1:id_end + 2] != "{":
-            out.append(text[j:id_start])
-            clean_len += id_start - j
-            i = id_start
+        nid = m.group(1)
+        end_tag = f"<comment-end={nid}>"
+        k = text.find(end_tag, m.end())
+        out.append(text[i:m.start()])
+        clean_len += m.start() - i
+        if k < 0:                       # unclosed — leave the raw tag alone
+            out.append(m.group(0))
+            clean_len += len(m.group(0))
+            i = m.end()
             continue
-        depth, k = 1, id_end + 2
-        while k < len(text) and depth:
-            if text[k] == "{":
-                depth += 1
-            elif text[k] == "}":
-                depth -= 1
-            if depth:
-                k += 1
-        if depth:                       # unclosed — leave the raw text alone
-            out.append(text[j:id_start])
-            clean_len += id_start - j
-            i = id_start
-            continue
-        body = text[id_end + 2:k]
+        body = text[m.end():k]
         found.append({"id": nid, "body": body, "start": clean_len})
         out.append(body)
         clean_len += len(body)
-        i = k + 1
+        i = k + len(end_tag)
     return "".join(out), found
 
 
 def _wrap_notes(source: str, notes: list[dict]) -> str:
-    r"""Inject `\comment{id}{quote}` at each note's anchor. Overlaps keep the first mark only."""
+    """Inject `<comment-begin=id>quote<comment-end=id>` at each anchor. Overlaps keep the
+    first mark only."""
     spans = []
     for n in notes:
         quote = n.get("quote") or ""
@@ -560,7 +548,8 @@ def _wrap_notes(source: str, notes: list[dict]) -> str:
             last_end = span[1]
     out = source
     for start, end, nid in reversed(kept):
-        out = f"{out[:start]}\\comment{{{nid}}}{{{out[start:end]}}}{out[end:]}"
+        out = (f"{out[:start]}<comment-begin={nid}>{out[start:end]}"
+               f"<comment-end={nid}>{out[end:]}")
     return out
 
 
@@ -698,7 +687,7 @@ def talk_detail(slug: str, talk_id: str) -> dict:
 
     for s in slides:
         # What the ✎ edit toggle opens: the slide's own markdown, with every open mark
-        # materialised as the same `\comment{id}{...}` wrapper report pages use.
+        # materialised as the same `<comment-begin=id>…<comment-end=id>` pair report pages use.
         s["edit_source"] = slide_edit_source(slug, talk_id, slides, notes, s["index"])
     return {"talk": rec, "slides": slides, "notes": out_notes,
             "open": len(out_notes)}
