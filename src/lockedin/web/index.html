@@ -2114,7 +2114,7 @@
   const S = { user:null, model:null, premium:false, premiumRequestedAt:"", admin:false,
     workspaceId:null, workspaces:[],
     mathMacros:{}, refs:null, view:"assets", bubble:null,
-    editor:null, page:null, pages:[], home:null, bubbleAssets:[],
+    editor:null, slideEd:null, slideSave:null, page:null, pages:[], home:null, bubbleAssets:[],
     todos:[], todosById:{}, todoFilter:"open", bubbleFilter:"active",
     pollTimer:null, lastPageMtime:null, lastManifestMtime:null, lastAssetsMtime:null,
     baseMtime:null, autosaveTimer:null, saving:false, syncState:"synced", applyingRemote:false,
@@ -4440,11 +4440,15 @@
         customHTMLRenderer:editorImageRenderer(bubbleOf),
       });
       S.slideEd=ed;
-      const handle={ editor:ed,
+      const save=()=>{ if(opts.onSave) opts.onSave(); };
+      const handle={ editor:ed, save,
         setSync(state){ if(syncBtn){ syncBtn.textContent=SYNC_ICON[state]||SYNC_ICON.synced;
                                      syncBtn.className="sync-toolbar "+state; } },
-        dispose(){ if(S.slideEd===ed)S.slideEd=null; try{ed.destroy();}catch(e){} } };
-      if(opts.onSave) ed.on("change",()=>handle.setSync("stale"));
+        dispose(){
+          if(S.slideEd===ed){S.slideEd=null;S.slideSave=null;}
+          try{ed.destroy();}catch(e){}
+        } };
+      if(opts.onSave){S.slideSave=save;ed.on("change",()=>handle.setSync("stale"));}
       return handle;
     }
   };
@@ -4480,6 +4484,12 @@
       S.ctrlSBound=true;
       document.addEventListener("keydown",e=>{
         if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&!e.altKey&&(e.key==="s"||e.key==="S")){
+          // A chalk-talk editor is a separate Toast instance. It must win over the ordinary
+          // page editor (which stays mounted behind the talk), or Ctrl/Cmd+S appears to do
+          // nothing and only the pencil toolbar control can save the slide.
+          if(S.slideEd&&typeof S.slideSave==="function"){
+            e.preventDefault(); e.stopPropagation(); S.slideSave(); return;
+          }
           if(S.editor&&S.page){ e.preventDefault(); e.stopPropagation(); clickSave(); }
         }
       },true);
