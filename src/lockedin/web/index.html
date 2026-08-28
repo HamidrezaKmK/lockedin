@@ -1970,9 +1970,13 @@
     const wrap=$("#previewWrap"), gutter=$("#reviewWrap");
     if(!wrap||!window.LockedInMarks||!S.bubble||!S.page)return;
     window.LockedInMarks.setUser(S.user);
-    if(!S.paneRight)return;   // nothing to paint, nothing to select into
-    window.LockedInMarks.paint(wrap,S.comments||[]);
-    if(gutter&&!S.commentDraftAnchor)
+    // The marks column controls visibility, not whether a reader can start a mark. In reading
+    // mode the selection picker must still open; otherwise the most direct feedback gesture
+    // appears broken until someone discovers the unrelated right-pane toggle.
+    if(S.paneRight){
+      window.LockedInMarks.paint(wrap,S.comments||[]);
+    }
+    if(S.paneRight&&gutter&&!S.commentDraftAnchor)
       window.LockedInMarks.gutter(gutter,S.comments||[],
         {onDelete:id=>markDelete(id),onEdit:(id,text)=>markEdit(id,text),
          onReply:(id,text)=>markReply(id,text)});

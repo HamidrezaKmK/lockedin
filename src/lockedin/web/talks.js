@@ -169,7 +169,9 @@
 .tk-md blockquote{border-left:3px solid var(--accent2);margin:0 0 15px;padding:10px 16px;
   background:color-mix(in srgb,var(--accent2) 8%,transparent);border-radius:0 9px 9px 0}
 /* The provisional mark, held while the composer is open. */
-.tk-md mark.tk-pending{background:color-mix(in srgb,var(--accent) 34%,transparent);color:inherit;
+/* A pending mark appears in both a slide (.tk-md) and the regular document preview, so this
+   cannot be scoped to .tk-md — otherwise the browser's default bright-yellow <mark> leaks in. */
+mark.tk-pending{background:color-mix(in srgb,var(--accent) 34%,transparent);color:inherit;
   border-radius:3px;padding:0 1px;box-shadow:0 0 0 1px color-mix(in srgb,var(--accent) 62%,transparent)}
 .tk-pending-region{position:absolute;border:1.5px dashed var(--accent);border-radius:7px;
   background:color-mix(in srgb,var(--accent) 9%,transparent);pointer-events:none;
