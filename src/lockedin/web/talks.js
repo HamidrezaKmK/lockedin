@@ -227,11 +227,11 @@ mark.tk-anno{background:color-mix(in srgb,var(--kc,var(--accent)) 26%,transparen
 .tk-edithead{display:flex;align-items:center;gap:9px;padding:11px 14px;border-bottom:1px solid var(--line);
   background:color-mix(in srgb,var(--panel2) 70%,var(--panel))}
 .tk-edithead .tk-cnt{margin-left:0}
-select.tk-ekind{width:auto;flex:0 0 auto;font:500 9.5px var(--font-mono);letter-spacing:.14em;
+input.tk-ekind{width:152px;flex:0 1 152px;font:500 9.5px var(--font-mono);letter-spacing:.14em;
   text-transform:uppercase;background:var(--accent);color:var(--bg);padding:3px 10px;
-  border-radius:999px;border:0;cursor:pointer;appearance:none;outline:none;
+  border-radius:999px;border:0;cursor:text;appearance:none;outline:none;
   transition:none;box-shadow:none}
-select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:none}
+input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
 .tk-edithost{flex:1;min-height:0}
 .tk-edithost .toastui-editor-defaultUI{border:0;border-radius:0;height:100%}
 .tk-editnote{font-size:11.5px;color:var(--muted);padding:7px 14px;border-top:1px solid var(--line)}
@@ -1218,17 +1218,19 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
       <div class="tk-col">
         <div class="tk-editcard">
           <div class="tk-edithead">
-            <select class="tk-ekind" title="slide kind">
+            <input class="tk-ekind" list="tk-kind-options" value="${esc(sl.kind)}"
+              title="Section label — choose a suggestion or type your own" aria-label="Slide section">
+            <datalist id="tk-kind-options">
               ${["setup","derivation","evidence","comparison","implementation","ask"].map(k =>
-                `<option value="${k}"${k === sl.kind ? " selected" : ""}>${k}</option>`).join("")}
-            </select>
+                `<option value="${k}">`).join("")}
+            </datalist>
             <span class="tk-sp"></span>
             <button class="pri" data-save="1">Save slide</button>
           </div>
           <div class="tk-edithost"></div>
-          <div class="tk-editnote">Marks appear as <code>&lt;comment-begin=id&gt;…&lt;comment-end=id&gt;</code>
-            — edit the text between the tags and the mark follows it. First line
-            <code># title</code>, then an optional <code>*subtitle*</code> line.</div>
+          <div class="tk-editnote">Type any section label above. The first line is the slide title:
+            <code># title</code>, then an optional <code>*subtitle*</code> line. Marks appear as
+            <code>&lt;comment-begin=id&gt;…&lt;comment-end=id&gt;</code> — edit inside them and the mark follows it.</div>
         </div>
         <div class="tk-foot">
           <div class="tk-dots">${S.talk.slides.map((s, i) =>
@@ -1284,7 +1286,7 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
 
     wrap.querySelector("[data-save]").onclick = () => saveSlide(true);
     // A kind change never touches the editor, so tell the chip ourselves.
-    wrap.querySelector(".tk-ekind").onchange = () =>
+    wrap.querySelector(".tk-ekind").oninput = () =>
       S.editorHandle && S.editorHandle.setSync("stale");
     const guarded = fn => () => { if (leaveEditOk()) fn(); };
     wrap.querySelectorAll("[data-nav]").forEach(b =>

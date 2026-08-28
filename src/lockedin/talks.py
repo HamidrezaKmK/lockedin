@@ -44,6 +44,7 @@ KINDS = {
 KIND_ORDER = ["bad", "q", "more", "good", "cut", "ink"]
 
 SLIDE_KINDS = ["setup", "derivation", "evidence", "comparison", "implementation", "ask"]
+_SLIDE_KIND_RE = re.compile(r"[A-Za-z][A-Za-z0-9 _&/+-]{0,47}$")
 
 # Slides are separated by a horizontal rule on its own line. Chosen because it is what a human
 # writing markdown slides reaches for anyway, and because every markdown renderer already
@@ -62,6 +63,14 @@ def _now_iso() -> str:
 
 def _today() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+
+def _slide_kind(value: str) -> str:
+    """Normalize a human section label without allowing it to break the slide attribute."""
+    kind = " ".join(str(value or "").split())
+    if not _SLIDE_KIND_RE.fullmatch(kind):
+        raise ValueError("slide section must be 1–48 letters, numbers, spaces, or - / + &")
+    return kind
 
 
 def _atomic_write(path: Path, text: str) -> None:
@@ -620,9 +629,7 @@ def apply_slide_source(slug: str, talk_id: str, index: int, text: str, *,
     if not 0 <= index < len(slides):
         raise IndexError(index)
     old = slides[index]
-    if kind and kind not in SLIDE_KINDS:
-        raise ValueError(f"kind must be one of {', '.join(SLIDE_KINDS)}")
-    kind = kind or old["kind"]
+    kind = _slide_kind(kind) if kind else old["kind"]
     head = f"<!-- slide: kind={kind}, date={old.get('date', '')} -->"
     parsed = parse_deck(head + "\n" + clean.strip("\n") + "\n")
     if not parsed:

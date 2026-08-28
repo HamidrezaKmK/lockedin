@@ -77,8 +77,16 @@ class TalkTests(unittest.TestCase):
             detail = talks.talk_detail(self.slug, self.talk)
             # Losing a reviewer's objection silently is the one unacceptable failure.
             self.assertTrue(detail["notes"][0]["orphan"])
-            self.assertEqual(detail["notes"][0]["quote"],
+        self.assertEqual(detail["notes"][0]["quote"],
                              "Here I assume $w(\\lambda) \\to \\text{const}$")
+
+    def test_a_slide_can_use_a_custom_section_label(self):
+        with paths.use_root(self.home):
+            talks.apply_slide_source(self.slug, self.talk, 1,
+                                     "# The residual term survives\n\nA new framing.",
+                                     kind="Literature review")
+            detail = talks.talk_detail(self.slug, self.talk)
+        self.assertEqual(detail["slides"][1]["kind"], "Literature review")
 
     # -- threads ---------------------------------------------------------------
     def test_only_the_last_turn_of_a_thread_can_be_edited(self):
