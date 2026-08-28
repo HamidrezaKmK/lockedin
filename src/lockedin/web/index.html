@@ -263,6 +263,8 @@
   /* Balanced wrapping and a size that fits the column: a headline that breaks as
      "…like a / PI" reads like a typo. */
   .landing-section h2{font-size:23px;line-height:1.2;margin:0;letter-spacing:0;text-wrap:balance}
+  /* The page thesis should read as one thought, including at desktop browser zoom levels. */
+  #why-title{white-space:nowrap;text-wrap:nowrap}
   .landing-section-head p{margin:0;color:var(--muted);text-wrap:pretty}
   .workflow-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}
   .workflow-step,.feature-card{background:var(--panel);border:1px solid var(--line);
