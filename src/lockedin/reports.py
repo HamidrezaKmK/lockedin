@@ -46,6 +46,16 @@ Admins see a **User access** card in Settings. From there you can:
 
 Users who request premium from the top-right account menu appear with a **requested** badge.
 You cannot delete your own account.
+
+## Background model for paper summaries
+
+Separate from the agent you actually work with, a background model can summarize papers for
+you: when you upload a PDF it extracts metadata, suggests tags, and writes the one-time summary
+shown on the asset page. That is its whole job — there is no AI chat in the app.
+
+Set it up in **⚙️ Settings**: pick a provider card (Qwen on the server for premium accounts, or
+OpenAI / Claude / Gemini with your own API key) and click **Configure** to add the key or
+endpoint. The coloured dot shows the provider's last health-check.
 """,
     },
     {
@@ -82,33 +92,6 @@ see; unsaved report edits must be saved or discarded first.
 **Math Macros** lives inside the active workspace settings. A macro belongs to the workspace,
 not an individual account, so every member, preview, public share, and Scientist client uses the
 same definitions. Add or edit a macro there before using it in report math.
-""",
-    },
-    {
-        "title": "Models",
-        "content": """\
-## Switching the active model
-
-Open **⚙️ Settings**. The model cards show Qwen (local), OpenAI, Claude, and Gemini.
-Double-click a card (or click **Use this model**) to activate it. Click **Configure** to
-set the API key or Ollama endpoint for that provider.
-
-| Provider | Notes |
-|----------|-------|
-| **Qwen (premium)** | Runs on the server via Ollama; available only for premium accounts |
-| **OpenAI** | GPT-4o and others; API key from platform.openai.com |
-| **Claude** | Anthropic models; API key from console.anthropic.com |
-| **Gemini** | Google models; API key from aistudio.google.com/apikey |
-
-Standard accounts use OpenAI, Claude, or Gemini with their own API key. This keeps public
-sign-ups from consuming the server's local compute by default.
-
-The coloured dot next to the active model updates when a health-check runs.
-
-The model's only job is asset ingestion: when you upload a PDF it extracts metadata,
-suggests tags, and writes the one-time summary shown on the asset page. There is no AI
-chat in the app — reports are written by you, in the editor or through the Scientist client.
-
 """,
     },
     {
@@ -233,6 +216,23 @@ agent that cannot see your screen.
 Region marks exist only on slides. On a report page, which reflows, a rectangle would say
 nothing a quoted sentence does not.
 
+## Writing and editing by hand
+
+A talk is not agent-only. **+ add chalk talk** offers two doors: **Ask an agent** hands you a
+prompt to paste into the agent you already run, and **Write it yourself** opens a blank slide in
+the editor.
+
+On any open talk, **✎ edit** switches the current slide to the same Markdown editor the document
+uses. The first line is the `# title`, an optional `*subtitle*` line follows, then the body.
+Every open mark appears as a `\comment{id}{…}` wrapper — the same syntax report pages use — and
+the mark follows the text inside the braces when you rewrite it. Deleting a wrapper leaves the
+mark to orphan loudly rather than silently vanishing.
+
+A hand edit is a revision like any other: it bumps the slide's version, and the one-line **why**
+you optionally give is kept in the history. **+ add slide** inserts a blank slide after the
+current one; **✂ delete slide** removes the slide with its marks and history; the ✕ on a talk
+card on the bubble page deletes the whole talk.
+
 ## Marks are conversations
 
 Every mark is a thread. **reply** adds a turn; the agent answers in the same thread. You can
@@ -252,9 +252,10 @@ If the agent thinks a mark is mistaken, it is told to say so and argue rather th
 
 ## Asking for one
 
-Press **+ ask for one** beside **Chalk talks**. Say what you want explained, add any steer
-("five slides at most", "assume I know the ELBO"), and copy the message into the session working
-on this bubble. The agent creates the talk by writing one file; it appears here on its next sync.
+Press **+ add chalk talk** beside **Chalk talks** and pick **Ask an agent**. Say what you want
+explained, add any steer ("five slides at most", "assume I know the ELBO"), and copy the message
+into the session working on this bubble. The agent creates the talk by writing one file; it
+appears here on its next sync.
 
 You do not need to describe the format or the rules — the agent has already read them.
 

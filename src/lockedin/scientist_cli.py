@@ -341,10 +341,10 @@ def bubbles_command(account: dict) -> list[dict]:
     return rows
 
 
-SKILL_VERSION = 27
+SKILL_VERSION = 29
 
 SKILL_ROUTER = """\
-<!-- lockedin-scientist-skill: 27 -->
+<!-- lockedin-scientist-skill: 29 -->
 # LockedIn Scientist
 
 This project is synchronized with one LockedIn bubble. These rules always apply. The detail
@@ -539,7 +539,8 @@ Markup that fails to parse inside a code span or fence is literal text, not an e
 A chalk talk is a dated deck at `reports/talks/<id>.md` explaining one idea whose correctness
 needs the user's judgement. Slides are separated by `---`; each has a
 `<!-- slide: kind=…, date=…, v=N -->` header, a `# Title`, an optional one-line *italic
-subtitle*, then Markdown with `$…$` maths and `\\cite{key}` citations.
+subtitle*, then Markdown with `$…$` maths and `\\cite{key}` citations. `kind` is one of
+`setup, derivation, evidence, comparison, implementation, ask` — nothing else renders.
 
 **Reading them without drowning.** Start with `IDEA.md`, then `OPEN.md`. Open a deck only when a
 mark points into it, the user names it, or you are about to write on the same idea — `talks.yaml`
@@ -556,10 +557,13 @@ document.
   user can mark a region of a figure, and a rectangle over unlabelled axes says little.
 - One idea per slide, fitting a screen. If it does not fit, it is two slides.
 - Condensed, not prose. If a sentence survives being cut, cut it.
+- Short sentences, at most five bullets a slide. A bullet that wraps past two lines is a
+  paragraph pretending — split it or cut it.
 - Minimise equations; carry the idea in words. When the derivation *is* the point, number the
   steps so the user can mark the one that is wrong.
 - Say what you are unsure of — the subtitle is the place.
-- Open with why it matters, close with what you need. Titles carry the claim, not the topic.
+- Open with why it matters, close with what you need. Titles carry the claim, not the
+  topic — and never `Slide N:`, the deck numbers itself.
 
 **Resolving.** Name the marks in the slide header of the revision that answers them:
 
