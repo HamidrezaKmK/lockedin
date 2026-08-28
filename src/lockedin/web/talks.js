@@ -26,7 +26,7 @@
 
   const S = { slug: null, name: "", view: "home", talk: null, data: null, bubble: null,
               slide: 0, kind: "q", pending: null, history: null, editPremise: false,
-              edit: false, editorObj: null };
+              edit: false, editorObj: null, notes: true };
   let root = null;
 
   const api = async (path, opts) => {
@@ -232,6 +232,21 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
 .tk-editnote{font-size:11.5px;color:var(--muted);padding:7px 14px;border-top:1px solid var(--line)}
 .tk-editnote code{font-family:var(--font-mono);background:var(--panel2);padding:1px 5px;border-radius:5px}
 .tk-danger:hover{border-color:var(--bad);color:var(--bad)}
+/* The slide tools are one instrument, so they get one body — six segments, one border. */
+.tk-seg{display:inline-flex;align-items:stretch;border:1px solid var(--line);border-radius:11px;
+  overflow:hidden;background:var(--panel2)}
+.tk-seg button{border:0;border-radius:0;background:none;min-height:34px;padding:6px 13px;
+  white-space:nowrap}
+.tk-seg button+button{border-left:1px solid var(--line)}
+.tk-seg button:hover{border-color:var(--line);background:color-mix(in srgb,var(--accent) 13%,transparent)}
+.tk-seg button.tk-danger:hover{background:color-mix(in srgb,var(--bad) 13%,transparent);color:var(--bad);
+  border-left-color:var(--line)}
+.tk-seg [data-notes].off{color:var(--muted)}
+/* Notes off = clean reading: the pane goes, and so does every kind of ink on the slide.
+   Inline marks keep their text and only lose their paint — display:none would eat words. */
+.tk-overlay.no-notes .tk-gutter{display:none}
+.tk-overlay.no-notes .tk-region,.tk-overlay.no-notes .tk-ink{display:none}
+.tk-overlay.no-notes mark.tk-anno{background:none;box-shadow:none;cursor:inherit}
 .tk-addwrap{position:relative}
 .tk-addmenu{position:absolute;right:0;top:calc(100% + 6px);z-index:30;min-width:250px;
   background:var(--panel2);border:1px solid var(--line);border-radius:11px;box-shadow:var(--shadow);
@@ -427,6 +442,14 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
     const target = slide.querySelector(
       `.tk-anno[data-note="${noteId}"],.tk-region[data-note="${noteId}"],.tk-ink[data-note="${noteId}"]`);
     if (target) target.classList.add("tk-capture-target");
+    // Ink is painted in a rAF after render. The first capture ever was slow enough (fetching
+    // html2canvas) to hide the race; every later one could clone the DOM before the strokes
+    // landed and ship a blank drawing. Flush a frame, then repaint the target outright.
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    if (target && target.classList.contains("tk-ink")) {
+      const note = (S.talk && S.talk.notes || []).find(n => n.id === noteId);
+      if (note && note.paths) paintInk(target, slide, note.paths);
+    }
     const restore = flattenColors(slide);
     try {
       const canvas = await h2c(slide, {
@@ -999,11 +1022,15 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
               data-i="${i}" title="${esc(s.title)}"></button>`).join("")}</div>
           <span class="tk-cnt">${S.slide + 1} / ${S.talk.slides.length}</span>
           <button data-nav="-1">←</button><button data-nav="1">→</button>
-          <button data-draw="1" title="drag a box over the slide">🖍 mark region</button>
-          <button data-ink="1" title="draw freely on the slide — the drawing becomes the feedback">✍ draw</button>
-          <button data-editdeck="1" title="edit this slide's markdown by hand">✎ edit</button>
-          <button data-add="1" title="insert a blank slide after this one">+ add slide</button>
-          <button data-del="1" class="tk-danger" title="delete this slide and its marks">✂ delete slide</button>
+          <div class="tk-seg">
+            <button data-draw="1" title="drag a box over the slide">🖍 mark region</button>
+            <button data-ink="1" title="draw freely on the slide — the drawing becomes the feedback">✍ draw</button>
+            <button data-editdeck="1" title="edit this slide's markdown by hand">✎ edit</button>
+            <button data-add="1" title="insert a blank slide after this one">+ add slide</button>
+            <button data-del="1" class="tk-danger" title="delete this slide and its marks">✂ delete slide</button>
+            <button data-notes="1" class="${S.notes ? "" : "off"}"
+              title="${S.notes ? "hide" : "show"} the notes pane and the marks on the slide">${S.notes ? "◨" : "◧"}</button>
+          </div>
         </div>
       </div>
       <div class="tk-gutter"></div>
@@ -1021,6 +1048,7 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
     wrap.querySelector("[data-ink]").onclick = startInk;
     wrap.querySelector("[data-add]").onclick = () => addSlideAfter(S.slide);
     wrap.querySelector("[data-del]").onclick = () => deleteSlideAt(S.slide);
+    wrap.querySelector("[data-notes]").onclick = () => { S.notes = !S.notes; render(); };
     wrap.querySelectorAll(".tk-dot").forEach(d => (d.onclick = () => go(Number(d.dataset.i))));
     wrap.querySelector(".tk-gutter").append(renderGutter(mine));
     return wrap;
@@ -1301,6 +1329,7 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
       if (S.pending.quote) payload.quote = S.pending.quote;
       if (S.pending.rect) payload.rect = S.pending.rect;
       closePicker(); S.pending = null;
+      S.notes = true;
       const created = await api(`/api/bubbles/${S.slug}/talks/${S.talk.talk.id}/notes`,
                                 { method: "POST", body: JSON.stringify(payload) });
       if (innerWidth <= 900) root.classList.add("notes-open");
@@ -1471,6 +1500,7 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
       bar.remove();
       inkComposer(e.clientX, Math.min(e.clientY + 10, innerHeight - 200), async text => {
         teardown();
+        S.notes = true;
         const created = await api(`/api/bubbles/${S.slug}/talks/${S.talk.talk.id}/notes`, {
           method: "POST",
           body: JSON.stringify({ slide: S.slide, kind: "ink", paths, text,
@@ -1565,6 +1595,7 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
     closePicker();
     clearPending();
     destroyEditor();
+    root.classList.toggle("no-notes", !S.notes);
     document.querySelectorAll(".tk-modal").forEach(x => x.remove());
     const top = root.querySelector(".tk-top");
     const body = root.querySelector(".tk-body");
