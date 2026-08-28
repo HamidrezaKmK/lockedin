@@ -257,6 +257,12 @@ class AestheticsConfigTests(unittest.TestCase):
         self.assertIn('headers["X-LockedIn-Workspace"] = S.workspaceId', source)
         self.assertIn("workspaceId:S.workspaceId", (Path(server.WEB_DIR) / "index.html").read_text())
 
+    def test_chalk_talk_card_titles_are_editable_from_bubble_tools(self):
+        spa = (Path(server.WEB_DIR) / "index.html").read_text()
+        talks_ui = (Path(server.WEB_DIR) / "talks.js").read_text()
+        self.assertIn('"Edit chalk talk titles"', spa)
+        self.assertIn("editTitles: editTalkTitles", talks_ui)
+
     def test_server_preview_strips_review_markers_before_math_rendering(self):
         html = server._render_preview_html(
             name="Test", page="overview",

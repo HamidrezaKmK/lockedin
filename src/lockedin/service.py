@@ -721,6 +721,11 @@ def delete_talk(home: Path, slug: str, talk_id: str) -> bool:
         return talks.delete_talk(slug, talk_id)
 
 
+def update_talk_metadata(home: Path, slug: str, talk_id: str, **kw) -> dict:
+    with paths.use_root(home):
+        return talks.update_talk_metadata(slug, talk_id, **kw)
+
+
 def add_talk_note(home: Path, slug: str, talk_id: str, **kw) -> dict:
     with paths.use_root(home):
         return talks.add_note(slug, talk_id, **kw)

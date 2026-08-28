@@ -1101,6 +1101,58 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     setTimeout(() => m.querySelector("textarea").focus(), 30);
   }
 
+  // A talk's card title and explanation are its invitation to read the deck. Keep them
+  // editable without rewriting the agent-authored first slide underneath it.
+  async function editTalkTitles() {
+    let talks = (S.data && S.data.talks) || [];
+    if (!talks.length) {
+      const listed = await api(`/api/bubbles/${encodeURIComponent(S.slug)}/talks`);
+      talks = listed.talks || [];
+    }
+    if (!talks.length) { toast("Add a chalk talk first."); return; }
+    let active = (S.talk && S.talk.talk && S.talk.talk.id) || talks[0].id;
+    const m = h(`<div class="tk-modal"><div class="tk-mcard">
+      <button class="tk-x" data-x="1">✕</button>
+      <h3>Edit chalk talk titles</h3>
+      <div class="msub">This changes the title and explanation on the chalk-talk list. It does not rewrite the slides.</div>
+      <label class="tk-lab">Chalk talk</label>
+      <select class="tk-ta" data-f="talk">${talks.map(t =>
+        `<option value="${esc(t.id)}"${t.id === active ? " selected" : ""}>${esc(t.title || t.id)}</option>`).join("")}</select>
+      <label class="tk-lab">Title</label><input class="tk-ta" data-f="title" maxlength="200">
+      <label class="tk-lab">Explanation <span class="tk-dim">optional</span></label>
+      <textarea class="tk-ta" data-f="intent" rows="3" maxlength="600"></textarea>
+      <div class="row" style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+        <button data-x="1">Cancel</button><button class="pri" data-save="1">Save</button></div>
+    </div></div>`).firstChild;
+    const select = m.querySelector('[data-f="talk"]');
+    const title = m.querySelector('[data-f="title"]');
+    const intent = m.querySelector('[data-f="intent"]');
+    const fill = () => {
+      active = select.value;
+      const t = talks.find(x => x.id === active) || {};
+      title.value = t.title || ""; intent.value = t.intent || "";
+    };
+    select.onchange = fill; fill();
+    const close2 = () => m.remove();
+    m.onclick = e => { if (e.target === m) close2(); };
+    m.querySelectorAll("[data-x]").forEach(x => (x.onclick = close2));
+    m.querySelector("[data-save]").onclick = async () => {
+      const save = m.querySelector("[data-save]"); save.disabled = true;
+      try {
+        const result = await api(`/api/bubbles/${encodeURIComponent(S.slug)}/talks/${encodeURIComponent(active)}`, {
+          method: "PATCH", body: JSON.stringify({ title: title.value.trim(), intent: intent.value.trim() }),
+        });
+        const updated = result.talk;
+        if (S.data && S.data.talks)
+          S.data.talks = S.data.talks.map(t => t.id === active ? {...t, ...updated} : t);
+        if (S.talk && S.talk.talk && S.talk.talk.id === active) S.talk.talk = {...S.talk.talk, ...updated};
+        close2(); render(); toast("Chalk talk title saved");
+      } catch (e) { save.disabled = false; toast(e.message); }
+    };
+    document.body.append(m);
+    setTimeout(() => title.focus(), 30);
+  }
+
   function renderList() {
     const talks = (S.data.talks || []);
     const body = h(`<div class="tk-talks">
@@ -2030,7 +2082,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     });
   }
 
-  window.LockedInTalks = { mount, close, home: loadHome };
+  window.LockedInTalks = { mount, close, home: loadHome, editTitles: editTalkTitles };
   window.LockedInMarks = { picker: markPicker, paint: paintMarks, gutter: markGutter,
                            setUser: (user, owner) => { M.user = String(user || ""); M.owner = String(owner || ""); },
                            pendingRange: paintPendingRange, clearPending };

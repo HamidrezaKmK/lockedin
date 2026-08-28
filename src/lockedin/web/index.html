@@ -3957,6 +3957,10 @@
         {on:S.editingTitles,
          title:S.editingTitles?"Save the page and bubble names":"Rename pages and this bubble",
          run:()=>toggleEditTitles()}));
+      if(!onPage && window.LockedInTalks)
+        menu.append(item("\ud83c\udff7\ufe0f","Edit chalk talk titles",
+          {title:"Rename a chalk talk or change its explanation",
+           run:()=>window.LockedInTalks.editTitles()}));
       menu.append(el("div",{class:"toolmenu-group"},"This bubble"));
       menu.append(item("\ud83c\udfe0","Bubble home",
         {title:"The idea, the document, and the chalk talks",

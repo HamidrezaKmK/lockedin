@@ -88,6 +88,16 @@ class TalkTests(unittest.TestCase):
             detail = talks.talk_detail(self.slug, self.talk)
         self.assertEqual(detail["slides"][1]["kind"], "Literature review")
 
+    def test_talk_card_title_and_explanation_can_change_without_rewriting_slides(self):
+        with paths.use_root(self.home):
+            before = talks.read_deck(self.slug, self.talk)
+            updated = talks.update_talk_metadata(self.slug, self.talk,
+                                                 title="Variance survives", intent="The short version.")
+            after = talks.read_deck(self.slug, self.talk)
+        self.assertEqual(updated["title"], "Variance survives")
+        self.assertEqual(updated["intent"], "The short version.")
+        self.assertEqual(before, after)
+
     def test_a_title_and_subtitle_are_markable_slide_source(self):
         with paths.use_root(self.home):
             title_note = talks.add_note(self.slug, self.talk, slide=0, kind="q", author="pi",
@@ -417,6 +427,7 @@ class RouteSurfaceTests(unittest.TestCase):
             ("GET", "/api/bubbles/{slug}/talks"),
             ("POST", "/api/bubbles/{slug}/talks"),
             ("GET", "/api/bubbles/{slug}/talks/{talk_id}"),
+            ("PATCH", "/api/bubbles/{slug}/talks/{talk_id}"),
             ("DELETE", "/api/bubbles/{slug}/talks/{talk_id}"),
             ("POST", "/api/bubbles/{slug}/talks/{talk_id}/notes"),
             ("PATCH", "/api/bubbles/{slug}/talks/{talk_id}/notes/{note_id}"),

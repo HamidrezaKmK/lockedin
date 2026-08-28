@@ -905,6 +905,10 @@ def build_app():
         date: str = ""
         body: str = ""
 
+    class TalkMetadataIn(BaseModel):
+        title: str
+        intent: str = ""
+
     class TalkNoteIn(BaseModel):
         slide: int = 0
         kind: str = "q"
@@ -1918,6 +1922,17 @@ def build_app():
             return service.talk_detail(home_of(user), slug, talk_id)
         except KeyError:
             raise HTTPException(status_code=404, detail="no such talk")
+
+    @app.patch("/api/bubbles/{slug}/talks/{talk_id}")
+    def update_talk_metadata(slug: str, talk_id: str, body: TalkMetadataIn,
+                             user: str = Depends(current_user)):
+        try:
+            return {"talk": service.update_talk_metadata(home_of(user), slug, talk_id,
+                                                           title=body.title, intent=body.intent)}
+        except KeyError:
+            raise HTTPException(status_code=404, detail="no such talk")
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
 
     @app.delete("/api/bubbles/{slug}/talks/{talk_id}")
     def delete_talk(slug: str, talk_id: str, user: str = Depends(current_user)):

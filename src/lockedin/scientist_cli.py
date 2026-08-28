@@ -565,9 +565,11 @@ document.
   report page does: `![caption](assets/name.png)`. State the axis ranges in the caption — the
   user can mark a region of a figure, and a rectangle over unlabelled axes says little.
 - One idea per slide, fitting a screen. If it does not fit, it is two slides.
-- Condensed, not prose. If a sentence survives being cut, cut it.
-- Short sentences, at most five bullets a slide. A bullet that wraps past two lines is a
-  paragraph pretending — split it or cut it.
+- Condensed, not prose. Default to **five or six words per sentence or bullet**. Treat a longer
+  line as a failure unless technical precision would be lost; then use the shortest wording
+  that is still correct. Titles may run longer when the claim genuinely needs it.
+- At most five bullets a slide. A bullet that wraps past two lines is a paragraph pretending —
+  split it or cut it.
 - Minimise equations; carry the idea in words. When the derivation *is* the point, number the
   steps so the user can mark the one that is wrong.
 - Say what you are unsure of — the subtitle is the place.

@@ -270,6 +270,24 @@ def delete_talk(slug: str, talk_id: str) -> bool:
     return True
 
 
+def update_talk_metadata(slug: str, talk_id: str, *, title: str, intent: str = "") -> dict:
+    """Rename the talk card without rewriting the agent-authored slide deck."""
+    title = str(title or "").strip()
+    intent = str(intent or "").strip()
+    if not title:
+        raise ValueError("a chalk talk needs a title")
+    if len(title) > 200 or len(intent) > 600:
+        raise ValueError("title or explanation is too long")
+    idx = load_index(slug)
+    for rec in idx.get("talks", []):
+        if rec.get("id") == talk_id:
+            rec["title"] = title
+            rec["intent"] = intent
+            save_index(slug, idx)
+            return dict(rec)
+    raise KeyError(talk_id)
+
+
 # --------------------------------------------------------------------------- #
 # Note snapshots
 # --------------------------------------------------------------------------- #
