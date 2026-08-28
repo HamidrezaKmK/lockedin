@@ -77,8 +77,10 @@ scientist:
         cfg = landing.load_landing()
         self.assertEqual(cfg["scientist"]["title"], "Custom CLI")
         self.assertIn("/lockedin/main/install.sh", cfg["scientist"]["platforms"][0]["command"])
-        self.assertIn("<bubble-slug>", cfg["scientist"]["steps"][3]["command"])
-        self.assertIn("setup", cfg["scientist"]["steps"][4]["command"])
+        # The replacement is whatever the current default flow is — today the three-step
+        # hit-🤖 / paste / run-your-agent story, with the paste step carrying the command.
+        self.assertEqual(len(cfg["scientist"]["steps"]), 3)
+        self.assertIn("setup/", cfg["scientist"]["steps"][1]["command"])
 
     def test_invalid_yaml_falls_back_to_defaults(self):
         self.write_landing("hero: [")

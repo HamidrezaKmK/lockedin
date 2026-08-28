@@ -262,7 +262,7 @@
   .landing-section-head{display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1fr);gap:30px;align-items:end;margin-bottom:24px}
   .landing-section h2{font-size:28px;line-height:1.15;margin:0;letter-spacing:0}
   .landing-section-head p{margin:0;color:var(--muted)}
-  .workflow-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+  .workflow-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}
   .workflow-step,.feature-card{background:var(--panel);border:1px solid var(--line);
     border-radius:8px;padding:16px;box-shadow:var(--shadow-sm)}
   .workflow-step{display:flex;flex-direction:column;gap:8px;min-height:150px}
@@ -304,8 +304,13 @@
   .demo-slide h4{margin:4px 0 14px;font-size:18px;letter-spacing:-.01em}
   .demo-slide p{margin:0 0 12px;font-size:14.5px;line-height:1.65;color:var(--ink)}
   .demo-slide code{font-size:.9em;background:var(--panel2);padding:1px 6px;border-radius:5px}
-  .demo-slide mark{background:color-mix(in srgb,var(--bad) 22%,transparent);color:inherit;
-    box-shadow:0 1px 0 var(--bad);border-radius:3px;padding:0 2px}
+  .demo-slide mark{--dm:var(--bad);background:color-mix(in srgb,var(--dm) 22%,transparent);color:inherit;
+    box-shadow:0 1px 0 var(--dm);border-radius:3px;padding:0 2px}
+  .demo-slide mark.dm-keep{--dm:var(--good)}
+  .demo-slide mark.dm-q{--dm:var(--warn)}
+  .demo-ink{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+  .demo-ink path{stroke:var(--text-color-4,#ff7aa2);stroke-width:2px;stroke-linecap:round;
+    vector-effect:non-scaling-stroke;opacity:.9}
   .demo-dim{color:var(--muted)}
   .demo-note{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--bad);
     border-radius:12px;padding:16px 17px;box-shadow:var(--shadow-sm)}
@@ -333,7 +338,7 @@
   .scientist-install>*{position:relative}
   .scientist-install .landing-section-head{margin-bottom:22px}
   .scientist-install .landing-section-head p{max-width:620px;line-height:1.55}
-  .scientist-platforms{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:18px}
+  .scientist-platforms{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:18px}
   .scientist-platform{min-width:0;background:color-mix(in srgb,var(--panel) 90%,transparent);border:1px solid var(--line);
     border-radius:10px;padding:15px;transition:transform .16s ease,border-color .16s ease,box-shadow .16s ease}
   .scientist-platform:hover{transform:translateY(-2px);border-color:color-mix(in srgb,var(--accent2) 56%,var(--line));box-shadow:var(--shadow-sm)}
@@ -1071,8 +1076,8 @@
 
       <section class="landing-section" aria-labelledby="why-title">
         <div class="landing-section-head">
-          <h2 id="why-title">Chat is the wrong shape for this work</h2>
-          <p>A good student does not send you a wall of text — they take you to the board, and you interrupt at the step that does not hold. lockedin is that arrangement, built for an agent.</p>
+          <h2 id="why-title">Communicate with agents like a PI</h2>
+          <p>Chat threads are not the most creative expression of research — so we fixed that. The agent gives chalk talks at a board, and you answer with a reviewer's pen: select the text, pick a mark, or just draw on the slide.</p>
         </div>
         <!-- Static by design: this is a picture drawn in DOM, not copy — it stays correct in
              every theme and is not touched by landing.yaml hydration. -->
@@ -1081,8 +1086,15 @@
             <span class="demo-kind">derivation · slide 3</span>
             <h4>The residual term survives</h4>
             <p>Splitting the loss gives <code>L = E[g]·E[ℓ] + R</code>.</p>
-            <p><mark>Step 3 assumes w(λ) → const, which makes R vanish.</mark> Every other step is an identity.</p>
-            <p class="demo-dim">So the claim rests on R — measurable, not yet measured.</p>
+            <p><mark class="dm-bad">Step 3 assumes w(λ) → const, which makes R vanish.</mark>
+              <mark class="dm-keep">Every other step is an identity.</mark></p>
+            <p class="demo-dim">So the claim rests on R — <mark class="dm-q">measurable, not yet measured</mark>.</p>
+            <!-- A hand-drawn stroke: the ✍ mark, sketched in theme ink. Decoration only. -->
+            <svg class="demo-ink" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+              <path d="M44.5 34 C 49 33, 50 41, 48 46 C 46 51, 41.5 50, 41 44 C 40.6 38, 42.5 34.5, 45 34" fill="none"/>
+              <path d="M32 68 C 36 62, 40 56, 43.5 50" fill="none"/>
+              <path d="M43.5 50 l -3.4 1.2 M43.5 50 l 0.4 5.5" fill="none"/>
+            </svg>
           </div>
           <div class="demo-note">
             <div class="demo-badge">✗ this is wrong</div>
@@ -1100,20 +1112,21 @@
 
       <section class="landing-section" aria-labelledby="workflow-title">
         <div class="landing-section-head">
-          <h2 id="workflow-title">How a week actually goes</h2>
-          <p>The loop you repeat while an idea is being worked out.</p>
+          <h2 id="workflow-title">Focus on better communication</h2>
+          <p>Remove the walls of text.</p>
         </div>
         <div class="workflow-grid">
-          <div class="workflow-step"><span class="workflow-num">01</span><b>You set the question</b><span>One paragraph on what you are trying to establish.</span></div>
-          <div class="workflow-step"><span class="workflow-num">02</span><b>It goes and works</b><span>Experiments, figures, derivations — kept in the bubble, not in a scrollback.</span></div>
-          <div class="workflow-step"><span class="workflow-num">03</span><b>It presents</b><span>A short deck with the soft spots named, when it needs your judgement.</span></div>
-          <div class="workflow-step"><span class="workflow-num">04</span><b>You mark up</b><span>It re-derives, argues back, and the history keeps your objection.</span></div>
+          <div class="workflow-step"><span class="workflow-num">01</span><b>Set up a bubble</b><span>One place for the idea: papers, pages, figures, talks.</span></div>
+          <div class="workflow-step"><span class="workflow-num">02</span><b>Set a goal</b><span>One line every agent reads first, every session.</span></div>
+          <div class="workflow-step"><span class="workflow-num">03</span><b>Write the document</b><span>Ongoing, together — the record that lasts is not the thread.</span></div>
+          <div class="workflow-step"><span class="workflow-num">04</span><b>Get chalk talks</b><span>The parts that need your judgement arrive as slides.</span></div>
+          <div class="workflow-step"><span class="workflow-num">05</span><b>Give feedback</b><span>Five marks, drawings, hand edits — on the exact line.</span></div>
         </div>
       </section>
 
       <section class="landing-section" aria-labelledby="components-title">
         <div class="landing-section-head">
-          <h2 id="components-title">Everything the work needs, in one place</h2>
+          <h2 id="components-title">Features</h2>
           <p>An agent is only as good as what it can see. Context is something you keep, not something you re-paste every session.</p>
         </div>
         <div class="feature-grid">
@@ -1128,11 +1141,11 @@
 
       <section class="landing-section" aria-labelledby="pi-title">
         <div class="landing-section-head">
-          <h2 id="pi-title">No compromise on the model</h2>
-          <p>lockedin is an interface, not a model wrapper. Bring the subscription you already pay for, or a local model.</p>
+          <h2 id="pi-title">Bring your own AI sub</h2>
+          <p>lockedin does not ship a new model — it integrates with the subscription you already have, or a local model.</p>
         </div>
         <ul class="landing-bullets" id="pi-bullets">
-          <li>Claude, Codex, Gemini, GPT — or Qwen on your own GPU.</li>
+          <li>Claude, Codex, Gemini — or Qwen on your own GPU.</li>
           <li>Your key stays yours; your work stays on your disk.</li>
           <li>Switching model never costs you the bubble, the marks or the history.</li>
         </ul>
@@ -1142,27 +1155,25 @@
         <div class="scientist-install">
         <div class="landing-section-head">
           <h2 id="scientist-install-title">Connecting a project takes one line</h2>
-          <p>The 🤖 button on any bubble hands you a single command to paste. The steps below are only for doing it by hand.</p>
+          <p>Open your bubble, hit 🤖, paste one line into a bash in your repo — and your source code is connected to everything: the papers, the document, the talks, your marks.</p>
         </div>
+        <ol class="scientist-steps">
+          <li><b>Hit 🤖 on the bubble</b>It hands you one command, pre-signed for this machine.</li>
+          <li><b>Paste it in your repo</b>Installs the client, signs you in, binds the folder, starts the sync.<code class="command">curl -fsSL https://lockedin.codes/setup/‹ticket›.sh | bash</code></li>
+          <li><b>Run your agent as usual</b>claude, codex, agy — the skill is in place, and reports, talks and feedback sync every few seconds.</li>
+        </ol>
         <div class="scientist-platforms">
           <article class="scientist-platform">
             <h3>macOS or Linux</h3>
-            <p>Python 3.11+ required. Installs only the Scientist client in your user PATH.</p>
+            <p>Prefer to set it up by hand? Python 3.11+; installs only the Scientist client in your user PATH.</p>
             <code class="command">curl -fsSL https://raw.githubusercontent.com/HamidrezaKmK/lockedin/main/install.sh | bash</code>
           </article>
           <article class="scientist-platform">
             <h3>Windows PowerShell</h3>
-            <p>Python 3.11+ required. Installs the client in local app data.</p>
+            <p>The same manual route for Windows; installs the client in local app data.</p>
             <code class="command">irm https://raw.githubusercontent.com/HamidrezaKmK/lockedin/main/install.ps1 | iex</code>
           </article>
         </div>
-        <ol class="scientist-steps">
-          <li><b>Authorize</b>Sign in to your lockedin account in the browser.<code class="command">lockedin-scientist login --server https://lockedin.codes</code></li>
-          <li><b>Choose a workspace</b>List your workspaces and select the one used across projects.<code class="command">lockedin-scientist workspaces switch &lt;workspace-id-or-name&gt;</code></li>
-          <li><b>Pick a bubble</b>List the approved bubbles in the selected workspace.<code class="command">lockedin-scientist bubbles</code></li>
-          <li><b>Stay in sync</b>Create a project-local bubble workspace that keeps reports synchronized in the background.<code class="command">lockedin-scientist sync &lt;bubble-slug&gt;</code></li>
-          <li><b>Install a native skill</b>Set up the lockedin-scientist skill once for the agent you use.<code class="command">lockedin-scientist &lt;codex|claude|agy&gt; setup</code></li>
-        </ol>
         </div>
       </section>
 
@@ -1481,8 +1492,11 @@
     if(scientistIntro&&scientist.intro!=null)scientistIntro.textContent=scientist.intro;
     cards(".scientist-platforms",scientist.platforms,(p)=>el("article",{class:"scientist-platform"},
       el("h3",{},p.title||""),el("p",{},p.text||""),el("code",{class:"command"},p.command||"")));
-    cards(".scientist-steps",scientist.steps,(s)=>el("li",{},
-      el("b",{},s.title||""),document.createTextNode(s.text||""),el("code",{class:"command"},s.command||"")));
+    cards(".scientist-steps",scientist.steps,(s)=>{
+      const li=el("li",{},el("b",{},s.title||""),document.createTextNode(s.text||""));
+      if(s.command)li.append(el("code",{class:"command"},s.command));
+      return li;
+    });
     setText(".landing-footer",c.footer);
   }
 
