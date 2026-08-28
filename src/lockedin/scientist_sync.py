@@ -208,7 +208,7 @@ def _server_path(slug: str, rel: str) -> Path:
     return paths.bubble_page_path(slug, Path(parts[2]).stem)
 
 
-def apply_writes(home: Path, slug: str, writes: list[dict]) -> dict:
+def apply_writes(home: Path, slug: str, writes: list[dict], *, actor: str = "") -> dict:
     conflicts, applied = [], []
     with paths.use_root(home):
         if not _approved(slug):
@@ -234,7 +234,8 @@ def apply_writes(home: Path, slug: str, writes: list[dict]) -> dict:
             target.parent.mkdir(parents=True, exist_ok=True)
             if Path(rel).parts[1] == "talks":
                 try:
-                    talks.absorb_push(slug, Path(rel).stem, raw.decode("utf-8"))
+                    talks.absorb_push(slug, Path(rel).stem, raw.decode("utf-8"),
+                                       actor=actor or "the connected user")
                 except UnicodeDecodeError:
                     conflicts.append({"path": rel, "reason": "a deck must be UTF-8 text"})
                     continue

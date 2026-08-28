@@ -1107,7 +1107,7 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
       ${mine.map(n => noteCard({ ...n, orphanNote: n.anchorLost ? "⚠ text moved · " : "",
                                  image: shot(n),
                                  messages: (n.messages || []).map(msg => ({ ...msg,
-                                   agent: msg.author && msg.author !== n.author })) })).join("")}
+                                   agent: !!msg.agent })) })).join("")}
       <div style="margin-top:auto;padding-top:10px">
         <button data-payload="1" style="width:100%">🤖 What the agent receives</button></div>
     </div>`);
@@ -1885,13 +1885,10 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
     }
     M.gutter = gutterEl; M.handlers = handlers || {};
     const list = (threads || []).map(t => {
-      const first = (t.messages || [])[0] || {};
       const loose = t.anchor_state && t.anchor_state !== "attached";
-      const mine = first.author || "";
-      return { id: t.id, kind: t.kind || "q", author: mine,
+      return { id: t.id, kind: t.kind || "q", author: "",
                quote: (t.anchor || {}).quote || "",
-               messages: (t.messages || []).map(msg => ({ ...msg,
-                 agent: msg.author && msg.author !== mine })),
+               messages: (t.messages || []).map(msg => ({ ...msg, agent: !!msg.agent })),
                orphan: loose, orphanNote: loose ? "⚠ its text was deleted · " : "" };
     });
     gutterEl.innerHTML = `

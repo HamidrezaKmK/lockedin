@@ -411,7 +411,7 @@ def add_note(slug: str, talk_id: str, *, slide: int, kind: str, author: str,
 
 
 def reply_note(slug: str, talk_id: str, note_id: str, author: str, body: str,
-               *, source_key: str = "") -> dict:
+               *, source_key: str = "", agent: bool = False) -> dict:
     """Add a turn to a mark's thread — yours or the agent's."""
     body = str(body or "").strip()
     if not body:
@@ -429,6 +429,8 @@ def reply_note(slug: str, talk_id: str, note_id: str, author: str, body: str,
                "created_at": _now_iso(), "edited_at": ""}
     if source_key:
         message["source_key"] = source_key
+    if agent:
+        message["agent"] = True
     msgs.append(message)
     save_notes(slug, talk_id, data)
     return note
@@ -767,7 +769,7 @@ def open_notes_for_agent(slug: str) -> list[dict]:
     return out
 
 
-def absorb_push(slug: str, talk_id: str, text: str) -> None:
+def absorb_push(slug: str, talk_id: str, text: str, *, actor: str) -> None:
     """Take a deck an agent pushed. The slide becomes what was pushed — nothing more.
 
     Deliberately powerless over marks: an agent can edit the text a mark points at (which may
@@ -801,8 +803,8 @@ def absorb_push(slug: str, talk_id: str, text: str) -> None:
         fingerprint = hashlib.sha256(
             f"{talk_id}\0{note_id}\0{body}".encode("utf-8")
         ).hexdigest()
-        reply_note(slug, talk_id, note_id, "LockedIn Scientist", body,
-                   source_key="scientist:" + fingerprint)
+        reply_note(slug, talk_id, note_id, f"agent on behalf of {actor}", body,
+                   source_key="scientist:" + fingerprint, agent=True)
 
 
 # --------------------------------------------------------------------------- #

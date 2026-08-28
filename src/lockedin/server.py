@@ -1750,7 +1750,7 @@ def build_app():
 
     @app.post("/api/scientist/v2/bubbles/{slug}/push")
     def scientist_push(slug: str, body: ScientistPushIn, user: str = Depends(scientist_user)):
-        return scientist_sync.apply_writes(home_of(user), slug, body.writes)
+        return scientist_sync.apply_writes(home_of(user), slug, body.writes, actor=user)
 
     @app.post("/api/scientist/v2/bubbles/{slug}/deletes")
     def scientist_delete(slug: str, body: ScientistDeleteIn, user: str = Depends(scientist_user)):

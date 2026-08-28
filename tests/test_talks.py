@@ -249,7 +249,7 @@ class ProjectHandoffTests(unittest.TestCase):
         write = {"path": f"reports/talks/{self.talk}.md",
                  "content_b64": base64.b64encode(base + reply.encode()).decode(),
                  "base_revision": scientist_sync.revision(base)}
-        result = scientist_sync.apply_writes(self.home, self.slug, [write])
+        result = scientist_sync.apply_writes(self.home, self.slug, [write], actor="talks")
         self.assertEqual(result["conflicts"], [])
         self.assertIn("content_b64", result["applied"][0])
         # A lost response retries with an obsolete deck revision. It is rejected before it can
@@ -263,8 +263,9 @@ class ProjectHandoffTests(unittest.TestCase):
         self.assertNotIn("lockedin-reply", stored)
         self.assertEqual([(m["author"], m["body"]) for m in thread["messages"]], [
             ("pi", "Not in the tail."),
-            ("LockedIn Scientist", "The covariance term is exact; I replaced that approximation on slide 2."),
+            ("agent on behalf of talks", "The covariance term is exact; I replaced that approximation on slide 2."),
         ])
+        self.assertTrue(thread["messages"][-1]["agent"])
 
     def test_an_unknown_reply_target_rejects_the_whole_deck_write(self):
         with paths.use_root(self.home):

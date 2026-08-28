@@ -235,7 +235,7 @@ def _seed() -> str:
             "Does that mean the text box is pointless?",
             content=content, base_mtime=None,
             selection_start=start, selection_end=start + len(anchor), kind="q")
-        bubbles.reply_comment_state(slug, "the-five-marks", state["thread"]["id"], "agent",
+        bubbles.reply_comment_state(slug, "the-five-marks", state["thread"]["id"], "agent on behalf of you",
                                     "Not pointless — optional. The mark carries the intent; "
                                     "prose is for whatever the glyph cannot say. This thread "
                                     "is itself the demo: resolve it with ✓ when you are done.")
@@ -249,8 +249,8 @@ def _seed() -> str:
     wrong = talks.add_note(slug, ask, slide=1, kind="bad", author="you",
                            quote='"Look into whether the schedule matters"',
                            text="Too kind — this one is not even a wish, it is a deflection.")
-    talks.reply_note(slug, ask, wrong["id"], "agent",
-                     "Fair — I will call it what it is; the contrast lands harder.")
+    talks.reply_note(slug, ask, wrong["id"], "agent on behalf of you",
+                     "Fair — I will call it what it is; the contrast lands harder.", agent=True)
     talks.add_note(slug, ask, slide=1, kind="good", author="you",
                    quote="The second one can *fail*, which is exactly what makes it answerable.")
     talks.add_note(slug, ask, slide=2, kind="q", author="you",
@@ -286,10 +286,10 @@ def _seed() -> str:
                                quote="Marks are always better than prose in",
                                text="Overclaimed. Say what the mechanism buys, "
                                     "not that it is perfect.")
-    talks.reply_note(slug, marks_deck, overclaim["id"], "agent",
+    talks.reply_note(slug, marks_deck, overclaim["id"], "agent on behalf of you",
                      "Agreed — I would rewrite it as: the mark carries the intent and the "
                      "anchor carries the place. Confirm and I will edit the slide in place; "
-                     "the mark stays yours to remove once it reads right.")
+                     "the mark stays yours to remove once it reads right.", agent=True)
     talks.add_note(slug, marks_deck, slide=2, kind="more", author="you",
                    quote="connect a repo and ask the agent",
                    text="Deep-link this to the Connecting your repo page?")
