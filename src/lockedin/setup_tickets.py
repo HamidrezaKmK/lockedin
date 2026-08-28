@@ -117,6 +117,14 @@ set -euo pipefail
 echo "Installing lockedin-scientist…"
 {INSTALL_UNIX}
 
+# A development server may be ahead of the released main branch. Overlay its matching,
+# dependency-free client so the setup link and the server always speak the same protocol.
+client_root="${{XDG_DATA_HOME:-$HOME/.local/share}}/lockedin-scientist/client"
+client_tmp="$(mktemp)"
+trap 'rm -f "$client_tmp"' EXIT
+curl -fsSL {(origin + '/setup/scientist_cli.py')!r} -o "$client_tmp"
+install -m 0644 "$client_tmp" "$client_root/scientist_cli.py"
+
 # install.sh does not touch PATH; it only prints where it put the command.
 export PATH="$HOME/.local/bin:$PATH"
 
@@ -150,6 +158,13 @@ def powershell_script(origin: str, ticket: str, workspace_id: str, slug: str) ->
     return f"""$ErrorActionPreference = 'Stop'
 Write-Host "Installing lockedin-scientist…"
 {INSTALL_POWERSHELL}
+
+# Keep a development server and its installed client protocol-matched before connecting.
+$clientRoot = Join-Path $env:LOCALAPPDATA 'LockedInScientist/client'
+$client = Join-Path $clientRoot 'scientist_cli.py'
+$clientTemp = Join-Path $clientRoot ("scientist_cli." + [guid]::NewGuid().ToString('N') + '.tmp')
+Invoke-WebRequest {quote(origin + '/setup/scientist_cli.py')} -OutFile $clientTemp
+Move-Item -Force -Path $clientTemp -Destination $client
 
 if ([Console]::IsInputRedirected) {{
   Write-Host "No terminal to ask on - connecting the current directory: $PWD"

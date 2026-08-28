@@ -59,6 +59,7 @@ class SetupScriptServing(unittest.TestCase):
             self.assertEqual(response.headers["cache-control"], "no-store")
             script = response.text
             self.assertIn("install.sh | bash", script)
+            self.assertIn("https://testserver/setup/scientist_cli.py", script)
             self.assertIn("lockedin-scientist connect", script)
             self.assertIn(f"--ticket '{ticket}'", script)
             self.assertIn(f"--bubble '{slug}'", script)
@@ -73,6 +74,7 @@ class SetupScriptServing(unittest.TestCase):
             ticket = api.post(f"/api/bubbles/{slug}/setup-link").json()["ticket"]
             script = api.get(f"/setup/{ticket}.ps1").text
             self.assertIn("install.ps1 | iex", script)
+            self.assertIn("https://testserver/setup/scientist_cli.py", script)
             self.assertIn("lockedin-scientist connect", script)
             self.assertIn(f"--ticket '{ticket}'", script)
             self.assertNotIn("li_sc_", script)
@@ -84,7 +86,15 @@ class SetupScriptServing(unittest.TestCase):
                 response = api.get(f"/setup/does-not-exist{suffix}")
                 self.assertEqual(response.status_code, 200)
                 self.assertIn("expired", response.text)
-                self.assertIn(marker, response.text)
+            self.assertIn(marker, response.text)
+
+    def test_server_exposes_the_exact_matching_client_without_a_session(self):
+        with client() as (api, _slug):
+            api.post("/api/logout")
+            response = api.get("/setup/scientist_cli.py")
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.headers["cache-control"], "no-store")
+            self.assertIn(f'SKILL_VERSION = {server.scientist_cli.SKILL_VERSION}', response.text)
 
 
 class SetupScriptWithoutATerminal(unittest.TestCase):
@@ -118,6 +128,9 @@ class SetupScriptWithoutATerminal(unittest.TestCase):
         # Keep the real branch; stub the install and the command it would exec.
         script = script.replace(
             "curl -fsSL https://raw.githubusercontent.com/HamidrezaKmK/lockedin/main/install.sh | bash",
+            "true")
+        script = script.replace(
+            "curl -fsSL 'https://x.test/setup/scientist_cli.py' -o \"$client_tmp\"",
             "true")
         script = script.replace("exec lockedin-scientist connect", "echo CHOSE:")
         run = subprocess.run(["bash", "-c", script], capture_output=True, text=True,

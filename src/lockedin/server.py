@@ -19,7 +19,7 @@ from typing import Optional
 from urllib.parse import quote
 
 from . import assets, auth, bubbles, landing, models, paths, presence, service, setup_tickets, tagger, talks, workspaces
-from . import scientist_sync
+from . import scientist_cli, scientist_sync
 
 
 # Display-math environments (numbered) vs theorem-like environments (boxed). Shared by the
@@ -1663,6 +1663,13 @@ def build_app():
     @app.get("/setup/{ticket}.ps1")
     def bubble_setup_ps1(ticket: str, request: Request):
         return _setup_script(ticket, request, "powershell")
+
+    @app.get("/setup/scientist_cli.py")
+    def scientist_client_source():
+        """Serve the client matching this running server, including unmerged prototypes."""
+        from fastapi.responses import PlainTextResponse
+        return PlainTextResponse(Path(scientist_cli.__file__).read_text(),
+                                 headers={"Cache-Control": "no-store"})
 
     def _setup_script(ticket: str, request: Request, shell: str):
         """Serve a setup script. Deliberately unauthenticated: the ticket *is* the credential.
