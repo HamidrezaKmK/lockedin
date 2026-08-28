@@ -715,6 +715,24 @@ def delete_slide(slug: str, talk_id: str, index: int) -> bool:
 # --------------------------------------------------------------------------- #
 # Views
 # --------------------------------------------------------------------------- #
+def talk_revision(slug: str, talk_id: str) -> str:
+    """A lightweight identity for the deck and its review sidecar.
+
+    The browser uses this to notice that a Scientist (or another collaborator) has
+    changed a chalk talk while it is open.  Hash the stored bytes, rather than the
+    parsed representation, so a newly-written remote file is always observable.
+    """
+    digest = hashlib.sha256()
+    for path in (paths.bubble_talk_path(slug, talk_id),
+                 paths.bubble_talk_notes_path(slug, talk_id)):
+        try:
+            digest.update(path.read_bytes())
+        except FileNotFoundError:
+            digest.update(b"<missing>")
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
 def talk_detail(slug: str, talk_id: str) -> dict:
     rec = _record(slug, talk_id)
     if rec is None:
@@ -739,6 +757,7 @@ def talk_detail(slug: str, talk_id: str) -> dict:
         # materialised as the same `<comment-begin=id>…<comment-end=id>` pair report pages use.
         s["edit_source"] = slide_edit_source(slug, talk_id, slides, notes, s["index"])
     return {"talk": rec, "slides": slides, "notes": out_notes,
+            "revision": talk_revision(slug, talk_id),
             "open": len(out_notes)}
 
 

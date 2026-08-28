@@ -88,6 +88,19 @@ class TalkTests(unittest.TestCase):
             detail = talks.talk_detail(self.slug, self.talk)
         self.assertEqual(detail["slides"][1]["kind"], "Literature review")
 
+    def test_talk_revision_changes_when_remote_deck_or_notes_change(self):
+        """The browser can tell that another collaborator updated an open talk."""
+        with paths.use_root(self.home):
+            initial = talks.talk_detail(self.slug, self.talk)["revision"]
+            talks.add_note(self.slug, self.talk, slide=0, kind="q", author="pi",
+                           quote="Sample the noise level", text="Which range?")
+            after_note = talks.talk_detail(self.slug, self.talk)["revision"]
+            talks.apply_slide_source(self.slug, self.talk, 0,
+                                     "# What we're changing\n\nA remote rewrite.")
+            after_deck = talks.talk_detail(self.slug, self.talk)["revision"]
+        self.assertNotEqual(initial, after_note)
+        self.assertNotEqual(after_note, after_deck)
+
     # -- threads ---------------------------------------------------------------
     def test_only_the_last_turn_of_a_thread_can_be_edited(self):
         with paths.use_root(self.home):

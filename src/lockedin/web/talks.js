@@ -26,7 +26,8 @@
 
   const S = { slug: null, name: "", owner: "", workspaceId: "", view: "home", talk: null, data: null, bubble: null,
               slide: 0, kind: "q", pending: null, editPremise: false, suppressRoute: false,
-              edit: false, editorObj: null, notes: true, user: "" };
+              edit: false, editorObj: null, notes: true, user: "", syncState: "synced",
+              syncTimer: null, syncBusy: false };
   let root = null;
 
   const api = async (path, opts = {}) => {
@@ -279,6 +280,12 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
 .tk-overlay .tk-dot.on{background:var(--accent);width:26px;border-radius:999px}
 .tk-overlay .tk-dot.note{background:var(--warn)}
 .tk-cnt{font:500 11px var(--font-mono);color:var(--muted);margin-left:auto}
+.tk-resync{color:var(--good);border-color:color-mix(in srgb,var(--good) 45%,var(--line))!important;
+  font-size:20px!important;line-height:1!important;padding:5px 10px!important;min-width:42px}
+.tk-resync.stale{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 65%,var(--line))!important;
+  background:color-mix(in srgb,var(--warn) 10%,transparent)}
+.tk-resync.checking{color:var(--warn);animation:tk-resync-spin .8s linear infinite}
+@keyframes tk-resync-spin{to{transform:rotate(360deg)}}
 
 .tk-gutter{flex:0 0 344px;border-left:1px solid var(--line);overflow:auto;padding:0 18px 28px;
   display:flex;flex-direction:column;gap:18px;background:color-mix(in srgb,var(--panel) 55%,var(--bg))}
@@ -837,6 +844,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
   }
 
   async function loadHome(updateRoute = true) {
+    stopTalkSync();
     S.edit = false;
     const [b, t] = await Promise.all([
       api(`/api/bubbles/${encodeURIComponent(S.slug)}`),
@@ -853,10 +861,62 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
   async function loadTalk(id, keepSlide) {
     if (!REFS) await loadRefs(S.slug);
     S.talk = await api(`/api/bubbles/${encodeURIComponent(S.slug)}/talks/${encodeURIComponent(id)}`);
+    S.syncState = "synced";
     if (!keepSlide) S.slide = 0;
     S.slide = Math.min(S.slide, Math.max(0, S.talk.slides.length - 1));
     S.view = "deck";
     render();
+    startTalkSync();
+  }
+
+  function syncTitle() {
+    if (S.syncState === "stale") return "Remote changes are ready — refresh this slide deck";
+    if (S.syncState === "checking") return "Checking the remote deck…";
+    return "In sync with the remote deck — refresh now";
+  }
+  function setTalkSync(state) {
+    S.syncState = state;
+    document.querySelectorAll("[data-resync]").forEach(button => {
+      button.className = "tk-resync " + state;
+      button.title = syncTitle();
+      button.setAttribute("aria-label", syncTitle());
+    });
+  }
+  function stopTalkSync() {
+    if (S.syncTimer) clearInterval(S.syncTimer);
+    S.syncTimer = null;
+  }
+  function startTalkSync() {
+    stopTalkSync();
+    S.syncTimer = setInterval(checkTalkSync, 5000);
+  }
+  async function checkTalkSync() {
+    if (!S.talk || S.view !== "deck" || S.syncBusy) return;
+    const id = S.talk.talk.id;
+    const known = S.talk.revision;
+    try {
+      const remote = await api(`/api/bubbles/${encodeURIComponent(S.slug)}/talks/${encodeURIComponent(id)}`);
+      if (!S.talk || S.talk.talk.id !== id || S.view !== "deck") return;
+      if (remote.revision && known && remote.revision !== known) setTalkSync("stale");
+    } catch (e) {
+      // A transient polling failure must not pretend the local view is out of date.
+    }
+  }
+  async function resyncTalk() {
+    if (!S.talk || S.syncBusy) return;
+    if (S.edit && !leaveEditOk()) return;
+    const id = S.talk.talk.id;
+    S.syncBusy = true;
+    setTalkSync("checking");
+    try {
+      await loadTalk(id, true);
+      toast("Slides refreshed — in sync with remote");
+    } catch (e) {
+      setTalkSync("stale");
+      toast("Couldn’t refresh slides: " + e.message);
+    } finally {
+      S.syncBusy = false;
+    }
   }
   const notesOn = i => (S.talk.notes || []).filter(n => n.slide === i);
   const openCount = () => (S.talk.notes || []).length;
@@ -1095,7 +1155,8 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
             `<button class="tk-dot${i === S.slide ? " on" : ""}${notesOn(i).some(n => n.status === "open") ? " note" : ""}"
               data-i="${i}" title="${esc(s.title)}"></button>`).join("")}</div>
           <span class="tk-cnt">${S.slide + 1} / ${S.talk.slides.length}</span>
-          <button data-nav="-1">←</button><button data-nav="1">→</button>
+          <button data-nav="-1">←</button><button class="tk-resync ${S.syncState}" data-resync="1"
+            title="${esc(syncTitle())}" aria-label="${esc(syncTitle())}">⟳</button><button data-nav="1">→</button>
           <div class="tk-seg">
             <button data-draw="1" title="mark region — drag a box over the slide">🖍</button>
             <button data-ink="1" title="draw — freehand strokes become the feedback">✍</button>
@@ -1117,6 +1178,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
 
     wrap.querySelectorAll("[data-nav]").forEach(b =>
       (b.onclick = () => go(S.slide + Number(b.dataset.nav))));
+    wrap.querySelector("[data-resync]").onclick = resyncTalk;
     wrap.querySelector("[data-draw]").onclick = startDraw;
     wrap.querySelector("[data-ink]").onclick = startInk;
     wrap.querySelector("[data-add]").onclick = () => addSlideAfter(S.slide);
@@ -1243,7 +1305,8 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
             `<button class="tk-dot${i === S.slide ? " on" : ""}${notesOn(i).length ? " note" : ""}"
               data-i="${i}" title="${esc(s.title)}"></button>`).join("")}</div>
           <span class="tk-cnt">${S.slide + 1} / ${S.talk.slides.length}</span>
-          <button data-nav="-1">←</button><button data-nav="1">→</button>
+          <button data-nav="-1">←</button><button class="tk-resync ${S.syncState}" data-resync="1"
+            title="${esc(syncTitle())}" aria-label="${esc(syncTitle())}">⟳</button><button data-nav="1">→</button>
           <span class="tk-sp"></span>
           <button data-editdeck="1" title="leave edit mode">✕ stop editing</button>
         </div>
@@ -1297,6 +1360,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     const guarded = fn => () => { if (leaveEditOk()) fn(); };
     wrap.querySelectorAll("[data-nav]").forEach(b =>
       (b.onclick = guarded(() => go(S.slide + Number(b.dataset.nav)))));
+    wrap.querySelector("[data-resync]").onclick = resyncTalk;
     wrap.querySelectorAll(".tk-dot").forEach(d =>
       (d.onclick = guarded(() => go(Number(d.dataset.i)))));
     return wrap;
@@ -1816,6 +1880,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
   }
 
   function close() {
+    stopTalkSync();
     closePicker();
     document.querySelectorAll(".tk-modal").forEach(x => x.remove());
     if (root) root.remove();
