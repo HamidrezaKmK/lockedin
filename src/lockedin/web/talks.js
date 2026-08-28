@@ -259,7 +259,7 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
   display:flex;align-items:center;gap:8px;padding:17px 0 13px;margin-bottom:4px;
   border-bottom:1px solid color-mix(in srgb,var(--line) 80%,transparent)}
 .tk-gh .tk-tag{font-size:10px;letter-spacing:.04em;padding:2px 9px}
-.tk-note{border:1px solid var(--line);border-left:4px solid var(--kc);border-radius:11px;
+.tk-note{flex:0 0 auto;border:1px solid var(--line);border-left:4px solid var(--kc);border-radius:11px;
   background:var(--panel);padding:18px 18px 20px;cursor:pointer;overflow:hidden;min-width:0}
 .tk-note:hover{border-color:var(--accent);border-left-color:var(--kc)}
 .tk-note.orphan{border-style:dashed}
@@ -696,6 +696,11 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
   // Editing is confined to your own last turn: rewriting anything the other side has already
   // answered would leave that answer replying to words that no longer exist.
   function wireCard(host, { onEdit, onDelete, onReply }) {
+    host.querySelectorAll(".tk-shot").forEach(im => (im.onclick = e => {
+      e.stopPropagation();
+      if (window.LockedInLightbox) window.LockedInLightbox.open(im.src, im.alt);
+      else window.open(im.src, "_blank", "noopener");
+    }));
     host.querySelectorAll("[data-drop]").forEach(b => (b.onclick = e => {
       e.stopPropagation();
       if (onDelete) onDelete(b.dataset.drop);
@@ -997,6 +1002,8 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
           <button data-draw="1" title="drag a box over the slide">🖍 mark region</button>
           <button data-ink="1" title="draw freely on the slide — the drawing becomes the feedback">✍ draw</button>
           <button data-editdeck="1" title="edit this slide's markdown by hand">✎ edit</button>
+          <button data-add="1" title="insert a blank slide after this one">+ add slide</button>
+          <button data-del="1" class="tk-danger" title="delete this slide and its marks">✂ delete slide</button>
         </div>
       </div>
       <div class="tk-gutter"></div>
@@ -1012,6 +1019,8 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
       (b.onclick = () => go(S.slide + Number(b.dataset.nav))));
     wrap.querySelector("[data-draw]").onclick = startDraw;
     wrap.querySelector("[data-ink]").onclick = startInk;
+    wrap.querySelector("[data-add]").onclick = () => addSlideAfter(S.slide);
+    wrap.querySelector("[data-del]").onclick = () => deleteSlideAt(S.slide);
     wrap.querySelectorAll(".tk-dot").forEach(d => (d.onclick = () => go(Number(d.dataset.i))));
     wrap.querySelector(".tk-gutter").append(renderGutter(mine));
     return wrap;
@@ -1134,8 +1143,6 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
           <span class="tk-cnt">${S.slide + 1} / ${S.talk.slides.length}</span>
           <button data-nav="-1">←</button><button data-nav="1">→</button>
           <span class="tk-sp"></span>
-          <button data-add="1" title="insert a blank slide after this one">+ add slide</button>
-          <button data-del="1" class="tk-danger" title="delete this slide and its marks">✂ delete slide</button>
           <button data-editdeck="1" title="leave edit mode">✕ stop editing</button>
         </div>
       </div>
@@ -1191,8 +1198,6 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
       (b.onclick = guarded(() => go(S.slide + Number(b.dataset.nav)))));
     wrap.querySelectorAll(".tk-dot").forEach(d =>
       (d.onclick = guarded(() => go(Number(d.dataset.i)))));
-    wrap.querySelector("[data-add]").onclick = guarded(() => addSlideAfter(S.slide));
-    wrap.querySelector("[data-del]").onclick = guarded(() => deleteSlideAt(S.slide));
     return wrap;
   }
 
