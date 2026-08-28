@@ -25,7 +25,7 @@
   const ORDER = ["bad", "q", "more", "good", "cut"];
 
   const S = { slug: null, name: "", view: "home", talk: null, data: null, bubble: null,
-              slide: 0, kind: "q", pending: null, editPremise: false,
+              slide: 0, kind: "q", pending: null, editPremise: false, suppressRoute: false,
               edit: false, editorObj: null, notes: true, user: "" };
   let root = null;
 
@@ -823,7 +823,14 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
   }
 
   /* ------------------------------------------------------------------ views */
-  async function loadHome() {
+  function publishRoute() {
+    if (!S.onRoute || S.suppressRoute) return;
+    if ((S.view === "deck" || S.view === "sheet") && S.talk && S.talk.talk)
+      S.onRoute({talkId: S.talk.talk.id, slide: S.slide, edit: !!S.edit});
+    else if (S.view === "home") S.onRoute(null);
+  }
+
+  async function loadHome(updateRoute = true) {
     S.edit = false;
     const [b, t] = await Promise.all([
       api(`/api/bubbles/${encodeURIComponent(S.slug)}`),
@@ -833,6 +840,7 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
     S.name = S.bubble.name || S.slug;
     S.view = "home";
     render();
+    if (updateRoute) publishRoute();
   }
   // `keepSlide` matters after pinning or removing a mark: reloading the deck must not throw the
   // reader back to slide 1, which is where they were emphatically not looking.
@@ -1778,6 +1786,7 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
       if (S.edit && !leaveEditOk()) return;
       S.edit = !S.edit; render();
     });
+    publishRoute();
   }
 
   function onKey(e) {
@@ -1816,16 +1825,29 @@ select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:n
     S.user = (opts && opts.user) || "";
     S.onPage = (opts && opts.onPage) || null;
     S.onView = (opts && opts.onView) || null;
+    S.onRoute = (opts && opts.onRoute) || null;
     S.view = "home";
     host.innerHTML = "";
     root = h(`<div class="tk-overlay tk-inline"><div class="tk-top"></div>
       <div class="tk-body"></div></div>`).firstChild;
     host.append(root);
     document.addEventListener("keydown", onKey);
-    try { await loadHome(); }
+    S.suppressRoute = true;
+    try {
+      await loadHome(false);
+      if (opts && opts.talkId) {
+        S.slide = Math.max(0, Number(opts.slide) || 0);
+        S.edit = !!opts.edit;
+        await loadTalk(opts.talkId, true);
+      }
+    }
     catch (e) {
       root.querySelector(".tk-body").innerHTML =
         `<div class="tk-list"><div class="tk-empty">Couldn’t load this bubble: ${esc(e.message)}</div></div>`;
+    }
+    finally {
+      S.suppressRoute = false;
+      publishRoute();
     }
   }
 

@@ -1377,6 +1377,12 @@
     if(tm){viewTodo(+tm[1]);return;}
     const am=h.match(/^asset\/([^/]+)$/);
     if(am){openAssetById(decodeURIComponent(am[1]),{noRoute:true});return;}
+    const talkRoute=h.match(/^bubble\/([^/]+)\/talk\/([^/]+)\/slide\/([1-9]\d*)(?:\/(edit))?$/);
+    if(talkRoute){
+      openBubble(talkRoute[1],{noRoute:true,talk:decodeURIComponent(talkRoute[2]),
+        slide:Number(talkRoute[3])-1,edit:!!talkRoute[4]});
+      return;
+    }
     const m=h.match(/^bubble\/([^/]+)(?:\/([^/]+))?$/);
     if(m){
       // `bubble/<slug>` is the bubble's *home* — the idea, the document, the chalk talks.
@@ -4160,7 +4166,7 @@
     return menu;
   }
 
-  async function openBubble(slug,{noRoute=false,page=null}={}){
+  async function openBubble(slug,{noRoute=false,page=null,talk=null,slide=0,edit=false}={}){
     // Re-entrancy guard: if two openBubble calls race (e.g. a quick click then another nav),
     // a superseded in-flight call could still build a stale workspace/editor over the new one.
     // A newer call bumps the token so the older one bails after its await.
@@ -4237,6 +4243,17 @@
       wrap.append(homeHost);
       window.LockedInTalks.mount(homeHost,slug,{name:b.name,user:S.user,
         onPage:p=>gotoRoute("bubble/"+slug+"/"+encodeURIComponent(p)),
+        talkId:talk, slide, edit,
+        // A talk is part of the bubble route, not an overlay. Replace rather than push while
+        // paging through slides so refresh/bookmarks restore the exact slide without filling
+        // the browser history with every arrow key press.
+        onRoute:state=>{
+          const path=state
+            ? "bubble/"+slug+"/talk/"+encodeURIComponent(state.talkId)+"/slide/"+(state.slide+1)
+                +(state.edit?"/edit":"")
+            : "bubble/"+slug;
+          history.replaceState(null,"",routeHref(path)); _appliedHash=location.hash;
+        },
         // Opening a talk goes a level deeper without changing the route, so the title's glyph
         // has to follow it down and become the way back out.
         onView:(()=>{
