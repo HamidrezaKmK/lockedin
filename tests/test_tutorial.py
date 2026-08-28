@@ -48,6 +48,10 @@ class TutorialSeedTests(unittest.TestCase):
         replied = [n for n in notes if len(n["conversation"]) > 1]
         self.assertTrue(replied)
 
+        # the drawing ships with its picture: thumbnail in the app, snapshot for the agent
+        ink = [n for n in notes if n["mark"] == "ink"][0]
+        self.assertIn("screenshot", ink)
+
         # the page comment thread carries the agent's answer
         self.assertEqual(len(threads), 1)
         self.assertEqual(len(threads[0]["messages"]), 2)

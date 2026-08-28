@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
+from pathlib import Path
 
 from . import bubbles, talks
 
@@ -260,32 +261,26 @@ def _seed() -> str:
     talks.add_note(slug, ask, slide=2, kind="q", author="you",
                    rect={"x": 6.0, "y": 34.0, "w": 88.0, "h": 30.0},
                    text="Which of these three should a brand-new user reach for first?")
-    talks.add_note(slug, ask, slide=0, kind="ink", author="you",
+    ink = talks.add_note(slug, ask, slide=0, kind="ink", author="you",
                    paths=[
-                       # an underline beneath the first bullet, a ring on the claim, an arrow
-                       [{"x": 12, "y": 56}, {"x": 30, "y": 57}, {"x": 46, "y": 56.5}],
-                       [{"x": 72.5, "y": 34.5},
-                        {"x": 71.6, "y": 37.8},
-                        {"x": 68.9, "y": 40.4},
-                        {"x": 65.1, "y": 41.8},
-                        {"x": 60.9, "y": 41.8},
-                        {"x": 57.1, "y": 40.4},
-                        {"x": 54.4, "y": 37.8},
-                        {"x": 53.5, "y": 34.5},
-                        {"x": 54.4, "y": 31.2},
-                        {"x": 57.1, "y": 28.6},
-                        {"x": 60.9, "y": 27.2},
-                        {"x": 65.1, "y": 27.2},
-                        {"x": 68.9, "y": 28.6},
-                        {"x": 71.6, "y": 31.2},
-                        {"x": 72.5, "y": 34.5}],
-                       [{"x": 40, "y": 74}, {"x": 56, "y": 44}],
-                       [{"x": 56, "y": 44}, {"x": 50, "y": 46}],
-                       [{"x": 56, "y": 44}, {"x": 55, "y": 51}],
+                       # measured off the rendered slide (720px card): an underline
+                       # beneath the first bullet, a ring around "the deliverable",
+                       # and an arrow pointing up into the ring
+                       [{"x": 10.2, "y": 60.6}, {"x": 30.0, "y": 61.4}, {"x": 51.5, "y": 60.4}],
+                       [{"x": 71.7, "y": 42.4}, {"x": 70.8, "y": 45.1}, {"x": 68.2, "y": 47.2}, {"x": 64.5, "y": 48.4}, {"x": 60.3, "y": 48.4}, {"x": 56.6, "y": 47.2}, {"x": 54.0, "y": 45.1}, {"x": 53.1, "y": 42.4}, {"x": 54.0, "y": 39.7}, {"x": 56.6, "y": 37.6}, {"x": 60.3, "y": 36.4}, {"x": 64.5, "y": 36.4}, {"x": 68.2, "y": 37.6}, {"x": 70.8, "y": 39.7}, {"x": 71.7, "y": 42.4}],
+                       [{"x": 42.0, "y": 78.0}, {"x": 57.0, "y": 50.5}],
+                       [{"x": 57.0, "y": 50.5}, {"x": 52.5, "y": 51.5}],
+                       [{"x": 57.0, "y": 50.5}, {"x": 56.2, "y": 56.0}],
                    ],
                    covers=["Name what you want to exist afterwards.",
                            "names the deliverable, not the steps."],
                    text="The ringed phrase is the whole deck — consider opening with it.")
+    # The snapshot every other ✍ mark gets from the browser, pre-captured once from this very
+    # slide and shipped with the package — the card gets its thumbnail and an agent gets its
+    # picture, in a workspace no browser has ever opened.
+    shot = Path(__file__).parent / "seed_assets" / "tutorial-ink.png"
+    if shot.is_file():
+        talks.save_note_image(slug, ask, ink["id"], shot.read_bytes())
 
     # Deck B: a real resolved-mark history — mark the overclaim, then revise it away with
     # resolves=, exactly as an agent would — plus one mark left open on purpose.
