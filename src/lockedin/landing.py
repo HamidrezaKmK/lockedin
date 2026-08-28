@@ -35,7 +35,7 @@ DEFAULT_LANDING: dict[str, Any] = {
     },
     "why": {
         "title": "Communicate Like a Fellow Researcher",
-        "text": "There are better modes of expression for creative thinking than chats, Lockedin aims to fix that.",
+        "text": "There are better modes of expression for creative thinking than chats, Lockedin aims to tackle that.",
         "bullets": [],
     },
     "workflow": {
