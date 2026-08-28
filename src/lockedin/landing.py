@@ -15,15 +15,15 @@ log = logging.getLogger(__name__)
 DEFAULT_LANDING: dict[str, Any] = {
     "hero": {
         "kicker_icon": "🔒",
-        "kicker": "AI that communicates clearly for research",
+        "kicker": "Research with AI, without the chat window",
         "title_accent": "locked",
         "title_rest": "in",
-        "lede": "Stop reading your agent’s work in a terminal",
-        "copy": "An agent that writes into a chat window is an agent whose work you cannot review. lockedin gives it somewhere to put a real document — slides, figures, derivations — and gives you a way to mark that work up the way you would a student’s.",
+        "lede": "Your agent is not a chatbot. Stop treating it like one.",
+        "copy": "We work with capable research collaborators through a chat thread — the one interface that cannot hold an argument, a figure, or a record. lockedin is an implementation of how it should work instead: the agent gives you a chalk talk, you write the document together, and you drop to the exact sentence when something is wrong.",
         "points": [
-            {"title": "Read, don’t scroll", "text": "Findings arrive as dated slide decks and living report pages, not as scrollback you lose on the next session."},
-            {"title": "Mark it up", "text": "✗ wrong · ? I don’t follow · → go deeper · ✓ keep · ✂ cut. Point at the exact sentence; the agent answers there."},
-            {"title": "Any model", "text": "Claude, Codex, GPT, Gemini, or a local Qwen. lockedin is the interface, not the model."},
+            {"title": "It presents; you review", "text": "Findings arrive as dated slide decks and living pages — the shape a colleague uses to convince you, not a transcript you scroll."},
+            {"title": "Intervene at the sentence", "text": "✗ wrong · ? I don’t follow · → go deeper · ✓ keep · ✂ cut. One tap on the exact line, and the answer comes back there."},
+            {"title": "One place for the context", "text": "Papers, figures, derivations, TODOs and the manuscript in the same bubble the agent is working in."},
         ],
     },
     "auth": {
@@ -31,27 +31,27 @@ DEFAULT_LANDING: dict[str, Any] = {
         "note": "Log in, or create an account and give your agent somewhere to write.",
     },
     "why": {
-        "title": "Why this exists",
-        "text": "lockedin came out of equal parts fascination and frustration with working alongside AI through a terminal. The models had become good collaborators; the interface had not. Findings scrolled past in a session and were gone, a correction meant retyping the paragraph you were objecting to, and there was nowhere for an argument to live between the chat and the paper.\n\nSo: a hub with a proper surface. The agent presents; you review it the way a supervisor reviews a student — on the page, at the sentence, in writing that lasts.",
+        "title": "Chat is the wrong shape for this work",
+        "text": "The models became good collaborators. The interface did not move: we still talk to them in a thread of messages, which is how you ask a question, not how you supervise research.\n\nThink about how it actually works with a good student. They do not send you a wall of text. They book half an hour and talk you through it at the board. You interrupt at the step that does not hold. What survives goes into the write-up, and the write-up is the thing you both keep. Nobody scrolls back through a conversation to find out what was decided.\n\nlockedin is that arrangement, built for an agent.",
         "bullets": [
-            "Chalk talks: dated slide decks an agent writes when something needs your judgement.",
-            "Marks, not replies: five of them, on slides and report pages alike, anchored to the exact text.",
-            "A record that survives the session: every revision keeps the mark that caused it.",
+            "It gives a chalk talk — a dated deck, one idea per slide, when something needs your judgement.",
+            "You write the document together, and it is the document that lasts, not the thread.",
+            "You drop to the low level when it matters: mark the exact sentence, and the argument happens there.",
         ],
     },
     "workflow": {
-        "title": "From an experiment to something you can argue with",
-        "intro": "Point an agent at the repo where the work actually happens; read what it found as a document, not a transcript.",
+        "title": "How a week actually goes",
+        "intro": "Not a demo flow — the loop you repeat while an idea is being worked out.",
         "steps": [
-            {"number": "01", "title": "Bubble", "text": "Open a topic. It gets a statement of the idea, a multi-page report, and a place for talks."},
-            {"number": "02", "title": "Connect", "text": "Sync a code repository, a training run, or an agent session to it. The agent reads the bubble and writes back into it."},
-            {"number": "03", "title": "Present", "text": "Experiment results arrive as figures, report pages, and slide decks — written to be read, with the uncertain parts marked as uncertain."},
-            {"number": "04", "title": "Review", "text": "Mark the exact sentence, argue in the thread, and watch the slide come back revised with your objection on the record."},
+            {"number": "01", "title": "You set the question", "text": "Open a bubble, drop in the papers, say in a paragraph what you are trying to establish. That statement is what every agent reads first."},
+            {"number": "02", "title": "It goes away and works", "text": "Point it at the repo. It runs the experiment, draws the figure, writes the derivation — in the bubble, where you can find it later."},
+            {"number": "03", "title": "It gives a chalk talk", "text": "When something needs your judgement it writes a short deck: one idea per slide, the soft spots named, and what it needs from you at the end."},
+            {"number": "04", "title": "You supervise", "text": "Mark the step that does not hold. It re-derives, argues back if you are wrong, and the revision carries your objection in its history."},
         ],
     },
     "components": {
-        "title": "What is in it",
-        "intro": "One place for the papers, the writing, and the tools you already use.",
+        "title": "Everything the work needs, in one place",
+        "intro": "An agent is only as good as what it can see. The papers, the figures, the open questions and the manuscript live in the same bubble it is working in — so context is something you keep, not something you re-paste every session.",
         "features": [
             {"icon": "📚", "title": "Library", "text": "Keep track of your papers, books, and other research materials with appropriate notes and links to idea bubbles and bibtex entries."},
             {"icon": "🫧", "title": "Idea Bubbles", "text": "Create idea bubbles to organize your research ideas and connect them to your papers and other research materials."},
@@ -63,12 +63,12 @@ DEFAULT_LANDING: dict[str, Any] = {
         ],
     },
     "pi": {
-        "title": "Research like a PI, not a grad student",
-        "text": "The pitch is not that the agent does your work. It is that you get to do the part of the job that is actually yours: reading a claim closely, finding the step that does not hold, and saying so. Someone else assembles the derivation, runs the sweep and redraws the figure — and comes back with a revision that names your objection.",
+        "title": "No compromise on the model",
+        "text": "lockedin is an interface, not a model, and not a wrapper that resells you one. Bring the subscription you already pay for — Claude, Codex, Gemini, GPT — or point it at a model running on your own machine. Your key stays yours, your work stays on your disk, and switching model does not cost you the bubble, the marks or the history.",
         "bullets": [
-            "You read and judge; the agent derives, runs, plots and rewrites.",
-            "A mark is a pointed finger plus one word — it costs a tap, not a paragraph.",
-            "Marks disappear when they are answered. Nothing accumulates a list nobody reads.",
+            "Works with the agent you already use, in the terminal you already use.",
+            "Self-hostable and open source: run the whole thing locally if you want to.",
+            "Nothing is locked to a vendor — least of all the record of what you decided.",
         ],
     },
     "privacy": {
@@ -81,8 +81,8 @@ DEFAULT_LANDING: dict[str, Any] = {
         ],
     },
     "scientist": {
-        "title": "Bring your own AI subscription",
-        "intro": "Install the lightweight Scientist companion, authorize, and work synchronized on the website with Codex, Claude, or Antigravity.",
+        "title": "Connecting a project takes one line",
+        "intro": "In the app, the 🤖 button on any bubble gives you a single command to paste — it installs the client, signs this machine in, and connects the folder you are standing in. The steps below are only for setting it up by hand.",
         "platforms": [
             {"title": "macOS or Linux", "text": "Python 3.11+ required. Installs only the Scientist client in your user PATH.",
              "command": "curl -fsSL https://raw.githubusercontent.com/HamidrezaKmK/lockedin/main/install.sh | bash"},

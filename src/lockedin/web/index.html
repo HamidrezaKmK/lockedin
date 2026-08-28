@@ -1013,10 +1013,10 @@
     <div class="landing-inner">
       <section class="landing-hero" aria-labelledby="landing-title">
         <div>
-          <div class="landing-kicker"><span class="landing-lock">🔒</span> AI that communicates clearly for research</div>
+          <div class="landing-kicker"><span class="landing-lock">🔒</span> Research with AI, without the chat window</div>
           <h1 id="landing-title"><span class="lock">locked</span>in</h1>
-          <p class="landing-lede">Stop reading your agent’s work in a terminal</p>
-          <p class="landing-copy">An agent that writes into a chat window is an agent whose work you cannot review. lockedin gives it somewhere to put a real document — slides, figures, derivations — and gives you a way to mark that work up the way you would a student’s.</p>
+          <p class="landing-lede">Your agent is not a chatbot. Stop treating it like one.</p>
+          <p class="landing-copy">We work with capable research collaborators through a chat thread — the one interface that cannot hold an argument, a figure, or a record. lockedin is an implementation of how it should work instead: the agent gives you a chalk talk, you write the document together, and you drop to the exact sentence when something is wrong.</p>
           <div class="landing-points">
             <div class="landing-point"><b>Organize Research</b><span>Keep PDFs, notes, tags, summaries, and BibTeX in a fully indexed library.</span></div>
             <div class="landing-point"><b>Math Help with AI</b><span>Build bubbles and math-aware reports that evolve with your project.</span></div>
@@ -1036,50 +1036,22 @@
         </form>
       </section>
 
-      <section class="landing-section" aria-labelledby="scientist-install-title">
-        <div class="scientist-install">
-        <div class="landing-section-head">
-          <h2 id="scientist-install-title">Bring your own AI subscription</h2>
-          <p>Install the lightweight Scientist companion, authorize, and work synchronized on the website with Codex, Claude, or Antigravity.</p>
-        </div>
-        <div class="scientist-platforms">
-          <article class="scientist-platform">
-            <h3>macOS or Linux</h3>
-            <p>Python 3.11+ required. Installs only the Scientist client in your user PATH.</p>
-            <code class="command">curl -fsSL https://raw.githubusercontent.com/HamidrezaKmK/lockedin/main/install.sh | bash</code>
-          </article>
-          <article class="scientist-platform">
-            <h3>Windows PowerShell</h3>
-            <p>Python 3.11+ required. Installs the client in local app data.</p>
-            <code class="command">irm https://raw.githubusercontent.com/HamidrezaKmK/lockedin/main/install.ps1 | iex</code>
-          </article>
-        </div>
-        <ol class="scientist-steps">
-          <li><b>Authorize</b>Sign in to your lockedin account in the browser.<code class="command">lockedin-scientist login --server https://lockedin.codes</code></li>
-          <li><b>Choose a workspace</b>List your workspaces and select the one used across projects.<code class="command">lockedin-scientist workspaces switch &lt;workspace-id-or-name&gt;</code></li>
-          <li><b>Pick a bubble</b>List the approved bubbles in the selected workspace.<code class="command">lockedin-scientist bubbles</code></li>
-          <li><b>Stay in sync</b>Create a project-local bubble workspace that keeps reports synchronized in the background.<code class="command">lockedin-scientist sync &lt;bubble-slug&gt;</code></li>
-          <li><b>Install a native skill</b>Set up the lockedin-scientist skill once for the agent you use.<code class="command">lockedin-scientist &lt;codex|claude|agy&gt; setup</code></li>
-        </ol>
-        </div>
-      </section>
-
       <section class="landing-section" aria-labelledby="why-title">
         <div class="landing-section-head">
-          <h2 id="why-title">Why this exists</h2>
-          <p>lockedin came out of equal parts fascination and frustration with working alongside AI through a terminal. The models had become good collaborators; the interface had not.</p>
+          <h2 id="why-title">Chat is the wrong shape for this work</h2>
+          <p>The models became good collaborators. The interface did not move: we still talk to them in a thread of messages, which is how you ask a question, not how you supervise research.</p>
         </div>
         <ul class="landing-bullets" id="why-bullets">
-          <li>Chalk talks: dated slide decks an agent writes when something needs your judgement.</li>
-          <li>Marks, not replies: five of them, on slides and report pages alike, anchored to the exact text.</li>
-          <li>A record that survives the session: every revision keeps the mark that caused it.</li>
+          <li>It gives a chalk talk — a dated deck, one idea per slide, when something needs your judgement.</li>
+          <li>You write the document together, and it is the document that lasts, not the thread.</li>
+          <li>You drop to the low level when it matters: mark the exact sentence, and the argument happens there.</li>
         </ul>
       </section>
 
       <section class="landing-section" aria-labelledby="workflow-title">
         <div class="landing-section-head">
-          <h2 id="workflow-title">From an experiment to something you can argue with</h2>
-          <p>Point an agent at the repo where the work actually happens; read what it found as a document, not a transcript.</p>
+          <h2 id="workflow-title">How a week actually goes</h2>
+          <p>Not a demo flow — the loop you repeat while an idea is being worked out.</p>
         </div>
         <div class="workflow-grid">
           <div class="workflow-step"><span class="workflow-num">01</span><b>Bubble</b><span>Create a theme or idea you would like to research on</span></div>
@@ -1106,14 +1078,42 @@
 
       <section class="landing-section" aria-labelledby="pi-title">
         <div class="landing-section-head">
-          <h2 id="pi-title">Research like a PI, not a grad student</h2>
-          <p>The pitch is not that the agent does your work. It is that you get to do the part of the job that is actually yours.</p>
+          <h2 id="pi-title">No compromise on the model</h2>
+          <p>lockedin is an interface, not a model, and not a wrapper that resells you one. Bring the subscription you already pay for.</p>
         </div>
         <ul class="landing-bullets" id="pi-bullets">
-          <li>You read and judge; the agent derives, runs, plots and rewrites.</li>
-          <li>A mark is a pointed finger plus one word — it costs a tap, not a paragraph.</li>
-          <li>Marks disappear when they are answered. Nothing accumulates a list nobody reads.</li>
+          <li>Works with the agent you already use, in the terminal you already use.</li>
+          <li>Self-hostable and open source: run the whole thing locally if you want to.</li>
+          <li>Nothing is locked to a vendor — least of all the record of what you decided.</li>
         </ul>
+      </section>
+
+      <section class="landing-section" aria-labelledby="scientist-install-title">
+        <div class="scientist-install">
+        <div class="landing-section-head">
+          <h2 id="scientist-install-title">Connecting a project takes one line</h2>
+          <p>In the app, the 🤖 button on any bubble gives you a single command to paste. The steps below are only for setting it up by hand.</p>
+        </div>
+        <div class="scientist-platforms">
+          <article class="scientist-platform">
+            <h3>macOS or Linux</h3>
+            <p>Python 3.11+ required. Installs only the Scientist client in your user PATH.</p>
+            <code class="command">curl -fsSL https://raw.githubusercontent.com/HamidrezaKmK/lockedin/main/install.sh | bash</code>
+          </article>
+          <article class="scientist-platform">
+            <h3>Windows PowerShell</h3>
+            <p>Python 3.11+ required. Installs the client in local app data.</p>
+            <code class="command">irm https://raw.githubusercontent.com/HamidrezaKmK/lockedin/main/install.ps1 | iex</code>
+          </article>
+        </div>
+        <ol class="scientist-steps">
+          <li><b>Authorize</b>Sign in to your lockedin account in the browser.<code class="command">lockedin-scientist login --server https://lockedin.codes</code></li>
+          <li><b>Choose a workspace</b>List your workspaces and select the one used across projects.<code class="command">lockedin-scientist workspaces switch &lt;workspace-id-or-name&gt;</code></li>
+          <li><b>Pick a bubble</b>List the approved bubbles in the selected workspace.<code class="command">lockedin-scientist bubbles</code></li>
+          <li><b>Stay in sync</b>Create a project-local bubble workspace that keeps reports synchronized in the background.<code class="command">lockedin-scientist sync &lt;bubble-slug&gt;</code></li>
+          <li><b>Install a native skill</b>Set up the lockedin-scientist skill once for the agent you use.<code class="command">lockedin-scientist &lt;codex|claude|agy&gt; setup</code></li>
+        </ol>
+        </div>
       </section>
 
       <section class="landing-section" aria-labelledby="privacy-title">
