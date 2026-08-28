@@ -554,7 +554,8 @@ def slide_edit_source(slug: str, talk_id: str, slides: list[dict], notes: dict, 
     return _ATTR.sub("", wrapped, count=1).lstrip("\n")
 
 
-def apply_slide_source(slug: str, talk_id: str, index: int, text: str, *, why: str = "") -> dict:
+def apply_slide_source(slug: str, talk_id: str, index: int, text: str, *, why: str = "",
+                       kind: str | None = None) -> dict:
     """Save a hand-edited slide, updating every mark whose wrapper came back.
 
     A changed slide is versioned and snapshotted exactly like an agent revision — the history
@@ -572,13 +573,17 @@ def apply_slide_source(slug: str, talk_id: str, index: int, text: str, *, why: s
     if not 0 <= index < len(slides):
         raise IndexError(index)
     old = slides[index]
-    head = f"<!-- slide: kind={old['kind']}, date={old.get('date', '')}, v={old['version']} -->"
+    if kind and kind not in SLIDE_KINDS:
+        raise ValueError(f"kind must be one of {', '.join(SLIDE_KINDS)}")
+    kind = kind or old["kind"]
+    head = f"<!-- slide: kind={kind}, date={old.get('date', '')}, v={old['version']} -->"
     parsed = parse_deck(head + "\n" + clean.strip("\n") + "\n")
     if not parsed:
         raise ValueError("could not parse the slide")
     new = parsed[0]
 
-    changed = (new["title"], new["sub"], new["body"]) != (old["title"], old["sub"], old["body"])
+    changed = ((new["title"], new["sub"], new["body"]) != (old["title"], old["sub"], old["body"])
+               or kind != old["kind"])
     if changed:
         hist = load_history(slug, talk_id)
         hist.setdefault("versions", []).append({
@@ -591,7 +596,8 @@ def apply_slide_source(slug: str, talk_id: str, index: int, text: str, *, why: s
         new["version"] = old["version"] + 1
         new["date"] = _today()
 
-    slides[index] = {**old, **{k: new[k] for k in ("title", "sub", "body", "version", "date")}}
+    slides[index] = {**old, "kind": kind,
+                     **{k: new[k] for k in ("title", "sub", "body", "version", "date")}}
     _atomic_write(paths.bubble_talk_path(slug, talk_id), render_deck(slides))
 
     if wraps:

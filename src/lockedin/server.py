@@ -925,6 +925,7 @@ def build_app():
     class TalkSlideSourceIn(BaseModel):
         text: str
         why: str = ""
+        kind: str = ""
 
     class TalkSlideInsertIn(BaseModel):
         after: int = -1
@@ -1993,7 +1994,8 @@ def build_app():
         r"""Save a hand-edited slide. `\comment{id}{...}` wrappers re-anchor their marks."""
         try:
             return {"slide": service.apply_talk_slide_source(home_of(user), slug, talk_id,
-                                                             slide, body.text, why=body.why)}
+                                                             slide, body.text, why=body.why,
+                                                             kind=body.kind or None)}
         except IndexError:
             raise HTTPException(status_code=404, detail="no such slide")
         except ValueError as e:

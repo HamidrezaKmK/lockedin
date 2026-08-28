@@ -749,9 +749,9 @@ def revise_talk_slide(home: Path, slug: str, talk_id: str, slide: int, **kw) -> 
 
 
 def apply_talk_slide_source(home: Path, slug: str, talk_id: str, slide: int, text: str,
-                            why: str = "") -> dict:
+                            why: str = "", kind: str | None = None) -> dict:
     with paths.use_root(home):
-        return talks.apply_slide_source(slug, talk_id, slide, text, why=why)
+        return talks.apply_slide_source(slug, talk_id, slide, text, why=why, kind=kind)
 
 
 def insert_talk_slide(home: Path, slug: str, talk_id: str, after: int) -> int:

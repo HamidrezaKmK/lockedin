@@ -202,8 +202,10 @@ mark.tk-anno{background:color-mix(in srgb,var(--kc,var(--accent)) 26%,transparen
 .tk-edithead{display:flex;align-items:center;gap:9px;padding:11px 14px;border-bottom:1px solid var(--line);
   background:color-mix(in srgb,var(--panel2) 70%,var(--panel))}
 .tk-edithead .tk-cnt{margin-left:0}
-.tk-ekind{font:500 9.5px var(--font-mono);letter-spacing:.14em;text-transform:uppercase;
-  background:var(--accent);color:var(--bg);padding:3px 10px;border-radius:999px}
+select.tk-ekind{font:500 9.5px var(--font-mono);letter-spacing:.14em;text-transform:uppercase;
+  background:var(--accent);color:var(--bg);padding:3px 10px;border-radius:999px;border:0;
+  cursor:pointer;appearance:none;outline:none}
+select.tk-ekind option{background:var(--panel);color:var(--ink);text-transform:none}
 .tk-why{flex:1;min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:8px;
   color:var(--ink);font:inherit;font-size:12.5px;padding:6px 10px;outline:none}
 .tk-why:focus{border-color:var(--accent)}
@@ -1018,8 +1020,11 @@ mark.tk-anno{background:color-mix(in srgb,var(--kc,var(--accent)) 26%,transparen
     S.editorObj = null;
   }
   const editDirty = () => {
-    try { return S.editorObj && S.editorObj.getMarkdown() !== (S.editInitial || ""); }
-    catch (e) { return false; }
+    try {
+      const kindSel = document.querySelector(".tk-ekind");
+      const kindChanged = kindSel && S.editKind != null && kindSel.value !== S.editKind;
+      return kindChanged || (S.editorObj && S.editorObj.getMarkdown() !== (S.editInitial || ""));
+    } catch (e) { return false; }
   };
   function leaveEditOk() {
     return !editDirty() || confirm("Discard the unsaved changes to this slide?");
@@ -1054,7 +1059,10 @@ mark.tk-anno{background:color-mix(in srgb,var(--kc,var(--accent)) 26%,transparen
       <div class="tk-col">
         <div class="tk-editcard">
           <div class="tk-edithead">
-            <span class="tk-ekind">${esc(sl.kind)}</span>
+            <select class="tk-ekind" title="slide kind">
+              ${["setup","derivation","evidence","comparison","implementation","ask"].map(k =>
+                `<option value="${k}"${k === sl.kind ? " selected" : ""}>${k}</option>`).join("")}
+            </select>
             <span class="tk-cnt">v${sl.version}</span>
             <input class="tk-why" placeholder="why this change — kept in the history (optional)">
             <button class="pri" data-save="1">Save slide</button>
@@ -1079,6 +1087,7 @@ mark.tk-anno{background:color-mix(in srgb,var(--kc,var(--accent)) 26%,transparen
 
     const host = wrap.querySelector(".tk-edithost");
     S.editInitial = sl.edit_source || "";
+    S.editKind = sl.kind;
     // The document's editor, pointed at one slide: index.html owns the construction so the two
     // surfaces cannot drift. The bare fallback exists only for a standalone mount.
     if (window.LockedInEditor) {
@@ -1101,7 +1110,8 @@ mark.tk-anno{background:color-mix(in srgb,var(--kc,var(--accent)) 26%,transparen
         await api(`/api/bubbles/${S.slug}/talks/${S.talk.talk.id}/slides/${S.slide}/source`, {
           method: "PUT",
           body: JSON.stringify({ text: S.editorObj.getMarkdown(),
-                                 why: wrap.querySelector(".tk-why").value.trim() }),
+                                 why: wrap.querySelector(".tk-why").value.trim(),
+                                 kind: wrap.querySelector(".tk-ekind").value }),
         });
         S.edit = false;
         await loadTalk(S.talk.talk.id, true);
