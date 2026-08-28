@@ -28,6 +28,10 @@ class LandingConfigTest(unittest.TestCase):
     def test_missing_file_uses_defaults(self):
         cfg = landing.load_landing()
         self.assertEqual(cfg["hero"]["title_accent"], "locked")
+        self.assertEqual(cfg["why"]["title"], "Communicate Like a Fellow Researcher")
+        self.assertEqual(
+            cfg["why"]["text"],
+            "There are better modes of expression for creative thinking than chats, Lockedin aims to fix that.")
         self.assertGreaterEqual(len(cfg["components"]["features"]), 1)
         # The installer cards were removed from the defaults as clutter; the 🤖 one-liner
         # in the steps is the connect story now.

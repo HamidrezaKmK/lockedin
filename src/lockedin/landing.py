@@ -31,11 +31,11 @@ DEFAULT_LANDING: dict[str, Any] = {
     },
     "auth": {
         "title": "Enter your workspace",
-        "note": "Log in, or create an account and give your agent somewhere to write.",
+        "note": "Log in, or request access to give your agent somewhere to write.",
     },
     "why": {
-        "title": "Communicate with agents like a PI",
-        "text": "Chat threads are not the most creative expression of research — so we fixed that. The agent gives chalk talks at a board, and you answer with a reviewer's pen: select the text, pick a mark, or just draw on the slide.",
+        "title": "Communicate Like a Fellow Researcher",
+        "text": "There are better modes of expression for creative thinking than chats, Lockedin aims to fix that.",
         "bullets": [],
     },
     "workflow": {
