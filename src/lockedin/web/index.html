@@ -970,7 +970,20 @@
     #topbar{position:sticky;top:0;z-index:25;padding:calc(8px + env(safe-area-inset-top)) 10px 8px;gap:6px}
     /* The brand is the one flexible item: it truncates first so the controls on the right
        (account / help / theme / log out) always stay visible and never wrap. */
-    #topbar .brand{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    #topbar .brand{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 0 auto}
+    /* The + and the three view toggles are fixed-width, so on a phone they were taking 212 of
+       393px and leaving the scrolling tab list a 181px keyhole. Tightening them buys the tabs
+       back about a third of the row without dropping a control. */
+    .ptabs{gap:6px;padding:8px 6px}
+    .tabrow-group>*{width:32px}
+    .ptab{max-width:190px}
+    /* Below ~560px the wordmark lost its fight with the workspace chip and ellipsised to
+       "l…", which reads as a rendering fault rather than a logo. The lock alone is a clean
+       mark, and the workspace name is the one of the two that carries information. */
+    @media (max-width:560px){
+      #topbar .brand .brand-word{display:none}
+      #topbar .brand{font-size:20px}
+    }
     #topbar button{flex-shrink:0;white-space:nowrap;min-height:40px;padding:6px 10px}
     /* always collapse sidebar — hamburger still toggles it as a narrow overlay */
     #side{width:0!important;min-width:0!important;padding:0!important;border-right:none!important;
@@ -1196,7 +1209,7 @@
 <div id="app">
   <div id="topbar">
     <button class="ghost small" id="sideToggle" title="Toggle sidebar" style="font-size:16px;padding:5px 10px">☰</button>
-    <div class="brand">🔒 <span class="lock">locked</span>in</div>
+    <div class="brand">🔒 <span class="brand-word"><span class="lock">locked</span>in</span></div>
     <div class="row" id="modelTabs"></div>
     <div class="spacer"></div>
     <div class="account-quick">
@@ -5255,6 +5268,12 @@
       "aria-label":"Toggle the marks column","aria-pressed":String(!!S.paneRight),
       onclick:()=>setPane("right",!S.paneRight)},"◨"));
     controls.append(group);
+    // The tab list scrolls horizontally, and on a phone its window is barely two tabs wide, so
+    // switching to a page whose tab sits past the fold used to leave the active tab off-screen —
+    // the row looked stuck on whichever tabs happened to be first. "nearest" so a tab already in
+    // view does not move.
+    const activeTab=tabScroll.querySelector(".ptab.active");
+    if(activeTab) activeTab.scrollIntoView({block:"nearest",inline:"nearest"});
     refreshPageVisibilityTool();
     refreshHiddenPagesTool();
   }

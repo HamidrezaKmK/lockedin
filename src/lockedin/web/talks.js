@@ -279,7 +279,10 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
 .tk-overlay .tk-dot:hover{background:var(--muted)}
 .tk-overlay .tk-dot.on{background:var(--accent);width:26px;border-radius:999px}
 .tk-overlay .tk-dot.note{background:var(--warn)}
-.tk-cnt{font:500 11px var(--font-mono);color:var(--muted);margin-left:auto}
+/* nowrap + no shrink: as a flex item this had been compressed to 11px, which broke "2 / 4"
+   across three lines and made the pager twice as tall as the buttons beside it. */
+.tk-cnt{font:500 11px var(--font-mono);color:var(--muted);margin-left:auto;
+  white-space:nowrap;flex:0 0 auto}
 .tk-resync{color:var(--good);border-color:color-mix(in srgb,var(--good) 45%,var(--line))!important;
   font-size:20px!important;line-height:1!important;padding:5px 10px!important;min-width:42px}
 .tk-resync.stale{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 65%,var(--line))!important;
@@ -388,12 +391,26 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     padding:13px 13px 0;transition:max-height .22s ease}
   .tk-overlay.notes-open .tk-gutter{max-height:64vh;overflow:auto;padding-bottom:13px}
   .tk-overlay:not(.notes-open) .tk-note,.tk-overlay:not(.notes-open) .tk-empty-notes{display:none}
-  .tk-gh{cursor:pointer;position:relative;z-index:3}
+  /* The header's negative margins are sized to the desktop gutter's 18px padding; this pane
+     has 13px, so it was hanging 5px off each edge of its own sheet. */
+  .tk-gh{cursor:pointer;position:relative;z-index:3;margin:0 -13px 6px;padding:14px 13px 12px}
   .tk-gh::after{content:"\\25b2";margin-left:auto;color:var(--accent);font-size:11px}
   .tk-overlay.notes-open .tk-gh::after{content:"\\25bc"}
   .tk-col{padding:12px 12px 62px}
   .tk-pop{width:calc(100vw - 24px);left:12px!important}
   .tk-list{padding:14px 13px 30px}
+}
+/* Phones. The slide tools are six segments and the pager is another four controls; on one row
+   that is ~390px of content in ~270px of space, so the pill was rendering 86px wide with 262px
+   of buttons inside it and four of the six were simply off-screen — unreachable, not just ugly.
+   Wrap the row and give the instrument its own full-width line, segments sharing the width. */
+@media(max-width:560px){
+  .tk-foot{flex-wrap:wrap;gap:9px;padding:14px 2px 4px}
+  .tk-foot .tk-seg{order:2;flex:1 1 100%;justify-content:space-between}
+  /* flex-basis:0 so six segments divide the row evenly instead of sizing to their glyphs. */
+  .tk-foot .tk-seg button{flex:1 1 0;padding:6px 0;min-height:40px;font-size:16px}
+  .tk-dots{flex:0 1 auto;min-width:0;flex-wrap:wrap}
+  .tk-resync{min-width:38px}
 }`;
     document.head.append(st);
   }
