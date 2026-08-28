@@ -28,15 +28,15 @@ class LandingConfigTest(unittest.TestCase):
     def test_missing_file_uses_defaults(self):
         cfg = landing.load_landing()
         self.assertEqual(cfg["hero"]["title_accent"], "locked")
-        self.assertEqual(cfg["why"]["title"], "Communicate Like a Fellow Researcher")
+        self.assertEqual(cfg["why"]["title"], "Think Beyond Chat")
         self.assertEqual(
             cfg["why"]["text"],
-            "There are better modes of expression for creative thinking than chats, Lockedin aims to tackle that.")
+            "Creative thinking needs more than chat. Lockedin gives agents better ways to collaborate.")
         self.assertEqual(cfg["workflow"]["title"], "From Paper Pile to Working Theory")
         self.assertEqual(cfg["workflow"]["steps"][0]["title"], "Library")
         self.assertEqual(
             [point["title"] for point in cfg["hero"]["points"]],
-            ["Chalk Talks & Feedback", "Central Research Hub", "Compatible with Frontier"])
+            ["Review Together", "Research Hub", "Bring Your AI"])
         self.assertEqual(
             cfg["pi"]["text"],
             "lockedin does not ship a new model — it integrates with the subscription you already have.")

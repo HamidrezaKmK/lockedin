@@ -24,9 +24,9 @@ DEFAULT_LANDING: dict[str, Any] = {
         "lede": "AI should not be limited to chat threads.",
         "copy": "lockedin was built out of my fascination — and frustration — working with AI for research. More often than not, my sessions turned into walls of text and jargon that neither I nor the agent could follow. Rather than automating research, Lockedin focuses on making agents better collaborators and enriching how they express their thinking.",
         "points": [
-            {"title": "Chalk Talks & Feedback", "text": "Meet with your agent and give clear feedback directly on the work."},
-            {"title": "Central Research Hub", "text": "Put all of the papers, resources, overleaf, code in one interactive place with agents that can read off their enriched context"},
-            {"title": "Compatible with Frontier", "text": "Bring your OpenAI, Anthropic, or Google AI subscription."},
+            {"title": "Review Together", "text": "Meet with your agent, then mark the work directly."},
+            {"title": "Research Hub", "text": "Keep papers, code, Overleaf, and resources in one shared context."},
+            {"title": "Bring Your AI", "text": "Use your OpenAI, Anthropic, or Google AI subscription."},
         ],
     },
     "auth": {
@@ -34,8 +34,8 @@ DEFAULT_LANDING: dict[str, Any] = {
         "note": "Log in, or request access to give your agent somewhere to write.",
     },
     "why": {
-        "title": "Communicate Like a Fellow Researcher",
-        "text": "There are better modes of expression for creative thinking than chats, Lockedin aims to tackle that.",
+        "title": "Think Beyond Chat",
+        "text": "Creative thinking needs more than chat. Lockedin gives agents better ways to collaborate.",
         "bullets": [],
     },
     "workflow": {
