@@ -160,9 +160,17 @@
 .tk-col{flex:1;min-width:0;display:flex;flex-direction:column;padding:18px 24px 10px;overflow:auto}
 /* margin:auto, not justify-content:center — auto margins collapse to zero when the slide
    overflows, so a tall slide scrolls from its top instead of clipping it. */
+/* A slide is a surface to draw on as much as a thing to read. Starting blank, annotating, and
+   letting the agent read the drawing back needs somewhere to draw: with no floor an empty slide
+   is 89px of padding at every screen size. The floor tracks what the viewport can actually show
+   (--vvh, so iOS chrome is accounted for) and is capped, so a short deck on a large monitor gets
+   a usable canvas rather than a wall of empty card. The lower bound matters on a landscape
+   phone, where a proportion of a 330px viewport is barely a strip; the controls are sticky now,
+   so a slide taller than the screen scrolls rather than pushing them out of reach. min-height
+   only ever adds — a slide with enough content to pass the floor is untouched. */
 .tk-slide{width:100%;max-width:720px;margin:auto;background:var(--panel);border:1px solid var(--line);
   border-radius:14px;box-shadow:var(--shadow);padding:34px 40px 32px;position:relative;
-  flex:0 0 auto}
+  flex:0 0 auto;min-height:clamp(260px,calc(var(--vvh,100vh) * .52),520px)}
 .tk-slide .kind{position:absolute;top:-10px;left:22px;font:500 9.5px var(--font-mono);
   letter-spacing:.14em;text-transform:uppercase;background:var(--accent);color:var(--bg);
   padding:3px 9px;border-radius:999px}
