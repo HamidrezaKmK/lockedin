@@ -1934,8 +1934,24 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     const paths = [];
     let cur = null;
     const repaint = () => paintInk(layer, slide, paths.concat(cur ? [cur] : []));
-    repaint();
+    repaint();   // also sizes the canvas; paintInk owns the geometry
 
+    // While the pen is down, draw only the segment it just added. The full repaint ran on
+    // every sample, and assigning a canvas's width — even unchanged — wipes and reallocates
+    // its backing store, so each sample cost a ~10MB reallocation plus a from-scratch redraw
+    // of every stroke so far. Handwriting is dozens of strokes: input lagged, samples dropped,
+    // and every pen lift hitched. Incremental segments make a sample O(1); paintInk remains
+    // the one true renderer for undo, replay and capture, and the segments match its geometry.
+    const ctx = layer.getContext("2d");
+    const seg = (a, b) => {
+      ctx.strokeStyle = inkColor();
+      ctx.lineWidth = Math.max(2, layer.width / 480);
+      ctx.lineCap = ctx.lineJoin = "round";
+      ctx.beginPath();
+      ctx.moveTo(a.x * layer.width / 100, a.y * layer.height / 100);
+      ctx.lineTo(b.x * layer.width / 100, b.y * layer.height / 100);
+      ctx.stroke();
+    };
     const pos = e => {
       const r = layer.getBoundingClientRect();
       return { x: +((e.clientX - r.left) / r.width * 100).toFixed(2),
@@ -1954,15 +1970,23 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     };
     layer.onpointermove = e => {
       if (!cur) return;
-      const pt = pos(e);
-      const last = cur[cur.length - 1];
-      if (Math.abs(pt.x - last.x) + Math.abs(pt.y - last.y) < 0.35) return;   // thin the samples
-      cur.push(pt); repaint();
+      // Coalesced events: a Pencil samples faster than the browser dispatches, and the extras
+      // ride along on the event — without them fast handwriting arrives as chords, not curves.
+      const events = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+      for (const ev of events) {
+        const pt = pos(ev);
+        const last = cur[cur.length - 1];
+        if (Math.abs(pt.x - last.x) + Math.abs(pt.y - last.y) < 0.35) continue;   // thin the samples
+        cur.push(pt); seg(last, pt);
+      }
     };
     layer.onpointerup = () => {
+      // The stroke is already on the canvas; there is nothing to redraw on lift. A one-point
+      // press painted nothing, so dropping it needs no cleanup either.
       if (cur && cur.length >= 2) paths.push(cur);
-      cur = null; repaint();
+      cur = null;
     };
+    layer.onpointercancel = () => { cur = null; repaint(); };   // palm-rejected: erase the fragment
     bar.querySelector("[data-undo]").onclick = () => { paths.pop(); repaint(); };
     bar.querySelector("[data-done]").onclick = e => {
       if (!paths.length) { teardown(); return; }
