@@ -290,8 +290,14 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
    leaves the pill 81px to hold 262px of buttons and four tools end up outside the column
    entirely. flex:0 0 auto stops the instrument being shrunk below its contents; wrapping gives
    it its own line the moment it no longer fits, at any width. */
+/* Sticky, because these controls are chrome and not part of the slide. They used to scroll with
+   the deck, so any geometry where the slide is taller than the column pushed the pager and the
+   six tools below the fold — a short laptop window did it as readily as a phone, and on a phone
+   they landed under the notes sheet as well. Sticking to the bottom of the scrollport keeps them
+   in reach at every size; the column's bottom padding is what holds them clear of the sheet. */
 .tk-foot{display:flex;flex-wrap:wrap;align-items:center;gap:11px;padding:16px 4px 4px;width:100%;
-  max-width:720px;margin:0 auto;flex:0 0 auto}
+  max-width:720px;margin:0 auto;flex:0 0 auto;
+  position:sticky;bottom:0;z-index:6;background:var(--bg)}
 .tk-foot .tk-seg{flex:0 0 auto}
 .tk-dots{display:flex;gap:6px;align-items:center}
 .tk-overlay .tk-dot{width:9px;height:9px;border-radius:50%;background:var(--line);cursor:pointer;
@@ -416,22 +422,24 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
   .tk-gh{cursor:pointer;position:relative;z-index:3;margin:0 -13px 6px;padding:14px 13px 12px}
   .tk-gh::after{content:"\\25b2";margin-left:auto;color:var(--accent);font-size:11px}
   .tk-overlay.notes-open .tk-gh::after{content:"\\25bc"}
+  /* The padding is what holds the sticky bar clear of the notes sheet — sticky resolves bottom:0
+     against the content box, so this reserves the sheet's height. Moving the clearance onto the
+     bar as a margin instead looked tidier but dropped the tools underneath the sheet. */
   .tk-col{padding:12px 12px 62px}
   .tk-pop{width:calc(100vw - 24px);left:12px!important}
   .tk-list{padding:14px 13px 30px}
 }
 /* Ink strokes and region boxes are stored as percentages of the slide box, so they ride the
-   box rather than the words. On a phone the same slide reflows to roughly twice the lines, so
-   a circle drawn around a term on a laptop lands in the middle of a different sentence — the
-   mark stops meaning what it meant. Stop replaying them live below tablet width; the note
-   still carries its snapshot, which is the copy that was true when it was drawn. Text marks
-   are quote-anchored, not box-anchored, so they reflow correctly and stay.
+   box rather than the words: the same slide at another width reflows, and a circle drawn around
+   a term lands in the middle of a different sentence. A snapshot is taken at the moment of
+   drawing and is the only faithful record of it, so that is where a drawing lives — on every
+   screen, not just the narrow ones. Keeping it live on a desktop only meant the misalignment
+   was subtler there. Text marks are quote-anchored, not box-anchored, so they reflow correctly
+   and stay on the slide.
    The :not(.tk-capturing) guard keeps this clear of the capture path, which deliberately
    reveals exactly one overlay while html2canvas reads the slide. */
-@media(max-width:700px){
-  .tk-slide:not(.tk-capturing) .tk-ink,
-  .tk-slide:not(.tk-capturing) .tk-region{display:none}
-}
+.tk-slide:not(.tk-capturing) .tk-ink,
+.tk-slide:not(.tk-capturing) .tk-region{display:none}
 /* Phones. The slide tools are six segments and the pager is another four controls; on one row
    that is ~390px of content in ~270px of space, so the pill was rendering 86px wide with 262px
    of buttons inside it and four of the six were simply off-screen — unreachable, not just ugly.
