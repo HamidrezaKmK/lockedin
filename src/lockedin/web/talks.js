@@ -2149,7 +2149,9 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
         document.querySelectorAll(".tk-modal").forEach(x => x.remove()); return;
       }
       if (S.edit) { if (leaveEditOk()) { S.edit = false; render(); } return; }
-      if (S.view === "deck" || S.view === "sheet") loadHome();
+      // Escape cancels what you opened — a picker, a modal, edit mode — and stops there. It
+      // used to fall through to leaving the deck, so a stray Esc while reading threw away your
+      // place in the talk. Leaving is deliberate: "all slides", or the ‹ in the title.
       return;
     }
     if (S.edit) return;   // the editor owns every key, including the arrows
