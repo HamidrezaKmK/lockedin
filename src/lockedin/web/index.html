@@ -999,7 +999,20 @@
 
   /* ── Mobile ── */
   @media (max-width:700px){
-    #reviewWrap{display:none!important}
+    /* The marks pane was simply display:none here, which made the ◨ toggle a switch wired to
+       nothing. It is now the same bottom sheet the chalk talks use — collapsed to its header,
+       pulled up by the grab bar or a tap, sharing bindSheetDrag and the .tk-gh header the
+       gutter already renders. ◨ still hides it outright via the marks-off rule. */
+    #reviewWrap{position:fixed;inset:auto 0 0 0;flex:none;min-width:0;border-left:0;
+      border-top:1px solid var(--accent);border-radius:16px 16px 0 0;background:var(--panel);
+      z-index:20;max-height:52px;overflow:hidden;padding:13px 13px 0;gap:18px;
+      transition:max-height .22s ease}
+    #reviewWrap.notes-open{max-height:64vh;overflow:auto;padding-bottom:13px}
+    #reviewWrap:not(.notes-open) .tk-note,#reviewWrap:not(.notes-open) .tk-empty{display:none}
+    #reviewWrap::before{content:"";position:absolute;left:50%;top:6px;transform:translateX(-50%);
+      width:38px;height:4px;border-radius:999px;background:var(--line);z-index:4;pointer-events:none}
+    /* The sheet sits over the page's tail; keep the last lines readable above it. */
+    #editorHost:not(.marks-off) #previewWrap{padding-bottom:64px}
     /* Safari zooms the viewport when focusing a form field below 16px. Keep every editable
        control at the platform threshold; the viewport declaration above also disables pinch zoom. */
     input,textarea,select{font-size:16px!important}
@@ -2057,10 +2070,12 @@
     // mode the selection picker must still open; otherwise the most direct feedback gesture
     // appears broken until someone discovers the unrelated right-pane toggle.
     window.LockedInMarks.paint(wrap,S.comments||[]);
-    if(S.paneRight&&gutter&&!S.commentDraftAnchor)
+    if(S.paneRight&&gutter&&!S.commentDraftAnchor){
       window.LockedInMarks.gutter(gutter,S.comments||[],
         {onDelete:id=>markDelete(id),onEdit:(id,text)=>markEdit(id,text),
          onReply:(id,text)=>markReply(id,text)});
+      if(window.LockedInMarks.sheet)window.LockedInMarks.sheet(gutter,gutter);
+    }
     if(wrap.dataset.marksBound!=="1"){
       wrap.dataset.marksBound="1";
       wrap.addEventListener("mouseup",()=>setTimeout(startMarkFromPreview,0));
@@ -4437,7 +4452,11 @@
     // defaulting to reading view. The toolbar dropdown switches to editor / side-by-side.
     S.viewMode="split";   // derived below from the pane toggles; kept for editor-only guards
     const saved=(()=>{try{return localStorage.getItem("lockedin:panes:"+b.slug)||"";}catch(e){return "";}})();
-    S.paneLeft=saved.includes("L"); S.paneRight=saved.includes("R");
+    S.paneLeft=saved.includes("L");
+    // No saved choice: on a phone the marks pane defaults on — it is a 52px sheet there, the
+    // same standing invitation the chalk talks keep at the bottom, not a column taking half
+    // the screen. A choice the user has made (either way) is kept.
+    S.paneRight=saved?saved.includes("R"):matchMedia("(max-width:700px)").matches;
     S.viewMode=S.paneLeft?"split":"view";
     const host=el("div",{id:"editorHost",
       class:(S.paneLeft?"mode-split":"mode-view")+(S.paneRight?"":" marks-off")});
@@ -5705,8 +5724,10 @@
   function setPane(side,on){
     if(side==="left")S.paneLeft=!!on; else S.paneRight=!!on;
     S.viewMode=S.paneLeft?"split":"view";
+    // "0" when both are off: an empty string is indistinguishable from never-chose, and the
+    // phone default would resurrect a pane the user explicitly closed.
     try{localStorage.setItem("lockedin:panes:"+S.bubble,
-      (S.paneLeft?"L":"")+(S.paneRight?"R":""));}catch(e){}
+      (S.paneLeft?"L":"")+(S.paneRight?"R":"")||"0");}catch(e){}
     applyPanes();
     updatePreview();          // repaint after the layout changes; marks are always available
     if(S.editor&&S.editor.setHeight)try{S.editor.setHeight("100%");}catch(e){}
@@ -5880,6 +5901,8 @@
     window.LockedInMarks.gutter(wrap,S.comments||[],
       {onDelete:id=>markDelete(id),onEdit:(id,text)=>markEdit(id,text),
        onReply:(id,text)=>markReply(id,text)});
+    // On phones the pane is a bottom sheet; the header the gutter just rendered is its handle.
+    if(window.LockedInMarks.sheet)window.LockedInMarks.sheet(wrap,wrap);
   }
   function inlineEditReviewMessage(t,msg,row){
     if(row.dataset.editing)return; row.dataset.editing="1"; row.replaceChildren();

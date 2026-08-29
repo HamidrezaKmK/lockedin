@@ -1398,7 +1398,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
 
     gh.addEventListener("pointerdown", e => {
       if (innerWidth > 900) return;          // the gutter is a column here, not a sheet
-      sheet = gh.closest(".tk-gutter");
+      sheet = gh.closest(".tk-gutter,#reviewWrap");   // the doc page's marks pane is a sheet too
       if (!sheet) return;
       dragging = true; dy = 0; startY = e.clientY;
       wasOpen = root.classList.contains("notes-open");
@@ -2348,6 +2348,14 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
 
   window.LockedInTalks = { mount, close, home: loadHome, editTitles: editTalkTitles };
   window.LockedInMarks = { picker: markPicker, paint: paintMarks, gutter: markGutter,
+                           // The doc page borrows the bottom-sheet gesture: its marks pane is
+                           // the same header-plus-cards the chalk-talk gutter is. `open` names
+                           // the class this instance toggles, since the two sheets style theirs
+                           // from different roots.
+                           sheet: (gutterEl, rootEl) => {
+                             const gh = gutterEl && gutterEl.querySelector(".tk-gh");
+                             if (gh && !gh._sheetBound) { gh._sheetBound = true; bindSheetDrag(gh, rootEl); }
+                           },
                            setUser: (user, owner) => { M.user = String(user || ""); M.owner = String(owner || ""); },
                            pendingRange: paintPendingRange, clearPending };
 })();
