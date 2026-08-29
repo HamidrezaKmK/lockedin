@@ -308,6 +308,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
 .tk-foot{display:flex;flex-wrap:wrap;align-items:center;gap:11px;padding:16px 4px 4px;width:100%;
   max-width:720px;margin:0 auto;flex:0 0 auto}
 .tk-foot .tk-seg{flex:0 0 auto}
+.tk-overlay .tk-fab{display:none}
 .tk-dots{display:flex;gap:6px;align-items:center}
 .tk-overlay .tk-dot{width:9px;height:9px;border-radius:50%;background:var(--line);cursor:pointer;
   border:0;padding:0;min-height:0;flex:0 0 auto}
@@ -468,10 +469,27 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
    of buttons inside it and four of the six were simply off-screen — unreachable, not just ugly.
    Wrap the row and give the instrument its own full-width line, segments sharing the width. */
 @media(max-width:560px){
-  .tk-foot{flex-wrap:wrap;gap:9px;padding:14px 2px 4px}
-  .tk-foot .tk-seg{order:2;flex:1 1 100%;justify-content:space-between}
-  /* flex-basis:0 so six segments divide the row evenly instead of sizing to their glyphs. */
-  .tk-foot .tk-seg button{flex:1 1 0;padding:6px 0;min-height:40px;font-size:16px}
+  /* Right padding clears the FAB's column so the → pager button is never underneath it. */
+  .tk-foot{flex-wrap:wrap;gap:9px;padding:14px 64px 4px 2px}
+  /* On phones the six tools left the footer: as a second wrapped row they slid behind the
+     notes sheet. They live behind a floating button now — the pill becomes a vertical popover
+     above it, same buttons, same handlers, just summoned instead of resident. */
+  .tk-foot .tk-seg{display:none;position:fixed;right:14px;bottom:132px;z-index:22;
+    flex-direction:column;border-radius:14px;box-shadow:var(--shadow)}
+  .tk-overlay.tools-open .tk-foot .tk-seg{display:flex}
+  .tk-foot .tk-seg button{padding:0 14px;min-height:46px;font-size:17px}
+  .tk-foot .tk-seg button+button{border-left:0;border-top:1px solid var(--line)}
+  /* .tk-overlay .tk-fab, for specificity: the overlay's generic button rule (class+element)
+     out-ranked a lone class and repainted the FAB as one more grey square. */
+  .tk-overlay .tk-fab{display:flex;position:fixed;right:14px;bottom:74px;z-index:22;
+    width:46px;height:46px;border-radius:50%;align-items:center;justify-content:center;
+    min-height:0;padding:0;background:var(--accent);border:1px solid var(--accent);
+    color:var(--bg);font-size:19px;box-shadow:var(--shadow)}
+  .tk-overlay.tools-open .tk-fab{background:var(--panel2);color:var(--ink);border-color:var(--line)}
+  /* Out of the way when something bigger is happening: the sheet expanded, or a draw layer up
+     (its corner is drawing surface, not chrome). */
+  .tk-overlay.notes-open .tk-fab,.tk-overlay.notes-open .tk-foot .tk-seg,
+  body:has(.tk-inkdraw) .tk-fab,body:has(.tk-draw) .tk-overlay .tk-fab{display:none}
   .tk-dots{flex:0 1 auto;min-width:0;flex-wrap:wrap}
   .tk-resync{min-width:38px}
 }`;
@@ -1302,6 +1320,8 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
             <button data-notes="1" class="${S.notes ? "" : "off"}"
               title="${S.notes ? "hide" : "show"} the notes pane and the marks on the slide">${S.notes ? "◨" : "◧"}</button>
           </div>
+          <button class="tk-fab" data-fab="1" title="slide tools" aria-label="slide tools"
+            aria-haspopup="true">✎</button>
         </div>
       </div>
       <div class="tk-gutter"></div>
@@ -1320,6 +1340,13 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     wrap.querySelector("[data-resync]").onclick = resyncTalk;
     wrap.querySelector("[data-draw]").onclick = startDraw;
     wrap.querySelector("[data-ink]").onclick = startInk;
+    const fab = wrap.querySelector("[data-fab]");
+    if (fab) {
+      fab.onclick = () => root.classList.toggle("tools-open");
+      // Picking any tool is an answer; the popover's job is done.
+      wrap.querySelector(".tk-seg").addEventListener("click",
+        () => root.classList.remove("tools-open"));
+    }
     wrap.querySelector("[data-add]").onclick = () => addSlideAfter(S.slide);
     wrap.querySelector("[data-del]").onclick = () => deleteSlideAt(S.slide);
     wrap.querySelector("[data-notes]").onclick = () => { S.notes = !S.notes; render(); };
