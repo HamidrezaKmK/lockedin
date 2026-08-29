@@ -1712,6 +1712,13 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     S.pending = null;
   }
 
+  /** Dismiss whichever draw layer is up, via the teardown it published on itself.
+   *  The modes are exclusive by construction — ink's canvas sits above region's layer, so
+   *  starting one under the other left it unreachable and looking broken. */
+  function cancelDrawModes() {
+    document.querySelectorAll(".tk-inkdraw,.tk-draw").forEach(l => l._cancel && l._cancel());
+  }
+
   function clearPending() {
     document.querySelectorAll(".tk-pending-region").forEach(box => box.remove());
     document.querySelectorAll("mark.tk-pending").forEach(mk => {
@@ -1743,7 +1750,8 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     // whitespace between two steps. It is also the element that gets photographed, so the
     // stored rectangle and the picture share one coordinate system.
     const md = root.querySelector(".tk-slide");
-    if (!md || md.querySelector(".tk-draw")) return;
+    if (!md) return;
+    cancelDrawModes();                    // switching from ✍ mid-thought is a cancel, not a bug
     clearPending();
     // A selection made just before entering survives the user-select switch-off and keeps its
     // handles on screen through the whole drag; drop it at the door.
@@ -1760,6 +1768,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
       removeEventListener("mouseup", up, true);
       removeEventListener("keydown", esc, true);
     };
+    layer._cancel = teardown;
     // The release is listened for on the window, not the layer: dragging past the edge of the
     // slide is the normal way to box something that touches it, and a mouseup the layer never
     // sees used to leave the draw mode armed with a stranded rectangle on screen.
@@ -1903,7 +1912,8 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
   // strokes; to the agent the picture IS the feedback.
   function startInk() {
     const slide = root.querySelector(".tk-slide");
-    if (!slide || slide.querySelector(".tk-inkdraw")) return;
+    if (!slide) return;
+    cancelDrawModes();                  // ✍ over an armed 🖍 replaces it
     clearPending();
     getSelection().removeAllRanges();   // same reason as startDraw: stale handles outlive the mode
     const layer = document.createElement("canvas");
@@ -1930,6 +1940,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
       layer.remove(); bar.remove();
       removeEventListener("keydown", esc, true);
     };
+    layer._cancel = teardown;
     layer.onpointerdown = e => {
       layer.setPointerCapture(e.pointerId);
       cur = [pos(e)];
