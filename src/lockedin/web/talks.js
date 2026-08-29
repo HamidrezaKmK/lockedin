@@ -225,9 +225,11 @@ mark.tk-anno{background:color-mix(in srgb,var(--kc,var(--accent)) 26%,transparen
   touch-action:none}
 /* While a draw layer is up the finger is a pen. touch-action stops the browser scrolling, but
    iOS long-press still selects the text *underneath* the layer and pops its Copy/Look Up
-   callout mid-stroke; selection has to be switched off for the duration. :has() keys it to the
-   layer's existence, so there is no mode flag to forget to clear. */
-.tk-overlay:has(.tk-inkdraw),.tk-overlay:has(.tk-draw){
+   callout mid-stroke; selection has to be switched off for the duration. The whole page, not
+   just the overlay: on an iPad the second finger or the heel of the hand lands on the topbar or
+   the notes pane just as often, and a selection blooming anywhere is the same interruption.
+   :has() keys it to the layer's existence, so there is no mode flag to forget to clear. */
+body:has(.tk-inkdraw),body:has(.tk-draw){
   -webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 .tk-draw::after{content:"drag a box over any part of this slide \u00b7 Esc to cancel";
   position:absolute;left:50%;bottom:9px;transform:translateX(-50%);font:500 11px var(--font-ui);
