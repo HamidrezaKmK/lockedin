@@ -182,7 +182,14 @@
     border-radius:999px;border:3px solid transparent;background-clip:content-box}
   *:hover::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--accent) 46%,transparent);
     background-clip:content-box}
-  html,body{height:100%}
+  /* manipulation, everywhere: iOS ignores the viewport's user-scalable=no for accessibility,
+     but it does honour touch-action — this is what actually removes double-tap-to-zoom, which
+     kept firing on accidental fast taps and left the app half-zoomed. Pan and pinch survive
+     (pinch stays available as the accessibility escape hatch); only the double-tap gesture and
+     its detection delay go. On html/body only, deliberately: double-tap consults the whole
+     ancestor chain, so this covers every descendant — while a universal rule would have carried
+     enough specificity to overturn the draw layers' stricter touch-action:none. */
+  html,body{height:100%;touch-action:manipulation}
   body{margin:0;font:14px/1.55 var(--font-ui);
        background:var(--bg);color:var(--ink);overflow:hidden;overflow:clip}
   /* Auth screen can scroll internally on very short viewports (body itself never scrolls) */
