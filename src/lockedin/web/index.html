@@ -1053,8 +1053,9 @@
     /* Below ~560px the wordmark lost its fight with the workspace chip and ellipsised to
        "l…", which reads as a rendering fault rather than a logo. The lock alone is a clean
        mark, and the workspace name is the one of the two that carries information. */
+    /* The wordmark is back below 560px: the hamburger it used to compete with is gone, and the
+       sidebar lives on its own edge now. */
     @media (max-width:560px){
-      #topbar .brand .brand-word{display:none}
       #topbar .brand{font-size:20px}
     }
     #topbar button{flex-shrink:0;white-space:nowrap;min-height:40px;padding:6px 10px}
@@ -1062,7 +1063,10 @@
     #side{width:0!important;min-width:0!important;padding:0!important;border-right:none!important;
           position:fixed;top:calc(49px + env(safe-area-inset-top));bottom:0;left:0;z-index:20;
           box-shadow:4px 0 24px rgba(0,0,0,.5)}
-    .side-reopen{display:none!important}
+    /* The sliver is the only way in now that the ☰ is gone, so it stays — and widens into a
+       finger-sized target that still reads as a hairline, since only the pill is painted. */
+    .side-reopen{width:22px;height:96px;touch-action:none}
+    .side-reopen::after{height:52px;opacity:.75}
     #app.side-open #side{width:240px!important;padding:14px 12px!important;border-right:1px solid var(--line)!important}
     #app.side-open #side .navbtn{min-height:44px;display:flex;align-items:center}
     #app.side-open::after{content:'';position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:19;
@@ -1292,7 +1296,6 @@
 <!-- ============ APP ============ -->
 <div id="app">
   <div id="topbar">
-    <button class="ghost small" id="sideToggle" title="Toggle sidebar" style="font-size:16px;padding:5px 10px">☰</button>
     <div class="brand">🔒 <span class="brand-word"><span class="lock">locked</span>in</span></div>
     <div class="row" id="modelTabs"></div>
     <div class="spacer"></div>
@@ -1306,8 +1309,8 @@
 
   <div id="side">
     <button class="navbtn" data-view="home">🏠 Home</button>
-    <button class="navbtn active" data-view="assets">📚 Library</button>
-    <button class="navbtn" data-view="bubbles">🫧 Bubbles</button>
+    <button class="navbtn active" data-view="bubbles">🫧 Bubbles</button>
+    <button class="navbtn" data-view="assets">📚 Library</button>
     <button class="navbtn" data-view="todos">✅ TODOs</button>
     <button class="navbtn" data-view="workspace">🗂️ Workspace</button>
     <button class="navbtn" data-view="settings">⚙️ Settings</button>
@@ -1351,29 +1354,42 @@
 
   // ---------- auto-hiding top bar ----------
   // Hidden until asked for: the mouse touching the top edge, a downward swipe that starts
-  // there, or keyboard focus landing inside it. It stays while the pointer or focus is in it,
-  // or while its account menu is open, and slips away shortly after being left alone.
+  // there, or keyboard focus landing inside it. Then an idle timer always takes it away again.
   (function(){
     const bar=document.getElementById("topbar"); if(!bar) return;
     // Inside #app, not body: fixed children still position against the viewport, and this way
     // the zone and its pill exist only when the app does — not over the public landing page.
     const zone=el("div",{id:"topbar-hotzone"}); document.getElementById("app").append(zone);
+    const IDLE=2600;
     let hideT=0;
-    const reveal=()=>{clearTimeout(hideT); bar.classList.add("reveal");};
-    const busy=()=> bar.matches(":hover") || bar.contains(document.activeElement)
-                 || !!bar.querySelector("#accountMenu:not(.hide)");
-    const hide=(delay=350)=>{clearTimeout(hideT);
-      hideT=setTimeout(()=>{ if(busy()) hide(700); else bar.classList.remove("reveal"); },delay);};
+    // What may hold the bar open, and nothing else: the workspace/account menu being open
+    // (choosing a workspace is the one job that takes real time), the pointer genuinely resting
+    // on it, or a keyboard user tabbing through. :focus-visible rather than :focus is the whole
+    // repair — a *clicked* button keeps focus after the click is over, so plain focus meant the
+    // bar stayed up for ever once you had pressed anything on it.
+    const holds=()=> !!bar.querySelector("#accountMenu:not(.hide)")
+                  || bar.matches(":hover")
+                  || !!bar.querySelector(":focus-visible");
+    const hide=(delay=IDLE)=>{clearTimeout(hideT);
+      hideT=setTimeout(()=>{
+        if(holds()){ hide(900); return; }
+        bar.classList.remove("reveal");
+        // Drop the leftover focus with it, so returning by keyboard starts from the top.
+        if(bar.contains(document.activeElement))document.activeElement.blur();
+      },delay);};
+    const reveal=()=>{clearTimeout(hideT); bar.classList.add("reveal"); hide();};
     zone.addEventListener("mouseenter",reveal);
     zone.addEventListener("click",reveal);              // the pill is tappable too
+    // Any use of the bar restarts the clock rather than stopping it: the countdown is what
+    // guarantees it leaves, and every interaction only buys another few seconds.
+    ["pointerdown","pointermove","click","keydown"].forEach(t=>
+      bar.addEventListener(t,()=>{clearTimeout(hideT); hide();},{passive:true}));
     // Both leave paths: the browser only re-computes hover on a real mouse move, so a bar
     // revealed *under* a stationary cursor was never "entered" — leaving then fired no
-    // bar.mouseleave and the bar stayed forever. busy() keeps this safe when the cursor is
-    // merely travelling from the zone down into the bar.
+    // bar.mouseleave and the bar stayed forever.
     zone.addEventListener("mouseleave",()=>hide(600));
-    bar.addEventListener("mouseleave",()=>hide());
+    bar.addEventListener("mouseleave",()=>hide(600));
     bar.addEventListener("focusin",reveal);
-    bar.addEventListener("focusout",()=>hide());
     // Touch: a swipe that begins in the top sliver and travels down. Longer grace before
     // hiding — there is no hover to hold it open while a finger travels to a button.
     let ty=null,tx=0;
@@ -1401,16 +1417,17 @@
       app.style.gridTemplateColumns="220px 1fr";
     }
   }
-  document.getElementById("sideToggle").onclick=()=>{
+  // The hamburger is gone — the sidebar's own edges are the control now, on every screen.
+  // A phone shows the pane as an overlay, so "open" is a class there and a column width here.
+  function setSideOpen(open){
     if(window.innerWidth<=700){
-      // Mobile: toggle overlay class; tap backdrop to close
-      document.getElementById("app").classList.toggle("side-open");
-    } else {
-      const next=localStorage.getItem("li_side")!=="1";
-      localStorage.setItem("li_side",next?"1":"0");
-      applySideCollapsed(next);
+      document.getElementById("app").classList.toggle("side-open",open);
+      document.body.classList.toggle("side-collapsed",!open);
+      return;
     }
-  };
+    localStorage.setItem("li_side",open?"0":"1");
+    applySideCollapsed(!open);
+  }
   // The edge grip: tap or fling left to close, mirroring the hamburger. Pointer capture makes
   // the fling readable even when the finger leaves the 16px strip immediately, which it does.
   (function(){
@@ -1424,22 +1441,45 @@
     grip.addEventListener("pointerup",e=>{
       if(!down)return; down=false;
       if(e.clientX-x0>12)return;             // pulled the wrong way — not a close
-      if(window.innerWidth<=700){document.getElementById("app").classList.remove("side-open");return;}
-      localStorage.setItem("li_side","1"); applySideCollapsed(true);
+      setSideOpen(false);
     });
     grip.addEventListener("pointercancel",()=>{down=false;});
-    const reopen=el("button",{class:"side-reopen",title:"Show sidebar","aria-label":"Show sidebar",
-      onclick:()=>{localStorage.setItem("li_side","0"); applySideCollapsed(false);}});
+    // The way back in, at the screen's edge on every screen. On a phone it is also draggable
+    // rightwards, so the pane answers a pull as well as a tap — the gesture a finger reaches
+    // for when there is no button.
+    const reopen=el("button",{class:"side-reopen",title:"Show sidebar","aria-label":"Show sidebar"});
+    let rx=0,rdown=false;
+    reopen.addEventListener("pointerdown",e=>{rx=e.clientX;rdown=true;
+      try{reopen.setPointerCapture(e.pointerId);}catch(err){}
+      e.preventDefault();});
+    reopen.addEventListener("pointerup",e=>{
+      if(!rdown)return; rdown=false;
+      if(e.clientX-rx<-12)return;            // flicked left — not an open
+      setSideOpen(true);
+    });
+    reopen.addEventListener("pointercancel",()=>{rdown=false;});
     document.body.append(reopen);
+    // A phone starts with the pane closed, so the sliver has to be showing from the first paint.
+    if(window.innerWidth<=700) document.body.classList.add("side-collapsed");
+    addEventListener("resize",()=>{
+      if(window.innerWidth<=700)
+        document.body.classList.toggle("side-collapsed",
+          !document.getElementById("app").classList.contains("side-open"));
+    },{passive:true});
   })();
   // Close mobile sidebar when tapping the backdrop
   document.getElementById("app").addEventListener("click",e=>{
-    if(e.target===e.currentTarget&&window.innerWidth<=700)
+    if(e.target===e.currentTarget&&window.innerWidth<=700){
       e.currentTarget.classList.remove("side-open");
+      document.body.classList.add("side-collapsed");
+    }
   });
   // Close mobile sidebar when a nav item is tapped
   document.querySelectorAll(".navbtn").forEach(b=>b.addEventListener("click",()=>{
-    if(window.innerWidth<=700) document.getElementById("app").classList.remove("side-open");
+    if(window.innerWidth<=700){
+      document.getElementById("app").classList.remove("side-open");
+      document.body.classList.add("side-collapsed");
+    }
   }));
 
   function setBubbleFocus(active,{persist=true}={}){
@@ -1524,9 +1564,11 @@
     // assigning location.hash fires hashchange without reloading the app.
     else if(S.workspaceId) history.replaceState(null,"",routeHref(h));
     _appliedHash=location.hash;
-    if(!h||h==="assets"){switchView("assets",{noRoute:true});return;}
+    // The bare route is the bubbles list: ideas are where work starts, and the library is
+    // what a bubble reaches into. pushRoute below keeps "bubbles" as the empty hash to match.
+    if(!h||h==="bubbles"){switchView("bubbles",{noRoute:true});return;}
+    if(h==="assets"){switchView("assets",{noRoute:true});return;}
     if(h==="home"){switchView("home",{noRoute:true});return;}
-    if(h==="bubbles"){switchView("bubbles",{noRoute:true});return;}
     if(h==="workspace"){switchView("workspace",{noRoute:true});return;}
     if(h==="settings"){switchView("settings",{noRoute:true});return;}
     if(h==="todos"){switchView("todos",{noRoute:true});return;}
@@ -1549,7 +1591,7 @@
       openBubble(m[1],{noRoute:true,page:m[2]||null});
       return;
     }
-    switchView("assets",{noRoute:true});
+    switchView("bubbles",{noRoute:true});
   }
   // Back/forward fires popstate, while a link or a script assigning location.hash fires only
   // hashchange — and both fire together for a hash-only history step, hence the guard.
@@ -2497,7 +2539,7 @@
       const math=await api("/api/settings/math"); S.mathMacros=math.macros||{};
       S.bubble=null; S.page=null; S.pages=[]; S.todos=[]; S.todosById={};
       localStorage.setItem(WORKSPACE_STORAGE_KEY,id);
-      refreshAccountButton(); $("#accountMenu").classList.add("hide"); switchView("assets");
+      refreshAccountButton(); $("#accountMenu").classList.add("hide"); switchView("bubbles");
       toast("Switched workspace");
     }catch(e){ S.workspaceId=old; S.workspaceOwner=oldOwner; toast(e.message); }
   }
@@ -3022,7 +3064,7 @@
     leaveBubbleWorkspace();
     S.view=v;
     document.querySelectorAll(".navbtn").forEach(b=>b.classList.toggle("active",b.dataset.view===v));
-    if(!noRoute)pushRoute(v==="assets"?"":v);
+    if(!noRoute)pushRoute(v==="bubbles"?"":v);
     if(v==="home")viewHome();
     else if(v==="assets")viewAssets();
     else if(v==="bubbles")viewBubbles();
@@ -3310,7 +3352,7 @@
     }catch(e){
       if(!isCurrentRender(version))return;
       toast(e.message);
-      switchView("assets",{noRoute:true});
+      switchView("bubbles",{noRoute:true});
     }
   }
   async function openAssetEditor(a, opts={}){
