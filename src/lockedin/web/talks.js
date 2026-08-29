@@ -1764,8 +1764,8 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     const teardown = () => {
       getSelection().removeAllRanges();   // no phantom selection re-materializing on exit
       layer.remove();
-      removeEventListener("mousemove", move, true);
-      removeEventListener("mouseup", up, true);
+      removeEventListener("pointermove", move, true);
+      removeEventListener("pointerup", up, true);
       removeEventListener("keydown", esc, true);
     };
     layer._cancel = teardown;
@@ -1810,12 +1810,18 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     };
     const esc = e => { if (e.key === "Escape") { teardown(); e.stopPropagation(); } };
 
-    layer.onmousedown = e => {
+    // Pointer events, not mouse events: a browser synthesizes mouse events from taps but never
+    // from a touch *drag*, so on an iPhone or iPad the box could not be drawn at all — this is
+    // a drag-only tool. Capturing the pointer keeps the drag alive past the slide's edge, which
+    // is the normal way to box something that touches it.
+    layer.onpointerdown = e => {
+      if (!e.isPrimary) return;            // a second finger mid-drag is not a second box
       const [x, y] = at(e);
       x0 = x; y0 = y;
       box = document.createElement("div"); box.className = "tk-drawbox"; layer.appendChild(box);
-      addEventListener("mousemove", move, true);
-      addEventListener("mouseup", up, true);
+      try { layer.setPointerCapture(e.pointerId); } catch (err) { /* capture is a nicety */ }
+      addEventListener("pointermove", move, true);
+      addEventListener("pointerup", up, true);
       e.preventDefault();
     };
     addEventListener("keydown", esc, true);
