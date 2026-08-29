@@ -408,7 +408,24 @@
   #topbar.reveal + #topbar-hotzone::after,body:has(#topbar.reveal) #topbar-hotzone::after{opacity:0}
   #topbar #modelTabs{display:none;min-width:0;overflow:hidden}
   #side{grid-area:side;border-right:1px solid var(--line);background:var(--panel);padding:14px 10px;
-        overflow:hidden;transition:width .2s ease,padding .15s ease;display:flex;flex-direction:column}
+        overflow:hidden;transition:width .2s ease,padding .15s ease;display:flex;flex-direction:column;
+        position:relative}
+  /* The sidebar's own way out: a grab pill on its edge — same grammar as the sheets and the
+     top bar — for when the hamburger is hidden along with the bar. Click closes on a desktop;
+     on touch it is a handle you fling left. It lives inside #side, so collapsing hides it. */
+  .side-grip{position:absolute;right:1px;top:50%;transform:translateY(-50%);width:16px;height:72px;
+    display:flex;align-items:center;justify-content:center;background:none;border:0;padding:0;
+    cursor:pointer;min-height:0;z-index:5;touch-action:none}
+  .side-grip::after{content:"";width:4px;height:44px;border-radius:999px;background:var(--line);opacity:.85}
+  .side-grip:hover::after{background:var(--accent)}
+  /* And the way back: a sliver on the screen's left edge, only while collapsed on a desktop —
+     without it the grip is a one-way door once the top bar is hidden too. */
+  .side-reopen{position:fixed;left:0;top:50%;transform:translateY(-50%);width:14px;height:80px;
+    display:none;align-items:center;justify-content:center;background:none;border:0;padding:0;
+    cursor:pointer;min-height:0;z-index:21}
+  .side-reopen::after{content:"";width:4px;height:44px;border-radius:999px;background:var(--line);opacity:.6}
+  .side-reopen:hover::after{background:var(--accent)}
+  body.side-collapsed .side-reopen{display:flex}
   /* minimal authorship credit, pinned to the bottom of the side pane */
   .side-credit{margin-top:auto;padding:12px 8px 4px;font-family:var(--font-ui);font-size:11px;
         color:var(--muted);line-height:1.4}
@@ -1045,6 +1062,7 @@
     #side{width:0!important;min-width:0!important;padding:0!important;border-right:none!important;
           position:fixed;top:calc(49px + env(safe-area-inset-top));bottom:0;left:0;z-index:20;
           box-shadow:4px 0 24px rgba(0,0,0,.5)}
+    .side-reopen{display:none!important}
     #app.side-open #side{width:240px!important;padding:14px 12px!important;border-right:1px solid var(--line)!important}
     #app.side-open #side .navbtn{min-height:44px;display:flex;align-items:center}
     #app.side-open::after{content:'';position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:19;
@@ -1374,6 +1392,7 @@
   function applySideCollapsed(collapsed){
     const side=document.getElementById("side"), app=document.getElementById("app");
     if(!side||!app)return;
+    document.body.classList.toggle("side-collapsed",!!collapsed);
     if(collapsed){
       side.style.width="0"; side.style.padding="0"; side.style.borderRight="none";
       app.style.gridTemplateColumns="0 1fr";
@@ -1392,6 +1411,27 @@
       applySideCollapsed(next);
     }
   };
+  // The edge grip: tap or fling left to close, mirroring the hamburger. Pointer capture makes
+  // the fling readable even when the finger leaves the 16px strip immediately, which it does.
+  (function(){
+    const side=document.getElementById("side");
+    const grip=el("button",{class:"side-grip",title:"Hide sidebar","aria-label":"Hide sidebar"});
+    side.append(grip);
+    let x0=0,down=false;
+    grip.addEventListener("pointerdown",e=>{x0=e.clientX;down=true;
+      try{grip.setPointerCapture(e.pointerId);}catch(err){}
+      e.preventDefault();});
+    grip.addEventListener("pointerup",e=>{
+      if(!down)return; down=false;
+      if(e.clientX-x0>12)return;             // pulled the wrong way — not a close
+      if(window.innerWidth<=700){document.getElementById("app").classList.remove("side-open");return;}
+      localStorage.setItem("li_side","1"); applySideCollapsed(true);
+    });
+    grip.addEventListener("pointercancel",()=>{down=false;});
+    const reopen=el("button",{class:"side-reopen",title:"Show sidebar","aria-label":"Show sidebar",
+      onclick:()=>{localStorage.setItem("li_side","0"); applySideCollapsed(false);}});
+    document.body.append(reopen);
+  })();
   // Close mobile sidebar when tapping the backdrop
   document.getElementById("app").addEventListener("click",e=>{
     if(e.target===e.currentTarget&&window.innerWidth<=700)
@@ -3442,10 +3482,13 @@
     const filter=S.bubbleFilter||"active";
     const head=el("div",{class:"row"}, el("h2",{class:"section-title",style:"margin:0"},"🫧 Bubbles"),
       el("span",{class:"spacer"}),
-      el("button",{class:"ghost small",title:"Copy papers from one bubble into another",
-        onclick:()=>viewMigratePapers()},"Migrate resources"),
-      el("button",{class:"ghost small",onclick:()=>{ S.bubbleFilter=filter==="active"?"archived":"active"; viewBubbles(); }},
-        filter==="active"?"Show archive":"Show active"),
+      el("button",{class:"ghost small",title:"Migrate resources — copy papers from one bubble into another",
+        "aria-label":"Migrate resources",onclick:()=>viewMigratePapers()},"📦"),
+      el("button",{class:"ghost small",
+        title:filter==="active"?"Show archived bubbles":"Show active bubbles",
+        "aria-label":filter==="active"?"Show archive":"Show active",
+        onclick:()=>{ S.bubbleFilter=filter==="active"?"archived":"active"; viewBubbles(); }},
+        filter==="active"?"🗄":"🫧"),
       el("button",{class:"primary small",onclick:newBubble},"+ New bubble"));
     const loading=viewLoading("Loading bubbles…",4);
     m.append(head, el("div",{style:"height:14px"}),loading);

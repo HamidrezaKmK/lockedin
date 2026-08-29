@@ -309,6 +309,22 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
   max-width:720px;margin:0 auto;flex:0 0 auto}
 .tk-foot .tk-seg{flex:0 0 auto}
 .tk-overlay .tk-fab{display:none}
+/* Shown while the bubble's own content is in flight. The shell arrives before the idea, the
+   document and the talks do, and a half-drawn page reads as a broken one — so the space they
+   will occupy says it is working instead of sitting empty. */
+.tk-loading{padding:22px 4px;display:flex;flex-direction:column;gap:16px}
+.tk-loading .tk-lrow{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:13px}
+.tk-spin{width:14px;height:14px;flex:none;border-radius:50%;border:2px solid var(--line);
+  border-top-color:var(--accent);animation:tk-spin .7s linear infinite}
+@keyframes tk-spin{to{transform:rotate(360deg)}}
+.tk-skel{border:1px solid var(--line);border-radius:12px;background:var(--panel);
+  padding:18px;display:flex;flex-direction:column;gap:11px}
+.tk-skel i{display:block;height:10px;border-radius:999px;background:var(--line);
+  animation:tk-pulse 1.4s ease-in-out infinite}
+.tk-skel i:nth-child(2){width:72%;animation-delay:.15s}
+.tk-skel i:nth-child(3){width:45%;animation-delay:.3s}
+@keyframes tk-pulse{0%,100%{opacity:.45}50%{opacity:.9}}
+@media(prefers-reduced-motion:reduce){.tk-spin,.tk-skel i{animation:none}}
 .tk-dots{display:flex;gap:6px;align-items:center}
 .tk-overlay .tk-dot{width:9px;height:9px;border-radius:50%;background:var(--line);cursor:pointer;
   border:0;padding:0;min-height:0;flex:0 0 auto}
@@ -2255,6 +2271,13 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     root = h(`<div class="tk-overlay tk-inline"><div class="tk-top"></div>
       <div class="tk-body"></div></div>`).firstChild;
     host.append(root);
+    // Painted before the first await, replaced by loadHome's render: the shell used to arrive
+    // seconds ahead of the content and look like a page that had failed to finish.
+    root.querySelector(".tk-body").append(h(`<div class="tk-loading">
+      <div class="tk-lrow"><span class="tk-spin"></span>Loading this bubble’s idea, document and chalk talks…</div>
+      <div class="tk-skel"><i></i><i></i><i></i></div>
+      <div class="tk-skel"><i></i><i></i><i></i></div>
+    </div>`).firstChild);
     bindSlideSwipe(root);
     document.addEventListener("keydown", onKey);
     S.suppressRoute = true;

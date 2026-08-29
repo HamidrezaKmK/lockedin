@@ -303,7 +303,10 @@ class AestheticsConfigTests(unittest.TestCase):
 
     def test_bubbles_view_reaches_the_migrate_picker(self):
         source = (Path(server.WEB_DIR) / "index.html").read_text()
-        self.assertIn('onclick:()=>viewMigratePapers()},"Migrate resources")', source)
+        # The control is a glyph now, so its wiring is asserted rather than its label — and the
+        # words it dropped have to survive somewhere a reader can still find them.
+        self.assertIn('"aria-label":"Migrate resources",onclick:()=>viewMigratePapers()', source)
+        self.assertIn('title:"Migrate resources — copy papers from one bubble into another"', source)
         self.assertIn('if(h==="migrate"){viewMigratePapers({noRoute:true});return;}', source)
         self.assertIn('"/api/bubbles/"+dest+"/migrate-papers"', source)
 
