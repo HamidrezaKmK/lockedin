@@ -189,7 +189,10 @@
      its detection delay go. On html/body only, deliberately: double-tap consults the whole
      ancestor chain, so this covers every descendant — while a universal rule would have carried
      enough specificity to overturn the draw layers' stricter touch-action:none. */
-  html,body{height:100%;touch-action:manipulation}
+  /* overscroll-behavior:none — a horizontal flick that the page cannot scroll becomes, in
+     Chrome, a history navigation; that is the same gesture as "previous slide". It also stops
+     pull-to-refresh swallowing the top-edge swipe that reveals the top bar. */
+  html,body{height:100%;touch-action:manipulation;overscroll-behavior:none}
   body{margin:0;font:14px/1.55 var(--font-ui);
        background:var(--bg);color:var(--ink);overflow:hidden;overflow:clip}
   /* Auth screen can scroll internally on very short viewports (body itself never scrolls) */
@@ -386,9 +389,23 @@
   #app{display:none;height:var(--vvh,100vh);overflow:hidden;overflow:clip;grid-template-rows:auto 1fr;
        grid-template-columns:220px minmax(0,1fr);
        grid-template-areas:"top top" "side main"}
+  /* The top bar hides above the viewport and slides down on demand, macOS-dock style — its
+     controls are occasional (workspace, account, theme), and the strip of screen is not.
+     position:fixed takes it out of the grid, so the "top" row collapses to zero and the app
+     gets the height back. Revealed by the hot zone at the top edge (mouse), a swipe down from
+     the edge (touch), or keyboard focus landing inside it. */
   #topbar{grid-area:top;display:flex;align-items:center;gap:14px;padding:10px 16px;
           border-bottom:1px solid var(--line);background:var(--panel);min-width:0;
-          background:linear-gradient(180deg, color-mix(in srgb, var(--panel) 100%, var(--accent) 0%) 0%, var(--panel) 100%)}
+          background:linear-gradient(180deg, color-mix(in srgb, var(--panel) 100%, var(--accent) 0%) 0%, var(--panel) 100%);
+          position:fixed;top:0;left:0;right:0;z-index:1200;
+          transform:translateY(-100%);transition:transform .22s ease}
+  #topbar.reveal{transform:translateY(0);box-shadow:var(--shadow)}
+  /* The landing strip. Invisible except for the same grab pill the notes sheet wears, so the
+     two "pull me" affordances share one grammar. */
+  #topbar-hotzone{position:fixed;top:0;left:0;right:0;height:14px;z-index:1199}
+  #topbar-hotzone::after{content:"";position:absolute;top:5px;left:50%;transform:translateX(-50%);
+    width:44px;height:4px;border-radius:999px;background:var(--line);opacity:.55}
+  #topbar.reveal + #topbar-hotzone::after,body:has(#topbar.reveal) #topbar-hotzone::after{opacity:0}
   #topbar #modelTabs{display:none;min-width:0;overflow:hidden}
   #side{grid-area:side;border-right:1px solid var(--line);background:var(--panel);padding:14px 10px;
         overflow:hidden;transition:width .2s ease,padding .15s ease;display:flex;flex-direction:column}
@@ -983,8 +1000,8 @@
        turning the body into a vertical scroll container the way overflow-x:hidden would. */
     html,body{height:auto;overflow-y:visible;overflow-x:clip}
     #app{height:auto;min-height:var(--vvh);overflow:visible;grid-template-columns:0 minmax(0,1fr)!important}
-    /* keep the topbar pinned while the page scrolls */
-    #topbar{position:sticky;top:0;z-index:25;padding:calc(8px + env(safe-area-inset-top)) 10px 8px;gap:6px}
+    /* fixed from the base rule; only the phone padding and gap differ here */
+    #topbar{padding:calc(8px + env(safe-area-inset-top)) 10px 8px;gap:6px}
     /* The brand is the one flexible item: it truncates first so the controls on the right
        (account / help / theme / log out) always stay visible and never wrap. */
     #topbar .brand{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 0 auto}
@@ -1281,6 +1298,45 @@
   updateViewportVars();
   window.addEventListener("resize",updateViewportVars,{passive:true});
   if(window.visualViewport) window.visualViewport.addEventListener("resize",updateViewportVars,{passive:true});
+
+  // ---------- auto-hiding top bar ----------
+  // Hidden until asked for: the mouse touching the top edge, a downward swipe that starts
+  // there, or keyboard focus landing inside it. It stays while the pointer or focus is in it,
+  // or while its account menu is open, and slips away shortly after being left alone.
+  (function(){
+    const bar=document.getElementById("topbar"); if(!bar) return;
+    // Inside #app, not body: fixed children still position against the viewport, and this way
+    // the zone and its pill exist only when the app does — not over the public landing page.
+    const zone=el("div",{id:"topbar-hotzone"}); document.getElementById("app").append(zone);
+    let hideT=0;
+    const reveal=()=>{clearTimeout(hideT); bar.classList.add("reveal");};
+    const busy=()=> bar.matches(":hover") || bar.contains(document.activeElement)
+                 || !!bar.querySelector("#accountMenu:not(.hide)");
+    const hide=(delay=350)=>{clearTimeout(hideT);
+      hideT=setTimeout(()=>{ if(busy()) hide(700); else bar.classList.remove("reveal"); },delay);};
+    zone.addEventListener("mouseenter",reveal);
+    zone.addEventListener("click",reveal);              // the pill is tappable too
+    // Both leave paths: the browser only re-computes hover on a real mouse move, so a bar
+    // revealed *under* a stationary cursor was never "entered" — leaving then fired no
+    // bar.mouseleave and the bar stayed forever. busy() keeps this safe when the cursor is
+    // merely travelling from the zone down into the bar.
+    zone.addEventListener("mouseleave",()=>hide(600));
+    bar.addEventListener("mouseleave",()=>hide());
+    bar.addEventListener("focusin",reveal);
+    bar.addEventListener("focusout",()=>hide());
+    // Touch: a swipe that begins in the top sliver and travels down. Longer grace before
+    // hiding — there is no hover to hold it open while a finger travels to a button.
+    let ty=null,tx=0;
+    addEventListener("touchstart",e=>{const t=e.touches[0];
+      ty=t.clientY<=40?t.clientY:null; tx=t.clientX;},{passive:true});
+    addEventListener("touchmove",e=>{if(ty==null)return; const t=e.touches[0];
+      if(t.clientY-ty>28&&Math.abs(t.clientX-tx)<60){reveal(); hide(3500); ty=null;}},{passive:true});
+    // A press anywhere else dismisses it, so it never lingers over what you are reading.
+    addEventListener("pointerdown",e=>{
+      if(bar.classList.contains("reveal")&&!bar.contains(e.target)&&e.target!==zone) hide(120);},true);
+    // One peek at load, so the bar's existence is taught rather than guessed.
+    reveal(); hide(1800);
+  })();
 
   // ---------- sidebar toggle ----------
   function applySideCollapsed(collapsed){

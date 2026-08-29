@@ -1582,6 +1582,46 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     S.slide = i; render();
   }
 
+  /** Horizontal flick anywhere on the deck turns the page, the way fingers expect slides to
+   *  work. Observation only — passive listeners, no preventDefault — so nothing here can slow
+   *  scrolling; the flick is recognised after the fact. Deliberately narrow about when: a
+   *  quick, mostly-horizontal, short-lived gesture, and never while editing, drawing, choosing
+   *  a mark, selecting text for one, or over something that scrolls sideways itself (a wide
+   *  code block, the thumbnail strip) — a swipe there is that element's scroll, not ours. */
+  function bindSlideSwipe(el) {
+    let t0 = 0, x0 = 0, y0 = 0, live = false;
+    el.addEventListener("touchstart", e => {
+      live = false;
+      if (e.touches.length !== 1 || S.view !== "deck" || S.edit) return;
+      if (document.querySelector(".tk-inkdraw,.tk-draw,.tk-pop,.tk-modal")) return;
+      for (let n = e.target; n && n !== el; n = n.parentElement) {
+        if (n.classList && n.classList.contains("tk-gutter")) return;   // the sheet drags vertically
+        if (n.scrollWidth > n.clientWidth + 4 && /auto|scroll/.test(getComputedStyle(n).overflowX)) return;
+      }
+      t0 = Date.now(); x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; live = true;
+    }, { passive: true });
+    // Deliberately non-passive: Chrome turns a horizontal flick the page cannot scroll into a
+    // history navigation — the exact gesture as "previous slide", and root overscroll-behavior
+    // does not reach it. Once the gesture is decisively horizontal, preventing the move cancels
+    // the browser's gesture for this touch. Until then nothing is prevented, so vertical
+    // scrolling never pays for this.
+    el.addEventListener("touchmove", e => {
+      if (!live) return;
+      const t = e.touches[0];
+      const dx = Math.abs(t.clientX - x0), dy = Math.abs(t.clientY - y0);
+      if (dx > 18 && dx > 1.8 * dy) e.preventDefault();
+    }, { passive: false });
+    el.addEventListener("touchend", e => {
+      if (!live) return;
+      live = false;
+      if (String(getSelection())) return;        // a long-press selection is a mark being born
+      const t = e.changedTouches[0];
+      const dx = t.clientX - x0, dy = t.clientY - y0;
+      if (Date.now() - t0 > 500 || Math.abs(dx) < 70 || Math.abs(dy) > 50) return;
+      go(S.slide + (dx < 0 ? 1 : -1));
+    }, { passive: true });
+  }
+
   /* ------------------------------------------------------------- mark picker */
   // A selection that clips into rendered math must be widened to the whole formula: half of a
   // KaTeX subtree is not a substring of anything the agent wrote.
@@ -2188,6 +2228,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     root = h(`<div class="tk-overlay tk-inline"><div class="tk-top"></div>
       <div class="tk-body"></div></div>`).firstChild;
     host.append(root);
+    bindSlideSwipe(root);
     document.addEventListener("keydown", onKey);
     S.suppressRoute = true;
     try {
