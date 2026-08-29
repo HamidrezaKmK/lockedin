@@ -427,7 +427,14 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
   .tk-overlay:not(.notes-open) .tk-note,.tk-overlay:not(.notes-open) .tk-empty-notes{display:none}
   /* The header's negative margins are sized to the desktop gutter's 18px padding; this pane
      has 13px, so it was hanging 5px off each edge of its own sheet. */
-  .tk-gh{cursor:pointer;position:relative;z-index:3;margin:0 -13px 6px;padding:14px 13px 12px}
+  /* touch-action:none so a vertical drag on the handle is ours, and not the browser scrolling
+     the page or triggering pull-to-refresh underneath the sheet. */
+  .tk-gh{cursor:grab;position:relative;z-index:3;margin:0 -13px 6px;padding:16px 13px 12px;
+    touch-action:none;-webkit-user-select:none;user-select:none}
+  .tk-gh:active{cursor:grabbing}
+  /* The grab bar every bottom sheet has: the thing that says "pull me" before you read a word. */
+  .tk-gutter::before{content:"";position:absolute;left:50%;top:6px;transform:translateX(-50%);
+    width:38px;height:4px;border-radius:999px;background:var(--line);z-index:4;pointer-events:none}
   .tk-gh::after{content:"\\25b2";margin-left:auto;color:var(--accent);font-size:11px}
   .tk-overlay.notes-open .tk-gh::after{content:"\\25bc"}
   /* The padding is what holds the sticky bar clear of the notes sheet — sticky resolves bottom:0
@@ -436,6 +443,16 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
   .tk-col{padding:12px 12px 62px}
   .tk-pop{width:calc(100vw - 24px);left:12px!important}
   .tk-list{padding:14px 13px 30px}
+  /* Editing on a phone. With the keyboard up the visible height is ~508px, and of the column
+     the editor was getting 39px of it — the syntax hint below it took 89 and the pager another
+     98, so there was more chrome explaining the editor than there was editor. Drop the hint
+     (it is guidance you need once, and it stays on larger screens) and drop the slide dots and
+     the counter, which leaves the arrows, resync and "stop editing" on one row instead of two.
+     That is ~140px back, and the typing area goes from 39px to something you can write in. */
+  .tk-editing .tk-editnote{display:none}
+  .tk-editing .tk-foot .tk-dots,
+  .tk-editing .tk-foot .tk-cnt{display:none}
+  .tk-edithost{min-height:150px}
 }
 /* Ink strokes and region boxes are stored as percentages of the slide box, so they ride the
    box rather than the words: the same slide at another width reflows, and a circle drawn around
@@ -1356,8 +1373,60 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
       if (m) m.scrollIntoView({ block: "center", behavior: "smooth" });
     }));
     const gh = el.querySelector(".tk-gh");
-    gh.onclick = () => root.classList.toggle("notes-open");
+    // Desktop only: on a phone the pointer handlers below own the gesture, and a click after
+    // them would toggle the pane straight back.
+    gh.onclick = () => { if (innerWidth > 900) root.classList.toggle("notes-open"); };
+    bindSheetDrag(gh, root);
     return el;
+  }
+
+  /** Let the notes sheet be pulled up by its header, not just poked by the ▲.
+   *
+   *  On a phone the pane is a bottom sheet, and the gesture people reach for is dragging it
+   *  open. The arrow was a ~12px target in the corner. The header follows the finger while it
+   *  moves — a sheet that jumps only on release does not feel attached to the hand — and on
+   *  release snaps to whichever end it was heading for. A press that never travels is still a
+   *  tap, so the old toggle keeps working.
+   */
+  function bindSheetDrag(gh, root) {
+    const COLLAPSED = 52, SNAP = 40;
+    // Resolved per gesture, not here: this runs while the header is still detached — the caller
+    // appends it to the gutter afterwards — so binding against closest() at this point found
+    // nothing and silently dropped both the drag and the tap.
+    let sheet = null;
+    const maxH = () =>
+      Math.round(((window.visualViewport && window.visualViewport.height) || innerHeight) * 0.64);
+    let startY = 0, startH = 0, dy = 0, wasOpen = false, dragging = false;
+
+    gh.addEventListener("pointerdown", e => {
+      if (innerWidth > 900) return;          // the gutter is a column here, not a sheet
+      sheet = gh.closest(".tk-gutter");
+      if (!sheet) return;
+      dragging = true; dy = 0; startY = e.clientY;
+      wasOpen = root.classList.contains("notes-open");
+      startH = sheet.getBoundingClientRect().height;
+      sheet.style.transition = "none";       // follow the finger, don't ease behind it
+      try { gh.setPointerCapture(e.pointerId); } catch (err) { /* capture is a nicety */ }
+    });
+
+    gh.addEventListener("pointermove", e => {
+      if (!dragging) return;
+      dy = startY - e.clientY;               // up is positive
+      const height = Math.max(COLLAPSED, Math.min(maxH(), startH + dy));
+      sheet.style.maxHeight = height + "px";
+      // Reveal the notes as it travels, so what you are dragging out is what you see.
+      root.classList.toggle("notes-open", height > COLLAPSED + 8);
+      e.preventDefault();
+    });
+
+    const settle = () => {
+      if (!dragging) return;
+      dragging = false;
+      sheet.style.transition = ""; sheet.style.maxHeight = "";
+      root.classList.toggle("notes-open", Math.abs(dy) < SNAP ? !wasOpen : dy > 0);
+    };
+    gh.addEventListener("pointerup", settle);
+    gh.addEventListener("pointercancel", settle);
   }
 
 
@@ -1406,7 +1475,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
       empty.querySelector("[data-add0]").onclick = () => addSlideAfter(-1);
       return empty;
     }
-    const wrap = h(`<div class="tk-stage">
+    const wrap = h(`<div class="tk-stage tk-editing">
       <div class="tk-col">
         <div class="tk-editcard">
           <div class="tk-edithead">
