@@ -1925,6 +1925,13 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     const layer = document.createElement("canvas");
     layer.className = "tk-inkdraw";
     layer.style.setProperty("--kc", inkColor());
+    // Belt over touch-action's braces: preventing the raw touch default here stops Safari
+    // running double-tap disambiguation between quick pen-downs — the beat it spends wondering
+    // whether two fast strokes are a zoom is the "delay between strokes". Pointer events are
+    // unaffected; the listeners die with the layer.
+    const eat = e => e.preventDefault();
+    layer.addEventListener("touchstart", eat, { passive: false });
+    layer.addEventListener("touchmove", eat, { passive: false });
     slide.appendChild(layer);
     const bar = h(`<div class="tk-inkbar"><b>draw on the slide · Esc cancels</b>
       <button data-undo="1">↩ undo</button>
@@ -1944,16 +1951,23 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     // the one true renderer for undo, replay and capture, and the segments match its geometry.
     const ctx = layer.getContext("2d");
     const seg = (a, b) => {
-      ctx.strokeStyle = inkColor();
-      ctx.lineWidth = Math.max(2, layer.width / 480);
-      ctx.lineCap = ctx.lineJoin = "round";
       ctx.beginPath();
       ctx.moveTo(a.x * layer.width / 100, a.y * layer.height / 100);
       ctx.lineTo(b.x * layer.width / 100, b.y * layer.height / 100);
       ctx.stroke();
     };
+    // Style and geometry are set once per stroke, at pen-down: getComputedStyle (inside
+    // inkColor) and getBoundingClientRect both force style/layout work, and neither belongs in
+    // the per-sample path. Nothing can move the slide mid-stroke — touch-action is none.
+    let rect = null;
+    const armStroke = () => {
+      rect = layer.getBoundingClientRect();
+      ctx.strokeStyle = ctx.fillStyle = inkColor();
+      ctx.lineWidth = Math.max(2, layer.width / 480);
+      ctx.lineCap = ctx.lineJoin = "round";
+    };
     const pos = e => {
-      const r = layer.getBoundingClientRect();
+      const r = rect || layer.getBoundingClientRect();
       return { x: +((e.clientX - r.left) / r.width * 100).toFixed(2),
                y: +((e.clientY - r.top) / r.height * 100).toFixed(2) };
     };
@@ -1964,8 +1978,16 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     };
     layer._cancel = teardown;
     layer.onpointerdown = e => {
+      if (!e.isPrimary) return;
       layer.setPointerCapture(e.pointerId);
+      armStroke();
       cur = [pos(e)];
+      // Ink at the instant of contact — a dot, so the pen never touches down onto nothing.
+      // It also makes a plain tap a mark: the dot on an i is a stroke that never moves.
+      const p0 = cur[0];
+      ctx.beginPath();
+      ctx.arc(p0.x * layer.width / 100, p0.y * layer.height / 100, ctx.lineWidth / 2, 0, 7);
+      ctx.fill();
       e.preventDefault();
     };
     layer.onpointermove = e => {
@@ -1981,9 +2003,12 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
       }
     };
     layer.onpointerup = () => {
-      // The stroke is already on the canvas; there is nothing to redraw on lift. A one-point
-      // press painted nothing, so dropping it needs no cleanup either.
-      if (cur && cur.length >= 2) paths.push(cur);
+      if (!cur) return;
+      // The stroke is already on the canvas; nothing to redraw on lift. A tap is kept as a
+      // degenerate two-point path — paintInk's round caps render that as the same dot, so the
+      // replay, the undo and the snapshot all agree with what the pen left behind.
+      if (cur.length === 1) cur.push({ x: cur[0].x + 0.01, y: cur[0].y });
+      paths.push(cur);
       cur = null;
     };
     layer.onpointercancel = () => { cur = null; repaint(); };   // palm-rejected: erase the fragment
