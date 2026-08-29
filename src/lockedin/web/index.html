@@ -370,7 +370,13 @@
   .err{color:var(--bad);min-height:18px;font-size:13px}
 
   /* shell */
-  #app{display:none;height:100vh;overflow:hidden;overflow:clip;grid-template-rows:auto 1fr;
+  /* --vvh (visualViewport.height), not 100vh. On iOS 100vh is the *layout* viewport, which stays
+     tall while Safari's address and tab bars sit over the bottom of it — and because this box is
+     overflow:clip, whatever lands under that chrome cannot be scrolled to. On an iPad that was
+     the bottom of a chalk talk: its pager and its six tools. Phones already had this via the
+     700px block; every tablet width fell through to 100vh. On a desktop the two are equal, so
+     this changes nothing there. */
+  #app{display:none;height:var(--vvh,100vh);overflow:hidden;overflow:clip;grid-template-rows:auto 1fr;
        grid-template-columns:220px minmax(0,1fr);
        grid-template-areas:"top top" "side main"}
   #topbar{grid-area:top;display:flex;align-items:center;gap:14px;padding:10px 16px;

@@ -273,7 +273,10 @@ def register_deck(slug: str, talk_id: str, *, sync_id: str = "") -> dict:
     slides = parse_deck(read_deck(slug, talk_id))
     first = slides[0] if slides else {}
     m = re.match(r"^(\d{4}-\d{2}-\d{2})-(.*)$", talk_id)
-    date = m.group(1) if m else _today()
+    # Prefer the id's date prefix, then the deck's own header, and only then today. An agent
+    # writing a deck under a sync id has no date in the path, and stamping it with the day it
+    # happened to sync silently re-dates a talk written for a meeting that already happened.
+    date = m.group(1) if m else (first.get("date") or _today())
     title = first.get("title") or (m.group(2).replace("-", " ").capitalize() if m else talk_id)
 
     idx = load_index(slug)

@@ -65,7 +65,14 @@
     const st = document.createElement("style");
     st.id = "talks-css";
     st.textContent = `
-.tk-overlay{position:fixed;inset:0;z-index:900;background:var(--bg);display:flex;flex-direction:column;
+/* Height from --vvh, not from inset:0. A fixed element resolves inset against the *layout*
+   viewport, which on iOS Safari is taller than what you can actually see — the address and tab
+   bars sit over the bottom of it. The slide pager and the six tools live at the very bottom of
+   this column, so on an iPad they ended up underneath Safari's own chrome and could not be
+   reached at all. --vvh tracks visualViewport.height and is already kept current on resize.
+   Over-constrained top/bottom/height means bottom is ignored, which is what we want here. */
+.tk-overlay{position:fixed;inset:0;height:var(--vvh,100%);z-index:900;background:var(--bg);
+  display:flex;flex-direction:column;
   font-family:var(--font-ui);letter-spacing:.005em}
 .tk-overlay.tk-inline{position:static;inset:auto;z-index:auto;height:100%;min-height:0;
   background:transparent;border-radius:var(--radius);overflow:hidden}
@@ -277,8 +284,15 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
 .tk-addmenu button:hover{background:color-mix(in srgb,var(--accent) 14%,transparent);border:0}
 .tk-addmenu button span{font-size:11.5px;color:var(--muted)}
 
-.tk-foot{display:flex;align-items:center;gap:11px;padding:16px 4px 4px;width:100%;max-width:720px;
-  margin:0 auto;flex:0 0 auto}
+/* Wrap rather than crush. The row carries a pager and a six-segment instrument; how much space
+   that has is set by the *column*, not the window, so it runs out at whatever width the notes
+   gutter happens to leave — an iPad in portrait is the worst case, where a 344px side gutter
+   leaves the pill 81px to hold 262px of buttons and four tools end up outside the column
+   entirely. flex:0 0 auto stops the instrument being shrunk below its contents; wrapping gives
+   it its own line the moment it no longer fits, at any width. */
+.tk-foot{display:flex;flex-wrap:wrap;align-items:center;gap:11px;padding:16px 4px 4px;width:100%;
+  max-width:720px;margin:0 auto;flex:0 0 auto}
+.tk-foot .tk-seg{flex:0 0 auto}
 .tk-dots{display:flex;gap:6px;align-items:center}
 .tk-overlay .tk-dot{width:9px;height:9px;border-radius:50%;background:var(--line);cursor:pointer;
   border:0;padding:0;min-height:0;flex:0 0 auto}
