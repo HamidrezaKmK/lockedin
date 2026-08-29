@@ -160,17 +160,9 @@
 .tk-col{flex:1;min-width:0;display:flex;flex-direction:column;padding:18px 24px 10px;overflow:auto}
 /* margin:auto, not justify-content:center — auto margins collapse to zero when the slide
    overflows, so a tall slide scrolls from its top instead of clipping it. */
-/* A slide is a surface to draw on as much as a thing to read. Starting blank, annotating, and
-   letting the agent read the drawing back needs somewhere to draw: with no floor an empty slide
-   is 89px of padding at every screen size. The floor tracks what the viewport can actually show
-   (--vvh, so iOS chrome is accounted for) and is capped, so a short deck on a large monitor gets
-   a usable canvas rather than a wall of empty card. The lower bound matters on a landscape
-   phone, where a proportion of a 330px viewport is barely a strip; the controls are sticky now,
-   so a slide taller than the screen scrolls rather than pushing them out of reach. min-height
-   only ever adds — a slide with enough content to pass the floor is untouched. */
 .tk-slide{width:100%;max-width:720px;margin:auto;background:var(--panel);border:1px solid var(--line);
   border-radius:14px;box-shadow:var(--shadow);padding:34px 40px 32px;position:relative;
-  flex:0 0 auto;min-height:clamp(260px,calc(var(--vvh,100vh) * .52),520px)}
+  flex:0 0 auto}
 .tk-slide .kind{position:absolute;top:-10px;left:22px;font:500 9.5px var(--font-mono);
   letter-spacing:.14em;text-transform:uppercase;background:var(--accent);color:var(--bg);
   padding:3px 9px;border-radius:999px}
@@ -298,14 +290,8 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
    leaves the pill 81px to hold 262px of buttons and four tools end up outside the column
    entirely. flex:0 0 auto stops the instrument being shrunk below its contents; wrapping gives
    it its own line the moment it no longer fits, at any width. */
-/* Sticky, because these controls are chrome and not part of the slide. They used to scroll with
-   the deck, so any geometry where the slide is taller than the column pushed the pager and the
-   six tools below the fold — a short laptop window did it as readily as a phone, and on a phone
-   they landed under the notes sheet as well. Sticking to the bottom of the scrollport keeps them
-   in reach at every size; the column's bottom padding is what holds them clear of the sheet. */
 .tk-foot{display:flex;flex-wrap:wrap;align-items:center;gap:11px;padding:16px 4px 4px;width:100%;
-  max-width:720px;margin:0 auto;flex:0 0 auto;
-  position:sticky;bottom:0;z-index:6;background:var(--bg)}
+  max-width:720px;margin:0 auto;flex:0 0 auto}
 .tk-foot .tk-seg{flex:0 0 auto}
 .tk-dots{display:flex;gap:6px;align-items:center}
 .tk-overlay .tk-dot{width:9px;height:9px;border-radius:50%;background:var(--line);cursor:pointer;
@@ -437,9 +423,6 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     width:38px;height:4px;border-radius:999px;background:var(--line);z-index:4;pointer-events:none}
   .tk-gh::after{content:"\\25b2";margin-left:auto;color:var(--accent);font-size:11px}
   .tk-overlay.notes-open .tk-gh::after{content:"\\25bc"}
-  /* The padding is what holds the sticky bar clear of the notes sheet — sticky resolves bottom:0
-     against the content box, so this reserves the sheet's height. Moving the clearance onto the
-     bar as a margin instead looked tidier but dropped the tools underneath the sheet. */
   .tk-col{padding:12px 12px 62px}
   .tk-pop{width:calc(100vw - 24px);left:12px!important}
   .tk-list{padding:14px 13px 30px}
