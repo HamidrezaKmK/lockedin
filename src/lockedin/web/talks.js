@@ -160,9 +160,15 @@
 .tk-col{flex:1;min-width:0;display:flex;flex-direction:column;padding:18px 24px 10px;overflow:auto}
 /* margin:auto, not justify-content:center — auto margins collapse to zero when the slide
    overflows, so a tall slide scrolls from its top instead of clipping it. */
+/* flex-grow, not min-height. A short slide grows to fill whatever height the frame actually
+   has — a full canvas to draw on, sized by the screen rather than by a constant — and there is
+   nothing to overflow, which is what sank the fixed floor: it pushed small frames into forced
+   scrolling. A slide taller than the frame is unchanged: grow only distributes *free* space,
+   so the column scrolls it exactly as before. */
 .tk-slide{width:100%;max-width:720px;margin:auto;background:var(--panel);border:1px solid var(--line);
   border-radius:14px;box-shadow:var(--shadow);padding:34px 40px 32px;position:relative;
-  flex:0 0 auto}
+  flex:1 0 auto;display:flex;flex-direction:column}
+.tk-slide .tk-md{flex:1}
 .tk-slide .kind{position:absolute;top:-10px;left:22px;font:500 9.5px var(--font-mono);
   letter-spacing:.14em;text-transform:uppercase;background:var(--accent);color:var(--bg);
   padding:3px 9px;border-radius:999px}
