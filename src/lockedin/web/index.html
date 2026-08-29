@@ -917,6 +917,15 @@
     display:inline-flex;align-items:center}
   .hdr-cluster .toolmenu-btn:hover,.hdr-cluster .toolmenu-btn.on{
     background:color-mix(in srgb,var(--accent) 18%,transparent);color:var(--ink)}
+  /* Phones: the four-segment pill folds into the ⋮ alone — one quiet control instead of a row
+     of chrome under the title. The people / workers / connect rows move inside its menu (see
+     buildBubbleToolsMenu), so nothing is lost, only tucked away. The presence host stays in the
+     DOM as the dropdown's mount, but the *cluster* becomes the anchor and the menu opens from
+     its left edge — right-aligned to a zero-width host it opened off the screen. */
+  @media (max-width:560px){
+    .hdr-cluster .presence-group-card{display:none}
+    .hdr-cluster .toolmenu-btn{border-left:0;border-radius:999px;min-height:32px;padding:0 14px}
+  }
   .presence-group-card{display:inline-flex;align-items:stretch;overflow:hidden;
     border-radius:999px;border:1px solid var(--line);background:var(--panel2)}
   .presence-seg{display:inline-flex;align-items:center;gap:5px;padding:0 11px;min-height:28px;
@@ -4037,6 +4046,23 @@
 
     function buildPanel(){
       const menu=el("div",{class:"toolmenu-panel",role:"menu",onclick:e=>e.stopPropagation()});
+      // On a phone the presence pill's segments are folded away (CSS above), so their three
+      // jobs live here instead — first, because "who and what is attached" is the glanceable
+      // stuff. Built per open from the live snapshot, so the counts are current.
+      if(matchMedia("(max-width:560px)").matches){
+        const snap=S.presence||{viewers:[],workers:[]};
+        const viewers=(snap.viewers||[]).length, workers=visibleWorkers(snap).length;
+        const worst=workers?worstWorkerState(visibleWorkers(snap)):"";
+        menu.append(el("div",{class:"toolmenu-group"},"Attached"));
+        menu.append(item("👥",viewers===1?"1 person reading":viewers+" people reading",
+          {title:"Who has this bubble open",keepOpen:false,
+           run:()=>togglePresence("people")}));
+        menu.append(item("⚙️",workers===1?"1 folder syncing":workers+" folders syncing",
+          {title:"Directories syncing this bubble",note:worst||"",noteOn:worst==="live",
+           run:()=>togglePresence("workers")}));
+        menu.append(item("🤖","Connect an agent",
+          {title:"Connect an agent to this bubble",run:()=>openScientistSetup(S.bubble)}));
+      }
       // View first: it is the control reached for most, and on a phone it is reachable nowhere
       // else — the toolbar select this replaced was hidden on narrow screens.
       // View modes are gone: ◧ and ◨ in the tab row are the two switches those three names
@@ -4194,7 +4220,18 @@
         "aria-label":"Connect an agent to this bubble",
         onclick:e=>{ e.stopPropagation(); closePresenceMenu(); openScientistSetup(S.bubble); }},"🤖"));
     host.append(group);
-    if(S.presenceView)host.append(buildPresenceMenu(snap,S.presenceView));
+    if(S.presenceView){
+      const menu=buildPresenceMenu(snap,S.presenceView);
+      host.append(menu);
+      // On a phone the pill is folded away and its host has no width, so anchoring the menu
+      // to it lands wherever the cluster happens to sit in this view — sometimes off-screen.
+      // Pin it to the viewport under the cluster instead; fixed also escapes any clipping.
+      if(matchMedia("(max-width:560px)").matches){
+        const anchor=(host.closest(".hdr-cluster")||host).getBoundingClientRect();
+        menu.style.position="fixed"; menu.style.left="16px"; menu.style.right="16px";
+        menu.style.width="auto"; menu.style.top=Math.round(anchor.bottom+8)+"px";
+      }
+    }
   }
 
   function togglePresence(view){
