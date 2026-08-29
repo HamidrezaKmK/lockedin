@@ -123,7 +123,9 @@
 .tk-pg:hover{border-color:var(--accent)}
 .tk-pg .t{font-weight:600;font-size:13.5px;margin-bottom:4px;line-height:1.3;
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.tk-pg .m{font-size:11.5px;color:var(--muted);margin-top:auto}
+.tk-pg .m{font-size:11.5px;color:var(--muted);margin-top:auto;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tk-pg .tk-pgmark{color:var(--warn);font-weight:600}
 .tk-talks{display:flex;flex-direction:column;gap:11px}
 .tk-lab{display:block;font:500 10.5px var(--font-ui);letter-spacing:.18em;text-transform:uppercase;
   color:var(--muted);margin:14px 0 6px}
@@ -1070,7 +1072,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
           <span class="tk-dim">${pages.length} page${pages.length === 1 ? "" : "s"}</span></div>
         <div class="tk-pages">${pages.map(p => `<div class="tk-pg" data-page="${esc(p.page_slug)}">
           <div class="t">${esc(p.title || p.page_slug)}</div>
-          <div class="m">${p.page_slug === b.home ? "home page" : "&nbsp;"}</div></div>`).join("")}</div>
+          <div class="m">${pageStats(p)}</div></div>`).join("")}</div>
       </div>
       <div>
         <div class="tk-band"><b>Chalk talks</b><div class="rule"></div>
@@ -1369,6 +1371,34 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     wrap.querySelectorAll(".tk-dot").forEach(d => (d.onclick = () => go(Number(d.dataset.i))));
     wrap.querySelector(".tk-gutter").append(renderGutter(mine));
     return wrap;
+  }
+
+  /** What a page card says under its title: how much is written, what is unanswered, how
+   *  fresh. "home page" was the only thing there, and it is the one fact you learn once and
+   *  never need again. Open marks lead when there are any — they are the thing asking for you.
+   */
+  function pageStats(p) {
+    const bits = [];
+    if (p.open_marks) bits.push(`<b class="tk-pgmark">${p.open_marks} open</b>`);
+    bits.push(p.chars ? `${shortCount(p.chars)} chars` : "empty");
+    if (p.edited_at) bits.push(esc(agoLabel(p.edited_at)));
+    return bits.join(" · ");
+  }
+  const shortCount = n => n >= 10000 ? Math.round(n / 1000) + "k"
+                        : n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, "") + "k" : String(n);
+  /** Coarse on purpose: "3d" is what you want from a card, and an exact stamp would invite
+   *  reading it as precision the mtime does not really carry. */
+  function agoLabel(epochSeconds) {
+    const secs = Math.max(0, Date.now() / 1000 - epochSeconds);
+    if (secs < 90) return "just now";
+    const mins = secs / 60;
+    if (mins < 60) return Math.round(mins) + "m ago";
+    const hours = mins / 60;
+    if (hours < 24) return Math.round(hours) + "h ago";
+    const days = hours / 24;
+    if (days < 30) return Math.round(days) + "d ago";
+    const months = days / 30;
+    return months < 12 ? Math.round(months) + "mo ago" : Math.round(months / 12) + "y ago";
   }
 
   function renderGutter(mine) {

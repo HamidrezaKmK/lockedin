@@ -553,6 +553,29 @@ def all_bubbles() -> list[dict]:
     return out
 
 
+def _page_stats(slug: str, page_slug: str) -> dict:
+    """What a page is worth at a glance: how much is written, how much is unanswered, how fresh.
+
+    Prose length, not file length: the comment tags are markup the reader never sees, and
+    counting them would make marking a page look like writing one. Failures here are never
+    worth failing a bubble over — a page that cannot be read simply reports nothing.
+    """
+    out = {"chars": 0, "open_marks": 0, "edited_at": 0.0}
+    try:
+        path = paths.bubble_page_path(slug, page_slug)
+        if path.exists():
+            out["edited_at"] = path.stat().st_mtime
+            out["chars"] = len(strip_comment_tags(migrate_comment_syntax(path.read_text())).strip())
+    except (OSError, UnicodeError):
+        pass
+    try:
+        out["open_marks"] = sum(1 for t in list_comments(slug, page_slug).get("threads", [])
+                                if t.get("status", "open") == "open")
+    except Exception:                      # a damaged sidecar must not cost the whole listing
+        pass
+    return out
+
+
 def bubble_detail(slug: str) -> dict:
     reg = load_registry()
     entry = reg.get(slug, {})
@@ -563,7 +586,7 @@ def bubble_detail(slug: str) -> dict:
     pages, home, content = [], "", ""
     if approved:
         ensure_pages(slug)
-        pages = list_pages(slug)
+        pages = [dict(p) | _page_stats(slug, str(p.get("page_slug") or "")) for p in list_pages(slug)]
         home = manifest(slug).get("home", pages[0]["page_slug"] if pages else "")
         content = get_page(slug, home) if home else ""
     return {
