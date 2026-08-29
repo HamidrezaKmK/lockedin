@@ -221,7 +221,14 @@ mark.tk-anno{background:color-mix(in srgb,var(--kc,var(--accent)) 26%,transparen
    not just its body — because "I hit mark region and cannot see what I may select" is the
    confusing part, not the drag itself. No tint: the slide has to stay readable while you aim. */
 .tk-draw{position:absolute;inset:0;cursor:crosshair;z-index:4;border-radius:14px;
-  outline:1.5px dashed color-mix(in srgb,var(--accent) 70%,transparent);outline-offset:-7px}
+  outline:1.5px dashed color-mix(in srgb,var(--accent) 70%,transparent);outline-offset:-7px;
+  touch-action:none}
+/* While a draw layer is up the finger is a pen. touch-action stops the browser scrolling, but
+   iOS long-press still selects the text *underneath* the layer and pops its Copy/Look Up
+   callout mid-stroke; selection has to be switched off for the duration. :has() keys it to the
+   layer's existence, so there is no mode flag to forget to clear. */
+.tk-overlay:has(.tk-inkdraw),.tk-overlay:has(.tk-draw){
+  -webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 .tk-draw::after{content:"drag a box over any part of this slide \u00b7 Esc to cancel";
   position:absolute;left:50%;bottom:9px;transform:translateX(-50%);font:500 11px var(--font-ui);
   letter-spacing:.02em;background:var(--accent);color:var(--bg);padding:4px 12px;border-radius:999px;
@@ -1736,12 +1743,16 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     const md = root.querySelector(".tk-slide");
     if (!md || md.querySelector(".tk-draw")) return;
     clearPending();
+    // A selection made just before entering survives the user-select switch-off and keeps its
+    // handles on screen through the whole drag; drop it at the door.
+    getSelection().removeAllRanges();
     const layer = document.createElement("div");
     layer.className = "tk-draw";
     md.appendChild(layer);
     let box = null, x0 = 0, y0 = 0;
 
     const teardown = () => {
+      getSelection().removeAllRanges();   // no phantom selection re-materializing on exit
       layer.remove();
       removeEventListener("mousemove", move, true);
       removeEventListener("mouseup", up, true);
@@ -1892,6 +1903,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     const slide = root.querySelector(".tk-slide");
     if (!slide || slide.querySelector(".tk-inkdraw")) return;
     clearPending();
+    getSelection().removeAllRanges();   // same reason as startDraw: stale handles outlive the mode
     const layer = document.createElement("canvas");
     layer.className = "tk-inkdraw";
     layer.style.setProperty("--kc", inkColor());
@@ -1912,6 +1924,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
                y: +((e.clientY - r.top) / r.height * 100).toFixed(2) };
     };
     const teardown = () => {
+      getSelection().removeAllRanges();   // no phantom selection re-materializing on exit
       layer.remove(); bar.remove();
       removeEventListener("keydown", esc, true);
     };
