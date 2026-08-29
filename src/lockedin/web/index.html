@@ -1072,9 +1072,19 @@
     #app.bubble-focus .ptabs,#app.bubble-focus #editorWrap{display:none!important}
     #app.bubble-focus #editorHost{display:block;position:absolute;inset:0;height:auto;overflow:hidden}
     #app.bubble-focus #previewWrap{display:block!important;position:absolute;inset:0;height:auto;box-sizing:border-box;overflow:auto;padding:22px 18px calc(76px + env(safe-area-inset-bottom))}
-    .mobile-focus-exit{display:block;position:fixed;right:14px;bottom:calc(env(safe-area-inset-bottom) + 14px);z-index:46;
-      min-height:38px;padding:7px 12px;border-radius:999px;background:color-mix(in srgb,var(--panel) 88%,transparent);
+    /* Top right, wearing the same accent fill as the ⛶ that opened the mode — the way out
+       dressed like the way in. It sat bottom-right in translucent panel, where it hid over the
+       page's own tail (and the marks sheet now lives down there). 18px top so it clears the
+       top-bar's 14px reveal zone rather than stealing its taps. */
+    .mobile-focus-exit{display:block;position:fixed;right:14px;top:calc(env(safe-area-inset-top) + 18px);z-index:46;
+      min-height:38px;padding:7px 12px;border-radius:999px;
+      background:var(--accent);border:1px solid var(--accent);color:var(--bg);
       box-shadow:0 5px 20px rgba(0,0,0,.35);font-size:12px}
+    /* Same ink the tab-row buttons use per theme; the button is fixed to the viewport, outside
+       the .ptabs scope that normally carries --tabrow-ink. */
+    body.theme-dark .mobile-focus-exit,body.theme-pink .mobile-focus-exit,
+    body.theme-pearl .mobile-focus-exit,body.theme-light .mobile-focus-exit{color:#fff}
+    body.theme-techno .mobile-focus-exit{color:#edfff0}
     #detail{display:block;min-height:0}
     .pane{height:auto;min-height:0}
     #detail>.editor-pane{height:calc(var(--vvh) - 154px - env(safe-area-inset-top));min-height:min(380px, calc(var(--vvh) - 154px))}
