@@ -2089,6 +2089,39 @@
     if(wrap.dataset.marksBound!=="1"){
       wrap.dataset.marksBound="1";
       wrap.addEventListener("mouseup",()=>setTimeout(startMarkFromPreview,0));
+      // A horizontal flick on the rendered page turns to the neighbouring tab, the same
+      // gesture the chalk-talk deck answers. Same discipline too: recognised after the fact
+      // from quick, decisively horizontal touches; never while renaming, choosing a mark, or
+      // holding a selection (that is a mark being born); never over anything that scrolls
+      // sideways itself, like a wide table; and the one non-passive listener cancels the
+      // browser's history-swipe once the gesture is decisively ours — vertical reading
+      // scrolls pay nothing, because until dominance is clear nothing is prevented.
+      let t0=0,x0=0,y0=0,live=false;
+      wrap.addEventListener("touchstart",e=>{
+        live=false;
+        if(e.touches.length!==1||S.editingTitles)return;
+        if(document.querySelector(".tk-pop,.tk-modal"))return;
+        for(let n=e.target;n&&n!==wrap;n=n.parentElement){
+          if(n.scrollWidth>n.clientWidth+4&&/auto|scroll/.test(getComputedStyle(n).overflowX))return;
+        }
+        t0=Date.now();x0=e.touches[0].clientX;y0=e.touches[0].clientY;live=true;
+      },{passive:true});
+      wrap.addEventListener("touchmove",e=>{
+        if(!live)return;
+        const t=e.touches[0],dx=Math.abs(t.clientX-x0),dy=Math.abs(t.clientY-y0);
+        if(dx>18&&dx>1.8*dy)e.preventDefault();
+      },{passive:false});
+      wrap.addEventListener("touchend",e=>{
+        if(!live)return; live=false;
+        if(String(getSelection()))return;
+        const t=e.changedTouches[0],dx=t.clientX-x0,dy=t.clientY-y0;
+        if(Date.now()-t0>500||Math.abs(dx)<70||Math.abs(dy)>50)return;
+        const vis=(S.pages||[]).filter(p=>!p.hidden||S.showHiddenPages);
+        const i=vis.findIndex(p=>p.page_slug===S.page);
+        const j=i+(dx<0?1:-1);
+        if(i<0||j<0||j>=vis.length)return;
+        switchPage(vis[j].page_slug);
+      },{passive:true});
     }
   }
   async function markReply(id,text){
