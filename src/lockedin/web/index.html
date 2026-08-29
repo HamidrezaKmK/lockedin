@@ -407,6 +407,12 @@
     width:44px;height:4px;border-radius:999px;background:var(--line);opacity:.55}
   #topbar.reveal + #topbar-hotzone::after,body:has(#topbar.reveal) #topbar-hotzone::after{opacity:0}
   #topbar #modelTabs{display:none;min-width:0;overflow:hidden}
+  /* The workspace name is the only unbounded label up here, and a long one pushed the theme
+     toggle off the right edge. Cap it and let it ellipsise: the first characters are enough to
+     tell workspaces apart, and the full name is in the menu it opens. */
+  #topbar .account-quick{min-width:0}
+  #topbar #accountBtn{max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    display:inline-block;vertical-align:middle}
   #side{grid-area:side;border-right:1px solid var(--line);background:var(--panel);padding:14px 10px;
         overflow:hidden;transition:width .2s ease,padding .15s ease;display:flex;flex-direction:column;
         position:relative}
@@ -420,11 +426,16 @@
   .side-grip:hover::after{background:var(--accent)}
   /* And the way back: a sliver on the screen's left edge, only while collapsed on a desktop —
      without it the grip is a one-way door once the top bar is hidden too. */
-  .side-reopen{position:fixed;left:0;top:50%;transform:translateY(-50%);width:14px;height:80px;
+  .side-reopen{position:fixed;left:3px;top:50%;transform:translateY(-50%);width:16px;height:84px;
     display:none;align-items:center;justify-content:center;background:none;border:0;padding:0;
     cursor:pointer;min-height:0;z-index:21}
-  .side-reopen::after{content:"";width:4px;height:44px;border-radius:999px;background:var(--line);opacity:.6}
-  .side-reopen:hover::after{background:var(--accent)}
+  /* The halo is the page's own colour, so the pill reads over text or a card without a border
+     to look at — it was a hairline flush against the edge, invisible over anything but empty
+     background. Still just a pill: nothing here is a panel. */
+  .side-reopen::after{content:"";width:5px;height:48px;border-radius:999px;
+    background:color-mix(in srgb,var(--ink) 42%,transparent);
+    box-shadow:0 0 0 5px color-mix(in srgb,var(--bg) 72%,transparent);transition:background .15s}
+  .side-reopen:hover::after,.side-reopen:focus-visible::after{background:var(--accent)}
   body.side-collapsed .side-reopen{display:flex}
   /* minimal authorship credit, pinned to the bottom of the side pane */
   .side-credit{margin-top:auto;padding:12px 8px 4px;font-family:var(--font-ui);font-size:11px;
@@ -1057,6 +1068,7 @@
        sidebar lives on its own edge now. */
     @media (max-width:560px){
       #topbar .brand{font-size:20px}
+      #topbar #accountBtn{max-width:104px}
     }
     #topbar button{flex-shrink:0;white-space:nowrap;min-height:40px;padding:6px 10px}
     /* always collapse sidebar — hamburger still toggles it as a narrow overlay */
@@ -1458,7 +1470,10 @@
       setSideOpen(true);
     });
     reopen.addEventListener("pointercancel",()=>{rdown=false;});
-    document.body.append(reopen);
+    // Inside #app, like the top bar's hot zone: fixed children still position against the
+    // viewport, and #app is display:none until you are logged in — which is exactly when a
+    // sidebar handle should not be on screen. It was on the landing page before.
+    document.getElementById("app").append(reopen);
     // A phone starts with the pane closed, so the sliver has to be showing from the first paint.
     if(window.innerWidth<=700) document.body.classList.add("side-collapsed");
     addEventListener("resize",()=>{
