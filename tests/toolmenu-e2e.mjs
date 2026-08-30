@@ -112,57 +112,63 @@ async function main() {
     const { slug } = await api(context.request, baseUrl, "POST", "/api/bubbles", { name: "Tool Menu E2E" });
     await api(context.request, baseUrl, "POST", `/api/bubbles/${slug}/approve`, { instructions: "" });
 
+    const detail = await api(context.request, baseUrl, "GET", `/api/bubbles/${slug}`);
+    const homePage = detail.bubble.home;
+
     const page = await context.newPage();
     page.on("pageerror", error => { throw error; });
-    await page.goto(`${baseUrl}/#bubble/${slug}`, { waitUntil: "domcontentloaded" });
+    await page.goto(`${baseUrl}/#bubble/${slug}/${homePage}`, { waitUntil: "domcontentloaded" });
 
-    const trigger = page.locator(".ptab-controls .toolmenu-btn");
+    const trigger = page.locator(".hdr-cluster .toolmenu-btn");
     await trigger.waitFor({ state: "visible", timeout: 10_000 });
-    // The whole point of the collapse: the toolbar is `+`, the tabs, then ⋮ and ⛶.
+    // The whole point of the collapse: nothing a bubble can do sits loose in the toolbar.
     const rowText = await page.locator("#ptabs").innerText();
-    for (const gone of ["Assets", "Overleaf", "Papers", "Preview", "Sharing", "Split", "Read"]) {
+    for (const gone of ["Assets", "Overleaf", "Papers", "Preview", "Sharing"]) {
       assert.ok(!rowText.includes(gone), `"${gone}" must not sit loose in the toolbar:\n${rowText}`);
     }
     assert.equal(await page.locator(".ptab-new").innerText(), "+", "page creation is a bare +");
     assert.equal(await page.locator("#ptabs > *").count(), 3,
       "the toolbar row is exactly: + , the tab list, the right-hand controls");
     assert.equal(await page.locator(".ptab-controls > *").count(), 1,
-      "⋮ and ⛶ are one card, not two");
-    assert.equal(await page.locator(".tabrow-group > *").count(), 2,
-      "that card has exactly two halves");
+      "the right-hand controls are one card, not several");
+    assert.equal(await page.locator(".tabrow-group > *").count(), 3,
+      "that card is the editor switch, focus, and the marks switch");
     assert.ok(await page.locator("#ptabs > *").first().evaluate(n => n.classList.contains("ptab-new")),
       "page creation must be the leftmost thing in the row");
     assert.equal(await page.locator(".toolmenu-panel").count(), 0, "the menu starts closed");
     await shoot(page, "toolmenu-collapsed");
-    step("the toolbar carries +, the tabs, then ⋮ and ⛶");
+    step("the toolbar carries +, the tabs, and the two pane switches");
 
     await trigger.click();
     const panel = page.locator(".toolmenu-panel");
     await panel.waitFor({ state: "visible", timeout: 2_000 });
     // The group headings are uppercased by CSS, so compare case-insensitively throughout.
     const closed = (await panel.innerText()).toLowerCase();
-    for (const expected of ["view", "split", "edit", "read", "edit titles",
-                            "this bubble", "papers", "assets",
+    for (const expected of ["edit titles",
+                            "this bubble", "bubble home", "papers", "assets",
                             "overleaf", "link a project", "sharing", "preview page",
                             "public link", "off"]) {
       assert.ok(closed.includes(expected), `the menu is missing ${expected}:\n${closed}`);
     }
     assert.ok(!closed.includes("open shared page"), `an unshared bubble has no public link:\n${closed}`);
     await shoot(page, "toolmenu-open");
-    step("the dropdown groups view modes, this bubble, Overleaf and sharing");
+    step("the dropdown groups this bubble, Overleaf and sharing");
 
-    // A view mode picked from the menu applies, and shows as the active row next time.
-    const host = page.locator("#editorHost");
-    await page.locator(".toolmenu-item", { hasText: "Split" }).click();
+    // The two switches the named modes were combinations of live in the tab row. Close the
+    // dropdown first — while it is open its panel covers the row it sits above.
+    await page.mouse.click(220, 700);
     await panel.waitFor({ state: "detached", timeout: 2_000 });
+    const host = page.locator("#editorHost");
+    await page.locator("#paneLeftToggle").click();
     assert.ok(await host.evaluate(n => n.classList.contains("mode-split")),
-      "picking Split must switch the workspace to split view");
+      "opening the editor pane must put it beside the rendered page");
+    await page.locator("#paneLeftToggle").click();
+    assert.ok(await host.evaluate(n => n.classList.contains("mode-view")),
+      "closing it must leave the rendered page alone");
+    step("the editor pane opens and closes from the tab row");
+
     await trigger.click();
     await panel.waitFor({ state: "visible", timeout: 2_000 });
-    const active = page.locator(".toolmenu-item.on");
-    assert.equal(await active.count(), 1, "exactly one view mode is marked active");
-    assert.match(await active.innerText(), /Split/, "the active row must be the current mode");
-    step("view modes switch from the menu and the current one is marked");
 
     // Papers is a popup on the assets modal's frame, not an anchored dropdown.
     await page.locator(".toolmenu-item", { hasText: "Papers" }).click();
@@ -191,7 +197,7 @@ async function main() {
     await shoot(page, "toolmenu-sharing");
     step("toggling the public link rewrites the menu in place");
 
-    await page.locator("h2.section-title").click();
+    await page.mouse.click(220, 700);
     await panel.waitFor({ state: "detached", timeout: 2_000 });
     assert.ok(!(await trigger.evaluate(node => node.classList.contains("on"))),
       "closing the menu must un-press the trigger");
@@ -200,7 +206,7 @@ async function main() {
     // A phone gets the same one control surface, and none of the retired floating buttons.
     await page.setViewportSize({ width: 390, height: 800 });
     await page.reload({ waitUntil: "domcontentloaded" });
-    const phoneTrigger = page.locator(".ptab-controls .toolmenu-btn");
+    const phoneTrigger = page.locator(".hdr-cluster .toolmenu-btn");
     await phoneTrigger.waitFor({ state: "visible", timeout: 10_000 });
     assert.ok(await page.locator(".ptab-new").isVisible(), "a phone must be able to add a page");
     assert.equal(await page.locator(".mobile-bubble-actions").count(), 0,
@@ -208,7 +214,7 @@ async function main() {
     await phoneTrigger.click();
     await panel.waitFor({ state: "visible", timeout: 2_000 });
     const phoneMenu = (await panel.innerText()).toLowerCase();
-    for (const expected of ["read", "papers", "overleaf", "public link"]) {
+    for (const expected of ["papers", "overleaf", "public link"]) {
       assert.ok(phoneMenu.includes(expected), `the phone menu is missing ${expected}:\n${phoneMenu}`);
     }
     const clipped = await panel.evaluate(node => {

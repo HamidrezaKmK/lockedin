@@ -573,6 +573,8 @@
   /* The landing strip. Invisible except for the same grab pill the notes sheet wears, so the
      two "pull me" affordances share one grammar. */
   #topbar-hotzone{position:fixed;top:0;left:0;right:0;height:14px;z-index:1199}
+  body:has(.overlay:not(.hide)) #topbar-hotzone,
+  body:has([role="dialog"]) #topbar-hotzone{pointer-events:none}
   #topbar-hotzone::after{content:"";position:absolute;top:5px;left:50%;transform:translateX(-50%);
     width:44px;height:4px;border-radius:999px;background:var(--line);opacity:.55}
   #topbar.reveal + #topbar-hotzone::after,body:has(#topbar.reveal) #topbar-hotzone::after{opacity:0}

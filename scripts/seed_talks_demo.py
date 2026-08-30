@@ -214,36 +214,39 @@ def main() -> int:
                          "In distribution only. Pathwise fails as soon as σ_t = 0; the document "
                          "now says so explicitly.")
 
-        # --- talk 3: revised twice, so the history has something in it --------
+        # --- talk 3: marked, answered, and rewritten in place --------------
+        # Slides carry no version history: `apply_slide_source` edits the living text and
+        # re-anchors the marks whose wrappers survive. The record is the current slide plus the
+        # conversation beside it, which is what the reader sees.
         t3 = talks.create_talk(
             slug, "What the log-SNR reparameterisation actually buys", date="2026-08-22",
             kicker="derivation",
-            intent="The core claim, from scratch. You said “go deeper” on slide 1 — I expanded it "
+            intent="The core claim, from scratch. You said \u201cgo deeper\u201d on slide 1 \u2014 I expanded it "
                    "and wrote the result up in the document.",
             body=DECK_CLAIM_V1)
         n1 = talks.add_note(slug, t3, slide=0, kind="bad", author=USER,
                             quote="beats uniform-in-$t$ training",
-                            text="“Beats” how, and measured with what? Not falsifiable as written.")
-        talks.revise_slide(
-            slug, t3, 0,
-            why="you marked it ✗ this is wrong — “beats” isn't a claim, it's a hope",
-            body="Uniform-in-log-SNR training reaches equal FID in fewer gradient steps than\n"
-                 "uniform-in-$t$, on CIFAR-10 at matched architecture.")
+                            text="\u201cBeats\u201d how, and measured with what? Not falsifiable as written.")
         talks.reply_note(slug, t3, n1["id"], "agent",
-                         "Rewritten in v2 — equal FID in fewer gradient steps, on CIFAR-10.")
-        n2 = talks.add_note(slug, t3, slide=0, kind="more", author=USER, version=2,
+                         "Rewritten \u2014 equal FID in fewer gradient steps, on CIFAR-10.")
+        talks.apply_slide_source(
+            slug, t3, 0,
+            "# What the reparameterisation buys\n\n"
+            "Uniform-in-log-SNR training reaches equal FID in fewer gradient steps than\n"
+            "uniform-in-$t$, on CIFAR-10 at matched architecture.\n")
+        n2 = talks.add_note(slug, t3, slide=0, kind="more", author=USER,
                             quote="at matched architecture",
                             text="Add what would falsify it, otherwise it's still not a real claim.")
-        talks.revise_slide(
-            slug, t3, 0,
-            why="you marked it → go deeper — say what would falsify it",
-            body="Uniform-in-log-SNR training reaches equal FID in fewer gradient steps than\n"
-                 "uniform-in-$t$, on CIFAR-10 at matched architecture and matched FLOPs.\n\n"
-                 "> Falsified if: the gap closes at long training horizons, or if it doesn't\n"
-                 "> survive a change of dataset. Both are cheap to check and both are in\n"
-                 "> Experiments.")
         talks.reply_note(slug, t3, n2["id"], "agent",
-                         "v3 adds the falsification conditions and points at Experiments.")
+                         "Added the falsification conditions and pointed at Experiments.")
+        talks.apply_slide_source(
+            slug, t3, 0,
+            "# What the reparameterisation buys\n\n"
+            "Uniform-in-log-SNR training reaches equal FID in fewer gradient steps than\n"
+            "uniform-in-$t$, on CIFAR-10 at matched architecture and matched FLOPs.\n\n"
+            "> Falsified if: the gap closes at long training horizons, or if it doesn't\n"
+            "> survive a change of dataset. Both are cheap to check and both are in\n"
+            "> Experiments.\n")
 
         # a mark on a report page, so feedback/OPEN.md shows both surfaces sharing one vocabulary
         overview = bubbles.get_page(slug, "overview")

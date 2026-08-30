@@ -107,7 +107,7 @@ async function main() {
     const tab1 = await context.newPage();
     tab1.on("pageerror", e => { throw e; });
     await tab1.goto(`${baseUrl}/#w/${wsA}/bubble/${slugA}`, { waitUntil: "domcontentloaded" });
-    await tab1.locator("#previewWrap").waitFor({ state: "visible", timeout: 15_000 });
+    await tab1.locator(".tk-band").first().waitFor({ state: "visible", timeout: 15_000 });
     let s1 = await state(tab1);
     assert.match(s1.hash, new RegExp(`^#w/${wsA}/bubble/${slugA}`), `tab 1 route: ${s1.hash}`);
     step("tab 1 opened the workspace-A bubble");
@@ -116,7 +116,7 @@ async function main() {
     const tab2 = await context.newPage();
     tab2.on("pageerror", e => { throw e; });
     await tab2.goto(`${baseUrl}/#w/${wsB}/bubble/${slugB}`, { waitUntil: "domcontentloaded" });
-    await tab2.locator("#previewWrap").waitFor({ state: "visible", timeout: 15_000 });
+    await tab2.locator(".tk-band").first().waitFor({ state: "visible", timeout: 15_000 });
     const s2 = await state(tab2);
     assert.match(s2.hash, new RegExp(`^#w/${wsB}/bubble/${slugB}`), `tab 2 route: ${s2.hash}`);
     // localStorage now holds B — exactly the state that used to poison tab 1.
@@ -126,7 +126,7 @@ async function main() {
 
     // --- the bug: refresh tab 1 ---
     await tab1.reload({ waitUntil: "domcontentloaded" });
-    await tab1.locator("#previewWrap").waitFor({ state: "visible", timeout: 15_000 });
+    await tab1.locator(".tk-band").first().waitFor({ state: "visible", timeout: 15_000 });
     await tab1.waitForTimeout(500);
     s1 = await state(tab1);
     await shoot(tab1, "tab1-after-reload");
@@ -139,7 +139,7 @@ async function main() {
 
     // Tab 2 must be equally unbothered by tab 1 having re-asserted A.
     await tab2.reload({ waitUntil: "domcontentloaded" });
-    await tab2.locator("#previewWrap").waitFor({ state: "visible", timeout: 15_000 });
+    await tab2.locator(".tk-band").first().waitFor({ state: "visible", timeout: 15_000 });
     await tab2.waitForTimeout(500);
     const s2b = await state(tab2);
     assert.match(s2b.hash, new RegExp(`^#w/${wsB}/bubble/${slugB}`),
