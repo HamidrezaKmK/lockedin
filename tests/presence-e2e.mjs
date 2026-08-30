@@ -171,10 +171,13 @@ async function main() {
     const seg = i => page.locator(".presence-seg").nth(i);
     assert.equal(await page.locator(".presence-seg").count(), 3,
       "one card, three segments: people, workers, connect");
-    assert.match(await seg(0).innerText(), /👥\s*1/, "the left segment counts the viewer");
-    assert.match(await seg(1).innerText(), /⚙\s*3/,
+    const segIcon = i => seg(i).locator("svg.li-ic use").getAttribute("href");
+    assert.equal(await segIcon(0), "#li-i-users", "the left segment wears the people icon");
+    assert.match(await seg(0).innerText(), /\b1\b/, "the left segment counts the viewer");
+    assert.equal(await segIcon(1), "#li-i-refresh", "the middle segment wears the sync icon");
+    assert.match(await seg(1).innerText(), /\b3\b/,
       "the middle segment counts every worker except the cleanly stopped grave");
-    assert.match(await seg(2).innerText(), /🤖/, "the right segment connects an agent");
+    assert.equal(await segIcon(2), "#li-i-agent", "the right segment connects an agent");
     // Health is the colour of the gear and the count — no separate dot, and scoped to the segment
     // it concerns. `worst` here is a rejected client, i.e. dead.
     assert.ok(await seg(1).evaluate(node => node.classList.contains("sync-dead")),

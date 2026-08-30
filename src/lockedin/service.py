@@ -701,6 +701,43 @@ def set_premise(home: Path, slug: str, **kw) -> dict:
 # --------------------------------------------------------------------------- #
 # Chalk talks
 # --------------------------------------------------------------------------- #
+def home_digest(home: Path, *, bubbles_limit: int = 6, talks_limit: int = 6,
+                todos_limit: int = 6) -> dict:
+    """What a returning researcher needs on the front page: what changed, and what is waiting.
+
+    Deliberately one round trip. The signed-in Home used to render the public marketing page,
+    so a returning user was shown the pitch instead of their own work; assembling this on the
+    client would have meant one request per bubble just to find the open marks.
+    """
+    active = [b for b in list_bubbles(home) if not b.get("archived")]
+    active.sort(key=lambda b: b.get("last_edited_at") or "", reverse=True)
+
+    waiting: list[dict] = []
+    for b in active:
+        for t in list_talks(home, b["slug"]):
+            if int(t.get("open") or 0) <= 0:
+                continue
+            waiting.append({"bubble_slug": b["slug"], "bubble_name": b["name"],
+                            "talk_id": t.get("id"), "title": t.get("title"),
+                            "date": t.get("date"), "kicker": t.get("kicker"),
+                            "intent": t.get("intent"), "open": int(t.get("open") or 0)})
+    # Newest first: a mark left this morning is likelier to be the one you came back for.
+    waiting.sort(key=lambda t: t.get("date") or "", reverse=True)
+
+    todo_items = [t for t in list_todos(home) if not t.get("done")]
+    todo_items.sort(key=lambda t: t.get("created_at") or "", reverse=True)
+
+    return {
+        "bubbles": active[:bubbles_limit],
+        "bubble_total": len(active),
+        "waiting": waiting[:talks_limit],
+        "waiting_total": len(waiting),
+        "open_marks": sum(t["open"] for t in waiting),
+        "todos": todo_items[:todos_limit],
+        "todo_total": len(todo_items),
+    }
+
+
 def list_talks(home: Path, slug: str) -> list[dict]:
     with paths.use_root(home):
         return talks.list_talks(slug)

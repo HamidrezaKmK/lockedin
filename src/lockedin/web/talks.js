@@ -14,15 +14,25 @@
   "use strict";
 
   const KINDS = {
-    bad:  { glyph: "✗", label: "wrong",   color: "var(--bad)" },
-    q:    { glyph: "?",      label: "unclear", color: "var(--warn)" },
-    more: { glyph: "→", label: "deeper",  color: "var(--accent2)" },
-    good: { glyph: "✓", label: "good",    color: "var(--good)" },
-    cut:  { glyph: "✂", label: "cut",     color: "var(--muted)" },
+    bad:  { icon: "mark-bad",  label: "wrong",   color: "var(--bad)" },
+    q:    { icon: "mark-q",    label: "unclear", color: "var(--warn)" },
+    more: { icon: "mark-more", label: "deeper",  color: "var(--accent2)" },
+    good: { icon: "mark-good", label: "good",    color: "var(--good)" },
+    cut:  { icon: "mark-cut",  label: "cut",     color: "var(--muted)" },
     // Created by the draw tool, not the picker: the drawing is the message.
-    ink:  { glyph: "✍", label: "drawn",   color: "var(--text-color-4, #ff7aa2)" },
+    ink:  { icon: "mark-ink",  label: "drawn",   color: "var(--text-color-4, #ff7aa2)" },
   };
+  /* The five verdicts are drawn marks, not text glyphs: `✗ ✓ ✂ ✍` picked up emoji presentation
+     on several platforms and changed shape between phone and desktop. Each KIND now carries an
+     icon name, and `glyph` is the rendered <svg> so every existing template literal is unchanged. */
+  for (const k in KINDS) {
+    Object.defineProperty(KINDS[k], "glyph", {
+      get() { return window.LIIcon ? LIIcon.html(this.icon, "mark") : ""; },
+    });
+  }
   const ORDER = ["bad", "q", "more", "good", "cut"];
+  /** Icon markup for use inside this file's template literals. */
+  const LI_IC = (name, cls) => (window.LIIcon ? LIIcon.html(name, cls) : "");
 
   const S = { slug: null, name: "", owner: "", workspaceId: "", view: "home", talk: null, data: null, bubble: null,
               slide: 0, kind: "q", pending: null, editPremise: false, suppressRoute: false,
@@ -84,10 +94,10 @@
 .tk-crumb .dim{color:var(--muted);font-weight:400}
 .tk-crumb .back{color:var(--accent);cursor:pointer}
 .tk-sp{flex:1}
-.tk-overlay button:where(:not(.tk-edithost *)){font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--panel2);
+.tk-overlay button:where(:not(.tk-edithost *)){font:inherit;cursor:pointer;border:1px solid var(--line-strong);background:var(--panel2);
   color:var(--ink);border-radius:9px;padding:6px 11px;min-height:34px}
 .tk-overlay button:where(:not(.tk-edithost *)):hover{border-color:var(--accent);background:var(--panel)}
-.tk-overlay button.pri:where(:not(.tk-edithost *)){background:var(--accent);color:var(--bg);border-color:var(--accent);font-weight:600}
+.tk-overlay button.pri:where(:not(.tk-edithost *)){background:var(--accent);color:var(--on-accent);border-color:var(--accent);font-weight:600}
 .tk-body{flex:1;min-height:0;display:flex;flex-direction:column}
 
 .tk-list{flex:1;overflow:auto;padding:20px 30px 40px;display:flex;flex-direction:column;gap:22px}
@@ -96,15 +106,16 @@
   background:linear-gradient(180deg,color-mix(in srgb,var(--accent) 9%,var(--panel)),var(--panel));
   padding:18px 20px;box-shadow:var(--shadow-sm)}
 .tk-premise.tk-unset{background:var(--panel);border-style:dashed}
+.tk-premise.tk-unset>p{max-width:68ch;margin-top:0}
 .tk-premise-top{display:flex;align-items:center;gap:10px;margin-bottom:12px}
 .tk-premise-top .tk-byline{margin:0;flex:1;min-width:0;font-size:12px;color:var(--muted)}
 .tk-premise-top button{padding:3px 10px;min-height:0;font-size:11.5px}
-.tk-premise .tk-abstract{font-family:var(--font-reading);font-size:16px;line-height:1.6;
+.tk-premise .tk-abstract{max-width:68ch;font-family:var(--font-reading);font-size:16px;line-height:1.6;
   color:var(--ink);overflow:visible}
 .tk-premise .tk-abstract p:last-child,.tk-goal .tk-md p:last-child{margin-bottom:0}
 /* The goal is a different kind of sentence from the abstract — a commitment rather than a
    description — so it is coloured rather than merely indented. */
-.tk-goal .tk-md{font-family:var(--font-reading);font-size:15.5px;line-height:1.55;overflow:visible;
+.tk-goal .tk-md{max-width:68ch;font-family:var(--font-reading);font-size:15.5px;line-height:1.55;overflow:visible;
   color:var(--accent2)}
 .tk-hint{font-size:11.5px;color:var(--muted);margin:14px 0 6px}
 .tk-hint code{font-family:var(--font-mono);background:var(--panel2);padding:1px 5px;border-radius:5px}
@@ -116,8 +127,12 @@
 .tk-byline{margin-top:11px;font-size:12px;color:var(--muted);display:flex;align-items:center;gap:9px}
 .tk-byline button{padding:3px 9px;min-height:0;font-size:11.5px}
 .tk-pages{display:flex;gap:10px;overflow-x:auto;overflow-y:hidden;padding-bottom:6px;
-  scroll-snap-type:x proximity;scrollbar-width:thin}
-.tk-pg{flex:0 0 208px;height:88px;border:1px solid var(--line);border-radius:10px;
+  scroll-snap-type:x proximity;scrollbar-width:thin;
+  /* Twelve pages overflow this strip, and the last visible card was sliced flat against the
+     container edge — it read as a clipping bug rather than "there is more this way". */
+  -webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 40px),transparent 100%);
+  mask-image:linear-gradient(90deg,#000 calc(100% - 40px),transparent 100%)}
+.tk-pg{flex:0 0 208px;height:88px;border:1px solid var(--line-strong);border-radius:10px;
   background:var(--panel);padding:12px 13px;cursor:pointer;scroll-snap-align:start;
   display:flex;flex-direction:column;overflow:hidden}
 .tk-pg:hover{border-color:var(--accent)}
@@ -129,17 +144,40 @@
 .tk-talks{display:flex;flex-direction:column;gap:11px}
 .tk-lab{display:block;font:500 10.5px var(--font-ui);letter-spacing:.18em;text-transform:uppercase;
   color:var(--muted);margin:14px 0 6px}
-.tk-ta{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:9px;
+.tk-ta{width:100%;background:var(--panel2);border:1px solid var(--line-strong);border-radius:9px;
   color:var(--ink);font:inherit;font-size:14px;padding:9px;resize:vertical;outline:none;
   font-family:var(--font-reading)}
 .tk-ta:focus{border-color:var(--accent)}
-.tk-out{margin:0;background:var(--panel2);border:1px solid var(--line);border-radius:9px;
+.tk-out{margin:0;background:var(--panel2);border:1px solid var(--line-strong);border-radius:9px;
   padding:12px 13px;font-family:var(--font-mono);font-size:12.5px;line-height:1.6;
   white-space:pre-wrap;color:var(--ink);max-height:190px;overflow:auto}
-.tk-band{display:flex;align-items:baseline;gap:10px;margin-bottom:4px}
+:root{--tk-caret:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6.2 14.6 12 8.8l5.8 5.8'/%3E%3C/svg%3E")}
+.tk-band{display:flex;align-items:center;gap:10px;margin-bottom:4px;flex-wrap:wrap}
+.tk-band .tk-addwrap{margin-left:auto}
+@media (max-width:700px){
+  /* Four things — eyebrow, rule, count, action — do not fit on one 358px line without the
+     button riding over the rule. The eyebrow and its rule keep the first line; the action takes
+     the second, full width, where it is also an easier target. */
+  .tk-band{row-gap:10px}
+  .tk-band .rule{flex:1 1 24px;min-width:24px}
+  .tk-band .tk-addwrap{flex:1 0 100%}
+  .tk-band .tk-addtalk{width:100%;justify-content:center;min-height:40px}
+  /* With the action wrapped onto its own line the band is now two rows tall, so it needs a real
+     gap under it — otherwise the button and the first card below read as one control. */
+  .tk-band{margin-bottom:12px}
+  /* The page strip: 88px of card for two short lines left a hollow middle on a phone. */
+  .tk-pg{flex:0 0 190px;height:auto;min-height:74px}
+  .tk-pg .m{margin-top:6px}
+  .tk-list{gap:26px}
+}
+.tk-root .li-ic,.tk-slide .li-ic,.tk-note .li-ic{width:1.05em;height:1.05em;flex:0 0 auto;
+  stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;
+  vertical-align:-.18em}
+.tk-root .li-ic.mark,.tk-slide .li-ic.mark{stroke-width:2.1}
+.tk-x .li-ic,.tk-del .li-ic{width:15px;height:15px;vertical-align:-.2em}
 .tk-band b{font:500 10.5px var(--font-ui);letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
 .tk-band .rule{flex:1;height:1px;background:var(--line)}
-.tk-card{display:flex;gap:15px;border:1px solid var(--line);border-radius:11px;background:var(--panel);
+.tk-card{display:flex;gap:15px;border:1px solid var(--line-strong);border-radius:11px;background:var(--panel);
   padding:13px 15px;cursor:pointer}
 .tk-card:hover{border-color:var(--accent);background:var(--panel2)}
 .tk-card{position:relative}
@@ -151,12 +189,15 @@
 .tk-card .t{font-weight:600;font-size:15px;margin-bottom:4px}
 .tk-card .i{font-family:var(--font-reading);font-size:14px;color:var(--muted);line-height:1.5}
 .tk-meta{display:flex;gap:7px;margin-top:9px;font-size:11.5px;color:var(--muted);flex-wrap:wrap}
-.tk-tag{border:1px solid var(--line);border-radius:999px;padding:2px 8px}
+.tk-tag{border:1px solid var(--line-strong);border-radius:999px;padding:2px 8px}
 .tk-tag.open{border-color:color-mix(in srgb,var(--warn) 60%,var(--line));color:var(--warn);
   background:color-mix(in srgb,var(--warn) 12%,transparent)}
 .tk-tag.done{border-color:color-mix(in srgb,var(--good) 50%,var(--line));color:var(--good)}
-.tk-empty{border:1px dashed var(--line);border-radius:11px;padding:18px;color:var(--muted);
+.tk-empty{border:1px dashed var(--line-strong);border-radius:11px;padding:18px;color:var(--muted);
   font-family:var(--font-reading);font-size:15px;line-height:1.6}
+.tk-empty>*{max-width:68ch}
+.tk-empty p{margin:0 0 .85em}
+.tk-empty p:last-child{margin-bottom:0}
 
 .tk-stage{flex:1;min-height:0;display:flex}
 .tk-col{flex:1;min-width:0;display:flex;flex-direction:column;padding:18px 24px 10px;overflow:auto}
@@ -167,12 +208,12 @@
    nothing to overflow, which is what sank the fixed floor: it pushed small frames into forced
    scrolling. A slide taller than the frame is unchanged: grow only distributes *free* space,
    so the column scrolls it exactly as before. */
-.tk-slide{width:100%;max-width:720px;margin:auto;background:var(--panel);border:1px solid var(--line);
+.tk-slide{width:100%;max-width:720px;margin:auto;background:var(--panel);border:1px solid var(--line-strong);
   border-radius:14px;box-shadow:var(--shadow);padding:34px 40px 32px;position:relative;
-  flex:1 0 auto;display:flex;flex-direction:column}
+  flex:0 0 auto;min-height:min(56vh,520px);display:flex;flex-direction:column}
 .tk-slide .tk-md{flex:1}
 .tk-slide .kind{position:absolute;top:-10px;left:22px;font:500 9.5px var(--font-mono);
-  letter-spacing:.14em;text-transform:uppercase;background:var(--accent);color:var(--bg);
+  letter-spacing:.14em;text-transform:uppercase;background:var(--accent);color:var(--on-accent);
   padding:3px 9px;border-radius:999px}
 .tk-stamp{position:absolute;top:-10px;right:18px;display:flex;gap:6px}
 .tk-stamp span{font:500 10px var(--font-mono);background:var(--panel2);border:1px solid var(--line);
@@ -235,7 +276,7 @@ body:has(.tk-inkdraw),body:has(.tk-draw){
   -webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 .tk-draw::after{content:"drag a box over any part of this slide \u00b7 Esc to cancel";
   position:absolute;left:50%;bottom:9px;transform:translateX(-50%);font:500 11px var(--font-ui);
-  letter-spacing:.02em;background:var(--accent);color:var(--bg);padding:4px 12px;border-radius:999px;
+  letter-spacing:.02em;background:var(--accent);color:var(--on-accent);padding:4px 12px;border-radius:999px;
   white-space:nowrap;pointer-events:none;box-shadow:var(--shadow-sm)}
 .tk-drawbox{position:absolute;border:1.5px solid var(--accent);border-radius:7px;
   background:color-mix(in srgb,var(--accent) 10%,transparent)}
@@ -265,7 +306,7 @@ body:has(.tk-inkdraw),body:has(.tk-draw){
   background:color-mix(in srgb,var(--panel2) 70%,var(--panel))}
 .tk-edithead .tk-cnt{margin-left:0}
 input.tk-ekind{width:152px;flex:0 1 152px;font:500 9.5px var(--font-mono);letter-spacing:.14em;
-  text-transform:uppercase;background:var(--accent);color:var(--bg);padding:3px 10px;
+  text-transform:uppercase;background:var(--accent);color:var(--on-accent);padding:3px 10px;
   border-radius:999px;border:0;cursor:text;appearance:none;outline:none;
   transition:none;box-shadow:none}
 input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
@@ -276,7 +317,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
 .tk-danger:hover{border-color:var(--bad);color:var(--bad)}
 /* The slide tools are one instrument, so they get one body — the same pill grammar as the
    presence cluster: glyph-only segments, dividers as borders, words in the tooltips. */
-.tk-seg{display:inline-flex;align-items:stretch;border:1px solid var(--line);border-radius:999px;
+.tk-seg{display:inline-flex;align-items:stretch;border:1px solid var(--line-strong);border-radius:999px;
   overflow:hidden;background:var(--panel2)}
 .tk-seg button{border:0;border-radius:0;background:none;min-height:34px;padding:6px 14px;
   font-size:15px;line-height:1;white-space:nowrap}
@@ -397,7 +438,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
 .tk-pop{position:fixed;border:1px solid var(--accent);border-radius:12px;background:var(--panel2);
   box-shadow:var(--shadow);padding:11px;width:316px;z-index:960}
 .tk-kinds{display:flex;gap:6px;margin-bottom:9px}
-.tk-kb{flex:1;border:1px solid var(--line);border-radius:9px;background:var(--panel);padding:7px 0 6px;
+.tk-kb{flex:1;border:1px solid var(--line-strong);border-radius:9px;background:var(--panel);padding:7px 0 6px;
   text-align:center;cursor:pointer;min-height:0}
 .tk-kb .g{font-size:17px;line-height:1.05}
 .tk-kb .l{font-size:9.5px;color:var(--muted);margin-top:2px}
@@ -406,7 +447,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
 .tk-pop .qt{font-family:var(--font-reading);font-size:12.5px;color:var(--muted);
   border-left:2px solid var(--accent);padding-left:8px;margin:0 0 9px;font-style:italic;
   max-height:46px;overflow:hidden;overflow-wrap:anywhere;word-break:break-word}
-.tk-pop textarea{width:100%;height:54px;background:var(--panel);border:1px solid var(--line);
+.tk-pop textarea{width:100%;height:54px;background:var(--panel);border:1px solid var(--line-strong);
   border-radius:9px;color:var(--ink);font:inherit;font-size:13px;padding:8px;resize:none;outline:none}
 .tk-pop .row{display:flex;gap:8px;margin-top:9px;align-items:center}
 .tk-pop .hint{font-size:11px;color:var(--muted);flex:1}
@@ -455,11 +496,16 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
   /* The grab bar every bottom sheet has: the thing that says "pull me" before you read a word. */
   .tk-gutter::before{content:"";position:absolute;left:50%;top:6px;transform:translateX(-50%);
     width:38px;height:4px;border-radius:999px;background:var(--line);z-index:4;pointer-events:none}
-  .tk-gh::after{content:"\\25b2";margin-left:auto;color:var(--accent);font-size:11px}
-  .tk-overlay.notes-open .tk-gh::after{content:"\\25bc"}
+  .tk-gh::after{content:"";margin-left:auto;width:15px;height:15px;flex:0 0 auto;
+    background:currentColor;color:var(--accent);transition:transform .2s ease;
+    -webkit-mask:var(--tk-caret) center/contain no-repeat;mask:var(--tk-caret) center/contain no-repeat}
+  .tk-overlay.notes-open .tk-gh::after{transform:rotate(180deg)}
   .tk-col{padding:12px 12px 62px}
   .tk-pop{width:calc(100vw - 24px);left:12px!important}
   .tk-list{padding:14px 13px 30px}
+  /* 40px of inset on a 358px card leaves about thirty characters a line. */
+  .tk-slide{padding:26px 20px 22px;border-radius:12px}
+  .tk-slide .kind{left:16px}
   /* Editing on a phone. With the keyboard up the visible height is ~508px, and of the column
      the editor was getting 39px of it — the syntax hint below it took 89 and the pager another
      98, so there was more chrome explaining the editor than there was editor. Drop the hint
@@ -887,7 +933,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     const msgs = m.messages || [];
     const lastIdx = msgs.length - 1;
     const turn = (msg, i) => `<div class="tk-turn${msg.agent ? " agent" : ""}">
-      <div class="tk-who">${msg.agent ? "🤖 " : ""}${esc(displayAuthor(msg.author))}${
+      <div class="tk-who">${msg.agent ? LI_IC("agent") + " " : ""}${esc(displayAuthor(msg.author))}${
         msg.edited_at ? ' <span class="tk-dim">· edited</span>' : ""}</div>
       <div class="tk-said"${i === lastIdx && !msg.agent ? ' data-last="1"' : ""}>${esc(msg.body || "")}</div>
     </div>`;
@@ -897,7 +943,8 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
         <span class="tk-id" title="the id an agent sees">${esc(m.id)}</span></div>
       <div class="qt">${m.orphanNote || ""}${m.quote
         ? "\u201c" + esc(m.quote) + "\u201d"
-        : (m.kind === "ink" ? "\u270d drawn on the slide" : "\u25ad region on the slide")}</div>
+        : (m.kind === "ink" ? LI_IC("mark-ink","mark") + " drawn on the slide"
+                                            : LI_IC("marquee") + " region on the slide")}</div>
       ${msgs.length ? msgs.map(turn).join("")
         : `<div class="tk-turn"><div class="tk-said tk-dim" data-last="1">no comment</div></div>`}
       ${m.image ? `<img class="tk-shot" alt="the slide as you marked it" src="${esc(m.image)}">` : ""}
@@ -1052,12 +1099,12 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
         <div class="tk-band"><b>The idea</b><div class="rule"></div></div>
         ${has ? `<div class="tk-premise">
             <div class="tk-premise-top">
-              <span class="tk-byline">🤖 the agent's understanding${b.premise_revised_at
+              <span class="tk-byline">${LI_IC("agent")} the agent's understanding${b.premise_revised_at
                 ? ", revised " + esc(b.premise_revised_at.slice(0, 10)) : ""}</span>
-              <button data-editp="1">✎ edit goals</button>
+              <button data-editp="1">${LI_IC("pencil")} edit goals</button>
             </div>
             <div class="tk-md tk-abstract"></div>
-            ${b.goal ? `<div class="tk-goal"><b title="Goal">✅</b>
+            ${b.goal ? `<div class="tk-goal"><b title="Goal">${LI_IC("check-circle")}</b>
               <div class="tk-md tk-goalbody"></div></div>` : ""}
           </div>`
           : `<div class="tk-premise tk-unset">
@@ -1079,8 +1126,8 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
           <span class="tk-dim">${total} open note${total === 1 ? "" : "s"}</span>
           <div class="tk-addwrap"><button class="tk-addtalk" data-newtalk="1">+ add chalk talk</button>
             <div class="tk-addmenu" hidden>
-              <button data-manual="1">✍ Write it yourself<span>opens a blank slide in the editor</span></button>
-              <button data-auto="1">🤖 Ask an agent<span>hands you a prompt to paste</span></button>
+              <button data-manual="1">${LI_IC("pencil")} Write it yourself<span>opens a blank slide in the editor</span></button>
+              <button data-auto="1">${LI_IC("agent")} Ask an agent<span>hands you a prompt to paste</span></button>
             </div></div></div>
         <div class="tk-talklist"></div>
       </div>
@@ -1140,7 +1187,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
              `\n\nFollow the chalk-talk instructions in .lockedin/SKILL.md, and sync it when done.`;
     };
     const m = h(`<div class="tk-modal"><div class="tk-mcard">
-      <button class="tk-x" data-x="1">✕</button>
+      <button class="tk-x" data-x="1" aria-label="Close">${LI_IC("close")}</button>
       <h3>Ask an agent for a chalk talk</h3>
       <div class="msub">Say what you want explained. The agent already knows the format and the
         rules for a good slide — you do not need to repeat them.</div>
@@ -1181,7 +1228,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
   function editPremise() {
     const b = S.bubble || {};
     const m = h(`<div class="tk-modal"><div class="tk-mcard">
-      <button class="tk-x" data-x="1">✕</button>
+      <button class="tk-x" data-x="1" aria-label="Close">${LI_IC("close")}</button>
       <h3>What is this bubble about?</h3>
       <div class="msub">One paragraph, and one line for the goal. Keep it short — this is the
         thing everyone reads first, including every agent that joins.</div>
@@ -1232,7 +1279,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     if (!talks.length) { toast("Add a chalk talk first."); return; }
     let active = (S.talk && S.talk.talk && S.talk.talk.id) || talks[0].id;
     const m = h(`<div class="tk-modal"><div class="tk-mcard">
-      <button class="tk-x" data-x="1">✕</button>
+      <button class="tk-x" data-x="1" aria-label="Close">${LI_IC("close")}</button>
       <h3>Edit chalk talk titles</h3>
       <div class="msub">This changes the title and explanation on the chalk-talk list. It does not rewrite the slides.</div>
       <label class="tk-lab">Chalk talk</label>
@@ -1276,12 +1323,12 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
   function renderList() {
     const talks = (S.data.talks || []);
     const body = h(`<div class="tk-talks">
-      ${talks.length ? "" : `<div class="tk-empty">No talks yet. A chalk talk is how the agent
+      ${talks.length ? "" : `<div class="tk-empty"><p>No talks yet. A chalk talk is how the agent
         explains an idea whose correctness needs your judgement — a derivation, a design
-        trade-off — as a few slides you can mark up, rather than burying it in a report page.
-        <br><br>Ask an agent working on this bubble to write one, or seed the demo data.</div>`}
+        trade-off — as a few slides you can mark up, rather than burying it in a report page.</p>
+        <p>Ask an agent working on this bubble to write one.</p></div>`}
       ${talks.map(t => `<div class="tk-card" data-id="${esc(t.id)}">
-        <button class="tk-del" data-del="${esc(t.id)}" title="delete this talk">✕</button>
+        <button class="tk-del" data-del="${esc(t.id)}" title="delete this talk">${LI_IC("trash")}</button>
         <div class="d">${esc(t.date)}</div>
         <div style="flex:1;min-width:0">
           <div class="t">${esc(t.title)}</div>
@@ -1291,7 +1338,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
             ${t.open ? `<span class="tk-tag open">${t.open} open note${t.open === 1 ? "" : "s"}</span>`
                      : (t.notes ? `<span class="tk-tag done">all notes closed</span>` : "")}
             ${t.kicker ? `<span class="tk-tag">${esc(t.kicker)}</span>` : ""}
-            ${t.landed ? `<span class="tk-tag done">↳ landed in ${esc(t.landed)}</span>` : ""}
+            ${t.landed ? `<span class="tk-tag done">${LI_IC("corner-down-right")} landed in ${esc(t.landed)}</span>` : ""}
           </div>
         </div></div>`).join("")}
     </div>`).firstChild;
@@ -1311,7 +1358,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     if (S.edit) return renderDeckEdit();
     const sl = S.talk.slides[S.slide];
     if (!sl) return h(`<div class="tk-list"><div class="tk-empty">This talk has no slides yet.
-      <br><br><button class="pri" data-editdeck="1">✎ edit</button></div></div>`).firstChild;
+      <br><br><button class="pri" data-editdeck="1">${LI_IC("pencil")} edit</button></div></div>`).firstChild;
     const mine = notesOn(S.slide);
     const wrap = h(`<div class="tk-stage">
       <div class="tk-col">
@@ -1326,20 +1373,20 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
           <div class="tk-dots">${S.talk.slides.map((s, i) =>
             `<button class="tk-dot${i === S.slide ? " on" : ""}${notesOn(i).some(n => n.status === "open") ? " note" : ""}"
               data-i="${i}" title="${esc(s.title)}"></button>`).join("")}</div>
-          <span class="tk-cnt">${S.slide + 1} / ${S.talk.slides.length}</span>
-          <button data-nav="-1">←</button><button class="tk-resync ${S.syncState}" data-resync="1"
-            title="${esc(syncTitle())}" aria-label="${esc(syncTitle())}">⟳</button><button data-nav="1">→</button>
+          ${S.talk.slides.length > 8 ? `<span class="tk-cnt">${S.slide + 1} / ${S.talk.slides.length}</span>` : ""}
+          <button data-nav="-1" aria-label="Previous slide">${LI_IC("arrow-left")}</button><button class="tk-resync ${S.syncState}" data-resync="1"
+            title="${esc(syncTitle())}" aria-label="${esc(syncTitle())}">${LI_IC("refresh")}</button><button data-nav="1" aria-label="Next slide">${LI_IC("arrow-right")}</button>
           <div class="tk-seg">
-            <button data-draw="1" title="mark region — drag a box over the slide">🖍</button>
-            <button data-ink="1" title="draw — freehand strokes become the feedback">✍</button>
-            <button data-editdeck="1" title="edit this slide's markdown by hand">✎</button>
-            <button data-add="1" title="add a blank slide after this one">＋</button>
-            <button data-del="1" class="tk-danger" title="delete this slide and its marks">✂</button>
+            <button data-draw="1" title="mark region — drag a box over the slide">${LI_IC("marquee")}</button>
+            <button data-ink="1" title="draw — freehand strokes become the feedback">${LI_IC("mark-ink","mark")}</button>
+            <button data-editdeck="1" title="edit this slide's markdown by hand">${LI_IC("pencil")}</button>
+            <button data-add="1" title="add a blank slide after this one" aria-label="Add a slide">${LI_IC("plus")}</button>
+            <button data-del="1" class="tk-danger" title="delete this slide and its marks">${LI_IC("trash")}</button>
             <button data-notes="1" class="${S.notes ? "" : "off"}"
-              title="${S.notes ? "hide" : "show"} the notes pane and the marks on the slide">${S.notes ? "◨" : "◧"}</button>
+              title="${S.notes ? "hide" : "show"} the notes pane and the marks on the slide">${LI_IC(S.notes ? "panel-right" : "panel-left")}</button>
           </div>
           <button class="tk-fab" data-fab="1" title="slide tools" aria-label="slide tools"
-            aria-haspopup="true">✎</button>
+            aria-haspopup="true">${LI_IC("pencil")}</button>
         </div>
       </div>
       <div class="tk-gutter"></div>
@@ -1380,9 +1427,15 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
   function pageStats(p) {
     const bits = [];
     if (p.open_marks) bits.push(`<b class="tk-pgmark">${p.open_marks} open</b>`);
-    bits.push(p.chars ? `${shortCount(p.chars)} chars` : "empty");
+    bits.push(p.chars ? readingLength(p.chars) : "empty");
     if (p.edited_at) bits.push(esc(agoLabel(p.edited_at)));
     return bits.join(" · ");
+  }
+  /** How long the page is, in the unit a reader actually thinks in. ~1000 characters is roughly
+   *  a minute of reading; below that, say "a note" rather than pretend to precision. */
+  function readingLength(chars) {
+    const mins = Math.round(chars / 1000);
+    return mins < 1 ? "a note" : mins + " min read";
   }
   const shortCount = n => n >= 10000 ? Math.round(n / 1000) + "k"
                         : n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, "") + "k" : String(n);
@@ -1409,15 +1462,15 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
         ${openCount() ? `<span class="tk-tag open">${openCount()} open</span>`
                       : `<span class="tk-tag done">all closed</span>`}</div>
       ${mine.length ? "" : `<div class="tk-empty tk-empty-notes" style="font-size:14px">
-        Select any text on the slide — or hit <b>🖍 mark region</b> and drag a box —
-        then pick one of <b>✗ ? → ✓ ✂</b>. Or <b>✍ draw</b> on the slide and let the
+        Select any text on the slide — or hit <b>${LI_IC("marquee")} mark region</b> and drag a box —
+        then pick one of <b>${ORDER.map(k=>KINDS[k].glyph).join(" ")}</b>. Or <b>${LI_IC("mark-ink","mark")} draw</b> on the slide and let the
         drawing say it.</div>`}
-      ${mine.map(n => noteCard({ ...n, orphanNote: n.anchorLost ? "⚠ text moved · " : "",
+      ${mine.map(n => noteCard({ ...n, orphanNote: n.anchorLost ? LI_IC("warning") + " text moved · " : "",
                                  image: shot(n),
                                  messages: (n.messages || []).map(msg => ({ ...msg,
                                    agent: !!msg.agent })) })).join("")}
       <div style="margin-top:auto;padding-top:10px">
-        <button data-payload="1" style="width:100%">🤖 Feedback YAML</button></div>
+        <button data-payload="1" style="width:100%">${LI_IC("agent")} Feedback YAML</button></div>
     </div>`);
     wireCard(el, {
       onDelete: async id => {
@@ -1568,11 +1621,11 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
           <div class="tk-dots">${S.talk.slides.map((s, i) =>
             `<button class="tk-dot${i === S.slide ? " on" : ""}${notesOn(i).length ? " note" : ""}"
               data-i="${i}" title="${esc(s.title)}"></button>`).join("")}</div>
-          <span class="tk-cnt">${S.slide + 1} / ${S.talk.slides.length}</span>
-          <button data-nav="-1">←</button><button class="tk-resync ${S.syncState}" data-resync="1"
-            title="${esc(syncTitle())}" aria-label="${esc(syncTitle())}">⟳</button><button data-nav="1">→</button>
+          ${S.talk.slides.length > 8 ? `<span class="tk-cnt">${S.slide + 1} / ${S.talk.slides.length}</span>` : ""}
+          <button data-nav="-1" aria-label="Previous slide">${LI_IC("arrow-left")}</button><button class="tk-resync ${S.syncState}" data-resync="1"
+            title="${esc(syncTitle())}" aria-label="${esc(syncTitle())}">${LI_IC("refresh")}</button><button data-nav="1" aria-label="Next slide">${LI_IC("arrow-right")}</button>
           <span class="tk-sp"></span>
-          <button data-editdeck="1" title="leave edit mode">✕ stop editing</button>
+          <button data-editdeck="1" title="leave edit mode">${LI_IC("close")} stop editing</button>
         </div>
       </div>
     </div>`).firstChild;
@@ -1777,7 +1830,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
         style="--kc:${KINDS[k].color}"><div class="g">${KINDS[k].glyph}</div>
         <div class="l">${KINDS[k].label}</div></div>`).join("")}</div>
       <div class="qt">${S.pending.quote ? "“" + esc(S.pending.quote.slice(0, 120)) + "”"
-                                        : "▭ region on the slide"}</div>
+                                        : LI_IC("marquee") + " region on the slide"}</div>
       <textarea placeholder="optional — say more"></textarea>
       <div class="row"><span class="hint">a mark alone is enough</span>
         <button data-cancel="1">Esc</button><button class="pri" data-pin="1">Pin note</button></div>
@@ -2047,8 +2100,8 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     layer.addEventListener("touchmove", eat, { passive: false });
     slide.appendChild(layer);
     const bar = h(`<div class="tk-inkbar"><b>draw on the slide · Esc cancels</b>
-      <button data-undo="1">↩ undo</button>
-      <button class="pri" data-done="1">✓ done</button></div>`).firstChild;
+      <button data-undo="1">${LI_IC("undo")} undo</button>
+      <button class="pri" data-done="1">${LI_IC("check")} done</button></div>`).firstChild;
     slide.appendChild(bar);
 
     const paths = [];
@@ -2189,7 +2242,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     const data = await api(`/api/bubbles/${encodeURIComponent(S.slug)}/talk-notes`);
     const payload = JSON.stringify(data.open_notes, null, 2);
     const m = h(`<div class="tk-modal"><div class="tk-mcard">
-      <button class="tk-x" data-x="1">✕</button>
+      <button class="tk-x" data-x="1" aria-label="Close">${LI_IC("close")}</button>
       <h3>Feedback YAML the agent can address and index</h3>
       <div class="msub">The Scientist receives this feedback YAML through its manifest poll and
         can address these marks in the linked source.</div>
@@ -2411,13 +2464,13 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
       return { id: t.id, kind: t.kind || "q", author: "",
                quote: (t.anchor || {}).quote || "",
                messages: (t.messages || []).map(msg => ({ ...msg, agent: !!msg.agent })),
-               orphan: loose, orphanNote: loose ? "⚠ its text was deleted · " : "" };
+               orphan: loose, orphanNote: loose ? LI_IC("warning") + " its text was deleted · " : "" };
     });
     gutterEl.innerHTML = `
       <div class="tk-gh">Your marks<span class="tk-sp"></span>
         <span style="font:400 10px var(--font-mono)">${list.length}</span></div>
       ${list.length ? "" : `<div class="tk-empty" style="font-size:14px">
-        Select any text in the rendered page and pick one of <b>✗ ? → ✓ ✂</b>.</div>`}
+        Select any text in the rendered page and pick one of <b>${ORDER.map(k=>KINDS[k].glyph).join(" ")}</b>.</div>`}
       ${list.map(noteCard).join("")}`;
     wireCard(gutterEl, {
       onDelete: id => M.handlers.onDelete && M.handlers.onDelete(id),

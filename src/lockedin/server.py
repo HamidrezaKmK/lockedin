@@ -429,7 +429,7 @@ def _render_preview_html(*, name: str, page: str, all_pages: list, content: str,
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{name} — {page}</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔒</text></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234dd9b8' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'><rect x='3.6' y='10.6' width='16.8' height='10.4' rx='1.6'/><path d='M8 10.6V7.4a4 4 0 0 1 8 0v3.2'/></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -442,34 +442,38 @@ def _render_preview_html(*, name: str, page: str, all_pages: list, content: str,
   --font-reading:'Source Serif 4',Georgia,serif;
   --font-mono:'JetBrains Mono',ui-monospace,monospace;
 }}
+/* One palette, shared with the app. These used to be a separate, older set — a shared page in
+   "light" was a different light from the editor's, and its borders sat around 1.7:1. Every value
+   here is the same measured one the SPA uses: text clears 4.5:1 on both --bg and --panel, and
+   --line-strong (which draws anything you can operate) clears 3:1 on both. */
 :root,body.theme-dark{{
-  --bg:#0d1018;--ink:#e8ecf4;--muted:#8a94a8;--line:#252d3d;--panel:#1c2230;
-  --accent:#9b80ff;--accent2:#4dd9b8;--shadow:rgba(0,0,0,.35);
+  --bg:#0d1018;--ink:#e8ecf4;--muted:#9aa4b8;--line:#3c4a63;--line-strong:#5d7195;--panel:#1c2434;
+  --accent:#9b80ff;--accent2:#4dd9b8;--on-accent:#0d1018;--shadow:rgba(0,0,0,.45);
   --scroll-track:#0d1018;--scroll-thumb:#6957ad;--scroll-thumb-hover:#8c73e8;
   --ref-accent:#b59cff;
 }}
 body.theme-light{{
-  --bg:#f8fafc;--ink:#171b24;--muted:#526073;--line:#9eacbe;--panel:#cfd8e6;
-  --accent:#5b3ee8;--accent2:#087f69;--shadow:rgba(17,24,39,.18);
-  --scroll-track:#f8fafc;--scroll-thumb:#7d8ca2;--scroll-thumb-hover:#5b3ee8;
-  --ref-accent:#6d4aff;
+  --bg:#dde6f1;--ink:#0f1826;--muted:#455872;--line:#8fa4bd;--line-strong:#6b7f9a;--panel:#ffffff;
+  --accent:#4338ca;--accent2:#0a635b;--on-accent:#ffffff;--shadow:rgba(15,24,38,.16);
+  --scroll-track:#dde6f1;--scroll-thumb:#8fa4bd;--scroll-thumb-hover:#4338ca;
+  --ref-accent:#4338ca;
 }}
 body.theme-pink{{
-  --bg:#fff0fa;--ink:#57113e;--muted:#9b4b7d;--line:#ff94d2;--panel:#ffc7e8;
-  --accent:#ff1493;--accent2:#00b8a9;--shadow:rgba(255,20,147,.18);
-  --scroll-track:#fff0fa;--scroll-thumb:#ff85cf;--scroll-thumb-hover:#ff1493;
+  --bg:#f0dbe9;--ink:#3d0e2b;--muted:#754463;--line:#bd87a7;--line-strong:#a06889;--panel:#fffafd;
+  --accent:#ad1a6a;--accent2:#076a64;--on-accent:#ffffff;--shadow:rgba(61,14,43,.18);
+  --scroll-track:#f0dbe9;--scroll-thumb:#bd87a7;--scroll-thumb-hover:#ad1a6a;
   --ref-accent:var(--accent2);
 }}
 body.theme-techno{{
-  --bg:#020704;--ink:#d7f4dc;--muted:#82b58a;--line:#174f25;--panel:#0b1b10;
-  --accent:#35c85a;--accent2:#8bd68f;--shadow:rgba(53,200,90,.16);
-  --scroll-track:#020704;--scroll-thumb:#247a38;--scroll-thumb-hover:#35c85a;
+  --bg:#07100b;--ink:#e0f4e3;--muted:#a4cdac;--line:#437a51;--line-strong:#5a9d66;--panel:#13261b;
+  --accent:#4bd16e;--accent2:#8ce6a1;--on-accent:#07100b;--shadow:rgba(0,0,0,.5);
+  --scroll-track:#07100b;--scroll-thumb:#3d7049;--scroll-thumb-hover:#4bd16e;
   --ref-accent:var(--accent2);
 }}
 body.theme-pearl{{
-  --bg:#fffdf7;--ink:#3f3f3b;--muted:#7c7168;--line:#d8d2c4;--panel:#f3f0e8;
-  --accent:#d9480f;--accent2:#f06d3a;--shadow:rgba(217,72,15,.16);
-  --scroll-track:#fffdf7;--scroll-thumb:#d2b48c;--scroll-thumb-hover:#d9480f;
+  --bg:#e9e3d8;--ink:#332e29;--muted:#5f544b;--line:#ac9880;--line-strong:#8c7955;--panel:#fffcf6;
+  --accent:#9d3d13;--accent2:#7d4a26;--on-accent:#ffffff;--shadow:rgba(51,46,41,.16);
+  --scroll-track:#e9e3d8;--scroll-thumb:#ac9880;--scroll-thumb-hover:#9d3d13;
   --ref-accent:var(--accent2);
 }}
 *{{box-sizing:border-box}}
@@ -483,7 +487,7 @@ html:hover::-webkit-scrollbar-thumb,body:hover::-webkit-scrollbar-thumb,*:hover:
 body{{background:var(--bg);color:var(--ink);max-width:860px;margin:0 auto;padding:24px 32px;
      font:16px/1.75 var(--font-reading)}}
 nav{{font-family:var(--font-ui);font-size:13px;font-weight:600;margin-bottom:28px;
-     padding-bottom:12px;border-bottom:1px solid var(--line);color:var(--muted)}}
+     padding-bottom:12px;padding-right:120px;border-bottom:1px solid var(--line);color:var(--muted)}}
 nav a{{color:var(--accent);text-decoration:none}} nav a:hover{{text-decoration:underline}}
 h1,h2,h3,h4{{position:relative;font-family:var(--font-reading);font-weight:600;letter-spacing:-.01em}}
 h1:hover .anchor,h2:hover .anchor,h3:hover .anchor,h4:hover .anchor{{opacity:.55}}
@@ -494,7 +498,7 @@ h1{{font-size:30px;margin-top:0}}
 h2{{font-size:22px;border-bottom:1px solid var(--line);padding-bottom:5px;margin-top:2em}}
 h3{{font-size:18px}} h4{{font-size:16px}}
 p{{margin:.65em 0}}
-code{{background:var(--panel);padding:2px 6px;border-radius:4px;font-family:var(--font-mono);font-size:.84em}}
+code{{background:var(--panel);border:1px solid var(--line);padding:2px 6px;border-radius:4px;font-family:var(--font-mono);font-size:.84em}}
 pre{{background:var(--panel);padding:14px;border-radius:10px;overflow:auto;
      box-shadow:0 2px 12px var(--shadow)}}
 pre code{{font-family:var(--font-mono);font-size:13px}}
@@ -554,45 +558,59 @@ blockquote p{{margin:5px 0}}
 .todoref{{color:var(--accent);font-weight:500;background:var(--panel);padding:1px 5px;border-radius:4px;
           font-family:var(--font-ui);font-size:.9em}}
 #copied{{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--panel);
-         border:1px solid var(--line);padding:8px 14px;border-radius:8px;
+         border:1px solid var(--line-strong);padding:8px 14px;border-radius:8px;
+         display:inline-flex;align-items:center;gap:7px;
          font-family:var(--font-ui);font-size:13px;opacity:0;
          transition:opacity .2s;pointer-events:none}}
 #copied.show{{opacity:1}}
-#theme-cycle{{position:fixed;top:14px;right:16px;background:var(--panel);border:1px solid var(--line);
-               color:var(--ink);border-radius:8px;padding:6px 12px;cursor:pointer;
-               font-family:var(--font-ui);font-size:13px;font-weight:600;z-index:10}}
-#back-btn{{position:fixed;top:14px;left:16px;background:var(--panel);border:1px solid var(--line);
-           color:var(--ink);border-radius:8px;padding:6px 12px;cursor:pointer;
+#theme-cycle,#back-btn{{position:fixed;top:14px;background:var(--panel);border:1px solid var(--line-strong);
+           color:var(--ink);border-radius:9px;padding:7px 11px;cursor:pointer;min-height:36px;
+           display:inline-flex;align-items:center;gap:7px;
            font-family:var(--font-ui);font-size:13px;font-weight:600;z-index:10}}
+#theme-cycle{{right:16px}} #back-btn{{left:16px}}
+#theme-cycle:hover,#back-btn:hover{{border-color:var(--accent)}}
+/* The icon set the app uses, so a shared page and the editor draw the same marks. */
+.li-ic{{width:1.15em;height:1.15em;flex:0 0 auto;stroke:currentColor;fill:none;stroke-width:1.7;
+  stroke-linecap:round;stroke-linejoin:round;vertical-align:-.22em}}
+.page-credit .li-ic{{width:13px;height:13px;vertical-align:-.16em}}
+.page-credit .li-ic.heart{{color:var(--accent);fill:currentColor;stroke-width:1.2}}
+#theme-cycle .li-ic{{width:16px;height:16px}}
+.anchor .li-ic{{width:.85em;height:.85em}}
 .page-credit{{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);
   font-family:var(--font-ui);font-size:12px;color:var(--muted);text-align:center}}
 .page-credit a{{color:var(--muted);text-decoration:none}}
 .page-credit a:hover{{color:var(--accent)}}
 @media(max-width:600px){{
-  body{{padding:16px 18px}}
-  #theme-cycle,#back-btn{{top:10px;padding:5px 10px;font-size:12px}}
+  body{{padding:16px}}
+  #theme-cycle,#back-btn{{top:10px;padding:6px 9px;font-size:12px;min-height:34px}}
   #back-btn{{left:10px}} #theme-cycle{{right:10px}}
+  /* Both corner controls can be present at once on the owner preview. */
+  nav{{padding-right:104px;padding-left:0}}
+  body:has(#back-btn) nav{{padding-left:86px}}
   h1{{font-size:24px}} h2{{font-size:19px}}
 }}
 </style></head><body>
 {back_btn}
-<button id="theme-cycle" onclick="cycleTheme()" title="Cycle theme">🌙</button>
+<button id="theme-cycle" onclick="cycleTheme()" title="Cycle theme" aria-label="Cycle theme"></button>
 <nav><b>{name}</b> &nbsp;|&nbsp; {nav_links}</nav>
 <div id="content"></div>
-<footer class="page-credit">Made with 💜 + 🤖 by a PhD student</footer>
-<div id="copied">🔗 Link copied</div>
+<footer class="page-credit" id="page-credit">Made with <span data-ic="heart" class="heart"></span> + <span data-ic="agent"></span> by a PhD student</footer>
+<div id="copied"><span data-ic="link"></span> Link copied</div>
+<script src="/icons.js"></script>
 <script src="/lightbox.js"></script>
 <script>
 (function(){{
   // Standalone owner previews and public shares intentionally stay restrained: they only
   // offer the universal Dark/Light pair, independent of the workspace's editor theme choices.
   const THEMES={json.dumps(["dark", "light"])};
-  const LABELS={{dark:"🌙",light:"☀️",pink:"🦄",techno:"🤖",pearl:"⚪"}};
+  const ICONS={{dark:"theme-dark",light:"theme-light",pink:"theme-pink",techno:"theme-techno",pearl:"theme-pearl"}};
+  const icon=(n,cls)=>window.LIIcon?LIIcon.html(n,cls):"";
   window.applyPreviewTheme=function(name){{
     const theme=THEMES.includes(name)?name:THEMES[0];
     document.body.classList.remove(...THEMES.map(t=>"theme-"+t),"light");
     document.body.classList.add("theme-"+theme);
-    document.getElementById("theme-cycle").textContent=LABELS[theme];
+    document.getElementById("theme-cycle").innerHTML=icon(ICONS[theme]||"theme-dark")
+      +"<span>"+theme.charAt(0).toUpperCase()+theme.slice(1)+"</span>";
     localStorage.setItem("li_theme",theme);
   }};
   window.cycleTheme=function(){{
@@ -600,6 +618,10 @@ blockquote p{{margin:5px 0}}
     applyPreviewTheme(THEMES[(THEMES.indexOf(cur)+1)%THEMES.length]);
   }};
   applyPreviewTheme(localStorage.getItem("li_theme")||localStorage.getItem("preview_theme")||"dark");
+  // Placeholders in the static markup, filled once the sprite is available.
+  document.querySelectorAll("[data-ic]").forEach(el=>{{
+    el.innerHTML=icon(el.getAttribute("data-ic"), el.classList.contains("heart")?"heart":"");
+  }});
 }})();
 // Render markdown + math + theorem environments.
 // Equation numbering (\\label→\\tag) was already done server-side by _preprocess_equations.
@@ -725,7 +747,8 @@ blockquote p{{margin:5px 0}}
     clearTimeout(c._t); c._t=setTimeout(()=>c.classList.remove("show"),1600); }}
   document.querySelectorAll("#content h1,#content h2,#content h3,#content h4").forEach(h=>{{
     if(!h.id) h.id=slugify(h.textContent);
-    const a=document.createElement("a"); a.className="anchor"; a.textContent="🔗";
+    const a=document.createElement("a"); a.className="anchor";
+    a.innerHTML=window.LIIcon?LIIcon.html("link"):"#";
     a.href="#"+h.id; a.title="Copy link to this section";
     a.onclick=e=>{{ e.preventDefault();
       const url=location.origin+location.pathname+"#"+h.id;
@@ -1143,6 +1166,14 @@ def build_app():
         # updates land immediately (it can still 304 when unchanged). Without this,
         # FileResponse sets no Cache-Control and browsers may serve a stale SPA.
         return FileResponse(WEB_DIR / "index.html", headers={"Cache-Control": "no-cache"})
+
+    @app.get("/icons.js")
+    def icons_js():
+        # Deliberately unauthenticated, for the same reason as lightbox.js: public share pages
+        # draw the same icons as the app, and serving one file to both is what keeps the two
+        # from drifting apart.
+        return FileResponse(WEB_DIR / "icons.js", media_type="application/javascript",
+                            headers={"Cache-Control": "no-store"})
 
     @app.get("/lightbox.js")
     def lightbox_js():
@@ -2037,6 +2068,11 @@ def build_app():
     def talk_notes_for_agent(slug: str, user: str = Depends(current_user)):
         """Exactly what a Scientist worker receives on its next poll — no HTML, no pixels."""
         return {"open_notes": service.talk_notes_for_agent(home_of(user), slug)}
+
+    @app.get("/api/home")
+    def home_digest(user: str = Depends(current_user)):
+        """One round trip for the signed-in Home: recent bubbles, talks with open marks, TODOs."""
+        return service.home_digest(home_of(user))
 
     # ---- todos (global per-user; referenced from report pages as @<id>) ----
     @app.get("/api/todos")

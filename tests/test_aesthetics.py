@@ -325,4 +325,7 @@ class AestheticsConfigTests(unittest.TestCase):
         self.assertIn('bubbleFilter:"active"', source)
         self.assertIn('filter==="active"?"Show archive":"Show active"', source)
         self.assertIn('api("/api/bubbles?archived="+(filter==="archived"))', source)
-        self.assertIn('b.archived?"Restore":"Archive"', source)
+        # Archive/restore is an icon button now (the name needed the width back), so assert the
+        # reversible control by its accessible name rather than by a visible text label.
+        self.assertIn('b.archived?"Restore this bubble":"Archive this bubble"', source)
+        self.assertIn('ic(b.archived?"undo":"archive")', source)

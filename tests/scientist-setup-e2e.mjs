@@ -173,7 +173,8 @@ async function main() {
     assert.ok(!recovery.includes("<workspace-id>"),
       `the by-hand steps must carry the real workspace id:\n${recovery}`);
     assert.ok(recovery.includes(`sync ${slug}`), "the by-hand steps must name this bubble");
-    assert.equal(await dialog.locator(".setup-refresh").innerText(), "↻",
+    assert.equal(await dialog.locator(".setup-refresh svg.li-ic use").getAttribute("href"),
+      "#li-i-refresh",
       "the fresh-link control is a circular arrow, not a second kind of link");
     // The controls act on the snippet, so they live beside it.
     assert.equal(await dialog.locator(".setup-run .setup-snippet").count(), 1);

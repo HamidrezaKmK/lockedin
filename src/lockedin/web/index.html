@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>lockedin — research assistant</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔒</text></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234dd9b8' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'><rect x='3.6' y='10.6' width='16.8' height='10.4' rx='1.6'/><path d='M8 10.6V7.4a4 4 0 0 1 8 0v3.2'/></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -21,9 +21,20 @@
 <script src="/lightbox.js"></script>
 <!-- Chalk talks: dated slide decks the agent writes, and the marks you leave on them. -->
 <script src="/talks.js"></script>
+<!-- Icon set: one geometric family replacing the OS emoji, inheriting currentColor so a single
+     drawing is correct in every theme and on every device. -->
+<script src="/icons.js"></script>
 <style>
   :root{
     --radius:12px; --vvh:100vh;
+    /* Spacing scale. Every gap in the app should be one of these, so the rhythm holds together
+       instead of being re-guessed per view. `--page-pad` and `--section-gap` step down on a
+       phone; the rest stay put, because a 12px gap means the same thing at any width. */
+    --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:24px; --sp-6:34px; --sp-7:48px;
+    --page-pad-y:20px; --page-pad-x:24px;
+    --section-gap:var(--sp-6);   /* between one titled section and the next */
+    --band-gap:var(--sp-3);      /* between a section's label and its content */
+    --row-gap:var(--sp-2);       /* between sibling rows or cards in a list */
     --font-ui:'Syne',system-ui,sans-serif;
     --font-reading:'Source Serif 4',Georgia,serif;
     --font-mono:'JetBrains Mono',ui-monospace,monospace;
@@ -33,133 +44,151 @@
     Theme color knobs.
     Tune these variables to adjust Dark / Light / Pink / Techno without touching layout CSS.
   */
+  /*
+    Every value below is measured, not picked by eye: `--ink`/`--muted`/`--accent` clear 4.5:1 on
+    both `--bg` and `--panel`, `--line-strong` clears 3:1 on both (WCAG 1.4.11 — it draws every
+    interactive boundary), and `--panel` stands at least 1.2:1 off `--bg` so a card is a card
+    rather than a brighter patch of canvas.
+
+    Two border tokens, because one cannot do both jobs. `--line-strong` bounds things you can
+    operate: buttons, inputs, cards, checkboxes. `--line` is the hairline for rules and dividers,
+    where 3:1 would turn the page into a spreadsheet.
+  */
   :root,body.theme-dark{
-    --bg:#0d1018; --panel:#161b25; --panel2:#1c2230; --line:#252d3d;
-    --ink:#e8ecf4; --muted:#8a94a8; --accent:#9b80ff; --accent2:#4dd9b8;
+    --bg:#0d1018; --panel:#1c2434; --panel2:#2a3346; --line:#3c4a63; --line-strong:#5d7195;
+    --ink:#e8ecf4; --muted:#9aa4b8; --accent:#9b80ff; --accent2:#4dd9b8;
     --warn:#f5c842; --bad:#ff6b6b; --good:#4ade80;
-    --ref-accent:#b59cff;
+    --ref-accent:#b59cff; --focus:#9b80ff;
+    --on-accent:#0d1018; --on-accent2:#0d1018;
     --text-color-1:#b59cff; --text-color-2:#4dd9b8; --text-color-3:#f2c94c; --text-color-4:#ff7aa2; --text-color-5:#8bd3ff;
     --shadow-sm:0 1px 6px rgba(0,0,0,.4); --shadow:0 6px 24px rgba(0,0,0,.55);
   }
+  /* The bright themes were the ones that hurt: a near-white panel on a barely-tinted canvas
+     reads as glare with no edge. The canvas now carries real tint, the panel is the brightest
+     surface, and the border is strong enough to hold it. */
   body.theme-light{
-    --bg:#eaf0f7; --panel:#fbfdff; --panel2:#d8e2ef; --line:#9eafc3;
-    --ink:#111b2d; --muted:#3f5067; --accent:#4338ca; --accent2:#0b6b63;
-    --warn:#92400e; --bad:#b91c36; --good:#166534;
-    --ref-accent:#4338ca;
-    --text-color-1:#4338ca; --text-color-2:#0b6b63; --text-color-3:#92400e; --text-color-4:#86198f; --text-color-5:#075985;
-    --shadow-sm:0 1px 5px rgba(17,27,45,.14); --shadow:0 10px 30px rgba(17,27,45,.2);
+    --bg:#dde6f1; --panel:#ffffff; --panel2:#c9d6e7; --line:#8fa4bd; --line-strong:#6b7f9a;
+    --ink:#0f1826; --muted:#455872; --accent:#4338ca; --accent2:#0a635b;
+    --warn:#8a3d0b; --bad:#b01730; --good:#14592e;
+    --ref-accent:#4338ca; --focus:#4338ca;
+    --on-accent:#ffffff; --on-accent2:#ffffff;
+    --text-color-1:#4338ca; --text-color-2:#0a635b; --text-color-3:#8a3d0b; --text-color-4:#86198f; --text-color-5:#075985;
+    --shadow-sm:0 1px 2px rgba(15,24,38,.10); --shadow:0 10px 30px rgba(15,24,38,.16);
   }
   body.theme-light #topbar,body.theme-light #side{
-    --ink:#f5f3ff; --muted:#c7c3e8; --panel:#29234f; --panel2:#393166; --line:#50477f;
+    --ink:#f5f3ff; --muted:#c7c3e8; --panel:#29234f; --panel2:#393166; --line:#50477f; --line-strong:#8079b6; --on-accent:#16121f; --on-accent2:#16121f;
     --accent:#c4b5fd; --accent2:#67e8d2;
     background:linear-gradient(135deg,#272148 0%,#322a60 58%,#3a3170 100%);
     box-shadow:0 1px 0 rgba(43,34,83,.28)
   }
   body.theme-light #topbar .brand{color:#fff}
   body.theme-light #accountMenu{
-    --bg:#eaf0f7; --panel:#fff; --panel2:#e8eef7; --line:#bdc8d8;
-    --ink:#111b2d; --muted:#3f5067; --accent:#4338ca; --accent2:#0b6b63;
+    --bg:#dde6f1; --panel:#fff; --panel2:#e8eef7; --line:#bdc8d8; --line-strong:#8095b4;
+    --ink:#0f1826; --muted:#455872; --accent:#4338ca; --accent2:#0a635b;
     background:#fff;color:#111b2d;box-shadow:0 14px 34px rgba(17,27,45,.22)
   }
   body.theme-light #side{
-    --panel:#4a3f82; --panel2:#5a4c99; --line:#786bb6; --accent:#ddd6fe; --accent2:#99f6e4;
-    background:linear-gradient(160deg,#51458d 0%,#5f50a3 48%,#6c5bb3 100%)
+    --panel:#4a3f82; --panel2:#5a4c99; --line:#786bb6; --line-strong:#a199cd; --on-accent:#16121f; --on-accent2:#16121f; --accent:#ddd6fe; --accent2:#99f6e4;
+    background:linear-gradient(160deg,#473d7c 0%,#54468f 48%,#5c4ba2 100%)
   }
-  body.theme-light #side .navbtn.active{background:rgba(196,181,253,.2);border-color:rgba(196,181,253,.68)}
+  body.theme-light #side .navbtn.active{background:rgba(0,0,0,.26);border-color:rgba(221,214,254,.6)}
   body.theme-dark .editor-pane>.ptabs{--tabrow-ink:#fff}
   body.theme-light .editor-pane>.ptabs{
-    --bg:#372f66; --panel:#493d80; --panel2:#5a4c98; --line:#786bb6;
+    --bg:#372f66; --panel:#493d80; --panel2:#5a4c98; --line:#786bb6; --line-strong:#978dc7; --on-accent:#16121f; --on-accent2:#16121f;
     --ink:#f6f4ff; --muted:#d0caec; --accent:#ddd6fe; --accent2:#99f6e4;
     background:linear-gradient(105deg,#40366f,#514586);border-bottom-color:#786bb6
   }
   body.theme-light .editor-pane>.ptabs .ptab{color:#fff}
   body.theme-light .card,body.theme-light .pane,body.theme-light .acard{box-shadow:0 1px 2px rgba(22,32,51,.04)}
   body.theme-pink{
-    --bg:#f6e9f2; --panel:#fff8fc; --panel2:#efd5e6; --line:#cc9dbb;
-    --ink:#42102f; --muted:#81506d; --accent:#b51f70; --accent2:#087f78;
-    --warn:#9a5b08; --bad:#bd185d; --good:#08765e;
-    --ref-accent:var(--accent2);
-    --text-color-1:#b51f70; --text-color-2:#8f287f; --text-color-3:#087f78; --text-color-4:#b64c38; --text-color-5:#643b9d;
-    --shadow-sm:0 1px 6px rgba(66,16,47,.14); --shadow:0 10px 30px rgba(66,16,47,.2);
+    --bg:#f0dbe9; --panel:#fffafd; --panel2:#e3c6da; --line:#bd87a7; --line-strong:#a06889;
+    --ink:#3d0e2b; --muted:#754463; --accent:#ad1a6a; --accent2:#076a64;
+    --warn:#8d5207; --bad:#b31456; --good:#076a54;
+    --ref-accent:var(--accent2); --focus:#ad1a6a;
+    --on-accent:#ffffff; --on-accent2:#ffffff;
+    --text-color-1:#ad1a6a; --text-color-2:#87257a; --text-color-3:#076a64; --text-color-4:#a5432f; --text-color-5:#5b358d;
+    --shadow-sm:0 1px 2px rgba(61,14,43,.10); --shadow:0 10px 30px rgba(61,14,43,.18);
   }
   body.theme-techno{
-    --bg:#07100b; --panel:#0e1b13; --panel2:#162b1c; --line:#315d3d;
-    --ink:#e0f4e3; --muted:#9cc5a4; --accent:#4bd16e; --accent2:#8ce6a1;
+    --bg:#07100b; --panel:#13261b; --panel2:#1e3827; --line:#437a51; --line-strong:#5a9d66;
+    --ink:#e0f4e3; --muted:#a4cdac; --accent:#4bd16e; --accent2:#8ce6a1;
     --warn:#d4d96c; --bad:#ff6680; --good:#4bd16e;
-    --ref-accent:var(--accent2);
+    --ref-accent:var(--accent2); --focus:#4bd16e;
+    --on-accent:#07100b; --on-accent2:#07100b;
     --text-color-1:#4bd16e; --text-color-2:#8ce6a1; --text-color-3:#d4d96c; --text-color-4:#67d5aa; --text-color-5:#9ecfa9;
     --shadow-sm:0 1px 6px rgba(0,0,0,.36); --shadow:0 10px 30px rgba(0,0,0,.5);
   }
   body.theme-pearl{
-    --bg:#f1eee8; --panel:#fffaf2; --panel2:#e4ddd1; --line:#c9bbab;
-    --ink:#36312d; --muted:#70645b; --accent:#a84216; --accent2:#bf592a;
-    --warn:#9c501d; --bad:#a92d25; --good:#55743a;
-    --ref-accent:var(--accent2);
-    --text-color-1:#a84216; --text-color-2:#bf592a; --text-color-3:#95651e; --text-color-4:#756052; --text-color-5:#833416;
-    --shadow-sm:0 1px 6px rgba(54,49,45,.12); --shadow:0 10px 30px rgba(54,49,45,.17);
+    --bg:#e9e3d8; --panel:#fffcf6; --panel2:#ded5c5; --line:#ac9880; --line-strong:#8c7955;
+    --ink:#332e29; --muted:#5f544b; --accent:#9d3d13; --accent2:#7d4a26;
+    --warn:#8f4a1a; --bad:#9c2921; --good:#4d6a34;
+    --ref-accent:var(--accent2); --focus:#9d3d13;
+    --on-accent:#ffffff; --on-accent2:#ffffff;
+    --text-color-1:#9d3d13; --text-color-2:#7d4a26; --text-color-3:#7a5416; --text-color-4:#5d4c40; --text-color-5:#6b2a11;
+    --shadow-sm:0 1px 2px rgba(51,46,41,.10); --shadow:0 10px 30px rgba(51,46,41,.16);
   }
   body.theme-pink #topbar,body.theme-pink #side{
-    --ink:#fff7fc; --muted:#e4bfd4; --panel:#531838; --panel2:#6e2450; --line:#8e3d67;
+    --ink:#fff7fc; --muted:#e4bfd4; --panel:#531838; --panel2:#6e2450; --line:#8e3d67; --line-strong:#c26b96; --on-accent:#16121f; --on-accent2:#16121f;
     --accent:#f4a7cd; --accent2:#7de0d2;
     background:linear-gradient(135deg,#49142f 0%,#642047 58%,#742957 100%);
     box-shadow:0 1px 0 rgba(66,16,47,.3)
   }
   body.theme-pink #topbar .brand{color:#fff}
   body.theme-pink #side{
-    --panel:#76305a; --panel2:#8c416c; --line:#aa6286; --accent:#ffd1e5; --accent2:#9bf0e3;
-    background:linear-gradient(160deg,#73305b 0%,#873d6b 48%,#99507a 100%)
+    --panel:#76305a; --panel2:#8c416c; --line:#aa6286; --line-strong:#c390a9; --on-accent:#16121f; --on-accent2:#16121f; --accent:#ffd1e5; --accent2:#9bf0e3;
+    background:linear-gradient(160deg,#682b52 0%,#7a3760 48%,#8a486e 100%)
   }
-  body.theme-pink #side .navbtn.active{background:rgba(255,209,229,.18);border-color:rgba(255,209,229,.66)}
+  body.theme-pink #side .navbtn.active{background:rgba(0,0,0,.26);border-color:rgba(255,209,229,.6)}
   body.theme-pink .editor-pane>.ptabs{
-    --bg:#642047; --panel:#793058; --panel2:#8d416c; --line:#aa6286;
+    --bg:#642047; --panel:#793058; --panel2:#8d416c; --line:#aa6286; --line-strong:#bf88a3; --on-accent:#16121f; --on-accent2:#16121f;
     --ink:#fff8fc; --muted:#e5c3d6; --accent:#ffd1e5; --accent2:#9bf0e3;
     background:linear-gradient(105deg,#68264d,#7d3861);border-bottom-color:#aa6286
   }
   body.theme-pink .editor-pane>.ptabs .ptab{color:#fff}
   body.theme-pink #accountMenu{
-    --bg:#f6e9f2; --panel:#fff8fc; --panel2:#f0dce9; --line:#d5adc4;
-    --ink:#42102f; --muted:#81506d; --accent:#b51f70; --accent2:#087f78;
-    background:#fff8fc;color:#42102f;box-shadow:0 14px 34px rgba(66,16,47,.22)
+    --bg:#f0dbe9; --panel:#fffafd; --panel2:#e3c6da; --line:#bd87a7; --line-strong:#bc7ca1;
+    --ink:#3d0e2b; --muted:#754463; --accent:#ad1a6a; --accent2:#076a64;
+    background:#fffafd;color:#3d0e2b;box-shadow:0 14px 34px rgba(66,16,47,.22)
   }
   body.theme-techno #topbar,body.theme-techno #side{
-    --ink:#ebfff0; --muted:#b4d8bb; --panel:#102b18; --panel2:#1a4025; --line:#39704a;
+    --ink:#ebfff0; --muted:#b4d8bb; --panel:#102b18; --panel2:#1a4025; --line:#39704a; --line-strong:#478c5b; --on-accent:#16121f; --on-accent2:#16121f;
     --accent:#8af0a0; --accent2:#b5f5be;
     background:linear-gradient(135deg,#0b2413 0%,#12351b 58%,#194322 100%);
     box-shadow:0 1px 0 rgba(0,0,0,.4)
   }
   body.theme-techno #side{
-    --panel:#1a4827; --panel2:#285d35; --line:#4a8158; --accent:#b3f8c1; --accent2:#d0ffd4;
-    background:linear-gradient(160deg,#194726 0%,#245833 48%,#306a3e 100%)
+    --panel:#1a4827; --panel2:#285d35; --line:#4a8158; --line-strong:#67a877; --on-accent:#16121f; --on-accent2:#16121f; --accent:#b3f8c1; --accent2:#d0ffd4;
+    background:linear-gradient(160deg,#184424 0%,#235431 48%,#2e663c 100%)
   }
-  body.theme-techno #side .navbtn.active{background:rgba(179,248,193,.14);border-color:rgba(179,248,193,.6)}
+  body.theme-techno #side .navbtn.active{background:rgba(0,0,0,.26);border-color:rgba(179,248,193,.6)}
   body.theme-techno .editor-pane>.ptabs{
-    --bg:#14381e; --panel:#20502b; --panel2:#2d6338; --line:#4a8158;
+    --bg:#14381e; --panel:#20502b; --panel2:#2d6338; --line:#4a8158; --line-strong:#5da26e; --on-accent:#16121f; --on-accent2:#16121f;
     --ink:#edfff0; --muted:#bfdfc4; --accent:#b3f8c1; --accent2:#d0ffd4;
     background:linear-gradient(105deg,#174322,#235430);border-bottom-color:#4a8158
   }
   body.theme-techno .editor-pane>.ptabs .ptab{color:#edfff0}
   body.theme-pearl #topbar,body.theme-pearl #side{
-    --ink:#fffaf1; --muted:#e7cbb8; --panel:#61351f; --panel2:#7a482c; --line:#9a6544;
+    --ink:#fffaf1; --muted:#e7cbb8; --panel:#61351f; --panel2:#7a482c; --line:#9a6544; --line-strong:#c39374; --on-accent:#16121f; --on-accent2:#16121f;
     --accent:#ffd0af; --accent2:#ffc29d;
     background:linear-gradient(135deg,#57301e 0%,#704027 58%,#804b2e 100%);
     box-shadow:0 1px 0 rgba(54,49,45,.26)
   }
   body.theme-pearl #topbar .brand{color:#fff}
   body.theme-pearl #side{
-    --panel:#824c2f; --panel2:#995e3d; --line:#b47a56; --accent:#ffe0c8; --accent2:#ffd0af;
-    background:linear-gradient(160deg,#854f31 0%,#985d3c 48%,#a96c47 100%)
+    --panel:#824c2f; --panel2:#995e3d; --line:#b47a56; --line-strong:#cea890; --muted:#ead2c1; --on-accent:#16121f; --on-accent2:#16121f; --accent:#ffe0c8; --accent2:#ffd0af;
+    background:linear-gradient(160deg,#72442a 0%,#835034 48%,#915d3d 100%)
   }
-  body.theme-pearl #side .navbtn.active{background:rgba(255,224,200,.18);border-color:rgba(255,224,200,.64)}
+  body.theme-pearl #side .navbtn.active{background:rgba(0,0,0,.26);border-color:rgba(255,224,200,.6)}
   body.theme-pearl .editor-pane>.ptabs{
-    --bg:#704027; --panel:#854e30; --panel2:#995e3d; --line:#b47a56;
+    --bg:#704027; --panel:#854e30; --panel2:#995e3d; --line:#b47a56; --line-strong:#cea790; --on-accent:#16121f; --on-accent2:#16121f;
     --ink:#fffaf2; --muted:#ecd0bb; --accent:#ffe0c8; --accent2:#ffd0af;
     background:linear-gradient(105deg,#77452b,#8b5334);border-bottom-color:#b47a56
   }
   body.theme-pearl .editor-pane>.ptabs .ptab{color:#fff}
   body.theme-pearl #accountMenu{
-    --bg:#f1eee8; --panel:#fffaf2; --panel2:#eee5d9; --line:#d2c3b2;
-    --ink:#36312d; --muted:#70645b; --accent:#a84216; --accent2:#bf592a;
-    background:#fffaf2;color:#36312d;box-shadow:0 14px 34px rgba(54,49,45,.2)
+    --bg:#e9e3d8; --panel:#fffcf6; --panel2:#ded5c5; --line:#ac9880; --line-strong:#a88b6b;
+    --ink:#332e29; --muted:#5f544b; --accent:#9d3d13; --accent2:#7d4a26;
+    background:#fffcf6;color:#332e29;box-shadow:0 14px 34px rgba(54,49,45,.2)
   }
   body.theme-light .toastui-editor-defaultUI{filter:invert(1) hue-rotate(180deg)}
   body.theme-light .toastui-editor-defaultUI img{filter:invert(1) hue-rotate(180deg)}
@@ -174,6 +203,135 @@
   body.theme-pearl #auth{background:
     radial-gradient(ellipse 80% 50% at 50% -10%, rgba(217,72,15,.16) 0%, transparent 70%),
     linear-gradient(180deg,var(--bg) 0%,color-mix(in srgb,var(--panel) 74%,var(--bg)) 58%,var(--bg) 100%)}
+  /* ---------- icons ----------
+     One geometric family (icons.js) drawn on a 24x24 grid, sized in `em` so an icon tracks the
+     type it sits beside, and stroked in `currentColor` so it is correct in all five themes
+     without a single per-theme override. Replaces the OS emoji the UI used to lean on, which
+     changed shape per platform and arrived in colours no theme had declared. */
+  .li-ic{width:1.15em;height:1.15em;flex:0 0 auto;stroke:currentColor;fill:none;stroke-width:1.7;
+    stroke-linecap:round;stroke-linejoin:round;vertical-align:-.22em}
+  /* The five chalk-talk verdicts are drawn, not constructed — a heavier stroke is what sells
+     them as marks left on a page rather than another piece of chrome. */
+  .li-ic.mark{stroke-width:2.1}
+  .navbtn .li-ic{width:19px;height:19px}
+  .section-title .li-ic{width:1em;height:1em;stroke-width:1.55}
+  button .li-ic{width:16px;height:16px}
+  .icon-btn{display:inline-flex;align-items:center;justify-content:center;gap:0;
+    padding:7px;min-height:36px;min-width:36px;line-height:0}
+  .icon-btn .li-ic{width:17px;height:17px}
+  /* Buttons that pair an icon with a word: one gap rule, so no caller has to add a space. */
+  button:has(.li-ic){display:inline-flex;align-items:center;gap:7px}
+  .feature-icon .li-ic{width:19px;height:19px;color:var(--accent)}
+  .brand .li-ic{width:19px;height:19px;color:var(--accent2)}
+  .landing-lock .li-ic{width:15px;height:15px}
+  .side-credit .li-ic,.landing-footer .li-ic{width:13px;height:13px;vertical-align:-.16em}
+  .side-credit .li-ic.heart,.landing-footer .li-ic.heart{color:var(--accent);
+    fill:currentColor;stroke-width:1.2}
+  /* Theme picker: three swatches per row — the canvas, the panel and the accent — so the
+     control shows what it actually switches. A glyph could only ever gesture at a palette. */
+  .theme-swatch{display:inline-flex;border-radius:999px;overflow:hidden;flex:0 0 auto;
+    border:1px solid var(--line-strong);box-shadow:var(--shadow-sm)}
+  .theme-swatch i{width:14px;height:14px;display:block}
+  .theme-swatch[data-theme="dark"] i:nth-child(1){background:#0d1018}
+  .theme-swatch[data-theme="dark"] i:nth-child(2){background:#1c2434}
+  .theme-swatch[data-theme="dark"] i:nth-child(3){background:#9b80ff}
+  .theme-swatch[data-theme="light"] i:nth-child(1){background:#dde6f1}
+  .theme-swatch[data-theme="light"] i:nth-child(2){background:#ffffff}
+  .theme-swatch[data-theme="light"] i:nth-child(3){background:#4338ca}
+  .theme-swatch[data-theme="pink"] i:nth-child(1){background:#f0dbe9}
+  .theme-swatch[data-theme="pink"] i:nth-child(2){background:#fffafd}
+  .theme-swatch[data-theme="pink"] i:nth-child(3){background:#ad1a6a}
+  .theme-swatch[data-theme="techno"] i:nth-child(1){background:#07100b}
+  .theme-swatch[data-theme="techno"] i:nth-child(2){background:#13261b}
+  .theme-swatch[data-theme="techno"] i:nth-child(3){background:#4bd16e}
+  .theme-swatch[data-theme="pearl"] i:nth-child(1){background:#e9e3d8}
+  .theme-swatch[data-theme="pearl"] i:nth-child(2){background:#fffcf6}
+  .theme-swatch[data-theme="pearl"] i:nth-child(3){background:#9d3d13}
+  .theme-choice{padding:5px 8px;border-radius:9px;border:1px solid transparent}
+  .theme-choice:hover{background:var(--panel2);border-color:var(--line)}
+  .theme-choice .li-ic{width:16px;height:16px;color:var(--muted)}
+  /* Checkboxes were the browser default — the one system blue in the product, wrong in all five
+     themes. Drawn here instead, so the control follows the palette like everything else. */
+  input[type=checkbox]{appearance:none;-webkit-appearance:none;width:18px;height:18px;
+    min-width:18px;border:1.5px solid var(--line-strong);border-radius:5px;background:var(--panel);
+    display:inline-grid;place-content:center;padding:0;cursor:pointer;transition:background .15s,border-color .15s}
+  input[type=checkbox]::before{content:"";width:11px;height:11px;transform:scale(0);
+    transition:transform .12s ease-out;background:var(--panel);
+    clip-path:polygon(15% 47%,7% 58%,38% 88%,93% 26%,84% 16%,37% 68%)}
+  input[type=checkbox]:checked{background:var(--accent);border-color:var(--accent)}
+  input[type=checkbox]:checked::before{transform:scale(1)}
+  input[type=checkbox]:focus-visible{outline:none;box-shadow:0 0 0 3px color-mix(in srgb,var(--focus) 30%,transparent)}
+  .presence-emoji .li-ic{width:15px;height:15px}
+  .model-title .li-ic{width:16px;height:16px;color:var(--muted)}
+  .mtab .li-ic{width:14px;height:14px}
+  .asset-modal-header b,.create-dialog-header b{display:inline-flex;align-items:center;gap:8px}
+  .demo-badge .li-ic,.demo-legend .li-ic{width:13px;height:13px;vertical-align:-.18em}
+  .badge .li-ic{width:12px;height:12px;vertical-align:-.14em;margin-right:3px}
+  /* Prose caps out at a readable measure wherever it appears — empty states, notes, the idea
+     panel. The panel still spans its column; only the text stops. */
+  .prose-measure,.tk-empty>*,.bd>p{max-width:68ch}
+  .backlink{display:inline-flex;align-items:center;gap:6px}
+  .backlink .li-ic{width:14px;height:14px}
+  /* ---------- Home ----------
+     Rows, not cards. Everything on this page is a thing you might open next, and the useful
+     comparison between them is vertical: date against date, title against title. A grid of
+     boxes makes that scan sideways for no gain. */
+  .home-band{display:flex;align-items:center;gap:var(--sp-3);margin:0 0 var(--band-gap);flex-wrap:wrap;
+    min-height:30px}
+  .home-band b{font:500 10.5px var(--font-ui);letter-spacing:.18em;text-transform:uppercase;
+    color:var(--muted);flex:0 0 auto}
+  /* The rule earns its place only when there is room for it to read as a rule rather than as
+     a stray dash between two labels. */
+  .home-band .rule{flex:1 1 60px;min-width:32px;height:1px;background:var(--line)}
+  .home-band-count{flex:0 0 auto;font-size:11.5px;color:var(--muted)}
+  .home-band>button{flex:0 0 auto}
+  .home-list{display:flex;flex-direction:column;gap:var(--row-gap);margin:0 0 var(--section-gap)}
+  .home-list:last-child{margin-bottom:var(--sp-4)}
+  .home-row{display:flex;align-items:flex-start;gap:var(--sp-4);width:100%;text-align:left;
+    padding:var(--sp-3) var(--sp-4);border:1px solid var(--line-strong);border-radius:10px;
+    background:var(--panel);min-height:0;transition:border-color .15s,background .15s,transform .15s}
+  .home-row:hover{border-color:var(--accent);background:var(--panel2);transform:translateX(2px)}
+  .home-row-date,.home-row-id{flex:0 0 auto;font:500 12px var(--font-mono);color:var(--muted);
+    padding-top:2px;min-width:76px}
+  .home-row-id{min-width:38px;color:var(--accent)}
+  .home-row-body{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:3px}
+  .home-row-title{font-weight:600;font-size:14.5px;color:var(--ink);line-height:1.3}
+  .home-row-sub{font-family:var(--font-reading);font-size:13px;color:var(--muted);line-height:1.45;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .home-row-meta,.home-row-tag{flex:0 0 auto;font-size:11.5px;color:var(--muted);white-space:nowrap;
+    padding-top:3px}
+  .home-row-tag{padding-top:0}
+  .todo-row.done .home-row-title{text-decoration:line-through;opacity:.6}
+  .todo-row.done .home-row-id{opacity:.55}
+  .home-row-tag .li-ic{width:12px;height:12px;margin-right:3px;vertical-align:-.14em}
+  .home-empty{border:1px dashed var(--line-strong);border-radius:12px;padding:26px;
+    display:flex;flex-direction:column;align-items:flex-start;gap:14px}
+  .home-empty p{margin:0;max-width:60ch;font-family:var(--font-reading);font-size:15px;
+    line-height:1.6;color:var(--muted)}
+  @media (max-width:700px){
+    /* Three shapes of row share this component, and each wants a different fold on a phone:
+         talk  — date + count lead, title and gist below them;
+         todo  — the @id belongs beside its title, not on a line of its own;
+         bubble — nothing leads, so the timestamp goes under the text rather than sitting alone
+                  on the first line with the whole width to itself. */
+    .home-row{flex-wrap:wrap;gap:var(--sp-2) var(--sp-3);padding:var(--sp-4);border-radius:12px}
+    .home-row-date,.home-row-id{min-width:0;padding-top:0}
+    .home-row-body{flex:1 1 100%;order:3;gap:var(--sp-1)}
+    .home-row-meta,.home-row-tag{margin-left:auto;padding-top:0}
+    .todo-row .home-row-body{flex:1 1 0;min-width:0;order:0}
+    .card .row:has(>input:not([type=checkbox]),>select){flex-wrap:wrap;gap:var(--sp-2)}
+    .card .row:has(>input:not([type=checkbox]),>select)>input:not([type=checkbox]),
+    .card .row:has(>input:not([type=checkbox]),>select)>select,
+    .card .row:has(>input:not([type=checkbox]),>select)>button{flex:1 0 100%;min-height:42px}
+    .todo-row .home-row-id{padding-top:1px}
+    .home-row:not(:has(.home-row-date,.home-row-id)) .home-row-meta{order:4;margin-left:0;
+      font-size:11.5px}
+    .home-row-title{font-size:16px;line-height:1.25}
+    .home-row-sub{font-size:14px}
+    /* A row is a tap target here, so the translate-on-hover of the desktop is dropped: on touch
+       it fires on press and reads as the row slipping out from under your finger. */
+    .home-row:hover{transform:none}
+  }
   *{box-sizing:border-box}
   *{scrollbar-width:thin;scrollbar-color:color-mix(in srgb,var(--accent) 34%,transparent) transparent}
   *::-webkit-scrollbar{width:10px;height:10px}
@@ -197,12 +355,12 @@
        background:var(--bg);color:var(--ink);overflow:hidden;overflow:clip}
   /* Auth screen can scroll internally on very short viewports (body itself never scrolls) */
   #auth{overflow-y:auto}
-  button{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--panel2);
+  button{font:inherit;cursor:pointer;border:1px solid var(--line-strong);background:var(--panel2);
          color:var(--ink);border-radius:8px;padding:7px 12px;min-height:36px;
          transition:border-color .15s,box-shadow .15s,background .15s}
   button:hover{border-color:var(--accent);background:var(--panel)}
   button:focus-visible{outline:none;box-shadow:var(--glow)}
-  button.primary{background:var(--accent);color:#fff;border-color:var(--accent);font-weight:700;
+  button.primary{background:var(--accent);color:var(--on-accent);border-color:var(--accent);font-weight:700;
     letter-spacing:.01em}
   button.primary:hover{background:color-mix(in srgb, var(--accent) 85%, white);border-color:var(--accent)}
   button.ghost{background:transparent}
@@ -217,16 +375,22 @@
     border-bottom:1px solid var(--line);flex-shrink:0;padding:0 12px;scrollbar-width:thin}
   #helpTabs>*{flex:0 0 auto;white-space:nowrap}
   input,textarea,select{font:inherit;background:var(--panel);color:var(--ink);
-         border:1px solid var(--line);border-radius:8px;padding:8px 10px;width:100%;
+         border:1px solid var(--line-strong);border-radius:8px;padding:8px 10px;width:100%;
          transition:border-color .15s,box-shadow .15s}
+  input[type=file]{padding:var(--sp-2);cursor:pointer;line-height:1.6}
+  input[type=file]::file-selector-button{font:inherit;font-weight:600;font-size:13px;cursor:pointer;
+    margin-right:var(--sp-3);padding:7px 12px;min-height:32px;border-radius:7px;
+    border:1px solid var(--line-strong);background:var(--panel2);color:var(--ink);
+    transition:border-color .15s,background .15s}
+  input[type=file]::file-selector-button:hover{border-color:var(--accent);background:var(--panel)}
   input:focus,textarea:focus,select:focus{outline:none;border-color:var(--accent);
-    box-shadow:0 0 0 3px rgba(155,128,255,.15)}
+    box-shadow:0 0 0 3px color-mix(in srgb,var(--focus) 26%,transparent)}
   textarea{resize:vertical}
   a{color:var(--accent);text-decoration:none}
   .row{display:flex;gap:10px;align-items:center}
   .col{display:flex;flex-direction:column;gap:10px}
   .muted{color:var(--muted)}
-  .pill{display:inline-block;background:var(--panel2);border:1px solid var(--line);
+  .pill{display:inline-block;background:var(--panel2);border:1px solid var(--line-strong);
         border-radius:999px;padding:2px 10px;font-size:12px;margin:2px 4px 2px 0}
   .pill.more{border-color:var(--line);color:var(--muted)}
   .dot{width:9px;height:9px;border-radius:50%;display:inline-block;background:var(--muted)}
@@ -241,19 +405,25 @@
       radial-gradient(ellipse 80% 50% at 50% -10%, rgba(155,128,255,.12) 0%, transparent 70%),
       linear-gradient(180deg,var(--bg) 0%,color-mix(in srgb,var(--panel) 76%,var(--bg)) 58%,var(--bg) 100%)}
   .landing{width:100%;min-height:100vh}
-  .landing-inner{width:min(1160px,calc(100vw - 40px));margin:0 auto}
-  .landing-hero{min-height:min(560px,92vh);display:grid;grid-template-columns:minmax(0,1.1fr) minmax(310px,.82fr);
-    gap:42px;align-items:center;padding:56px 0 44px}
+  .landing-inner{width:min(1160px,calc(100vw - 48px));margin:0 auto}
+  .landing-hero{min-height:0;display:grid;grid-template-columns:minmax(0,1.1fr) minmax(310px,.82fr);
+    grid-template-areas:"lead auth" "detail auth";gap:0 48px;align-items:start;padding:40px 0 30px}
+  .landing-lead{grid-area:lead}
+  .landing-detail{grid-area:detail;margin-top:22px}
+  .landing-auth-panel{grid-area:auth;align-self:center;margin-top:0}
   .landing-kicker{display:inline-flex;align-items:center;gap:8px;color:var(--accent2);font-size:12px;
     font-weight:700;text-transform:uppercase;letter-spacing:.12em;margin-bottom:14px}
   .landing-lock{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;
     border-radius:7px;background:color-mix(in srgb,var(--accent2) 16%,transparent);
     border:1px solid color-mix(in srgb,var(--accent2) 34%,var(--line));letter-spacing:0}
-  .landing h1{font-family:var(--font-ui);font-size:clamp(44px,8vw,92px);line-height:.92;margin:0 0 18px;
-    letter-spacing:0;font-weight:700}
+  /* The wordmark is a lockup now, not the headline: it says who is speaking, and the line under
+     it says the thing worth reading. */
+  .landing h1{font-family:var(--font-ui);font-size:clamp(22px,2vw,27px);line-height:1;margin:0 0 10px;
+    letter-spacing:-.01em;font-weight:700}
   .landing h1 .lock{color:var(--accent2)}
-  .landing-lede{max-width:680px;font-size:clamp(18px,2vw,23px);line-height:1.45;color:var(--ink);margin:0 0 20px}
-  .landing-copy{max-width:690px;color:var(--muted);font-size:15px;margin:0 0 26px}
+  .landing-lede{max-width:26ch;font-family:var(--font-ui);font-weight:700;letter-spacing:-.012em;
+    font-size:clamp(24px,2.5vw,34px);line-height:1.14;color:var(--ink);margin:0;text-wrap:balance}
+  .landing-copy{max-width:62ch;color:var(--muted);font-size:14.5px;line-height:1.6;margin:0 0 22px}
   .landing-points{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;max-width:760px}
   .landing-point{border-left:2px solid color-mix(in srgb,var(--accent) 60%,var(--line));padding:8px 12px;
     background:color-mix(in srgb,var(--panel) 40%,transparent);border-radius:0 8px 8px 0}
@@ -268,11 +438,9 @@
   .landing-auth-panel .row{flex-wrap:wrap}
   .landing-auth-panel button{flex:1 1 120px}
   .landing-section{padding:54px 0;border-top:1px solid color-mix(in srgb,var(--line) 72%,transparent)}
-  .home-landing .landing-section:first-of-type{border-top:0}
-  /* The signed-in Home keeps the landing introduction but has no access panel or wordmark, so it
-     uses the full row rather than reserving an empty second column. */
-  .home-landing .home-hero{min-height:0;grid-template-columns:minmax(0,1fr);padding:42px 0 48px}
-  .landing-section-head{display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1fr);gap:30px;align-items:end;margin-bottom:24px}
+  .landing-section-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:10px 30px;margin-bottom:24px}
+  .landing-section-head>:first-child{flex:0 1 auto}
+  .landing-section-head>p{flex:1 1 300px;max-width:56ch}
   /* Balanced wrapping and a size that fits the column: a headline that breaks as
      "…like a / PI" reads like a typo. */
   .landing-section h2{font-size:23px;line-height:1.2;margin:0;letter-spacing:0;text-wrap:balance}
@@ -282,13 +450,15 @@
   .landing-section[aria-labelledby="why-title"] h2{margin-bottom:8px}
   .landing-section-head p{margin:0;color:var(--muted);text-wrap:pretty}
   .workflow-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}
+  @media (max-width:1000px){.workflow-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
   .workflow-step,.feature-card{background:var(--panel);border:1px solid var(--line);
     border-radius:8px;padding:16px;box-shadow:var(--shadow-sm)}
   .workflow-step{display:flex;flex-direction:column;gap:8px;min-height:150px}
   .workflow-num{font-family:var(--font-mono);font-size:12px;color:var(--accent2)}
   .workflow-step b,.feature-card b{font-size:15px}
   .workflow-step span,.feature-card span{color:var(--muted);font-size:13px;line-height:1.55}
-  .feature-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+  .feature-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+  @media (max-width:900px){.feature-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
   .feature-card{min-height:142px}
   .feature-icon{width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;
     background:color-mix(in srgb,var(--accent) 13%,var(--panel2));border:1px solid color-mix(in srgb,var(--accent) 30%,var(--line));
@@ -308,10 +478,10 @@
     padding:16px 18px;color:var(--muted);font-size:14.5px;line-height:1.6}
   .clone-box{display:grid;gap:10px;padding:15px;background:color-mix(in srgb,var(--panel) 88%,transparent);border:1px solid var(--line);border-radius:10px}
   .clone-box small{font-family:var(--font-ui);font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--accent2)}
-  .clone-command{display:block;overflow:auto;white-space:nowrap;padding:9px 10px;border-radius:7px;background:var(--bg);border:1px solid var(--line);font-family:var(--font-mono);font-size:11px;color:var(--ink)}
+  .clone-command{display:block;white-space:pre-wrap;overflow-wrap:anywhere;padding:9px 10px;border-radius:7px;background:var(--bg);border:1px solid var(--line);font-family:var(--font-mono);font-size:11px;color:var(--ink)}
   .clone-link{display:inline-flex;align-items:center;justify-content:center;gap:7px;text-decoration:none;font-family:var(--font-ui);font-size:13px;font-weight:700;
-    color:#fff;background:var(--accent2);padding:10px 13px;border-radius:8px;transition:transform .15s ease,filter .15s ease}
-  .clone-link:hover{color:#fff;transform:translateY(-1px);filter:brightness(1.08)}
+    color:var(--on-accent2);background:var(--accent2);padding:10px 13px;border-radius:8px;transition:transform .15s ease,filter .15s ease}
+  .clone-link:hover{color:var(--on-accent2);transform:translateY(-1px);filter:brightness(1.08)}
   .landing-footer{padding:24px 0 38px;color:var(--muted);font-size:12px}
   /* The demo board: a slide and a mark card drawn in DOM, so it costs nothing, scales, and
      recolours with every theme. */
@@ -364,16 +534,16 @@
   .scientist-install .landing-section-head p{max-width:620px;line-height:1.55}
   .command{display:block;min-width:0;margin:0;padding:11px 12px;border-radius:7px;background:#101218;
     border:1px solid color-mix(in srgb,var(--accent2) 35%,var(--line));color:#e8e5ff;font-family:var(--font-mono);
-    font-size:12px;line-height:1.55;white-space:nowrap;overflow-x:auto;overflow-y:hidden;word-break:normal;user-select:all}
+    font-size:12px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere;user-select:all}
   .scientist-steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin:0;padding:0;list-style:none;counter-reset:scientist-step}
   .scientist-steps li{min-width:0;counter-increment:scientist-step;position:relative;padding:13px 13px 13px 43px;
     background:color-mix(in srgb,var(--panel) 86%,transparent);border:1px solid var(--line);border-radius:9px;
     color:var(--muted);font-size:12px;line-height:1.5}
   .scientist-steps li::before{content:counter(scientist-step);position:absolute;left:13px;top:13px;width:20px;height:20px;
-    display:grid;place-items:center;border-radius:50%;background:var(--accent);color:white;font-family:var(--font-mono);font-size:11px;font-weight:700}
+    display:grid;place-items:center;border-radius:50%;background:var(--accent);color:var(--on-accent);font-family:var(--font-mono);font-size:11px;font-weight:700}
   .scientist-steps b{display:block;color:var(--ink);font-size:13px;margin-bottom:4px}
   .scientist-steps .command{margin-top:8px;font-size:11px;padding:7px 8px}
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:22px;
+  .card{background:var(--panel);border:1px solid var(--line-strong);border-radius:var(--radius);padding:22px;
     box-shadow:var(--shadow-sm)}
   .brand{font-size:22px;font-weight:700;font-family:var(--font-ui);letter-spacing:-.02em}
   .brand .lock{color:var(--accent2)}
@@ -432,9 +602,10 @@
   /* The halo is the page's own colour, so the pill reads over text or a card without a border
      to look at — it was a hairline flush against the edge, invisible over anything but empty
      background. Still just a pill: nothing here is a panel. */
-  .side-reopen::after{content:"";width:5px;height:48px;border-radius:999px;
-    background:color-mix(in srgb,var(--ink) 42%,transparent);
-    box-shadow:0 0 0 5px color-mix(in srgb,var(--bg) 72%,transparent);transition:background .15s}
+  .side-reopen{border-radius:999px;background:color-mix(in srgb,var(--panel) 88%,transparent);
+    border:1px solid var(--line);box-shadow:var(--shadow-sm);backdrop-filter:blur(6px)}
+  .side-reopen::after{content:"";width:4px;height:44px;border-radius:999px;
+    background:color-mix(in srgb,var(--ink) 46%,transparent);transition:background .15s}
   .side-reopen:hover::after,.side-reopen:focus-visible::after{background:var(--accent)}
   body.side-collapsed .side-reopen{display:flex}
   /* minimal authorship credit, pinned to the bottom of the side pane */
@@ -445,7 +616,7 @@
   .side-credit a:hover{color:var(--accent)}
   /* min-height/min-width:0 let the grid track govern size (no hardcoded topbar height,
      no flex/grid blowout from wide content → no surprise global scrollbars) */
-  #main{grid-area:main;padding:18px 22px;overflow:auto;min-width:0;min-height:0;box-sizing:border-box}
+  #main{grid-area:main;padding:var(--page-pad-y) var(--page-pad-x);overflow:auto;min-width:0;min-height:0;box-sizing:border-box}
   /* overflow:clip (with hidden fallback) — clips like hidden but is NOT a scroll container, so a
      focus/scrollIntoView inside the editor can't programmatically scroll these layout boxes and
      leave them stuck (the editor's own internal scroller absorbs it instead). */
@@ -458,12 +629,15 @@
   #app.bubble-focus #main.detailmode{padding:0}
   #app.bubble-focus #detail{grid-template-columns:minmax(0,1fr);gap:0}
   #app.bubble-focus .pane{border:0;border-radius:0}
-  .navbtn{display:block;width:100%;text-align:left;border:none;background:transparent;
-          padding:10px 12px;border-radius:8px;color:var(--muted);margin-bottom:2px;
+  .navbtn{display:flex;align-items:center;gap:11px;width:100%;text-align:left;border:none;
+          background:transparent;padding:10px 12px;border-radius:8px;color:var(--muted);margin-bottom:2px;
           font-size:13px;font-weight:600;letter-spacing:.01em;transition:color .15s,background .15s}
+  .navbtn .li-ic{stroke-width:1.85;opacity:.9;transition:opacity .15s}
+  .navbtn:hover .li-ic,.navbtn.active .li-ic{opacity:1}
   .navbtn:hover{color:var(--ink);background:var(--panel2)}
-  .navbtn.active{background:color-mix(in srgb, var(--accent) 12%, var(--panel2));
-    color:var(--accent);border:1px solid color-mix(in srgb, var(--accent) 25%, transparent)}
+  .navbtn.active{background:rgba(0,0,0,.26);color:var(--accent);
+    border:1px solid color-mix(in srgb, var(--accent) 52%, transparent);
+    box-shadow:inset 0 1px 2px rgba(0,0,0,.18)}
 
   /* model switcher */
   .mtab{display:flex;align-items:center;gap:7px;padding:6px 10px;border-radius:8px;
@@ -476,7 +650,16 @@
   .model-card.active{border-color:var(--accent);
     box-shadow:0 0 0 1px var(--accent) inset,0 4px 20px rgba(155,128,255,.15)}
   .model-card .model-title{display:flex;gap:8px;align-items:center;min-width:0}
-  .model-card .model-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px}
+  .model-card .model-actions{display:flex;gap:var(--sp-2);align-items:center;flex-wrap:wrap;margin-top:auto;
+    padding-top:var(--sp-2)}
+  /* One rhythm inside the card: the flex gap. These lines used to add their own margins on top
+     of it, so no two sat the same distance apart. */
+  .model-card{gap:var(--sp-1)}
+  .health-block{display:flex;flex-direction:column;gap:var(--sp-2);margin-top:var(--sp-4)}
+  .health-block pre{margin:0;white-space:pre-wrap;overflow:auto;padding:var(--sp-3);
+    border:1px solid var(--line);border-radius:8px;background:var(--panel);font-size:12px;line-height:1.5}
+  .model-card .model-line{font-size:12px;line-height:1.5}
+  .model-card>.row:first-child{margin-bottom:var(--sp-1)}
   .account-quick{position:relative;flex:0 0 auto}
   #accountBtn{max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   #accountMenu{position:absolute;top:calc(100% + 8px);right:0;width:260px;z-index:35;
@@ -491,18 +674,18 @@
     border-color:var(--accent2);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent2) 18%,transparent)}
 
   /* grids */
-  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:var(--sp-3)}
   .asset-filter{display:grid;grid-template-columns:minmax(180px,1fr) minmax(180px,260px) auto;
     gap:10px;align-items:end;margin:0 0 14px}
   .asset-filter label{display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--muted)}
   .asset-count{font-size:12px;color:var(--muted);white-space:nowrap;padding-bottom:9px}
-  .seg{display:inline-flex;gap:3px;background:var(--panel2);border:1px solid var(--line);
+  .seg{display:inline-flex;gap:3px;background:var(--panel2);border:1px solid var(--line-strong);
     border-radius:9px;padding:3px;align-self:flex-start}
   .seg button{border:none;background:transparent;min-height:30px;padding:4px 10px;font-size:12px}
-  .seg button.active{background:var(--accent);color:#fff}
-  .acard{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+  .seg button.active{background:var(--accent);color:var(--on-accent)}
+  .acard{background:var(--panel);border:1px solid var(--line-strong);border-radius:var(--radius);
          padding:14px;cursor:pointer;transition:border-color .18s,box-shadow .18s,transform .18s;
-         box-shadow:var(--shadow-sm);min-width:0;display:flex;flex-direction:column;gap:10px;
+         box-shadow:var(--shadow-sm);min-width:0;display:flex;flex-direction:column;gap:var(--sp-2);
          position:relative;overflow:hidden}
   .acard::before{content:"";position:absolute;inset:0 0 auto;height:3px;
     background:linear-gradient(90deg,var(--accent),var(--accent2));opacity:.68}
@@ -512,6 +695,13 @@
      `1fr` grid track resolves its `auto` minimum to the title's full min-content width. */
   .acard>.row{min-width:0}
   .acard h4{margin:0 0 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+  /* One block of facts about the card, set tight, so it reads as metadata rather than as two
+     more things in the stack. */
+  .acard-meta{display:flex;flex-direction:column;gap:2px;font-size:12px;line-height:1.5}
+  /* A bubble's name is what identifies its card, so it gets two lines before it clips. The
+     actions beside it were made icons precisely so there is room for them. */
+  .acard h4.acard-name{white-space:normal;text-overflow:clip;display:-webkit-box;
+    -webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.25;overflow-wrap:anywhere}
   .acard-head{display:flex;gap:9px;align-items:flex-start;min-width:0}
   .acard-title{min-width:0;flex:1}
   .acard-title h4{margin:0}
@@ -545,7 +735,7 @@
   /* bubble detail */
   #detail{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;flex:1;
           min-height:0;min-width:0}
-  .pane{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+  .pane{background:var(--panel);border:1px solid var(--line-strong);border-radius:var(--radius);
         display:flex;flex-direction:column;min-height:0;min-width:0;overflow:hidden;overflow:clip}
   .pane .hd{padding:10px 14px;border-bottom:1px solid var(--line);display:flex;gap:8px;
             align-items:center;flex-wrap:wrap;flex:0 0 auto;min-width:0;font-size:13px;font-weight:600}
@@ -656,6 +846,10 @@
   .page-visibility-btn svg .slash{display:none}
   .toastui-editor-toolbar-icons{min-height:0}
   .sync-toolbar{color:var(--good)!important;font-weight:700!important}
+  .sync-toolbar .li-ic{width:15px;height:15px}
+  .sync-toolbar.saving .li-ic{animation:li-spin 1.4s linear infinite}
+  @keyframes li-spin{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion:reduce){.sync-toolbar.saving .li-ic{animation:none}}
   .sync-toolbar.stale,.sync-toolbar.saving{color:var(--warn)!important}
   .sync-toolbar.conflict{color:var(--bad)!important}
   .sync-toolbar.saving{opacity:.8}
@@ -702,17 +896,35 @@
      pale tint in four of the five themes, near enough to --ink that colour alone said nothing. */
   .toolmenu-item.on{color:var(--ink);font-weight:650;
     background:color-mix(in srgb,var(--accent) 42%,var(--panel))}
-  .toolmenu-check{flex:none;font-size:11px;color:var(--ink)}
+  .toolmenu-check{flex:none;font-size:11px;color:var(--ink);display:inline-flex}
+  .toolmenu-check .li-ic{width:14px;height:14px}
   .toolmenu-item[disabled]{opacity:.55;cursor:default}
   .toolmenu-icon{flex:none;width:17px;display:inline-flex;align-items:center;justify-content:center;
-    font-size:13px}
+    font-size:13px;color:var(--muted)}
+  .toolmenu-item.on .toolmenu-icon,.toolmenu-item:hover .toolmenu-icon{color:inherit}
+  .toolmenu-icon .li-ic{width:16px;height:16px}
   .toolmenu-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .toolmenu-note{flex:none;padding:2px 7px;border:1px solid var(--line);border-radius:999px;
     font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;line-height:1;color:var(--muted)}
   .toolmenu-note.on{color:var(--good);border-color:color-mix(in srgb,var(--good) 45%,var(--line))}
   .toolmenu-dot{width:8px;height:8px;border-radius:50%;background:var(--muted);opacity:.45}
   .toolmenu-dot.on{background:var(--good);opacity:1}
-  h2.section-title{margin:0 0 18px;font-family:var(--font-ui);font-weight:700;
+  /* Every view opens with either an h2.section-title or a .view-head row carrying one; both
+     leave the same gap before the content, so the views start on the same line. */
+  .view-head{margin:0 0 var(--sp-5);gap:var(--sp-3);flex-wrap:wrap;row-gap:var(--sp-2)}
+  /* Stacked panels — settings sections, the Library's upload form — sit a section apart, from
+     the scale rather than from a hardcoded 20px that could not follow the viewport. */
+  .stack-card{margin-top:var(--section-gap)}
+  .card.col>b:first-child{margin-bottom:var(--sp-1)}
+  .stack-card.first{margin-top:0;margin-bottom:var(--section-gap)}
+  /* A line that introduces the panel under it belongs to that panel, so it keeps the smaller
+     gap; a full section break here read as if the two were unrelated. */
+  .view-intro{margin:0 0 var(--sp-2);max-width:70ch}
+  .err:empty,.muted:empty{display:none}
+  .view-intro + .stack-card{margin-top:var(--sp-5)}
+  .view-head>.section-title{margin:0}
+  h2.section-title{display:flex;align-items:center;gap:9px;
+    margin:0 0 var(--sp-5);font-family:var(--font-ui);font-weight:700;
     letter-spacing:-.02em;font-size:20px}
   .spacer{flex:1}
   .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--panel2);
@@ -771,7 +983,12 @@
   .ptabs{--tabrow-ink:var(--bg);display:flex;gap:10px;align-items:center;padding:8px 10px;
          border-bottom:1px solid var(--line);flex:0 0 auto;min-width:0}
   .ptab-scroll{display:flex;gap:4px;align-items:center;min-width:0;flex:1 1 auto;
-         overflow-x:auto;overflow-y:hidden;padding-bottom:2px}
+         overflow-x:auto;overflow-y:hidden;padding-bottom:2px;
+         /* The mask is the scroll hint: the row fades out where it continues, and is fully
+            opaque once you reach either end. `scroll-timeline` is not needed — the mask sits on
+            the scroller, so the browser paints it against whatever is currently in view. */
+         -webkit-mask-image:linear-gradient(90deg,transparent 0,#000 14px,#000 calc(100% - 22px),transparent 100%);
+         mask-image:linear-gradient(90deg,transparent 0,#000 14px,#000 calc(100% - 22px),transparent 100%)}
   .ptab-scroll::-webkit-scrollbar{height:8px}
   .ptab-scroll::-webkit-scrollbar-thumb{border-width:2px}
   .ptab-scroll>*{flex:0 0 auto}
@@ -821,8 +1038,13 @@
   .ptab.active{border-color:var(--accent);color:var(--ink);background:var(--bg)}
   .ptab.dragging{opacity:.45;border-color:var(--accent)}
   .ptab.drop-target{box-shadow:inset 2px 0 0 var(--accent)}
-  .ptab .x{opacity:.5;font-size:11px}
-  .ptab .x:hover{opacity:1;color:var(--bad)}
+  .ptab .x{opacity:0;width:0;overflow:hidden;font-size:11px;flex:0 0 auto;
+    transition:opacity .12s ease,width .12s ease}
+  .ptab .x .li-ic{width:12px;height:12px}
+  .ptab:hover .x,.ptab:focus-within .x,.ptab.active .x{opacity:.55;width:12px}
+  .ptab .x:hover,.ptab .x:focus-visible{opacity:1;color:var(--bad)}
+  /* No hover on touch, so the affordance cannot be hidden behind one there. */
+  @media (hover:none){.ptab .x{opacity:.5;width:12px}}
   .ptab-edit{font-size:13px;padding:2px 6px;width:130px;border-radius:5px}
   #editorHost{position:relative;flex:1;min-height:0;min-width:0;display:flex;overflow:hidden;overflow:clip}
   #editorWrap{flex:1;min-height:0;min-width:0;overflow:hidden;overflow:clip}
@@ -854,6 +1076,7 @@
     box-shadow:var(--shadow);pointer-events:none}
   #previewWrap{flex:1;overflow:auto;padding:12px 16px;min-width:0;min-height:0;line-height:1.6;
     overflow-anchor:none}
+  #previewWrap>:is(p,ul,ol,dl,blockquote,h1,h2,h3,h4,h5,h6){max-width:74ch}
   /* The editor pane has three view modes, chosen from the toolbar dropdown:
      view  = rendered page only (default reading view),
      edit  = Markdown editor only,
@@ -972,6 +1195,13 @@
   .presence-seg.sync-dead{color:var(--bad)}
   .presence-emoji{font-size:12.5px;line-height:1}
   .presence-count{min-width:6px;text-align:center}
+  /* The noun appears when the header has room for it. Below that the tooltip carries it, and
+     the segment falls back to icon + count — which is what it always was. */
+  .presence-word{display:none;color:inherit;opacity:.8}
+  @media (min-width:1100px){.presence-word{display:inline}}
+  /* Nothing attached is not a fault: without this a plain "0" sat at full strength beside a
+     live "1" and read like an error state. */
+  .presence-seg.is-zero{opacity:.62}
   .presence-robot{font-size:14px;padding:0 10px}
   .presence-dot{width:7px;height:7px;border-radius:50%;flex:none;background:var(--good)}
   .presence-dot.degraded,.presence-dot.unresponsive{background:var(--warn)}
@@ -1027,6 +1257,14 @@
 
   /* ── Mobile ── */
   @media (max-width:700px){
+    .home-band>button{flex:0 0 auto;margin-left:auto;min-height:34px}
+    .home-band .rule{flex:1 1 24px}
+    .home-band:has(>button){margin-bottom:var(--sp-4)}
+    /* Rhythm on a phone: rows sit further apart than they do on a desktop, because a row is
+       taller here (its content wraps onto three lines) and 8px between two 140px blocks reads
+       as one continuous mass rather than as separate things you can tap. */
+    :root{--page-pad-x:16px; --page-pad-y:var(--sp-4);
+          --row-gap:var(--sp-3); --section-gap:var(--sp-7); --band-gap:var(--sp-3)}
     /* The marks pane was simply display:none here, which made the ◨ toggle a switch wired to
        nothing. It is now the same bottom sheet the chalk talks use — collapsed to its header,
        pulled up by the grab bar or a tap, sharing bindSheetDrag and the .tk-gh header the
@@ -1071,25 +1309,40 @@
       #topbar #accountBtn{max-width:104px}
     }
     #topbar button{flex-shrink:0;white-space:nowrap;min-height:40px;padding:6px 10px}
-    /* always collapse sidebar — hamburger still toggles it as a narrow overlay */
+    /* always collapse sidebar — the edge handle toggles it as a narrow overlay */
+    /* Full height, from the top edge down. This used to start 49px in, reserving room for the
+       top bar; but the bar auto-hides, so nearly all the time that strip was just page showing
+       above the drawer — the bubble title sitting over the open sheet. The drawer is a modal
+       surface: it starts at the edge, clears the notch with padding instead of margin, and
+       stacks above the bar so revealing the bar cannot clip its first row. */
     #side{width:0!important;min-width:0!important;padding:0!important;border-right:none!important;
-          position:fixed;top:calc(49px + env(safe-area-inset-top));bottom:0;left:0;z-index:20;
+          position:fixed;top:0;bottom:0;left:0;z-index:1300;
           box-shadow:4px 0 24px rgba(0,0,0,.5)}
     /* The sliver is the only way in now that the ☰ is gone, so it stays — and widens into a
        finger-sized target that still reads as a hairline, since only the pill is painted. */
-    .side-reopen{width:22px;height:96px;touch-action:none}
-    .side-reopen::after{height:52px;opacity:.75}
-    #app.side-open #side{width:240px!important;padding:14px 12px!important;border-right:1px solid var(--line)!important}
+    .side-reopen{width:20px;height:88px;left:6px;touch-action:none}
+    .side-reopen::after{height:46px;opacity:.85}
+    #app.side-open #side{width:240px!important;
+      padding:calc(14px + env(safe-area-inset-top)) 12px calc(14px + env(safe-area-inset-bottom))!important;
+      border-right:1px solid var(--line)!important}
     #app.side-open #side .navbtn{min-height:44px;display:flex;align-items:center}
-    #app.side-open::after{content:'';position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:19;
+    /* The scrim rides just under the drawer and above the top bar, so nothing of the page —
+       or of the bar — shows through beside it. */
+    #app.side-open::after{content:'';position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1290;
       backdrop-filter:blur(2px)}
     /* main scrolls with the page */
-    #main{height:auto;overflow:visible;padding:14px 12px}
-    #main.detailmode{height:auto;overflow:visible;min-height:0;padding:12px 10px 84px}
+    /* A 12px gutter put the cards' own 16px padding almost against the screen edge. 16px is
+       the gutter every phone UI uses, and the extra bottom padding keeps the last row clear of
+       the home indicator. */
+    #main{height:auto;overflow:visible;
+      padding:var(--sp-4) var(--page-pad-x) calc(var(--sp-7) + env(safe-area-inset-bottom))}
+    #main.detailmode{height:auto;overflow:visible;min-height:0;
+      padding:var(--sp-3) var(--page-pad-x) calc(84px + env(safe-area-inset-bottom))}
     /* A bubble is an editor workspace, not a document page: keep the app frame fixed and let
        the editor/preview own scrolling. This removes Safari's extra page-level scroll handle. */
     #app.detail-open{height:var(--vvh);min-height:var(--vvh);overflow:hidden}
-    #app.detail-open #main.detailmode{height:100%;overflow:hidden;padding:12px 10px 0}
+    #app.detail-open #main.detailmode{height:100%;overflow:hidden;
+      padding:var(--sp-3) var(--page-pad-x) 0}
     #app.detail-open #detail{display:flex;flex:1;min-height:0}
     #app.detail-open #detail>.editor-pane{height:auto;min-height:0;flex:1}
     /* Safari can still expose the document scroller even when the app itself is clipped. Lock
@@ -1137,14 +1390,17 @@
     /* Larger touch targets in the bubble toolbar on mobile */
     .ptab{min-height:38px;display:flex;align-items:center}
     /* Settings cards full-width */
-    .card{border-radius:10px}
+    .card{border-radius:12px;padding:var(--sp-4)}
+    .acard{padding:var(--sp-4)}
     #auth{height:auto;min-height:var(--vvh)}
     .landing,.landing-inner{min-height:var(--vvh)}
-    .landing-inner{width:min(100% - 28px,1160px)}
-    .landing-hero{min-height:auto;display:flex;flex-direction:column;align-items:stretch;gap:24px;
-      padding:28px 0 38px}
-    .landing h1{font-size:48px;line-height:.96}
-    .landing-lede{font-size:18px}
+    .landing-inner{width:min(100% - 32px,1160px)}
+    .landing-hero{min-height:auto;grid-template-columns:minmax(0,1fr);
+      grid-template-areas:"lead" "auth" "detail";gap:20px;padding:20px 0 30px}
+    .landing-lead,.landing-detail,.landing-auth-panel{margin-top:0}
+    .landing h1{font-size:23px;line-height:1;margin-bottom:8px}
+    .landing-lede{font-size:clamp(21px,5.8vw,27px);line-height:1.12;max-width:24ch}
+    .landing-kicker{font-size:10.5px;letter-spacing:.1em;margin-bottom:10px}
     .landing-points{grid-template-columns:minmax(0,1fr)}
     .landing-section{padding:36px 0}
     .demo-board{display:block}
@@ -1171,10 +1427,12 @@
   <main class="landing">
     <div class="landing-inner">
       <section class="landing-hero" aria-labelledby="landing-title">
-        <div>
-          <div class="landing-kicker"><span class="landing-lock">🔒</span> Collaborative Research with AI</div>
+        <div class="landing-lead">
+          <div class="landing-kicker"><span class="landing-lock"><svg class="li-ic" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#li-i-lock"/></svg></span> Collaborative Research with AI</div>
           <h1 id="landing-title"><span class="lock">locked</span>in</h1>
           <p class="landing-lede">AI should not be limited to chat threads.</p>
+        </div>
+        <div class="landing-detail">
           <p class="landing-copy">Lockedin was built out of my fascination — and frustration — working with AI for research. More often than not, my sessions turned into walls of text and jargon that neither I nor the agent could follow. Rather than automating research and replacing humans, Lockedin focuses on keeping them in the loop, and make agents good colleagues and collaborators, while enriching how they express their thoughts.</p>
           <div class="landing-points">
             <div class="landing-point"><b>Review Together</b><span>Meet with your agent, then mark the work directly.</span></div>
@@ -1218,16 +1476,16 @@
             <p class="demo-dim">So <mark class="dm-q">a teaspoon of water could power a city</mark>.</p>
           </div>
           <div class="demo-note">
-            <div class="demo-badge">✗ this is wrong</div>
+            <div class="demo-badge"><svg class="li-ic mark" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#li-i-mark-bad"/></svg> this is wrong</div>
             <div class="demo-quote">“Because c is huge, any mass converts easily…”</div>
             <div class="demo-say"><b>you</b> A big exchange rate is not an easy exchange. Re-derive.</div>
-            <div class="demo-say agent"><b>🤖 agent</b> Re-derived — c² sets the rate, not the ease; conversion needs a mechanism. The slide now says so.</div>
+            <div class="demo-say agent"><b><svg class="li-ic" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#li-i-agent"/></svg> agent</b> Re-derived — c² sets the rate, not the ease; conversion needs a mechanism. The slide now says so.</div>
           </div>
         </div>
         <div class="demo-legend">
-          <span style="--kc:var(--bad)">✗ wrong</span><span style="--kc:var(--warn)">? unclear</span>
-          <span style="--kc:var(--accent2)">→ go deeper</span><span style="--kc:var(--good)">✓ keep</span>
-          <span style="--kc:var(--muted)">✂ cut</span>
+          <span style="--kc:var(--bad)"><svg class="li-ic mark" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#li-i-mark-bad"/></svg> wrong</span><span style="--kc:var(--warn)"><svg class="li-ic mark" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#li-i-mark-q"/></svg> unclear</span>
+          <span style="--kc:var(--accent2)"><svg class="li-ic mark" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#li-i-mark-more"/></svg> go deeper</span><span style="--kc:var(--good)"><svg class="li-ic mark" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#li-i-mark-good"/></svg> keep</span>
+          <span style="--kc:var(--muted)"><svg class="li-ic mark" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#li-i-mark-cut"/></svg> cut</span>
         </div>
       </section>
 
@@ -1251,12 +1509,12 @@
           <p>AI is only as good as its context, our features are built around enriching it.</p>
         </div>
         <div class="feature-grid">
-          <div class="feature-card"><div class="feature-icon">📚</div><b>Library</b><br><span>Papers with notes, tags and BibTeX — indexed for you and for the agent.</span></div>
-          <div class="feature-card"><div class="feature-icon">🫧</div><b>Idea bubbles</b><br><span>One idea: its pages, figures, talks and open questions together.</span></div>
-          <div class="feature-card"><div class="feature-icon">💬</div><b>Chalk talks</b><br><span>Dated decks you mark up instead of replying in prose.</span></div>
+          <div class="feature-card"><div class="feature-icon"><svg class="li-ic" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#li-i-library"/></svg></div><b>Library</b><br><span>Papers with notes, tags and BibTeX — indexed for you and for the agent.</span></div>
+          <div class="feature-card"><div class="feature-icon"><svg class="li-ic" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#li-i-bubbles"/></svg></div><b>Idea bubbles</b><br><span>One idea: its pages, figures, talks and open questions together.</span></div>
+          <div class="feature-card"><div class="feature-icon"><svg class="li-ic" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#li-i-talk"/></svg></div><b>Chalk talks</b><br><span>Dated decks you mark up instead of replying in prose.</span></div>
           <div class="feature-card"><div class="feature-icon"><img src="/brand/overleaf.svg" alt="" aria-hidden="true"></div><b>Overleaf</b><br><span>The manuscript stays bound to the notes it grew from.</span></div>
           <div class="feature-card"><div class="feature-icon"><img src="/brand/slack.svg" alt="" aria-hidden="true"></div><b>Slack</b><br><span>Papers and TODOs from the channel your group already lives in.</span></div>
-          <div class="feature-card"><div class="feature-icon">📋</div><b>TODOs</b><br><span>Open tasks, referenced from pages GitHub-issue style.</span></div>
+          <div class="feature-card"><div class="feature-icon"><svg class="li-ic" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#li-i-clipboard"/></svg></div><b>TODOs</b><br><span>Open tasks, referenced from pages GitHub-issue style.</span></div>
         </div>
       </section>
 
@@ -1276,10 +1534,10 @@
         <div class="scientist-install">
         <div class="landing-section-head">
           <h2 id="scientist-install-title">Connecting a project takes one line</h2>
-          <p>Open your bubble, hit 🤖, paste one line into a bash in your repo — and your source code is connected to everything: the papers, the document, the talks, your marks.</p>
+          <p>Open your bubble, hit <svg class="li-ic" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#li-i-agent"/></svg>, paste one line into a bash in your repo — and your source code is connected to everything: the papers, the document, the talks, your marks.</p>
         </div>
         <ol class="scientist-steps">
-          <li><b>Hit 🤖 on the bubble</b>It hands you one command, pre-signed for this machine.</li>
+          <li><b>Hit <svg class="li-ic" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#li-i-agent"/></svg> on the bubble</b>It hands you one command, pre-signed for this machine.</li>
           <li><b>Paste it in your repo</b>Installs the clients and binds the folder.<code class="command">curl -fsSL https://lockedin.codes/setup/‹ticket›.sh | bash</code></li>
           <li><b>Run your agent as usual</b>claude, codex, agy — the skill is in place, and reports, talks and feedback sync every few seconds.</li>
         </ol>
@@ -1295,12 +1553,12 @@
           <div class="clone-box">
             <small>Make it your own</small>
             <code class="clone-command">git clone https://github.com/HamidrezaKmK/lockedin.git</code>
-            <a class="clone-link" href="https://github.com/HamidrezaKmK/lockedin" target="_blank" rel="noopener noreferrer">⌘ Clone the repository <span aria-hidden="true">↗</span></a>
+            <a class="clone-link" href="https://github.com/HamidrezaKmK/lockedin" target="_blank" rel="noopener noreferrer"><svg class="li-ic" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#li-i-command"/></svg> Clone the repository <svg class="li-ic" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#li-i-external"/></svg></a>
           </div>
         </div>
       </section>
 
-      <div class="landing-footer">Made with 💜 by a PhD student</div>
+      <div class="landing-footer">Made with <svg class="li-ic heart" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#li-i-heart"/></svg> by a PhD student</div>
     </div>
   </main>
 </div>
@@ -1308,7 +1566,7 @@
 <!-- ============ APP ============ -->
 <div id="app">
   <div id="topbar">
-    <div class="brand">🔒 <span class="brand-word"><span class="lock">locked</span>in</span></div>
+    <div class="brand"><svg class="li-ic" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#li-i-lock"/></svg> <span class="brand-word"><span class="lock">locked</span>in</span></div>
     <div class="row" id="modelTabs"></div>
     <div class="spacer"></div>
     <div class="account-quick">
@@ -1316,17 +1574,17 @@
       <div id="accountMenu" class="card col hide"></div>
     </div>
     <button class="ghost small help-cta" id="helpBtn" title="Help and user guide">Help</button>
-    <button class="ghost small" id="themeCycle" title="Cycle theme">🌙</button>
+    <button class="ghost small icon-btn" id="themeCycle" title="Cycle theme" aria-label="Cycle theme"><svg class="li-ic" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#li-i-theme-dark"/></svg></button>
   </div>
 
   <div id="side">
-    <button class="navbtn" data-view="home">🏠 Home</button>
-    <button class="navbtn active" data-view="bubbles">🫧 Bubbles</button>
-    <button class="navbtn" data-view="assets">📚 Library</button>
-    <button class="navbtn" data-view="todos">✅ TODOs</button>
-    <button class="navbtn" data-view="workspace">🗂️ Workspace</button>
-    <button class="navbtn" data-view="settings">⚙️ Settings</button>
-    <div class="side-credit">Made with <span class="heart" aria-label="love">♥</span> + 🤖 by a PhD student</div>
+    <button class="navbtn" data-view="home"><svg class="li-ic" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#li-i-home"/></svg><span>Home</span></button>
+    <button class="navbtn active" data-view="bubbles"><svg class="li-ic" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#li-i-bubbles"/></svg><span>Bubbles</span></button>
+    <button class="navbtn" data-view="assets"><svg class="li-ic" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#li-i-library"/></svg><span>Library</span></button>
+    <button class="navbtn" data-view="todos"><svg class="li-ic" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#li-i-todos"/></svg><span>TODOs</span></button>
+    <button class="navbtn" data-view="workspace"><svg class="li-ic" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#li-i-workspace"/></svg><span>Workspace</span></button>
+    <button class="navbtn" data-view="settings"><svg class="li-ic" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#li-i-settings"/></svg><span>Settings</span></button>
+    <div class="side-credit">Made with <span class="heart" aria-label="love"><svg class="li-ic heart" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#li-i-heart"/></svg></span> + <svg class="li-ic" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#li-i-agent"/></svg> by a PhD student</div>
   </div>
 
   <div id="main"></div>
@@ -1336,7 +1594,7 @@
 <div id="helpModal" class="overlay hide">
   <div class="diffbox col" style="width:min(900px,97vw);max-height:92vh;padding:0;gap:0;overflow:hidden">
     <div class="hd" style="padding:10px 16px;flex-shrink:0;display:flex;align-items:center;gap:8px"><b>User Guide</b><span class="spacer"></span>
-      <button class="ghost small" id="helpClose">✕</button></div>
+      <button class="ghost small icon-btn" id="helpClose" aria-label="Close"><svg class="li-ic" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#li-i-close"/></svg></button></div>
     <div id="helpTabs"></div>
     <div class="diffbody preview" id="helpBody" style="font-family:inherit;font-size:14px;padding:20px 24px;overflow-y:auto;flex:1;min-height:0"></div>
   </div>
@@ -1354,6 +1612,12 @@
       else e.setAttribute(k,a[k]); }
     for(const c of kids){ if(c==null)continue; e.append(c.nodeType?c:document.createTextNode(c)); }
     return e;};
+  /* One icon, drawn from the sprite in icons.js. Falls back to nothing rather than a broken
+     glyph if the sprite has not loaded — an absent icon is survivable, a tofu box is not. */
+  /** "1 paper" / "2 papers" — the `(s)` construction showed on every card in the product. */
+  const plural=(n,word)=>n+" "+word+(n===1?"":"s");
+  const ic=(name,cls)=>window.LIIcon&&LIIcon.has(name)
+    ? LIIcon(name,{className:cls}) : document.createDocumentFragment();
   const toast = (m)=>{const t=$("#toast"); t.textContent=m; t.classList.remove("hide");
     clearTimeout(t._t); t._t=setTimeout(()=>t.classList.add("hide"),2600);};
   function updateViewportVars(){
@@ -1523,7 +1787,7 @@
     if(enabled&&window.matchMedia("(max-width:700px)").matches) updatePreview();
     const focusBtn=document.getElementById("bubbleFocusToggle");
     if(focusBtn){
-      focusBtn.textContent=enabled?"⤢":"⛶";
+      focusBtn.replaceChildren(ic(enabled?"collapse":"expand"));
       focusBtn.title=enabled?"Exit focused workspace":"Enter focused workspace";
       focusBtn.setAttribute("aria-label",focusBtn.title);
     }
@@ -1638,9 +1902,40 @@
     const ct=r.headers.get("content-type")||""; return ct.includes("json")?r.json():r.text();
   }
 
+  /* Emoji that landing.yaml is known to use, mapped onto the icon set. Anything unlisted is
+     left as text, so unusual copy still renders rather than disappearing. */
+  const LEGACY_ICON={"\uD83D\uDD12":"lock","\uD83D\uDCDA":"library","\uD83E\uDEE7":"bubbles",
+    "\uD83D\uDCAC":"talk","\uD83D\uDDE8\uFE0F":"talk","\uD83D\uDDE8":"talk",
+    "\uD83D\uDCCB":"clipboard","\uD83D\uDD17":"link","\uD83E\uDD16":"agent",
+    "\uD83D\uDC9C":"heart","\u2665":"heart","\uD83D\uDCC4":"doc","\uD83D\uDCC1":"folder",
+    "\u2705":"check-circle","\u2699\uFE0F":"settings","\uD83D\uDDA5":"monitor",
+    "\uD83D\uDCE6":"package","\uD83C\uDFE0":"home","\uD83D\uDDC2\uFE0F":"workspace",
+    "\uD83D\uDDD1":"trash","\u26A0":"warning"};
+  const LEGACY_RE=new RegExp("("+Object.keys(LEGACY_ICON)
+    .sort((a,b)=>b.length-a.length)
+    .map(k=>k.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")).join("|")+")","g");
+  /** A string from landing.yaml, with any known emoji swapped for its icon. */
+  function withIcons(text){
+    const frag=document.createDocumentFragment();
+    String(text==null?"":text).split(LEGACY_RE).forEach(part=>{
+      if(!part)return;
+      if(LEGACY_ICON[part])frag.append(ic(LEGACY_ICON[part]));
+      else frag.append(document.createTextNode(part));
+    });
+    return frag;
+  }
+  /** One icon from a field that may hold an icon name or a legacy emoji. */
+  function iconField(v){
+    const key=String(v==null?"":v).trim();
+    if(!key)return document.createDocumentFragment();
+    if(window.LIIcon&&LIIcon.has(key))return ic(key);
+    if(LEGACY_ICON[key])return ic(LEGACY_ICON[key]);
+    return document.createTextNode(key);
+  }
+
   function renderLandingContent(c){
     if(!c||typeof c!=="object")return;
-    const setText=(sel,v)=>{ const n=$(sel); if(n&&v!=null)n.textContent=String(v); };
+    const setText=(sel,v)=>{ const n=$(sel); if(n&&v!=null)n.replaceChildren(withIcons(v)); };
     const setTitle=(accent,rest)=>{
       const h=$("#landing-title"); if(!h)return;
       h.innerHTML="";
@@ -1656,7 +1951,7 @@
     const kicker=$(".landing-kicker");
     if(kicker){
       kicker.innerHTML="";
-      kicker.append(el("span",{class:"landing-lock"},hero.kicker_icon||""), " "+(hero.kicker||""));
+      kicker.append(el("span",{class:"landing-lock"},iconField(hero.kicker_icon)), " "+(hero.kicker||""));
     }
     setTitle(hero.title_accent,hero.title_rest);
     setText(".landing-lede",hero.lede);
@@ -1671,34 +1966,34 @@
     const workflow=c.workflow||{};
     setText("#workflow-title",workflow.title);
     const workflowIntro=$("#workflow-title")&&$("#workflow-title").parentElement.querySelector("p");
-    if(workflowIntro&&workflow.intro!=null) workflowIntro.textContent=workflow.intro;
+    if(workflowIntro&&workflow.intro!=null) workflowIntro.replaceChildren(withIcons(workflow.intro));
     cards(".workflow-grid",workflow.steps,(s)=>el("div",{class:"workflow-step"},
       el("span",{class:"workflow-num"},s.number||""),
-      el("b",{},s.title||""),
-      el("span",{},s.text||"")));
+      el("b",{},withIcons(s.title)),
+      el("span",{},withIcons(s.text))));
 
     const components=c.components||{};
     setText("#components-title",components.title);
     const componentsIntro=$("#components-title")&&$("#components-title").parentElement.querySelector("p");
-    if(componentsIntro&&components.intro!=null) componentsIntro.textContent=components.intro;
+    if(componentsIntro&&components.intro!=null) componentsIntro.replaceChildren(withIcons(components.intro));
     const featureIcon=(f)=>{
       const name=String(f.title||"").trim().toLowerCase();
       const icon=el("div",{class:"feature-icon"});
       if(name==="overleaf"||name==="slack") icon.append(el("img",{src:"/brand/"+name+".svg",alt:"","aria-hidden":"true"}));
-      else icon.append(f.icon||"");
+      else icon.append(iconField(f.icon));
       return icon;
     };
     cards(".feature-grid",components.features,(f)=>el("div",{class:"feature-card"},
       featureIcon(f),
-      el("b",{},f.title||""),
+      el("b",{},withIcons(f.title)),
       el("br"),
-      el("span",{},f.text||"")));
+      el("span",{},withIcons(f.text))));
 
     const bulletSection=(data,titleSel,listSel)=>{
       setText(titleSel,data.title);
       const host=$(titleSel)&&$(titleSel).parentElement.querySelector("p");
       if(host&&data.text!=null) host.textContent=String(data.text).split("\n\n")[0];
-      cards(listSel,data.bullets,(b)=>el("li",{},String(b||"")));
+      cards(listSel,data.bullets,(b)=>el("li",{},withIcons(b)));
     };
     setText("#why-title",(c.why||{}).title);
     const whyText=$("#why-title")&&$("#why-title").parentElement.querySelector("p");
@@ -1713,9 +2008,9 @@
     const scientist=c.scientist||{};
     setText("#scientist-install-title",scientist.title);
     const scientistIntro=$("#scientist-install-title")&&$("#scientist-install-title").parentElement.querySelector("p");
-    if(scientistIntro&&scientist.intro!=null)scientistIntro.textContent=scientist.intro;
+    if(scientistIntro&&scientist.intro!=null)scientistIntro.replaceChildren(withIcons(scientist.intro));
     cards(".scientist-steps",scientist.steps,(s)=>{
-      const li=el("li",{},el("b",{},s.title||""),document.createTextNode(s.text||""));
+      const li=el("li",{},el("b",{},withIcons(s.title)),withIcons(s.text));
       if(s.command)li.append(el("code",{class:"command"},s.command));
       return li;
     });
@@ -2496,7 +2791,8 @@
 
   function refreshAccountButton(){
     const btn=$("#accountBtn");
-    if(btn){ const ws=(S.workspaces||[]).find(w=>w.id===S.workspaceId); btn.textContent=ws?("▣ "+ws.name):"Workspace"; }
+    if(btn){ const ws=(S.workspaces||[]).find(w=>w.id===S.workspaceId);
+      btn.replaceChildren(ic("workspace"), ws?ws.name:"Workspace"); }
   }
 
   function renderAccountMenu(){
@@ -2512,8 +2808,8 @@
     );
     const ws=el("div",{class:"col",style:"gap:4px"},el("b",{style:"font-size:12px"},"Workspaces"));
     (S.workspaces||[]).forEach(w=>ws.append(el("button",{class:"ghost small",disabled:w.id===S.workspaceId,
-      onclick:()=>switchWorkspace(w.id)},(w.id===S.workspaceId?"✓ ":"")+w.name+" · "+w.role)));
-    ws.append(el("button",{class:"workspace-manage small",onclick:()=>{ $("#accountMenu").classList.add("hide"); switchView("workspace"); }},"Manage workspaces →"));
+      onclick:()=>switchWorkspace(w.id)},w.id===S.workspaceId?ic("check"):"",w.name+" · "+w.role)));
+    ws.append(el("button",{class:"workspace-manage small",onclick:()=>{ $("#accountMenu").classList.add("hide"); switchView("workspace"); }},"Manage workspaces",ic("arrow-right")));
     menu.append(ws);
     if(!S.premium){
       menu.append(el("div",{class:"acct-row"},
@@ -2589,7 +2885,7 @@
   $("#helpClose").onclick=()=>$("#helpModal").classList.add("hide");
   $("#helpModal").onclick=e=>{ if(e.target===e.currentTarget)$("#helpModal").classList.add("hide"); };
   const THEMES=["dark","light","pink","techno","pearl"];
-  const THEME_LABELS={dark:"🌙",light:"☀️",pink:"🦄",techno:"🤖",pearl:"⚪"};
+  const THEME_ICONS={dark:"theme-dark",light:"theme-light",pink:"theme-pink",techno:"theme-techno",pearl:"theme-pearl"};
   const THEME_NAMES={dark:"Dark",light:"Light",pink:"Pink",techno:"Techno",pearl:"Pearl"};
   function availableThemes(){
     const enabled=(S.availableThemes||[]).filter(t=>THEMES.includes(t));
@@ -2600,7 +2896,7 @@
     const theme=enabled.includes(name)?name:enabled[0];
     document.body.classList.remove(...THEMES.map(t=>"theme-"+t), "light");
     document.body.classList.add("theme-"+theme);
-    $("#themeCycle").textContent=THEME_LABELS[theme];
+    $("#themeCycle").replaceChildren(ic(THEME_ICONS[theme]||"theme-dark"));
     if(persist)localStorage.setItem("li_theme",theme);
   }
   $("#themeCycle").onclick=()=>{
@@ -2664,7 +2960,7 @@
   }
 
   // ================= MODEL SWITCHER =================
-  const PROV=[{k:"qwen",label:"🖥 Qwen (premium)"},{k:"openai",label:"OpenAI"},{k:"claude",label:"Claude"},{k:"gemini",label:"Gemini"}];
+  const PROV=[{k:"qwen",label:"Qwen (premium)",icon:"monitor"},{k:"openai",label:"OpenAI"},{k:"claude",label:"Claude"},{k:"gemini",label:"Gemini"}];
   const MODEL_SUGGESTIONS={
     qwen:["qwen2.5:7b-instruct","qwen2.5:14b-instruct","qwen2.5:32b-instruct","qwen2.5:72b-instruct"],
     openai:["gpt-4o","gpt-4o-mini","o3-mini","o1","o1-mini"],
@@ -2678,8 +2974,8 @@
       const locked=p.k==="qwen"&&!S.premium;
       const dot=el("span",{class:"dot","data-dot-provider":p.k});
       const tab=el("div",{class:"mtab"+(active?" active":"")+(locked?" muted":"")},
-        dot, el("span",{},p.label),
-        el("span",{class:"gear",title:"Configure",onclick:(ev)=>{ev.stopPropagation();openCfg(p.k);}},"⚙"));
+        dot, p.icon?ic(p.icon):null, el("span",{},p.label),
+        el("span",{class:"gear",title:"Configure",onclick:(ev)=>{ev.stopPropagation();openCfg(p.k);}},ic("settings")));
       tab.onclick=()=>locked?toast("Qwen is premium. Configure OpenAI, Claude, or Gemini with your own API key."):setActive(p.k);
       wrap.append(tab);
     });
@@ -2694,7 +2990,7 @@
     const box=$("#modelCfg"); const cfg=S.model[k]||{};
     box.innerHTML="";
     box.append(el("div",{class:"row"}, el("b",{},"Configure "+k), el("span",{class:"spacer"}),
-      el("button",{class:"ghost small",onclick:()=>box.classList.add("hide")},"✕")));
+      el("button",{class:"ghost small icon-btn","aria-label":"Close",onclick:()=>box.classList.add("hide")},ic("close"))));
     const inputs={};
     const field=(key,label,val,type,suggestions)=>{
       box.append(el("label",{class:"muted"},label));
@@ -2744,7 +3040,8 @@
     S.verifiedActive=null;
     markProviderHealth(provider,"bad");
     let note=$("#settingsHealth");
-    if(note)note.textContent="Waiting 2 seconds before testing "+provider+"…";
+    const provName=(PROV.find(p=>p.k===provider)||{}).label||provider;
+    if(note)note.textContent="Testing "+provName+"…";
     const details=$("#settingsHealthDetails");
     if(details)details.classList.add("hide");
     S.healthTimer=setTimeout(()=>refreshHealth({live:true,seq,expect:provider}),2000);
@@ -2781,7 +3078,7 @@
 
   async function viewSettings({checkHealth=true}={}){
     const {m}=beginMainRender();
-    m.append(el("h2",{class:"section-title"},"⚙️ Settings"));
+    m.append(el("h2",{class:"section-title"},ic("settings"),"Settings"));
     const grid=el("div",{class:"grid"});
     PROV.forEach(p=>{
       const cfg=S.model[p.k]||{};
@@ -2793,31 +3090,39 @@
       card.append(el("div",{class:"row"},
         el("div",{class:"model-title"},
           el("span",{class:"dot","data-dot-provider":p.k}),
+          p.icon?ic(p.icon):null,
           el("h4",{style:"margin:0"},p.label)),
         el("span",{class:"spacer"}),
         verified?el("span",{class:"badge"},"active"):(active?el("span",{class:"badge"},"testing"):null)));
       const modelName=cfg.model||MODEL_SUGGESTIONS[p.k][0]||"Not configured";
-      card.append(el("div",{class:"muted",style:"font-size:12px;margin-top:8px"},"Model: "+modelName));
+      card.append(el("div",{class:"muted model-line"},"Model: "+modelName));
       if(p.k==="qwen"){
-        card.append(el("div",{class:"muted truncate",style:"font-size:12px;margin-top:4px"},cfg.base_url||"http://localhost:11434/v1"));
-        if(locked)card.append(el("div",{class:"err",style:"font-size:12px;margin-top:6px"},"Premium required"));
+        card.append(el("div",{class:"muted truncate model-line"},cfg.base_url||"http://localhost:11434/v1"));
+        if(locked)card.append(el("div",{class:"err model-line"},"Premium required"));
       } else {
-        card.append(el("div",{class:"muted",style:"font-size:12px;margin-top:4px"},
+        card.append(el("div",{class:"muted model-line"},
           cfg.api_key?"API key saved":"API key not set"));
       }
-      const useBtn=el("button",{class:active?"ghost small":"primary small",
-        onclick:()=>{ if(locked)toast("Qwen is premium. Use your own API key with another provider."); else if(!active)setActive(p.k); }},
-        locked?"Premium only":(active?(verified?"Current":"Testing"):"Use this model"));
+      // Qwen runs locally, so it needs no key; the cloud providers do.
+      const needsKey=p.k!=="qwen" && !cfg.api_key;
+      const useBtn=el("button",{class:(active||needsKey)?"ghost small":"primary small",
+        onclick:()=>{ if(locked)toast("Qwen is premium. Use your own API key with another provider.");
+                      else if(needsKey)openCfg(p.k);
+                      else if(!active)setActive(p.k); }},
+        locked?"Premium only":needsKey?"Add API key"
+          :(active?(verified?"Current":"Testing"):"Use this model"));
       if(active||locked)useBtn.disabled=true;
+      const keyBtn=needsKey?el("button",{class:"primary small",onclick:()=>openCfg(p.k)},
+        ic("key"),"Add API key"):null;
       card.append(el("div",{class:"model-actions"},
-        useBtn,
+        keyBtn||useBtn,
         el("button",{class:"ghost small",onclick:()=>openCfg(p.k)},"Configure")));
       grid.append(card);
     });
     m.append(grid,
-      el("div",{id:"settingsHealth",class:"muted",style:"margin-top:14px"}),
-      el("pre",{id:"settingsHealthDetails",class:"hide",
-        style:"white-space:pre-wrap;overflow:auto;margin-top:8px;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--panel);font-size:12px"}));
+      el("div",{class:"health-block"},
+        el("div",{id:"settingsHealth",class:"muted"}),
+        el("pre",{id:"settingsHealthDetails",class:"hide"})));
     renderAesthetics(m);
     if(S.admin) renderUserAccess(m);
     renderAccountSection(m);
@@ -2826,7 +3131,7 @@
 
   function renderAesthetics(main){
     const old=$("#aestheticsSection"); if(old)old.remove();
-    const box=el("div",{id:"aestheticsSection",class:"card col",style:"margin-top:20px;gap:10px"});
+    const box=el("div",{id:"aestheticsSection",class:"card col stack-card",style:"gap:10px"});
     box.append(el("b",{},"Aesthetics"));
     box.append(el("div",{class:"muted",style:"font-size:12px"},
       "Choose the themes available from the top-bar switcher. These same choices apply to every public page you share."));
@@ -2835,8 +3140,10 @@
     THEMES.forEach(theme=>{
       const check=el("input",{type:"checkbox",checked:availableThemes().includes(theme),style:"width:auto"});
       checks[theme]=check;
-      choices.append(el("label",{class:"row",style:"gap:8px;cursor:pointer"},
-        check,el("span",{},THEME_LABELS[theme]+" "+THEME_NAMES[theme])));
+      choices.append(el("label",{class:"row theme-choice",style:"gap:10px;cursor:pointer"},
+        check, el("span",{class:"theme-swatch","data-theme":theme,"aria-hidden":"true"},
+          el("i",{}),el("i",{}),el("i",{})),
+        ic(THEME_ICONS[theme]), el("span",{},THEME_NAMES[theme])));
     });
     const status=el("span",{class:"muted",style:"font-size:12px"});
     const save=el("button",{class:"primary small",onclick:async()=>{
@@ -2859,7 +3166,7 @@
     const old=$("#workspaceCreate"); if(old)old.remove();
     const prior=$("#workspaceSettings"); if(prior)prior.remove();
     const active=(S.workspaces||[]).find(w=>w.id===S.workspaceId);
-    const createBox=el("div",{id:"workspaceCreate",class:"card col",style:"margin-top:20px;gap:10px"});
+    const createBox=el("div",{id:"workspaceCreate",class:"card col stack-card",style:"gap:10px"});
     createBox.append(el("b",{},"Create a workspace"),
       el("div",{class:"muted",style:"font-size:12px"},"Create a shared research space, then invite approved LockedIn users."));
     const makeName=el("input",{placeholder:"New shared workspace name"});
@@ -2871,7 +3178,7 @@
     }},"Create workspace")));
     main.append(createBox);
     if(!active)return;
-    const box=el("div",{id:"workspaceSettings",class:"card col",style:"margin-top:20px;gap:10px"});
+    const box=el("div",{id:"workspaceSettings",class:"card col stack-card",style:"gap:10px"});
     box.append(el("div",{class:"row"},el("b",{},"Active workspace: "+active.name),el("span",{class:"pill"},active.role)),
       el("div",{class:"muted",style:"font-size:12px"},"These settings and math macros apply to every bubble and member in this workspace."));
     const roster=el("div",{class:"col",style:"gap:6px"}); box.append(roster); main.append(box);
@@ -2909,8 +3216,8 @@
 
   async function viewWorkspace(){
     const {m}=beginMainRender();
-    m.append(el("h2",{class:"section-title"},"🗂️ Workspace"),
-      el("div",{class:"muted",style:"margin-bottom:12px"},"Manage the active workspace, its members, and shared report macros."));
+    m.append(el("h2",{class:"section-title"},ic("workspace"),"Workspace"),
+      el("div",{class:"muted view-intro"},"Manage the active workspace, its members, and shared report macros."));
     await refreshWorkspaceSettings(m);
   }
 
@@ -2921,7 +3228,7 @@
 
   function renderAccountSection(main){
     const old=$("#accountSection"); if(old)old.remove();
-    const box=el("div",{id:"accountSection",class:"card col",style:"margin-top:20px;gap:10px"});
+    const box=el("div",{id:"accountSection",class:"card col stack-card",style:"gap:10px"});
     box.append(el("b",{},"Account — @"+(S.user||"")));
     box.append(el("div",{class:"muted",style:"font-size:12px;margin-bottom:4px"},
       "Change your username or password. Current password is always required."));
@@ -2952,7 +3259,7 @@
   function renderMathMacros(main,{embedded=false}={}){
     const old=$("#mathMacros"); if(old)old.remove();
     const pending=Object.assign({},S.mathMacros); // editable copy
-    const box=el("div",{id:"mathMacros",class:(embedded?"col":"card col"),style:embedded?"margin-top:14px;padding-top:14px;border-top:1px solid var(--line)":"margin-top:20px"});
+    const box=el("div",{id:"mathMacros",class:(embedded?"col":"card col stack-card"),style:embedded?"margin-top:14px;padding-top:14px;border-top:1px solid var(--line)":""});
     const body=el("div",{class:"col hide",style:"gap:10px;margin-top:10px"});
     const toggle=el("button",{class:"ghost small",onclick:()=>{
       body.classList.toggle("hide");
@@ -2971,7 +3278,7 @@
         style:"width:120px;font-family:monospace;font-size:13px"});
       const vIn=el("input",{type:"text",value:val,placeholder:"\\mathbb{E}",
         style:"flex:1;font-family:monospace;font-size:13px"});
-      const del=el("button",{class:"ghost small",onclick:()=>{ row.remove(); }}, "✕");
+      const del=el("button",{class:"ghost small icon-btn","aria-label":"Remove",onclick:()=>{ row.remove(); }},ic("close"));
       const row=el("tr",{},
         el("td",{style:"padding:4px 8px 4px 0"},kIn),
         el("td",{style:"padding:4px 8px"},vIn),
@@ -3015,7 +3322,7 @@
     const renderVersion=main.dataset.renderVersion;
     const old=$("#userAccess");
     if(old)old.remove();
-    const box=el("div",{id:"userAccess",class:"card col",style:"margin-top:20px"});
+    const box=el("div",{id:"userAccess",class:"card col stack-card"});
     box.append(el("div",{class:"row"},
       el("b",{},"User access"),
       el("span",{class:"spacer"}),
@@ -3037,7 +3344,8 @@
           u.premium_requested_at&&!u.premium?el("span",{class:"badge"},"requested"):null,
           el("span",{class:"muted",style:"font-size:12px"},u.created_at?("created "+u.created_at.slice(0,10)):""),
           el("span",{class:"spacer"}));
-        row.append(el("button",{class:u.premium?"ghost small":"primary small",onclick:async()=>{
+        row.append(el("button",{class:u.premium?"danger small":"primary small",onclick:async()=>{
+            if(u.premium&&!confirm("Remove premium from @"+u.username+"?"))return;
             try{
               await api("/api/admin/users/"+encodeURIComponent(u.username)+"/premium",
                 {method:"PUT",body:JSON.stringify({premium:!u.premium})});
@@ -3046,7 +3354,8 @@
             }catch(e){ toast(e.message); }
           }},u.premium?"Remove premium":"Upgrade to premium"));
         if(u.username!==S.user){
-          row.append(el("button",{class:u.approved?"ghost small":"primary small",onclick:async()=>{
+          row.append(el("button",{class:u.approved?"danger small":"primary small",onclick:async()=>{
+            if(u.approved&&!confirm("Revoke access for @"+u.username+"? They will not be able to sign in."))return;
             try{
               await api("/api/admin/users/"+encodeURIComponent(u.username)+"/approval",
                 {method:"PUT",body:JSON.stringify({approved:!u.approved})});
@@ -3088,24 +3397,96 @@
     else if(v==="settings")viewSettings();
   }
 
-  function viewHome(){
-    const {m}=beginMainRender();
-    // Reuse the public landing copy, but omit account access because this is an authenticated
-    // in-app destination. The source landing remains the single editable content surface.
-    const source=$("#auth .landing"); if(!source)return;
-    const home=source.cloneNode(true);
-    home.classList.add("home-landing");
-    const hero=home.querySelector(".landing-hero");
-    if(hero){
-      hero.classList.add("home-hero");
-      hero.removeAttribute("aria-labelledby");
-      const wordmark=hero.querySelector("#landing-title"); if(wordmark)wordmark.remove();
+  /* The signed-in Home used to be the marketing page with the login panel cut out, so someone
+     returning to their own work was shown the pitch for the product they already use. It now
+     answers the two questions you actually come back with: what changed, and what is waiting
+     on me. The landing copy stays where it belongs — on the landing page. */
+  async function viewHome(){
+    const {m,version}=beginMainRender();
+    m.append(el("h2",{class:"section-title"},ic("home"),"Home"));
+    const loading=viewLoading("Loading your workspace…",3);
+    m.append(loading);
+    let d;
+    try{ d=await api("/api/home"); }
+    catch(e){ if(isCurrentRender(version))loading.replaceWith(el("div",{class:"err"},e.message)); return; }
+    if(!isCurrentRender(version))return;
+    loading.remove();
+
+    const nothing=!d.bubble_total && !d.waiting_total && !d.todo_total;
+    if(nothing){
+      m.append(el("div",{class:"home-empty"},
+        el("p",{},"Nothing here yet. A bubble is one idea — its pages, its papers, and the talks you have about it."),
+        el("button",{class:"primary",onclick:newBubble},ic("plus"),"Create your first bubble")));
+      return;
     }
-    const authPanel=home.querySelector(".landing-auth-panel"); if(authPanel)authPanel.remove();
-    const footer=home.querySelector(".landing-footer"); if(footer)footer.remove();
-    home.removeAttribute("aria-labelledby");
-    home.querySelectorAll("[id]").forEach(node=>node.removeAttribute("id"));
-    m.append(home);
+
+    // What is waiting on you comes first: an open mark is a question the agent asked and has
+    // not had answered. Nothing else on this page is blocking anyone.
+    const band=(label,count,action)=>{
+      const row=el("div",{class:"home-band"},el("b",{},label),el("div",{class:"rule"}));
+      if(count!=null)row.append(el("span",{class:"home-band-count"},count));
+      if(action)row.append(action);
+      return row;
+    };
+
+    if(d.waiting_total){
+      m.append(band("Waiting on you",
+        d.open_marks+" open mark"+(d.open_marks===1?"":"s")+" across "
+        +d.waiting_total+" talk"+(d.waiting_total===1?"":"s")));
+      const list=el("div",{class:"home-list"});
+      d.waiting.forEach(t=>{
+        const row=el("button",{class:"home-row",
+          onclick:()=>gotoRoute("bubble/"+t.bubble_slug+"/talk/"+encodeURIComponent(t.talk_id)+"/slide/1")});
+        row.append(el("span",{class:"home-row-date"},t.date||""));
+        const body=el("span",{class:"home-row-body"});
+        body.append(el("span",{class:"home-row-title"},t.title||"Untitled talk"));
+        body.append(el("span",{class:"home-row-sub"},t.bubble_name+" · ",
+          withIcons(t.intent||"")));
+        row.append(body);
+        row.append(el("span",{class:"tk-tag open home-row-tag"},
+          t.open+" open note"+(t.open===1?"":"s")));
+        list.append(row);
+      });
+      m.append(list);
+    }
+
+    if(d.bubble_total){
+      m.append(band("Recently worked on", d.bubble_total>d.bubbles.length
+        ? d.bubbles.length+" of "+d.bubble_total : null,
+        el("button",{class:"ghost small",onclick:()=>switchView("bubbles")},"All bubbles",ic("arrow-right"))));
+      const list=el("div",{class:"home-list"});
+      d.bubbles.forEach(b=>{
+        const row=el("button",{class:"home-row",onclick:()=>openBubble(b.slug)});
+        const body=el("span",{class:"home-row-body"});
+        body.append(el("span",{class:"home-row-title"},b.name));
+        // The goal, if the agent has written one — it says what the bubble is *for*, which is
+        // the one thing a list of names cannot.
+        const gist=(b.goal||b.abstract||"").replace(/\s+/g," ").trim();
+        if(gist)body.append(el("span",{class:"home-row-sub"},withIcons(gist)));
+        row.append(body);
+        row.append(el("span",{class:"home-row-meta"},relativeEditedLabel(b.last_edited_at).replace(/^last edited /,"")));
+        list.append(row);
+      });
+      m.append(list);
+    }
+
+    if(d.todo_total){
+      m.append(band("Open TODOs", d.todo_total>d.todos.length
+        ? d.todos.length+" of "+d.todo_total : null,
+        el("button",{class:"ghost small",onclick:()=>switchView("todos")},"All TODOs",ic("arrow-right"))));
+      const list=el("div",{class:"home-list"});
+      d.todos.forEach(t=>{
+        const row=el("button",{class:"home-row",onclick:()=>viewTodo(t.id)});
+        row.append(el("span",{class:"home-row-id"},"@"+t.id));
+        const body=el("span",{class:"home-row-body"});
+        body.append(el("span",{class:"home-row-title"},t.title));
+        row.append(body);
+        if(t.ref_count)row.append(el("span",{class:"home-row-meta"},
+          t.ref_count+" reference"+(t.ref_count===1?"":"s")));
+        list.append(row);
+      });
+      m.append(list);
+    }
   }
 
   // ================= ASSETS =================
@@ -3148,7 +3529,7 @@
 
   async function viewAssets(){
     const {m,version}=beginMainRender();
-    m.append(el("h2",{class:"section-title"},"📚 Library"));
+    m.append(el("h2",{class:"section-title"},ic("library"),"Library"));
     // Start both reads immediately: the bubble list populates the upload selector, while the
     // asset request is often the expensive one for a large library.
     const bubblesRequest=api("/api/bubbles");
@@ -3157,7 +3538,7 @@
     m.append(loading);
 
     // upload form
-    const f=el("div",{class:"card col"});
+    const f=el("div",{class:"card col stack-card first"});
     let uploadMode=S.assetUploadMode||"file";
     const fileMode=el("button",{type:"button"},"Upload file");
     const linkMode=el("button",{type:"button"},"PDF link");
@@ -3235,7 +3616,7 @@
     };
     f.append(el("b",{},"Add a PDF"),modeSeg,file,url,title,bibliography,bubblePicker,btn);
     m.insertBefore(f,loading);
-    m.insertBefore(el("div",{style:"height:16px"}),loading);
+    // (header spacing comes from .view-head)
 
     let r;
     try{ r=await assetsRequest; }
@@ -3316,7 +3697,7 @@
     }
     const head=el("div",{class:"acard-head"},titleBox);
     const badges=el("div",{class:"row",style:"gap:5px;flex-wrap:wrap;justify-content:flex-end"});
-    if((a.bibliography||"").trim())badges.append(el("span",{class:"badge bib",title:"BibTeX available"},"✓ BibTeX"));
+    if((a.bibliography||"").trim())badges.append(el("span",{class:"badge bib",title:"BibTeX available"},ic("check"),"BibTeX"));
     if(a.attention_flag)badges.append(el("span",{class:"badge"},"requires attention"));
     if(badges.childNodes.length)head.append(badges);
     c.append(head);
@@ -3327,7 +3708,7 @@
       el("span",{},(a.date_added||"").slice(0,10)||"undated")));
     c.append(el("div",{class:"acard-actions"},
       el("a",{href:workspaceUrl("/api/assets/"+a.pdf_id+"/pdf"),target:"_blank",title:"Open PDF",onclick:e=>e.stopPropagation()},
-        el("button",{class:"primary small",onclick:e=>e.stopPropagation()},"↗ PDF")),
+        el("button",{class:"primary small",onclick:e=>e.stopPropagation()},ic("external"),"PDF")),
       el("span",{class:"spacer"}),
       el("button",{class:"ghost small",title:a.attention_flag?"Clear attention flag":"Mark as requiring attention",onclick:async(e)=>{
         e.stopPropagation();
@@ -3377,7 +3758,7 @@
     const render=opts.renderVersion==null?beginMainRender():{m:$("#main"),version:opts.renderVersion};
     const {m,version}=render;
     if(!isCurrentRender(version))return;
-    m.append(el("button",{class:"ghost small",onclick:goBack},"← Library"));
+    m.append(el("button",{class:"ghost small",onclick:goBack},ic("arrow-left"),"Library"));
     const box=el("div",{class:"card col",style:"margin-top:12px;max-width:720px"});
     const title=el("input",{value:a.title||""});
     const notes=el("textarea",{rows:"4"}); notes.value=a.notes||"";
@@ -3499,7 +3880,7 @@
     m.append(box);
     // show cached summary
     const sumWrap=el("div",{class:"card",style:"margin-top:12px;max-width:720px"});
-    const resummarize=el("button",{class:"ghost small"},"↻ Re-summarize");
+    const resummarize=el("button",{class:"ghost small"},ic("refresh"),"Re-summarize");
     const summaryHint=el("span",{class:"muted",style:"font-size:12px"},"⤷ Uses your active model");
     sumWrap.append(el("div",{class:"row"},el("b",{},"AI summary"),el("span",{class:"spacer"}),summaryHint,resummarize));
     const body=el("div",{class:"preview",style:"margin-top:8px"});
@@ -3537,18 +3918,19 @@
   async function viewBubbles(){
     const {m,version}=beginMainRender();
     const filter=S.bubbleFilter||"active";
-    const head=el("div",{class:"row"}, el("h2",{class:"section-title",style:"margin:0"},"🫧 Bubbles"),
+    const head=el("div",{class:"row"}, el("h2",{class:"section-title",style:"margin:0"},ic("bubbles"),"Bubbles"),
       el("span",{class:"spacer"}),
       el("button",{class:"ghost small",title:"Migrate resources — copy papers from one bubble into another",
-        "aria-label":"Migrate resources",onclick:()=>viewMigratePapers()},"📦"),
+        "aria-label":"Migrate resources",onclick:()=>viewMigratePapers()},ic("package")),
       el("button",{class:"ghost small",
         title:filter==="active"?"Show archived bubbles":"Show active bubbles",
         "aria-label":filter==="active"?"Show archive":"Show active",
         onclick:()=>{ S.bubbleFilter=filter==="active"?"archived":"active"; viewBubbles(); }},
-        filter==="active"?"🗄":"🫧"),
+        ic(filter==="active"?"archive":"bubbles")),
       el("button",{class:"primary small",onclick:newBubble},"+ New bubble"));
     const loading=viewLoading("Loading bubbles…",4);
-    m.append(head, el("div",{style:"height:14px"}),loading);
+    head.classList.add("view-head");
+    m.append(head, loading);
     let r;
     try{ r=await api("/api/bubbles?archived="+(filter==="archived")); }
     catch(e){ if(isCurrentRender(version))loading.replaceWith(el("div",{class:"err"},e.message)); return; }
@@ -3559,22 +3941,23 @@
     const grid=el("div",{class:"grid"});
     r.bubbles.forEach(b=>{
       const c=el("div",{class:"acard"});
-      const h=el("div",{class:"row"}, el("h4",{style:"margin:0"},b.name));
+      const h=el("div",{class:"row"}, el("h4",{class:"acard-name",style:"margin:0"},b.name));
       // delete button — stopPropagation so it doesn't also open the bubble
       h.append(el("span",{class:"spacer"}));
       h.append(el("button",{class:"ghost small",style:"padding:3px 7px",
+        class:"ghost small icon-btn",
+        "aria-label":b.archived?"Restore this bubble":"Archive this bubble",
         title:b.archived?"Restore this bubble":"Archive this bubble",
         onclick:async(e)=>{ e.stopPropagation(); await setBubbleArchived(b.slug, !b.archived); }
-      },b.archived?"Restore":"Archive"));
-      h.append(el("button",{class:"ghost small",style:"opacity:.5;padding:3px 7px",
-        title:"Delete this bubble",
+      },ic(b.archived?"undo":"archive")));
+      h.append(el("button",{class:"ghost small icon-btn",style:"opacity:.55",
+        "aria-label":"Delete this bubble",title:"Delete this bubble",
         onclick:(e)=>{ e.stopPropagation(); deleteBubble(b.slug, b.name, viewBubbles); }
-      },"🗑"));
+      },ic("trash")));
       c.append(h);
-      c.append(el("div",{class:"muted",style:"font-size:12px;margin-top:6px"},
-        `${b.pdf_count} paper(s) • ${b.page_count||0} page(s)`));
-      c.append(el("div",{class:"muted",style:"font-size:12px;margin-top:3px"},
-        relativeEditedLabel(b.last_edited_at)));
+      c.append(el("div",{class:"acard-meta muted"},
+        el("span",{},`${plural(b.pdf_count,"paper")} • ${plural(b.page_count||0,"page")}`),
+        el("span",{},relativeEditedLabel(b.last_edited_at))));
       c.onclick=()=>openBubble(b.slug);
       grid.append(c);
     });
@@ -3589,7 +3972,7 @@
     document.querySelectorAll(".navbtn").forEach(b=>b.classList.toggle("active",b.dataset.view==="bubbles"));
     if(!noRoute)pushRoute("migrate");
     const {m,version}=beginMainRender();
-    m.append(el("a",{class:"wikilink",style:"font-size:13px",onclick:()=>viewBubbles()},"← All bubbles"));
+    m.append(el("a",{class:"wikilink backlink",style:"font-size:13px",onclick:()=>viewBubbles()},ic("arrow-left"),"All bubbles"));
     m.append(el("h2",{style:"margin:10px 0 2px"},"Migrate resources"));
     m.append(el("div",{class:"muted",style:"font-size:12px;margin-bottom:14px"},
       "Copy papers from one bubble into another. The source bubble keeps everything; "
@@ -3774,24 +4157,34 @@
     loading.remove();
     const filter=S.todoFilter||"open";
     const head=el("div",{class:"row"},
-      el("h2",{class:"section-title",style:"margin:0"},"✅ TODOs"),
+      el("h2",{class:"section-title",style:"margin:0"},ic("todos"),"TODOs"),
       el("span",{class:"spacer"}),
       el("button",{class:"ghost small",onclick:()=>{ S.todoFilter=filter==="open"?"done":"open"; viewTodos(); }},
         filter==="open"?"Show done":"Show open"),
-      el("button",{class:"primary small",onclick:newTodo},"+ New TODO"));
-    m.append(head, el("div",{style:"height:14px"}));
+      el("button",{class:"primary small",onclick:newTodo},ic("plus"),"New TODO"));
+    head.classList.add("view-head");
+    m.append(head);
     const items=S.todos.filter(t=>filter==="done"?t.done:!t.done);
     if(!items.length){ m.append(el("div",{class:"muted"},
       filter==="done"?"No completed TODOs.":"No open TODOs. Create one with + New TODO.")); return; }
-    const grid=el("div",{class:"grid"});
+    const list=el("div",{class:"home-list"});
     items.forEach(t=>{
-      const c=el("div",{class:"acard",style:"cursor:pointer"});
-      c.append(el("span",{style:"font-weight:600"+(t.done?";text-decoration:line-through;opacity:.6":"")},
-        "@"+t.id+"  "+t.title));
-      c.onclick=()=>viewTodo(t.id);
-      grid.append(c);
+      const row=el("button",{class:"home-row todo-row"+(t.done?" done":""),onclick:()=>viewTodo(t.id)});
+      // The @id is the reference syntax pages use to point here, so it is identity, not decoration.
+      row.append(el("span",{class:"home-row-id"},"@"+t.id));
+      const body=el("span",{class:"home-row-body"});
+      body.append(el("span",{class:"home-row-title"},t.title));
+      const note=(t.note||"").replace(/\s+/g," ").trim();
+      if(note)body.append(el("span",{class:"home-row-sub"},note));
+      row.append(body);
+      // A TODO with references cannot be deleted until they are gone, so the count is the one
+      // number worth showing next to it.
+      if(t.ref_count)row.append(el("span",{class:"home-row-meta"},
+        t.ref_count+" reference"+(t.ref_count===1?"":"s")));
+      if(t.done)row.append(el("span",{class:"tk-tag done home-row-tag"},ic("check"),"done"));
+      list.append(row);
     });
-    m.append(grid);
+    m.append(list);
   }
   async function newTodo(){
     const title=await requestTextDialog({title:"New TODO",label:"TODO title",
@@ -3813,7 +4206,7 @@
     catch(e){ if(isCurrentRender(version))m.append(el("div",{class:"err"},"TODO not found.")); return; }
     if(!isCurrentRender(version))return;
     S.todosById[t.id]=t;
-    m.append(el("a",{class:"wikilink",style:"font-size:13px",onclick:()=>{S.todoFilter="open";viewTodos();}},"← All TODOs"));
+    m.append(el("a",{class:"wikilink backlink",style:"font-size:13px",onclick:()=>{S.todoFilter="open";viewTodos();}},ic("arrow-left"),"All TODOs"));
 
     // title row: done toggle + (inline-editable) title
     const titleWrap=el("div",{class:"row",style:"margin-top:10px;align-items:center;gap:10px"});
@@ -3821,7 +4214,7 @@
       title:t.done?"Mark open":"Mark done",
       onclick:async()=>{ try{ await api("/api/todos/"+t.id,{method:"PATCH",body:JSON.stringify({done:!t.done})}); }
         catch(e){ toast(e.message); } viewTodo(id); }},
-      t.done?"↩ Reopen":"✓ Mark done");
+      ...(t.done?[ic("undo"),"Reopen"]:[ic("check"),"Mark done"]));
     const titleSpan=el("h2",{style:"margin:0"+(t.done?";text-decoration:line-through;opacity:.6":"")},"@"+t.id+"  "+t.title);
     const editTitle=el("button",{class:"ghost small",title:"Edit title",onclick:()=>{
       const inp=el("input",{value:t.title,style:"font-size:20px;font-weight:600;width:auto;min-width:240px"});
@@ -3830,7 +4223,7 @@
         viewTodo(id); };
       inp.onkeydown=e=>{ if(e.key==="Enter")save(); if(e.key==="Escape")viewTodo(id); };
       titleSpan.replaceWith(inp); inp.focus(); inp.select();
-    }},"✏️");
+    }},ic("pencil"));
     titleWrap.append(doneBtn,titleSpan,editTitle);
     m.append(titleWrap);
 
@@ -3871,7 +4264,7 @@
     m.append(refWrap);
 
     // delete — blocked while referenced (server enforces this too)
-    const del=el("button",{class:"ghost small",style:"margin-top:18px"},"🗑 Delete TODO");
+    const del=el("button",{class:"ghost small",style:"margin-top:18px"},ic("trash"),"Delete TODO");
     if(refs.length){ del.disabled=true; del.title="Referenced — remove the @"+t.id+" references first."; }
     else del.onclick=async()=>{ if(!confirm("Delete TODO @"+t.id+"?"))return;
       try{ await api("/api/todos/"+t.id,{method:"DELETE"}); toast("TODO deleted"); S.todoFilter="open"; viewTodos(); }
@@ -3918,8 +4311,8 @@
     const body=el("div",{class:"diffbody asset-modal-body papers-modal-body col"});
     const close=()=>overlay.remove();
     box.append(
-      el("div",{class:"asset-modal-header"},el("b",{},"📚 Papers in this bubble"),
-        el("span",{class:"spacer"}),el("button",{class:"ghost small",title:"Close",onclick:close},"✕")),
+      el("div",{class:"asset-modal-header"},el("b",{},ic("library"),"Papers in this bubble"),
+        el("span",{class:"spacer"}),el("button",{class:"ghost small icon-btn",title:"Close",onclick:close},ic("close"))),
       body);
     overlay.append(box); overlay.onclick=e=>{if(e.target===overlay)close();}; document.body.append(overlay);
     body.append(el("div",{class:"muted"},"Loading papers…"));
@@ -3957,7 +4350,7 @@
           const preview=previewable
             ?el("a",{class:"asset-file-preview",href:url,target:"_blank",rel:"noopener",title:"Open preview: "+item.name,
                 onclick:e=>e.stopPropagation()},el("img",{src:url,alt:"Preview: "+item.name,loading:"lazy"}))
-            :el("span",{class:"asset-file-preview asset-file-icon",title:"File"},"📄");
+            :el("span",{class:"asset-file-preview asset-file-icon",title:"File"},ic("doc"));
           const row=el("div",{class:"asset-file-row"},
             preview,
             el("span",{class:"asset-file-name truncate",title:item.name},item.name),
@@ -3975,7 +4368,7 @@
           }
           row.append(
             el("a",{href:url,target:"_blank",rel:"noopener",onclick:e=>e.stopPropagation()},el("button",{class:"ghost small"},"Open")),
-            el("a",{href:url,download:item.name,onclick:e=>e.stopPropagation()},el("button",{class:"ghost small"},"⇩ Download")));
+            el("a",{href:url,download:item.name,onclick:e=>e.stopPropagation()},el("button",{class:"ghost small"},ic("download"),"Download")));
           row.append(el("button",{class:"danger small",onclick:async()=>{
             if(!confirm("Delete "+item.name+"? This can break report links that use this file."))return;
             try{ await api("/api/bubbles/"+encodeURIComponent(slug)+"/assets/"+encodeURIComponent(item.name),{method:"DELETE"}); toast("Deleted "+item.name); render(); }
@@ -4001,7 +4394,7 @@
     };
     file.onchange=()=>{ if(file.files.length)upload.textContent="Upload "+file.files.length+" file"+(file.files.length===1?"":"s"); };
     box.append(
-      el("div",{class:"asset-modal-header"},el("b",{},"📁 Bubble assets"),el("span",{class:"spacer"}),el("button",{class:"ghost small",title:"Close",onclick:close},"✕")),
+      el("div",{class:"asset-modal-header"},el("b",{},ic("folder"),"Bubble assets"),el("span",{class:"spacer"}),el("button",{class:"ghost small icon-btn",title:"Close",onclick:close},ic("close"))),
       list,
       el("div",{class:"asset-modal-footer"},file,el("span",{class:"spacer"}),upload));
     overlay.append(box); overlay.onclick=e=>{if(e.target===overlay)close();}; document.body.append(overlay); render();
@@ -4045,7 +4438,7 @@
     // A circular arrow rather than the words "New link": the button restores a link that went
     // stale, which is a retry, not a second kind of link.
     const refresh=el("button",{class:"setup-refresh",title:"Get a fresh link",
-      "aria-label":"Get a fresh link"},"↻");
+      "aria-label":"Get a fresh link"},ic("refresh"));
     const close=()=>overlay.remove();
     let commands=null, os=detectPlatform(), agent="claude";
     const OSES=[["mac","macOS"],["linux","Linux"],["windows","Windows"]];
@@ -4079,8 +4472,8 @@
         commands=await api("/api/bubbles/"+encodeURIComponent(slug)+"/setup-link",{method:"POST"});
         // Warning-coloured on purpose: for its short life this line is a credential, and a muted
         // grey footnote is exactly how people miss that.
-        warn.textContent="⚠ Link expires in "+Math.round((commands.expires_in||600)/60)
-          +" minutes, don't share!";
+        warn.replaceChildren(ic("warning"),"Link expires in "+Math.round((commands.expires_in||600)/60)
+          +" minutes, don't share!");
       }catch(e){ snippet.textContent="Could not create a setup link: "+e.message; }
       render();
     }
@@ -4088,7 +4481,7 @@
       try{
         await copyText(commandFor());
         // Feedback in the button, not a toast: .toast sits at z-index 50, below this overlay's 60.
-        copy.textContent="Copied ✓"; copy.classList.add("ok");
+        copy.replaceChildren(ic("check"),"Copied"); copy.classList.add("ok");
         clearTimeout(copy._t); copy._t=setTimeout(()=>{ copy.textContent="Copy"; copy.classList.remove("ok"); },2000);
       }catch(e){ copy.textContent="Press ⌘/Ctrl+C"; snippet.focus(); }
     };
@@ -4121,8 +4514,8 @@
       el("div",{class:"setup-step-num"},String(n)),
       el("div",{class:"setup-step-body"},el("b",{},title),...body));
     box.append(
-      el("div",{class:"create-dialog-header"},el("b",{},"🤖 Connect an agent"),
-        el("span",{class:"spacer"}),el("button",{class:"ghost small",title:"Close",onclick:close},"✕")),
+      el("div",{class:"create-dialog-header"},el("b",{},ic("agent"),"Connect an agent"),
+        el("span",{class:"spacer"}),el("button",{class:"ghost small icon-btn",title:"Close",onclick:close},ic("close"))),
       el("div",{class:"diffbody create-dialog-body setup-body"},
         step(1,"Open a terminal in your project folder",
           el("div",{class:"muted setup-hint"},"Wherever this bubble's writing should live. ",
@@ -4195,12 +4588,12 @@
         el("span",{class:"toolmenu-icon"},icon),
         el("span",{class:"toolmenu-label"},label));
       if(opts.note)row.append(el("span",{class:"toolmenu-note"+(opts.noteOn?" on":"")},opts.note));
-      if(opts.on)row.append(el("span",{class:"toolmenu-check"},"\u2713"));
+      if(opts.on)row.append(el("span",{class:"toolmenu-check"},ic("check")));
       row.onclick=e=>{ e.stopPropagation(); if(!opts.keepOpen)close(); opts.run(row); };
       return row;
     }
-    const overleafMark=()=>el("img",{class:"overleaf-mark",alt:"",
-      src:"https://images.ctfassets.net/nrgyaltdicpt/451Wbu94Q1X3M5QIk74QLL/08e42061e965fb152a329ded74cdc3ce/overleaf-o-logo-primary.svg"});
+    const overleafMark=()=>el("img",{class:"overleaf-mark",alt:"","aria-hidden":"true",
+      src:"/brand/overleaf.svg"});
 
     function buildPanel(){
       const menu=el("div",{class:"toolmenu-panel",role:"menu",onclick:e=>e.stopPropagation()});
@@ -4212,13 +4605,13 @@
         const viewers=(snap.viewers||[]).length, workers=visibleWorkers(snap).length;
         const worst=workers?worstWorkerState(visibleWorkers(snap)):"";
         menu.append(el("div",{class:"toolmenu-group"},"Attached"));
-        menu.append(item("👥",viewers===1?"1 person reading":viewers+" people reading",
+        menu.append(item(ic("users"),viewers===1?"1 person reading":viewers+" people reading",
           {title:"Who has this bubble open",keepOpen:false,
            run:()=>togglePresence("people")}));
-        menu.append(item("⚙️",workers===1?"1 folder syncing":workers+" folders syncing",
+        menu.append(item(ic("refresh"),workers===1?"1 folder syncing":workers+" folders syncing",
           {title:"Directories syncing this bubble",note:worst||"",noteOn:worst==="live",
            run:()=>togglePresence("workers")}));
-        menu.append(item("🤖","Connect an agent",
+        menu.append(item(ic("agent"),"Connect an agent",
           {title:"Connect an agent to this bubble",run:()=>openScientistSetup(S.bubble)}));
       }
       // View first: it is the control reached for most, and on a phone it is reachable nowhere
@@ -4228,21 +4621,21 @@
       // Page-scoped entries only make sense with a page open. On the bubble home the bubble-wide
       // ones still do, so the menu keeps working rather than emptying out.
       const onPage=!S.onBubbleHome;
-      if(onPage) menu.append(item("\ud83c\udff7\ufe0f","Edit titles",
+      if(onPage) menu.append(item(ic("pencil"),"Edit titles",
         {on:S.editingTitles,
          title:S.editingTitles?"Save the page and bubble names":"Rename pages and this bubble",
          run:()=>toggleEditTitles()}));
       if(!onPage && window.LockedInTalks)
-        menu.append(item("\ud83c\udff7\ufe0f","Edit chalk talk titles",
+        menu.append(item(ic("pencil"),"Edit chalk talk titles",
           {title:"Rename a chalk talk or change its explanation",
            run:()=>window.LockedInTalks.editTitles()}));
       menu.append(el("div",{class:"toolmenu-group"},"This bubble"));
-      menu.append(item("\ud83c\udfe0","Bubble home",
+      menu.append(item(ic("home"),"Bubble home",
         {title:"The idea, the document, and the chalk talks",
          run:()=>gotoRoute("bubble/"+slug)}));
-      menu.append(item("\ud83d\udcda","Papers",
+      menu.append(item(ic("library"),"Papers",
         {title:"Papers attached to this bubble",run:()=>openBubblePapers(slug)}));
-      menu.append(item("\ud83d\udcc1","Assets",
+      menu.append(item(ic("folder"),"Assets",
         {title:"Browse, upload, or download this bubble\u2019s files",
          run:()=>openBubbleAssets(slug)}));
       menu.append(el("div",{class:"toolmenu-group"},"Overleaf"));
@@ -4251,13 +4644,13 @@
                              :"Link an Overleaf project to this bubble",
          run:()=>b.overleaf_url?window.open(b.overleaf_url,"_blank","noopener"):openOverleafModal(b)}));
       if(b.overleaf_url)
-        menu.append(item("\u270f\ufe0f","Change or remove link",
+        menu.append(item(ic("pencil"),"Change or remove link",
           {title:"Change or remove Overleaf project",run:()=>openOverleafModal(b)}));
       if(onPage) menu.append(el("div",{class:"toolmenu-group"},"Sharing"));
       // The owner preview is exactly what a share viewer sees, so it is redundant once the public
       // link itself is one row below — the same rule the old toolbar followed by hiding it.
       if(onPage&&!S.shareActive)
-        menu.append(item("\ud83d\udc41","Preview page",
+        menu.append(item(ic("eye"),"Preview page",
           {title:"Preview the read-only page your share viewers see",
            run:()=>openReadOnlyPreview(slug)}));
       if(onPage) menu.append(item(el("span",{class:"toolmenu-dot"+(S.shareActive?" on":"")}),"Public link",
@@ -4274,7 +4667,7 @@
            }catch(err){ row.disabled=false; toast(err.message); }
          }}));
       if(S.shareActive)
-        menu.append(item("\u2197","Open shared page",
+        menu.append(item(ic("external"),"Open shared page",
           {title:"Open the shared page in a new tab",
            run:()=>window.open(shareUrl(),"_blank","noopener")}));
       return menu;
@@ -4358,25 +4751,30 @@
     host.classList.remove("hide");
     const viewers=snap.viewers||[], workers=visibleWorkers(snap);
     const worst=worstWorkerState(workers);
-    const segment=(view,title,state,...kids)=>el("button",
-      {class:"presence-seg"+(S.presenceView===view?" on":"")+(state?" sync-"+state:""),
+    const segment=(view,title,state,count,...kids)=>el("button",
+      {class:"presence-seg"+(S.presenceView===view?" on":"")+(state?" sync-"+state:"")
+             +(count?"":" is-zero"),
        title,onclick:e=>{ e.stopPropagation(); togglePresence(view); }},...kids);
     const group=el("div",{class:"presence-group-card"},
       segment("people", viewers.length===1?"1 person is reading this bubble"
                                           :viewers.length+" people are reading this bubble", "",
-        el("span",{class:"presence-emoji"},"👥"),
-        el("span",{class:"presence-count"},String(viewers.length))),
-      segment("workers", workers.length===1?"1 folder is syncing this bubble"
+        viewers.length,
+        el("span",{class:"presence-emoji"},ic("users")),
+        el("span",{class:"presence-count"},String(viewers.length)),
+        el("span",{class:"presence-word"},viewers.length===1?"reading":"reading")),
+      segment("workers", workers.length===0?"No folders are syncing this bubble"
+                        :workers.length===1?"1 folder is syncing this bubble"
                                            :workers.length+" folders are syncing this bubble",
         // The gear and the count carry the health themselves — `⚙` is a text glyph, so it takes
         // the colour. A separate dot said the same thing twice and made the segment lopsided.
         // With nothing syncing there is no health to report, so the segment stays neutral.
-        workers.length?worst:"",
-        el("span",{class:"presence-emoji"},"⚙"),
-        el("span",{class:"presence-count"},String(workers.length))),
+        workers.length?worst:"", workers.length,
+        el("span",{class:"presence-emoji"},ic("refresh")),
+        el("span",{class:"presence-count"},String(workers.length)),
+        el("span",{class:"presence-word"},"syncing")),
       el("button",{class:"presence-seg presence-robot",title:"Connect an agent to this bubble",
         "aria-label":"Connect an agent to this bubble",
-        onclick:e=>{ e.stopPropagation(); closePresenceMenu(); openScientistSetup(S.bubble); }},"🤖"));
+        onclick:e=>{ e.stopPropagation(); closePresenceMenu(); openScientistSetup(S.bubble); }},ic("agent")));
     host.append(group);
     if(S.presenceView){
       const menu=buildPresenceMenu(snap,S.presenceView);
@@ -4440,7 +4838,7 @@
       // The one actionable thing from here, and the reason the robot sits in the same card.
       menu.append(el("button",{class:"presence-item",
         onclick:()=>{ closePresenceMenu(); openScientistSetup(S.bubble); }},
-        el("span",{class:"presence-emoji"},"🤖"),
+        el("span",{class:"presence-emoji"},ic("agent")),
         el("span",{class:"presence-name"},"Connect an agent…")));
     }
     workers.forEach(w=>{
@@ -4499,14 +4897,14 @@
     // nowhere to go, and only there is it a glyph.
     const backTo=fn=>el("button",{class:"bubble-back",title:"Back to the bubble\u2019s home",
       "aria-label":"Back to the bubble\u2019s home",onclick:fn},"\u2039");
-    const glyph=el("h2",{class:"section-title",style:"margin:0"},"🫧 ");
+    const glyph=el("h2",{class:"section-title",style:"margin:0"},ic("bubbles"));
     const mark=onHome?glyph:backTo(()=>gotoRoute("bubble/"+slug));
     const titleRow=el("div",{class:"row bubble-title",style:"margin:10px 0 12px;align-items:center;gap:8px;flex-wrap:wrap"},
       mark, nameSpan);
     if(!b.approved){
       titleRow.append(el("button",{class:"ghost small",title:"Rename bubble",
         style:"opacity:.5;padding:4px 7px;flex-shrink:0",
-        onclick:()=>startBubbleRename(nameSpan,b.slug)},"✏️"));
+        onclick:()=>startBubbleRename(nameSpan,b.slug)},ic("pencil")));
     }
     titleRow.append(el("span",{class:"spacer"}));
     if(b.approved){
@@ -4702,9 +5100,10 @@
 
   // One button factory for both editors' undo/redo; editorHistoryCmd already targets whichever
   // editor is active.
-  function editorHistButton(label,title,redo){
+  function editorHistButton(iconName,title,redo){
     const b=document.createElement("button");
-    b.type="button"; b.textContent=label; b.title=title;
+    b.type="button"; b.title=title; b.setAttribute("aria-label",title);
+    b.replaceChildren(ic(iconName));
     b.style.cssText="font:inherit;font-size:16px;line-height:1;background:none;border:none;color:inherit;cursor:pointer;margin:0;padding:0 2px";
     b.addEventListener("mousedown",e=>e.preventDefault());
     b.addEventListener("click",e=>{ e.preventDefault(); editorHistoryCmd(redo); });
@@ -4741,15 +5140,15 @@
       if(opts.onSave){
         syncBtn=editorToolButton("slideSyncToolbarButton","Saved; click to save now",
                                  ()=>opts.onSave());
-        syncBtn.className="sync-toolbar synced"; syncBtn.textContent=SYNC_ICON.synced;
+        syncBtn.className="sync-toolbar synced"; syncBtn.replaceChildren(ic(SYNC_ICON.synced));
         tools.push({name:"slide-sync",tooltip:"Save state",el:syncBtn});
       }
       tools.push('image','table',
         {name:"text-color",tooltip:"Color selected text",el:buildColorTool()},
         {name:"center-text",tooltip:"Center selected text",el:buildCenterTextTool()},
         'link',
-        {name:"undo",tooltip:"Undo (Ctrl+Z)",el:editorHistButton("↶","Undo",false)},
-        {name:"redo",tooltip:"Redo (Ctrl+Shift+Z)",el:editorHistButton("↷","Redo",true)});
+        {name:"undo",tooltip:"Undo (Ctrl+Z)",el:editorHistButton("undo","Undo",false)},
+        {name:"redo",tooltip:"Redo (Ctrl+Shift+Z)",el:editorHistButton("redo","Redo",true)});
       const ed=new toastui.Editor({
         el:host, height:opts.height||"100%", theme:"dark", initialEditType:"markdown",
         previewStyle:"tab", initialValue:opts.initialValue||"", usageStatistics:false,
@@ -4761,7 +5160,7 @@
       S.slideEd=ed;
       const save=()=>{ if(opts.onSave) opts.onSave(); };
       const handle={ editor:ed, save,
-        setSync(state){ if(syncBtn){ syncBtn.textContent=SYNC_ICON[state]||SYNC_ICON.synced;
+        setSync(state){ if(syncBtn){ syncBtn.replaceChildren(ic(SYNC_ICON[state]||SYNC_ICON.synced));
                                      syncBtn.className="sync-toolbar "+state; } },
         dispose(){
           if(S.slideEd===ed){S.slideEd=null;S.slideSave=null;}
@@ -4788,8 +5187,8 @@
         'link',
         {name:"page-visibility",tooltip:"Toggle page visibility",el:buildPageVisibilityTool()},
         {name:"hidden-pages",tooltip:"Show hidden pages",el:buildHiddenPagesTool()},
-        {name:"undo",tooltip:"Undo (Ctrl+Z)",el:editorHistButton("↶","Undo",false)},
-        {name:"redo",tooltip:"Redo (Ctrl+Shift+Z)",el:editorHistButton("↷","Redo",true)}
+        {name:"undo",tooltip:"Undo (Ctrl+Z)",el:editorHistButton("undo","Undo",false)},
+        {name:"redo",tooltip:"Redo (Ctrl+Shift+Z)",el:editorHistButton("redo","Redo",true)}
       ]],
       hooks:{ addImageBlobHook:(blob,cb)=>uploadImage(S.bubble,blob,cb) },
       customHTMLRenderer:editorImageRenderer(()=>S.bubble),
@@ -5504,7 +5903,7 @@
         };
         t.append(el("span",{onclick:()=>switchPage(p.page_slug)},p.title));
         if(p.page_slug!==S.home)
-          t.append(el("span",{class:"x",title:"Delete page",onclick:(e)=>{e.stopPropagation();deletePage(p.page_slug);}},"✕"));
+          t.append(el("span",{class:"x",title:"Delete page",onclick:(e)=>{e.stopPropagation();deletePage(p.page_slug);}},ic("close")));
       }
       (p.hidden?hiddenTabs:visibleTabs).append(t);
     });
@@ -5531,14 +5930,14 @@
     group.append(el("button",{class:"small pane-toggle"+(S.paneLeft?" on":""),id:"paneLeftToggle",
       title:S.paneLeft?"Hide the Markdown editor":"Show the Markdown editor",
       "aria-label":"Toggle the Markdown editor","aria-pressed":String(!!S.paneLeft),
-      onclick:()=>setPane("left",!S.paneLeft)},"◧"));
+      onclick:()=>setPane("left",!S.paneLeft)},ic("panel-left")));
     group.append(el("button",{class:"small",id:"bubbleFocusToggle",
       title:"Enter focused workspace", "aria-label":"Enter focused workspace",
-      onclick:()=>setBubbleFocus(!S.bubbleFocus)},"⛶"));
+      onclick:()=>setBubbleFocus(!S.bubbleFocus)},ic("expand")));
     group.append(el("button",{class:"small pane-toggle"+(S.paneRight?" on":""),id:"paneRightToggle",
       title:S.paneRight?"Hide your marks":"Show your marks",
       "aria-label":"Toggle the marks column","aria-pressed":String(!!S.paneRight),
-      onclick:()=>setPane("right",!S.paneRight)},"◨"));
+      onclick:()=>setPane("right",!S.paneRight)},ic("panel-right")));
     controls.append(group);
     // The tab list scrolls horizontally, and on a phone its window is barely two tabs wide, so
     // switching to a page whose tab sits past the fold used to leave the active tab off-screen —
@@ -5840,7 +6239,7 @@
       applyRemote(c||""); markSynced(); scrollContentTop(); primeSync(); }
     refreshTabs(); fetchRefs().then(()=>updatePreview());   // page removed → renumber
   }
-  const SYNC_ICON={synced:"✓",stale:"✎",saving:"…",conflict:"✕"};
+  const SYNC_ICON={synced:"check",stale:"pencil",saving:"clock",conflict:"close"};
   function editorToolButton(id,title,onClick){
     const b=document.createElement("button");
     b.type="button"; b.id=id; b.title=title; b.setAttribute("aria-label",title);
@@ -6063,7 +6462,7 @@
   function buildSyncTool(){
     const b=editorToolButton("syncToolbarButton","Saved automatically; click to save now",clickSave);
     b.className="sync-toolbar "+(S.syncState||"synced");
-    b.textContent=SYNC_ICON[S.syncState||"synced"];
+    b.replaceChildren(ic(SYNC_ICON[S.syncState||"synced"]));
     return b;
   }
   function buildPageVisibilityTool(){
@@ -6074,7 +6473,7 @@
   }
   function buildHiddenPagesTool(){
     const b=editorToolButton("hiddenPagesToolbarButton","Show hidden pages",toggleHiddenPages);
-    b.textContent="☷";
+    b.replaceChildren(ic("panel-left"));
     return b;
   }
   function toggleHiddenPages(){
@@ -6084,7 +6483,7 @@
   function refreshHiddenPagesTool(){
     const b=$("#hiddenPagesToolbarButton"); if(!b)return;
     const shown=!!S.showHiddenPages;
-    b.textContent=shown?"◫":"☷";
+    b.replaceChildren(ic(shown?"panel-right":"panel-left"));
     b.title=shown?"Hide hidden pages":"Show hidden pages";
     b.setAttribute("aria-label",b.title);
     b.classList.toggle("active",shown);
