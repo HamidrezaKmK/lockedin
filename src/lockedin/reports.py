@@ -18,13 +18,13 @@ admin and starts with premium access. Later sign-ups are standard accounts by de
 can use the site right away, but premium-only server compute is not enabled until an admin
 upgrades them.
 
-On phones, tap **☰** (top-left) to open the sidebar.
+On phones the sidebar opens from its own edge: pull the handle on the left of the screen, or tap it. Tap the dimmed page beside it, or fling it left, to close it again.
 
 ## Theme modes
 
 Use the theme button in the top bar to cycle the colour scheme. Open
-**⚙️ Settings → Aesthetics** to choose which of **🌙 Dark, ☀️ Light, 🦄 Pink, 🤖 Techno,**
-and **⚪ Pearl** appear in that cycle. Your selection is remembered for your workspace. Owner
+**Settings → Aesthetics** to choose which of **Dark, Light, Pink, Techno** and **Pearl** appear
+in that cycle; each row shows the palette it switches to. Your selection is remembered for your workspace. Owner
 previews and public shared pages deliberately offer only **Dark** and **Light**. The landing page
 is always Dark.
 
@@ -33,7 +33,7 @@ is always Dark.
 Click the active workspace name in the top-right menu to see whether your account is **standard**
 or **premium**, request premium access, log out, or open **Manage workspaces**.
 
-Go to **⚙️ Settings → Account** to change your username or password. You must supply your
+Go to **Settings → Account** to change your username or password. You must supply your
 current password to confirm. A username change carries all your data over and keeps you
 logged in.
 
@@ -53,7 +53,7 @@ Separate from the agent you actually work with, a background model can summarize
 you: when you upload a PDF it extracts metadata, suggests tags, and writes the one-time summary
 shown on the asset page. That is its whole job — there is no AI chat in the app.
 
-Set it up in **⚙️ Settings**: pick a provider card (Qwen on the server for premium accounts, or
+Set it up in **Settings**: pick a provider card (Qwen on the server for premium accounts, or
 OpenAI / Claude / Gemini with your own API key) and click **Configure** to add the key or
 endpoint. The coloured dot shows the provider's last health-check.
 """,
@@ -75,7 +75,7 @@ not ownership of the work already contributed.
 
 ## Workspace tab
 
-Open **🗂️ Workspace** in the sidebar to manage the active workspace.
+Open **Workspace** in the sidebar to manage the active workspace.
 
 - **Create a workspace** creates a new shared workspace with you as its first admin.
 - **Active workspace** lists every member and their `admin` or `editor` role.
@@ -110,12 +110,13 @@ New bubbles are created explicitly from the Bubbles view.
 
 ## Renaming & deleting
 
-Rename a bubble from its detail view via **🏷️ Edit titles** in the **⋮** menu (the same mode
-that renames its pages).
+Rename a bubble from its detail view via **Edit titles** in the **⋮** menu (the same mode that
+renames its pages).
 
-**Archive** on a bubble card hides it from the Bubbles list without touching its papers or pages;
-**Show archive** lists the archived ones, where **Restore** brings one back. The 🗑 icon deletes a
-bubble **and all its wiki pages** — archive is the reversible option.
+Each bubble card carries two icon buttons: **archive** hides it from the Bubbles list without
+touching its papers or pages, and **delete** removes the bubble **and all its wiki pages**.
+Archive is the reversible one. The archive button in the view header lists the archived bubbles,
+where the same button on a card restores it.
 
 ## The bubble home
 
@@ -125,7 +126,7 @@ the document as a row of page cards, and the **chalk talks**. Click a page card 
 
 The idea is written by the agent and stamped with when it last revised it — it is the agent's
 own statement of what the work is for. If it is subtly wrong, that is the cheapest and
-highest-value thing you can correct, so **✎ correct this** is right beside it. Both fields take
+highest-value thing you can correct, so **edit goals** is right beside it. Both fields take
 Markdown and LaTeX.
 
 ## Page tabs
@@ -133,21 +134,54 @@ Markdown and LaTeX.
 Each bubble has a mini-wiki. The tabs at the top of the editor list all pages.
 
 - **+** at the left of the tab row — create a new page
-- **◧** and **◨** at the right — open the Markdown editor and your marks. With both closed you
-  get the rendered page and nothing else
+- **the editor switch** and **the marks switch** at the right — open the Markdown editor and
+  your marks. With both closed you get the rendered page and nothing else. The button between
+  them enters a focused workspace
 - Click a tab to switch pages (the current page auto-saves first)
 - Drag a tab to reorder pages; page order controls wiki navigation and bubble-wide numbering
-- **✕** on a tab deletes that page (the overview page cannot be deleted)
-- Pick **🏷️ Edit titles** in the **⋮** menu (beside the presence pill) to rename pages
+- the **close** button on a tab deletes that page (the overview page cannot be deleted); it
+  shows on the tab you are on and on hover, and stays visible on touch
+- Pick **Edit titles** in the **⋮** menu (the last segment of the presence cluster in the
+  bubble's title row) to rename pages
 
 The eye icon beside **Insert link** in the editor toolbar hides or shows the current page in
 read-only previews and public shares. Hidden pages are omitted from the tab bar by default.
-Use the **☷ Show hidden pages** control beside the sync icon to reveal them; they appear in a
+Use the **show hidden pages** control in the editor toolbar to reveal them; they appear in a
 separate right-aligned group until you hide them again.
+
+## Files on a bubble
+
+**Assets** in the **⋮** menu is the bubble's own file drawer — figures a page links to, data, a
+slide export, anything the work needs beside the prose. Drop files in, download them back, or
+delete them. A page refers to one by a path under `assets/` — the usual Markdown image line,
+pointing at the file name — and it resolves wherever the page is read, including on a public
+share.
+
+### Large files
+
+Nothing here asks you to think about size until it matters, but it is worth knowing what happens.
+
+A file over **16 MB** is not sent as one request. The browser slices it into **32 MB** pieces and
+sends them one at a time, because a proxy in front of the server caps a single request body
+(Cloudflare stops at 100 MB) while the server itself does not. You see one progress ring either
+way; the slicing is not something you drive.
+
+**An interrupted upload resumes.** The pieces already accepted stay on the server, so if the
+connection drops at 80% you pick the same file again and it carries on from 80% rather than
+starting over — the upload dialog says so when it fails. A dropped slice is retried on its own a
+few times first, with a widening pause, since one bad slice over a tunnel is the ordinary
+failure and re-sending it is cheap. Cancelling is the one thing that throws the staged bytes
+away; anything simply abandoned is swept a day later.
+
+Text assets preview in the browser up to **1 MB**. Past that the viewer says so and offers the
+download instead, rather than pulling a large file into the page to render it.
+
+If a bubble is synced to a folder by LockedIn Scientist, files over **25 MB** are listed but never
+carried by the sync in either direction — see **Scientist CLI** for moving those deliberately.
 
 ## Quick-add a paper
 
-Open **📚 Papers** in the **⋮** menu to see the bubble's attached papers and a **Quick add
+Open **Papers** in the **⋮** menu to see the bubble's attached papers and a **Quick add
 paper** form. Paste a PDF URL, provide a title, and optionally paste BibTeX. Quick add fetches
 the PDF as a new asset, attaches it directly to the current bubble at relevance 5, and saves the
 BibTeX when valid. You can edit or add BibTeX later from the asset detail page.
@@ -157,12 +191,12 @@ are rewritten automatically.
 
 ## Sharing
 
-Open the **⋮** menu in the page toolbar and click **Public link** to publish an unlisted,
+Open the **⋮** menu in the bubble's title row and click **Public link** to publish an unlisted,
 read-only link. While sharing is active the row reads **On** and an **↗ Open shared page** entry
 appears beneath it. Anyone with the link can browse visible pages (no login needed). Toggle off to revoke
 immediately; toggle back on to restore the same URL.
 
-Hovering a heading on the shared page reveals a 🔗 anchor for deep-linking to a section.
+Hovering a heading on the shared page reveals a link anchor for deep-linking to a section.
 Shared pages have a theme-cycle button, restricted to the themes you enabled in **Aesthetics**.
 """,
     },
@@ -196,19 +230,21 @@ Select any text on a slide and pick one:
 
 | mark | means | what the agent does |
 |---|---|---|
-| ✗ | this is wrong | re-derives, rather than rewording |
-| ? | I don't follow | re-explains, rather than re-deriving |
-| → | go deeper | expands, usually into a report page |
-| ✓ | good, keep this | leans on it rather than cutting it |
-| ✂ | cut this | removes it |
+| **wrong** | this is wrong | re-derives, rather than rewording |
+| **unclear** | I don't follow | re-explains, rather than re-deriving |
+| **deeper** | go deeper | expands, usually into a report page |
+| **keep** | good, keep this | leans on it rather than cutting it |
+| **cut** | cut this | removes it |
 
-**A mark alone is a complete comment.** Tapping ✗ on a sentence says everything it needs to;
+Each is drawn in the picker with its own mark and colour, and named underneath.
+
+**A mark alone is a complete comment.** Tapping **wrong** on a sentence says everything it needs to;
 the text box is optional. That matters on a phone, and it gives the agent a far stronger signal
 than prose it has to infer intent from.
 
 ## Marking a region
 
-Some marks are about *where things are*, not what they say. Hit **🖍 mark region**, drag a box
+Some marks are about *where things are*, not what they say. Hit **mark region**, drag a box
 over any part of the slide, and pick a mark. A region mark stores a picture of the slide as you
 saw it, with your box drawn on — which is the only thing that carries layout and placement to an
 agent that cannot see your screen.
@@ -218,11 +254,11 @@ nothing a quoted sentence does not.
 
 ## Drawing on a slide
 
-Some feedback is faster to draw than to say. Hit **✍ draw** and the slide becomes a canvas:
+Some feedback is faster to draw than to say. Hit **draw** and the slide becomes a canvas:
 cross a line out, arrow a paragraph to where it belongs, circle the weak step, write in the
-margin. **↩ undo** removes the last stroke; **✓ done** pins it, with an optional sentence.
+margin. **undo** removes the last stroke; **done** pins it, with an optional sentence.
 
-It lands as a single **✍ drawn** mark. The agent gets a picture of the slide with your strokes
+It lands as a single **drawn** mark. The agent gets a picture of the slide with your strokes
 on it and the instruction that the drawing *is* the feedback — crossed-out text wants rewriting,
 arrows want things moved, circles want attention. Like region marks, drawing exists only on
 chalk talks.
@@ -233,19 +269,19 @@ A talk is not agent-only. **+ add chalk talk** offers two doors: **Ask an agent*
 prompt to paste into the agent you already run, and **Write it yourself** opens a blank slide in
 the editor.
 
-On any open talk, **✎ edit** switches the current slide to the same Markdown editor the document
+On any open talk, **edit** switches the current slide to the same Markdown editor the document
 uses. The first line is the `# title`, an optional `*subtitle*` line follows, then the body.
 Every open mark appears as a `<comment-begin=…> … <comment-end=…>` pair — the same syntax
 report pages use — and the mark follows the text between the tags when you rewrite it. Deleting
 the tags leaves the mark to orphan loudly rather than silently vanishing.
 
 The toolbar is the document editor's — same image upload, tables, text colour, centering and
-undo — and the same coloured chip on its left shows the save state: ✓ saved, ✎ unsaved; click it
-to save in place, or **Save slide** to save and return to the deck.
+undo — and the same coloured chip on its left shows the save state: a tick when saved, a pencil
+while unsaved; click it to save in place, or **Save slide** to save and return to the deck.
 
-A hand edit lands in place — the slide simply becomes what you saved. **＋** inserts a blank
-slide after the current one; **✂** removes the slide with its marks; the ✕ on a talk card on
-the bubble page deletes the whole talk.
+A hand edit lands in place — the slide simply becomes what you saved. **+** inserts a blank
+slide after the current one; the **delete** button removes the slide with its marks; the delete
+button on a talk card on the bubble page removes the whole talk.
 
 ## Marks are conversations
 
@@ -276,8 +312,8 @@ You do not need to describe the format or the rules — the agent has already re
 ## Marks on report pages
 
 Report pages take the same five marks. Select text in the **rendered** page (not the Markdown)
-and pick one; the highlight appears where you read. Open the marks column with **◨** in the tab
-row.
+and pick one; the highlight appears where you read. Open the marks column with the marks
+switch in the tab row.
 
 The one difference is the anchor. A page is hand-edited constantly, so a page mark wraps the
 text it points at — you will see `<comment-begin=…> … <comment-end=…>` in the Markdown — and
@@ -295,13 +331,14 @@ a **title**, an optional Markdown **note**, and a **done** flag.
 
 ## Managing TODOs
 
-Open the **✅ TODOs** view in the sidebar.
+Open the **TODOs** view in the sidebar. It is a list: one row per item, carrying its `@id`, its
+title, and how many report pages reference it.
 
 - **+ New TODO** — opens a title form and creates a new item
-- Click a TODO to expand and edit its note
-- The **Open / Done** toggle at the top filters the list
-- Check the checkbox to mark done (it moves to the Done list)
-- The 🗑 button deletes a TODO — only allowed when no report page references it
+- Click a row to open it and edit its note
+- **Show done** / **Show open** at the top switches which list you are looking at
+- **Mark done** on an open item closes it; **Reopen** brings it back
+- **Delete TODO** removes it — only allowed when no report page references it
 - Deleting a TODO compacts the remaining ids; any shifted `@id` references in report pages
   are updated automatically
 
@@ -321,7 +358,7 @@ of the editor. Use ↑/↓ to move, Enter/Tab to insert, or click an item.
         "content": """\
 ## Uploading papers
 
-Use **📚 Library** to add a PDF or a paper URL. You can optionally set:
+Use **Library** to add a PDF or a paper URL. You can optionally set:
 - **Title** — defaults to the filename
 - **Extracted metadata** — the active model records a canonical paper title and author list
   from the PDF during background processing; your chosen asset title is preserved
@@ -355,7 +392,16 @@ The Library page has filters above the card grid:
 - **Bubble** — limits results to papers attached to that bubble
 
 You can combine both filters, for example selecting a bubble and typing part of a paper
-title. Asset cards with saved BibTeX show a small **✓ BibTeX** badge.
+title. Asset cards with saved BibTeX show a small **BibTeX** badge.
+
+## Large PDFs
+
+A paper goes up in a single request, and a PDF over **200 MB** is refused with a message saying
+so. That is a different path from a bubble's own files, which slice and resume — a paper is
+metadata plus text extraction, and one that large is almost always the wrong file.
+
+Text extraction and the summary run in the background after the upload returns, so a long paper
+lands in the list straight away and fills in its extracted title and summary shortly after.
 
 ## BibTeX and citations
 
@@ -381,7 +427,7 @@ section when the bubble has citations.
 
 ## Tagging a paper into a bubble
 
-When editing or uploading an asset, use **➕ Pick an existing bubble…** to attach it
+When editing or uploading an asset, use the **Add to bubble…** picker to attach it
 to an existing bubble. The picker uses the bubble's stable tag, so it avoids accidentally
 creating a duplicate bubble after a rename. You can still type new comma-separated tags
 when you intentionally want to create or suggest another topic.
@@ -428,8 +474,8 @@ after installing its native `lockedin-scientist` bootstrap skill.
 
 ### The one-line way
 
-Open the bubble and click **🤖** beside the presence chip (or **Connect an agent** in the **⋮**
-menu). Pick your operating system, copy the single line it shows, and paste it into a terminal on
+Open the bubble and click the **agent** button in the presence cluster (or **Connect an agent**
+in the **⋮** menu). Pick your operating system, copy the single line it shows, and paste it into a terminal on
 the machine where you write. It installs the client, signs that terminal in with no browser step,
 asks which folder to use, binds the bubble to it, and installs the skill for whichever of Codex,
 Claude Code, and Antigravity are on that machine — then tells you what to run.
@@ -489,7 +535,7 @@ lockedin-scientist bubbles
 lockedin-scientist sync <bubble-slug>
 ```
 
-`workspaces switch` is a **device-global** setting shared by every project on the computer. The 🤖
+`workspaces switch` is a **device-global** setting shared by every project on the computer. The agent
 link avoids it entirely — it pins the bubble's workspace into that one project's binding, so
 connecting one project never retargets the others.
 
@@ -565,11 +611,9 @@ conflict and the file is restored locally. Delete the home page in the browser i
 ### Figures and GIFs
 
 Scientist can add report figures and animated GIFs using the same format as the browser editor.
-Place a descriptively named file in `.lockedin/reports/assets/`, then embed it in a page:
-
-```
-![Description of the figure](assets/my-figure.gif)
-```
+Place a descriptively named file in `.lockedin/reports/assets/`, then embed it on a page with an
+ordinary Markdown image: the alt text becomes the figure's caption and carries its numbering, and
+the path is relative to the page — `assets/my-figure.gif`. Captions may contain math.
 
 Keep report artwork out of `.lockedin/assets/`, which is reserved for the paper library. Preview and shared
 bubble pages restart GIFs from their first frame whenever they render.
@@ -668,62 +712,62 @@ bubble a damaged local directory belongs to.
         "content": """\
 ## The editor
 
-Open any bubble and pick a view from the **⋮** menu in the page toolbar:
-- **◧ Split** — editor left, live preview right
-- **✏️ Edit** — plain Markdown editor
-- **👁 Read** — rendered reading view (default)
-- **🏷️ Edit titles** — rename the bubble and its pages inline; pick another view (or press
-  Enter in a title) to save
+There are no named view modes. The right of the page-tab row carries two switches and a focus
+button, and every layout is a combination of the two:
 
-**Save**: click the leftmost sync icon in the editor toolbar, or press **Ctrl/⌘+S**. It changes to
-**✎** while there are unsaved edits and **⚠** when a disk conflict needs attention.
+- **the editor switch** — opens the Markdown editor beside the rendered page
+- **the marks switch** — opens your marks column
+- **the focus button** between them — a focused workspace with the navigation hidden; press it
+  again to leave
 
-From left to right, the editor toolbar shows: the **sync** icon, **💬 Toggle review**, insert image,
-insert table, text colour, **≡ center selected text**, insert link, the page visibility eye,
-**☷ Show hidden pages**, **↶ undo**, and **↷ redo**. The eye hides or shows the current page
-in read-only previews and public shares; hidden page tabs stay out of the way until you use
-**☷**, then appear right-aligned in the tab bar.
+With both switches closed you get the rendered page and nothing else, which is the default.
 
-The page toolbar itself stays short: **+** at the far left, the page tabs, then **⋮** and
-**⛶**. Everything else for the bubble — the view modes, Edit titles, 📚 Papers, 📁 Assets, the
-Overleaf link, and preview/sharing — lives in **⋮**. Use **⛶** to enter a focused workspace that
-hides the navigation; click it again to exit.
+**Save**: click the leftmost sync chip in the editor toolbar, or press **Ctrl/⌘+S**. The chip
+shows the state — a tick when saved, a pencil while there are unsaved edits, a clock while
+saving, and a cross when a disk conflict needs attention.
+
+From left to right, the editor toolbar shows: the **sync** chip, insert image, insert table,
+text colour, **center selected text**, insert link, the **page visibility** eye, **show hidden
+pages**, **undo** and **redo**. The eye hides or shows the current page in read-only previews
+and public shares; hidden page tabs stay out of the way until you use show-hidden-pages, then
+appear right-aligned in the tab bar.
+
+Everything else about the bubble — Edit titles, Papers, Assets, the Overleaf link, and
+preview/sharing — lives in the **⋮** menu, which sits at the end of the presence cluster in the
+bubble's title row rather than in the tab row.
 
 ### On mobile
 
-The bubble page is the same one control surface, sized for a phone: page tabs, the editor
-toolbar, **+**, and **⋮**. Everything above is reachable from that menu, including switching
-between **👁 Read** and **✏️ Edit**, and **👁 Preview page** for the read-only view.
+The same controls, sized for a phone: the page tabs, the editor toolbar, **+**, and the **⋮**
+menu in the title row. The two pane switches work the same way — open the editor when you want
+to type, close it when you want to read.
 
 ---
 
-## Review comments
+## Marks on a page
 
-Review comments are private to signed-in members of the active workspace. They are never
-included in read-only previews or unlisted shared links.
+Marks are private to signed-in members of the active workspace. They are never included in
+read-only previews or unlisted shared links.
 
-On a desktop, switch to **✏️ Edit** or **◧ Split**, then use **💬 Toggle review** in the editor
-toolbar. In Edit mode, Review appears beside the source editor; in Split mode it sits between
-the editor and preview. Read, focused, and mobile views stay free of review UI.
+Report pages take the same five marks a chalk talk does — see **Chalk talks** for what each one
+asks the agent to do. Select text in the **rendered** page, not in the Markdown, and the picker
+opens where you read. A mark alone is a complete comment; the sentence is optional. Open the
+marks column with the marks switch in the tab row.
 
-To start a review, select source text and click the coloured **+** in the Review header. The
-selected text receives a subtle highlight in the editor. The source is wrapped in
-`<comment-begin=…> … <comment-end=…>` tags. LockedIn creates and removes those tags together with
-the review thread in one save; do not type, copy, or rename them yourself. Click the
-highlighted body text to open its thread. Threads are collapsed by default; opening one collapses
-the others. Markers are removed from rendered previews and KaTeX, so they are source-only
-bookkeeping. A missing closing brace is shown as a source error and must be repaired before the
-page can be saved. Commented ranges may sit next to one another but cannot overlap or contain one
-another.
+A page mark wraps the text it points at, so you will see a `<comment-begin=…> … <comment-end=…>`
+pair in the Markdown. LockedIn writes and removes those tags itself as part of one save; do not
+type, copy or rename them by hand. They are stripped from rendered previews, public shares and
+KaTeX, so they are source-only bookkeeping. A tag left unclosed is reported as a source error
+with its line and column, and blocks the save until it is repaired. Marked ranges may sit beside
+one another and may nest, but a selection whose edge would land inside a tag is refused.
 
-The Review header separates **Open** and **Resolved** threads. Workspace members can reply,
-resolve/reopen, or delete a thread. You can double-click only your own comment or reply to edit
-it in place; save with **Ctrl/⌘+Enter** or **Save**. Resolving or deleting a thread removes its
-wrapper while preserving the report text. Reopening a resolved thread leaves it unanchored rather
-than guessing where it belongs. If later edits remove the wrapper or selected text, the open thread
-remains in its original review-list position with an **Unanchored** badge, but no text is
-highlighted and LockedIn never recreates the wrapper. Deleting a report page also removes all of
-that page's reviews.
+Because the wrapper surrounds the text, a mark moves with its sentence as you edit around it. A
+selection that runs through typeset math cannot be anchored back to the source, so the picker
+stays shut rather than offering a mark it could not place.
+
+Every mark is a thread: **reply** adds a turn, and you can **edit** your own last turn. **remove**
+withdraws the mark entirely — and only you can, the agent cannot. Nothing accumulates a list of
+resolved items. Deleting a report page removes that page's marks with it.
 
 ---
 
@@ -814,14 +858,14 @@ $\\sum_{k=1}^{n+1} k = \\frac{n(n+1)}{2} + (n+1) = \\frac{(n+1)(n+2)}{2}$.
 
 | Environment | Numbered? |
 |-------------|-----------|
-| `theorem` | ✓ (own counter) |
-| `lemma` | ✓ (own counter) |
-| `corollary` | ✓ (own counter) |
-| `definition` | ✓ (own counter) |
-| `proposition` | ✓ (own counter) |
-| `assumption` | ✓ (own counter) |
-| `remark` | ✓ (own counter) |
-| `proof` | ✗ — ends with ∎ |
+| `theorem` | Yes — own counter |
+| `lemma` | Yes — own counter |
+| `corollary` | Yes — own counter |
+| `definition` | Yes — own counter |
+| `proposition` | Yes — own counter |
+| `assumption` | Yes — own counter |
+| `remark` | Yes — own counter |
+| `proof` | No — ends with ∎ |
 
 The optional `[title]` appears after the number. For example,
 `\\begin{theorem}[Spectral Theorem]` renders as **Theorem 1 (Spectral Theorem)**.
@@ -900,7 +944,7 @@ any links that used the old title.
 
 ## Math macros
 
-Define your own shorthand commands in **⚙️ Settings → Math Macros**. For example,
+Define your own shorthand commands in **Settings → Math Macros**. For example,
 you might define `\\bmu` → `\\boldsymbol{\\mu}` so you can write `$\\bmu$` everywhere.
 Macros are applied automatically to all math on every page.
 
