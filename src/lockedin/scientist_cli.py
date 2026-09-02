@@ -405,10 +405,14 @@ def bubbles_command(account: dict) -> list[dict]:
     return rows
 
 
-SKILL_VERSION = 37
+# Bump when the guide text changes: a project only regenerates SKILL.md when this marker in its
+# copy stops matching, so an edit to the guide reaches no existing agent until this moves.
+SKILL_VERSION = 38
 
-SKILL_ROUTER = """\
-<!-- lockedin-scientist-skill: 37 -->
+# The marker is derived, never typed. It is what the staleness check compares against, so a
+# hand-written copy that drifted from SKILL_VERSION would either pin every project to a stale
+# guide or rewrite the skill on every five-second sync.
+SKILL_ROUTER = f"<!-- lockedin-scientist-skill: {SKILL_VERSION} -->\n" + """\
 # LockedIn Scientist
 
 This project is synchronized with one LockedIn bubble. These rules always apply. The detail
