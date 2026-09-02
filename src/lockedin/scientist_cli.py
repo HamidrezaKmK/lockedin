@@ -23,7 +23,7 @@ import webbrowser
 from pathlib import Path
 
 APP = "lockedin-scientist"
-SCIENTIST_CLIENT_VERSION = "2026.09.02.1"
+SCIENTIST_CLIENT_VERSION = "2026.09.02.2"
 POLL_SECONDS = 5
 # A worker that has not completed a cycle in three polls is wedged rather than merely busy.
 # `doctor` reports that verdict and `resync` repairs exactly what `doctor` complains about, so
@@ -1137,11 +1137,16 @@ class ProjectSync:
         return account_request(self.account, method, f"/api/scientist/v2/bubbles/{self.bubble}/{suffix}", body,
                                extra=self._presence_headers())
 
-    def _read_remote(self, paths: list[str]) -> dict[str, dict]:
+    def _read_remote(self, paths: list[str], sizes: dict[str, int] | None = None) -> dict[str, dict]:
         result: dict[str, dict] = {}
-        for start in range(0, len(paths), 200):
-            for item in self._request("POST", "files", {"paths": paths[start:start + 200]}).get("files", []):
-                result[item["path"]] = item
+        sizes = sizes or {}
+        # Bounded by bytes as well as count: 200 figures is a modest number of files and a
+        # response no proxy or memory budget should be asked to carry in one piece.
+        for batch in _batched_by_size(paths, lambda rel: sizes.get(rel, 0)):
+            for start in range(0, len(batch), 200):
+                for item in self._request("POST", "files",
+                                          {"paths": batch[start:start + 200]}).get("files", []):
+                    result[item["path"]] = item
         return result
 
     def _local(self, rel: str) -> Path: return self.root / rel
@@ -1249,6 +1254,7 @@ class ProjectSync:
         entries = response.get("files", [])
         remote = {f["path"]: f["revision"] for f in entries}
         cap = int(response.get("large_asset_bytes") or 0)
+        remote_sizes = {f["path"]: int(f.get("size") or 0) for f in entries}
         # Assets the server declines to stream on a poll (photo archives, datasets). They stay in
         # the manifest so they are not mistaken for deletions, but they are not content-synced:
         # never fetched, never pushed, never removed locally. ``assets pull`` fetches one.
@@ -1259,7 +1265,7 @@ class ProjectSync:
 
         def fetch(rel: str) -> dict | None:
             if rel not in remote: return None
-            if rel not in remote_data: remote_data.update(self._read_remote([rel]))
+            if rel not in remote_data: remote_data.update(self._read_remote([rel], remote_sizes))
             return remote_data.get(rel)
 
         # Layout v1 used title-derived flat deck filenames. Existing server talks receive a
@@ -1345,8 +1351,9 @@ class ProjectSync:
             for item in result.get("conflicts", []):
                 if item.get("content_b64"):
                     self._conflict(rel, b"", raw, base64.b64decode(item["content_b64"])); self._write_remote(item)
-        if writes:
-            result = self._request("POST", "push", {"writes": writes})
+        for writes_batch in (_batched_by_size(
+                writes, lambda w: len(w.get("content_b64", "")) * 3 // 4) if writes else []):
+            result = self._request("POST", "push", {"writes": writes_batch})
             for item in result.get("applied", []):
                 # The server may store a normalized form of a pushed page (wikilinks, display
                 # math) and hands the stored bytes back when it does. Adopt them: keeping the
@@ -1761,6 +1768,27 @@ def _size_label(n: int) -> str:
 # Same reasoning as the browser dialog: comfortably under the 100 MB body cap a proxy in front
 # of the server imposes, and big enough that a multi-gigabyte file is not thousands of requests.
 PUSH_CHUNK_BYTES = 32 * 1024 * 1024
+
+# One request must stay well under what a proxy in front of the server will carry (Cloudflare
+# stops at 100 MB). Files are base64 in these bodies, so the ceiling is on *raw* bytes with room
+# for the ~4/3 expansion and the JSON around it. Three hundred ordinary figures are individually
+# tiny and collectively far past any such limit, so batches are bounded by bytes, not by count.
+REQUEST_PAYLOAD_BYTES = 24 * 1024 * 1024
+
+
+def _batched_by_size(items, size_of, limit: int = REQUEST_PAYLOAD_BYTES):
+    """Group items so each batch stays under ``limit`` raw bytes. Never yields an empty batch,
+    so a single item larger than the limit still goes out alone rather than being dropped."""
+    batch, used = [], 0
+    for item in items:
+        size = max(0, int(size_of(item)))
+        if batch and used + size > limit:
+            yield batch
+            batch, used = [], 0
+        batch.append(item)
+        used += size
+    if batch:
+        yield batch
 
 
 def _push_large_asset(account: dict, bubble: str, rel: str, path: Path, *, live: bool) -> str:

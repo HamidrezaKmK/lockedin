@@ -288,7 +288,11 @@ def manifest(home: Path, slug: str) -> dict:
             files.append({"path": rel, "revision": _stamp(source),
                           "oversize": True, "size": source.stat().st_size})
         else:
-            files.append({"path": rel, "revision": revision(_content(source))})
+            raw = _content(source)
+            # Every entry carries its size. A client batching many files into one request has no
+            # other way to keep that request under what a proxy in front of this server will
+            # carry, and 300 small figures add up to a body no cap would accept.
+            files.append({"path": rel, "revision": revision(raw), "size": len(raw)})
     return {"files": files, "large_asset_bytes": LARGE_ASSET_BYTES}
 
 
