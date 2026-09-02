@@ -23,7 +23,7 @@ import webbrowser
 from pathlib import Path
 
 APP = "lockedin-scientist"
-SCIENTIST_CLIENT_VERSION = "2026.08.28.1"
+SCIENTIST_CLIENT_VERSION = "2026.09.02.1"
 POLL_SECONDS = 5
 # A worker that has not completed a cycle in three polls is wedged rather than merely busy.
 # `doctor` reports that verdict and `resync` repairs exactly what `doctor` complains about, so
@@ -125,6 +125,10 @@ def welcome() -> None:
     print(f"  {cyan('•')} {dim('Resume this project’s bubble after a worker stopped')}\n     {cyan('lockedin-scientist resync')}")
     print(f"  {cyan('•')} {dim('Replace this project’s .lockedin from the server')}\n     {cyan('lockedin-scientist hard-reset <bubble-slug>')}")
     print(f"  {cyan('•')} {dim('Verify this project’s worker and server connection')}\n     {cyan('lockedin-scientist doctor')}")
+    print()
+    print(bold("Large files"))
+    print(f"  {cyan('\u2022')} {dim('Big binaries are listed but never synced automatically \u2014 move them on request')}\n     {cyan('lockedin-scientist assets')}")
+    print(f"  {cyan('\u2022')} {dim('Bring one down, or send one up (both take --all)')}\n     {cyan('lockedin-scientist assets pull <filename>')}\n     {cyan('lockedin-scientist assets push <filename>')}")
     print()
     print(bold("Native agent skills"))
     print(f"  {cyan('•')} {dim('Install the LockedIn Scientist skill once for your agent')}\n     {cyan('lockedin-scientist <codex|claude|agy> setup')}")
@@ -246,6 +250,60 @@ def account_request(account: dict, method: str, path: str, body: dict | None = N
     kwargs = {"extra": extra} if extra else {}
     if timeout != 90: kwargs["timeout"] = timeout
     return request(*args, **kwargs)
+
+
+def download_request(account: dict, path: str, rel: str, dest: Path, *, timeout: float = 900,
+                     on_progress=None) -> int:
+    """Stream a response body straight to disk. Never buffers the whole file in memory."""
+    headers = {"Accept": "application/octet-stream",
+               "User-Agent": f"{APP}/{SCIENTIST_CLIENT_VERSION}",
+               "X-LockedIn-Scientist-Version": SCIENTIST_CLIENT_VERSION,
+               "Content-Type": "application/json",
+               "Authorization": "Bearer " + account["token"]}
+    workspace = account.get("workspace_id", "")
+    if workspace: headers["X-LockedIn-Workspace"] = workspace
+    body = json.dumps({"paths": [rel]}).encode()
+    req = urllib.request.Request(account["server"].rstrip("/") + path, data=body,
+                                 headers=headers, method="POST")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dest.with_suffix(dest.suffix + ".part")
+    written = 0
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            total = int(response.headers.get("Content-Length") or 0)
+            with tmp.open("wb") as fh:
+                while True:
+                    block = response.read(1024 * 1024)
+                    if not block: break
+                    fh.write(block); written += len(block)
+                    if on_progress: on_progress(written, total)
+        tmp.replace(dest)          # only a complete download replaces what was there
+        return written
+    except urllib.error.HTTPError as exc:
+        tmp.unlink(missing_ok=True)
+        raise RuntimeError(f"server returned {exc.code}: {exc.read().decode(errors='replace')}") from exc
+    except urllib.error.URLError as exc:
+        tmp.unlink(missing_ok=True)
+        raise RuntimeError(f"cannot reach LockedIn server: {exc.reason}") from exc
+
+
+def upload_request(account: dict, path: str, payload: bytes, *, timeout: float = 900) -> dict:
+    """POST raw bytes (one slice of a large asset). JSON in, JSON out is not enough here."""
+    headers = {"Accept": "application/json", "Content-Type": "application/octet-stream",
+               "User-Agent": f"{APP}/{SCIENTIST_CLIENT_VERSION}",
+               "X-LockedIn-Scientist-Version": SCIENTIST_CLIENT_VERSION,
+               "Authorization": "Bearer " + account["token"]}
+    workspace = account.get("workspace_id", "")
+    if workspace: headers["X-LockedIn-Workspace"] = workspace
+    req = urllib.request.Request(account["server"].rstrip("/") + path, data=payload,
+                                 headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            return json.loads(response.read() or b"{}")
+    except urllib.error.HTTPError as exc:
+        raise RuntimeError(f"server returned {exc.code}: {exc.read().decode(errors='replace')}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"cannot reach LockedIn server: {exc.reason}") from exc
 
 
 def choose_account() -> dict:
@@ -1187,7 +1245,14 @@ class ProjectSync:
 
     def sync_once(self) -> None:
         self.validate_or_initialize()
-        remote = {f["path"]: f["revision"] for f in self._request("GET", "manifest").get("files", [])}
+        response = self._request("GET", "manifest")
+        entries = response.get("files", [])
+        remote = {f["path"]: f["revision"] for f in entries}
+        cap = int(response.get("large_asset_bytes") or 0)
+        # Assets the server declines to stream on a poll (photo archives, datasets). They stay in
+        # the manifest so they are not mistaken for deletions, but they are not content-synced:
+        # never fetched, never pushed, never removed locally. ``assets pull`` fetches one.
+        oversize = {f["path"] for f in entries if f.get("oversize")}
         state = self._state(); tracked: dict = state.setdefault("files", {})
         prior_math_revision = state.get("skill_math_revision")
         remote_data: dict[str, dict] = {}
@@ -1216,6 +1281,8 @@ class ProjectSync:
             tracked[current] = tracked.pop(legacy)
 
         def pushable_path(rel: str) -> bool:
+            if rel in oversize:
+                return False
             parts = Path(rel).parts
             return bool(
                 len(parts) == 3 and parts[:2] in (("reports", "pages"), ("reports", "assets"))
@@ -1224,7 +1291,15 @@ class ProjectSync:
             )
 
         report_remote = {r for r in remote if pushable_path(r)}
-        report_local = set(self._report_paths())
+        # A file the agent dropped in locally that is over the cap is skipped in the same way:
+        # pushing it would base64 the whole thing into one request body.
+        def local_oversize(rel: str) -> bool:
+            path = self._local(rel)
+            try: return bool(cap) and path.is_file() and path.stat().st_size > cap
+            except OSError: return False
+
+        report_local = {r for r in self._report_paths()
+                        if r not in oversize and not local_oversize(r)}
         deletes, writes, creates = [], [], []
         for rel, old in list(tracked.items()):
             if not pushable_path(rel): continue
@@ -1285,7 +1360,7 @@ class ProjectSync:
                     raw = base64.b64decode(item["content_b64"]); self._conflict(rel, b"", local, raw); self._write_remote(item); tracked[rel] = {"revision": item["revision"]}
         # Everything except report pages and report assets is server-authoritative. This includes
         # the report manifest and paper inventory that agents read but never edit.
-        for rel in sorted(r for r in remote if r not in report_remote):
+        for rel in sorted(r for r in remote if r not in report_remote and r not in oversize):
             path = self._local(rel)
             if (not path.exists() or self._rev(path.read_bytes()) != remote[rel]
                     or tracked.get(rel, {}).get("revision") != remote[rel]):
@@ -1675,6 +1750,171 @@ def _stop_and_wait(worker_id: str) -> None:
     raise RuntimeError("Scientist worker did not stop in time; stop it manually, then retry.")
 
 
+def _size_label(n: int) -> str:
+    for unit in ("B", "KB", "MB", "GB"):
+        if n < 1024 or unit == "GB":
+            return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
+        n /= 1024.0
+    return f"{n:.1f} GB"
+
+
+# Same reasoning as the browser dialog: comfortably under the 100 MB body cap a proxy in front
+# of the server imposes, and big enough that a multi-gigabyte file is not thousands of requests.
+PUSH_CHUNK_BYTES = 32 * 1024 * 1024
+
+
+def _push_large_asset(account: dict, bubble: str, rel: str, path: Path, *, live: bool) -> str:
+    """Send one oversized asset in slices, resuming whatever the server already holds."""
+    base = f"/api/scientist/v2/bubbles/{bubble}/large-asset/push"
+    total = path.stat().st_size
+    begun = account_request(account, "POST", base + "/begin",
+                            {"filename": path.name, "total_size": total})
+    upload_id = begun["upload_id"]
+    offset = min(int(begun.get("received") or 0), total)
+    if offset and live:
+        print(dim(f"  resuming at {_size_label(offset)} of {_size_label(total)}"))
+    shown = [-1]
+    with path.open("rb") as fh:
+        while offset < total:
+            fh.seek(offset)
+            block = fh.read(PUSH_CHUNK_BYTES)
+            if not block:
+                break
+            # A dropped connection mid-file is the normal failure over a tunnel. The server
+            # checks the offset, so a resend can never staple a slice into the wrong place.
+            for attempt in range(1, 6):
+                try:
+                    offset = int(upload_request(
+                        account, f"{base}/{upload_id}?offset={offset}", block)["received"])
+                    break
+                except RuntimeError as exc:
+                    # A 4xx is the server refusing this request, not the network dropping it;
+                    # resending it would only fail the same way.
+                    if attempt == 5 or "server returned 4" in str(exc):
+                        raise
+                    time.sleep(min(8.0, 0.5 * 2 ** (attempt - 1)))
+            pct = int(offset * 100 / total) if total else 100
+            if live and pct != shown[0] and pct % 5 == 0:
+                shown[0] = pct
+                print(f"\r  {path.name}  {pct:3d}%  "
+                      f"{_size_label(offset)} of {_size_label(total)}", end="", flush=True)
+    done = account_request(account, "POST", f"{base}/{upload_id}/finish")
+    return done.get("path") or rel
+
+
+def assets_command(project: Path, pull: list[str], pull_all: bool = False,
+                   push: list[str] | None = None, push_all: bool = False) -> None:
+    """List, fetch, or send the assets a sync deliberately leaves alone.
+
+    Big binaries (photo archives, datasets, model checkpoints) are listed by the manifest but
+    never content-synced in either direction: hashing one on every poll costs more than the whole
+    rest of the bubble, and no agent reads a zip anyway. This is how you move one on purpose.
+    """
+    push = push or []
+    project = project.resolve()
+    binding = read_binding(project)
+    account = account_for_binding(binding)
+    bubble = binding["bubble"]
+    syncer = ProjectSync(account, project, bubble)
+    live = sys.stdout.isatty()
+    response = account_request(account, "GET",
+                               f"/api/scientist/v2/bubbles/{bubble}/large-assets")
+    remote = response.get("assets", [])
+    cap = int(response.get("threshold") or 0)
+    remote_by_name = {Path(item["path"]).name: item for item in remote}
+
+    # Local files over the cap: the other half of the picture. An agent that generated a dataset
+    # has one of these and no way to know the sync will not carry it.
+    local_dir = syncer.root / "reports" / "assets"
+    local: dict[str, Path] = {}
+    if local_dir.is_dir():
+        for path in sorted(local_dir.iterdir()):
+            if path.is_file() and cap and path.stat().st_size > cap:
+                local[path.name] = path
+
+    def matches(name: str, chosen: list[str]) -> bool:
+        return name in chosen or f"reports/assets/{name}" in chosen
+
+    if push or push_all:
+        names = sorted(local) if push_all else [n for n in local if matches(n, push)]
+        unknown = [n for n in push if n not in local and Path(n).name not in local]
+        if unknown:
+            raise RuntimeError(
+                "No local file over " + _size_label(cap) + " named: " + ", ".join(unknown)
+                + f"\n  Large files are read from {local_dir}")
+        if not names:
+            heading("Pushing large assets", bubble)
+            print(dim(f"  Nothing local is over {_size_label(cap)}; ordinary sync carries the rest."))
+            return
+        heading("Pushing large assets", bubble)
+        for name in names:
+            path = local[name]
+            known = remote_by_name.get(name)
+            if known and known["size"] == path.stat().st_size:
+                print(green("✓") + f" {bold(name)} " + dim("already on the server, unchanged"))
+                continue
+            rel = _push_large_asset(account, bubble, f"reports/assets/{name}", path, live=live)
+            print(f"\r{green('✓')} {bold(name)}  {_size_label(path.stat().st_size)} → "
+                  + dim(rel) + (" " * 20 if live else ""))
+        return
+
+    if pull or pull_all:
+        unknown = [n for n in pull if Path(n).name not in remote_by_name]
+        if unknown:
+            raise RuntimeError("Not a large asset in this bubble: " + ", ".join(unknown))
+        wanted = remote if pull_all else [remote_by_name[Path(n).name] for n in pull]
+        heading("Fetching large assets", bubble)
+        for item in wanted:
+            dest = syncer._local(item["path"])
+            if dest.exists() and dest.stat().st_size == item["size"]:
+                print(green("\u2713") + f" {bold(Path(item['path']).name)} "
+                      + dim(f"already here ({_size_label(item['size'])})"))
+                continue
+            shown = [-1]
+
+            def progress(done: int, total: int, _shown=shown, _size=item["size"],
+                         _name=Path(item["path"]).name) -> None:
+                target = total or _size
+                pct = int(done * 100 / target) if target else 0
+                if pct != _shown[0] and pct % 5 == 0:
+                    _shown[0] = pct
+                    print(f"\r  {_name}  {pct:3d}%  "
+                          f"{_size_label(done)} of {_size_label(target)}", end="", flush=True)
+
+            written = download_request(
+                account, f"/api/scientist/v2/bubbles/{bubble}/large-asset",
+                item["path"], dest, on_progress=progress if live else None)
+            print(f"\r{green('\u2713')} {bold(Path(item['path']).name)}  "
+                  f"{_size_label(written)} \u2192 {dim(str(dest.relative_to(project)))}"
+                  + (" " * 20 if live else ""))
+        return
+
+    # --- the listing ---
+    heading("Large assets", f"{bubble} \u2014 moved on request, never by the sync")
+    if not remote and not local:
+        print(dim(f"  None. Anything over {_size_label(cap)} would appear here; "
+                  "everything else syncs normally."))
+        return
+    names = sorted(set(remote_by_name) | set(local))
+    for name in names:
+        item, path = remote_by_name.get(name), local.get(name)
+        size = item["size"] if item else path.stat().st_size
+        if item and path and path.stat().st_size == item["size"]:
+            where = green("\u2713 in sync")
+        elif item and path:
+            where = orange("differs \u2014 pull or push")
+        elif item:
+            where = dim("on server \u2014 pull")
+        else:
+            where = orange("local only \u2014 push")
+        print(f"  {bold(name):<44} {_size_label(size):>10}  {where}")
+    print()
+    print(dim(f"  Anything over {_size_label(cap)} is listed but never transferred by the sync:"))
+    print(dim("  re-hashing it on every poll would cost more than the rest of the bubble combined."))
+    print("  Get one:   " + bold("lockedin-scientist assets pull <name>") + dim("   (or --all)"))
+    print("  Send one:  " + bold("lockedin-scientist assets push <name>") + dim("   (or --all)"))
+
+
 def resync_command(project: Path) -> None:
     """Resume the bubble this project is already bound to.
 
@@ -1732,6 +1972,14 @@ def _main() -> None:
     sub.add_parser("ps")
     sub.add_parser("doctor", help="Verify this project's bound worker and server connection.")
     sub.add_parser("resync", help="Resume the bubble this project is already bound to.")
+    assets_p = sub.add_parser("assets", help="Large assets this bubble does not sync automatically.")
+    assets_sub = assets_p.add_subparsers(dest="assets_command")
+    assets_pull = assets_sub.add_parser("pull", help="Download a large asset into this project.")
+    assets_pull.add_argument("name", nargs="*", help="Asset filename, or none with --all.")
+    assets_pull.add_argument("--all", action="store_true", dest="pull_all")
+    assets_push = assets_sub.add_parser("push", help="Upload a large asset from this project.")
+    assets_push.add_argument("name", nargs="*", help="Asset filename, or none with --all.")
+    assets_push.add_argument("--all", action="store_true", dest="push_all")
     connect_p = sub.add_parser("connect", help="Set this computer up for one bubble, end to end.")
     connect_p.add_argument("--server", required=True)
     connect_p.add_argument("--workspace", required=True)
@@ -1766,6 +2014,14 @@ def _main() -> None:
     # Deliberately dispatched before choose_account(): resync resolves its account from the
     # project's own binding, so it must not depend on which account was authorized last.
     if args.command == "resync": resync_command(Path.cwd()); return
+    if args.command == "assets":
+        if args.assets_command == "pull":
+            assets_command(Path.cwd(), args.name, pull_all=args.pull_all)
+        elif args.assets_command == "push":
+            assets_command(Path.cwd(), [], push=args.name, push_all=args.push_all)
+        else:
+            assets_command(Path.cwd(), [])
+        return
     # Also above choose_account(): connect runs on a machine with no account yet — it is the
     # command that creates one.
     if args.command == "connect":

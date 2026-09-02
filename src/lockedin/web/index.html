@@ -31,6 +31,7 @@
        instead of being re-guessed per view. `--page-pad` and `--section-gap` step down on a
        phone; the rest stay put, because a 12px gap means the same thing at any width. */
     --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:24px; --sp-6:34px; --sp-7:48px;
+
     --page-pad-y:20px; --page-pad-x:24px;
     --section-gap:var(--sp-6);   /* between one titled section and the next */
     --band-gap:var(--sp-3);      /* between a section's label and its content */
@@ -963,6 +964,18 @@
   .asset-file-name{font-family:var(--font-mono);font-size:12px;min-width:0}
   .asset-modal-footer{padding:12px 16px;border-top:1px solid var(--line);display:flex;
     align-items:center;gap:10px;flex-wrap:wrap;flex-shrink:0;background:var(--panel2)}
+  .upload-progress{display:flex;align-items:center;gap:9px;font-size:12px;color:var(--muted)}
+  .upload-ring{position:relative;width:34px;height:34px;border-radius:50%;flex-shrink:0;
+    background:conic-gradient(var(--accent) calc(var(--pct,0) * 1%),
+      color-mix(in srgb,var(--accent) 20%,transparent) 0)}
+  /* A disc punches the hole rather than a mask, so the percentage sits on solid panel colour. */
+  .upload-ring::before{content:"";position:absolute;inset:4px;border-radius:50%;background:var(--panel2)}
+  .upload-ring b{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    font-family:var(--font-mono);font-size:9.5px;font-weight:600;color:var(--fg)}
+  /* Until the first progress event there is no ratio to show, so sweep a fixed arc instead. */
+  .upload-ring.indeterminate{background:conic-gradient(var(--accent) 25%,
+    color-mix(in srgb,var(--accent) 20%,transparent) 0);animation:loading-spin 1s linear infinite}
+  @media (prefers-reduced-motion:reduce){.upload-ring.indeterminate{animation-duration:2.4s}}
   @media(max-width:700px){.asset-file-row{grid-template-columns:52px minmax(92px,1fr) auto auto;gap:6px}
     .asset-file-preview{width:52px;height:40px}.asset-file-row .asset-file-size{grid-column:2}
     .asset-file-row a:not(.asset-file-preview),.asset-file-row button{justify-self:end}}
@@ -1076,9 +1089,13 @@
   .review-render-error b{display:block;color:var(--danger);margin-bottom:4px}
   .review-editor-error{position:absolute;z-index:12;top:58px;left:18px;right:18px;max-width:760px;
     box-shadow:var(--shadow);pointer-events:none}
-  #previewWrap{flex:1;overflow:auto;padding:12px 16px;min-width:0;min-height:0;line-height:1.6;
-    overflow-anchor:none}
-  #previewWrap>:is(p,ul,ol,dl,blockquote,h1,h2,h3,h4,h5,h6){max-width:74ch}
+  #previewWrap{flex:1;overflow:auto;padding:var(--sp-4) var(--sp-5);min-width:0;min-height:0;
+    line-height:1.6;overflow-anchor:none}
+  /* The rendered page uses the pane it is given. Everything in it — headings, prose, figures,
+     tables, callouts — starts and ends on the same two edges, so nothing sits inset from the
+     thing above it. The pane's padding is the only margin. */
+  #previewWrap>*{max-width:100%;margin-inline:0}
+  #previewWrap>figure img{width:100%}
   /* The editor pane has three view modes, chosen from the toolbar dropdown:
      view  = rendered page only (default reading view),
      edit  = Markdown editor only,
@@ -1149,10 +1166,11 @@
   /* Fixed width: "Copy" becomes "Copied ✓" on click, and a button that grows mid-interaction
      would shove the link box it sits beside. */
   .setup-run-actions>button{min-height:0;width:100px;padding-left:0;padding-right:0}
-  .setup-run-actions>button.setup-refresh{width:40px;padding:0;font-size:17px;line-height:1;
-    background:transparent}
+  .setup-run-actions>button.setup-refresh{width:44px;padding:0;background:transparent;
+    display:inline-flex;align-items:center;justify-content:center}
+  .setup-run-actions>button.setup-refresh .li-ic{width:18px;height:18px}
   .setup-run-actions>button.setup-refresh:hover{background:var(--panel2)}
-  .setup-refresh.spin{animation:setup-spin .7s linear infinite}
+  .setup-refresh.spin .li-ic{animation:setup-spin .7s linear infinite}
   @keyframes setup-spin{to{transform:rotate(360deg)}}
   .create-dialog-footer button.ok{background:var(--good);border-color:var(--good)}
   .presence{position:relative;flex-shrink:0}
@@ -4330,13 +4348,120 @@
     });
   }
 
+  // fetch() cannot report how much of a request body has gone out, so uploads that want a progress
+  // ring go through XHR. Returns the request so the caller can abort it.
+  function uploadWithProgress(url,fd,onProgress){
+    const xhr=new XMLHttpRequest();
+    xhr.open("POST",url);
+    xhr.withCredentials=true;
+    xhr.setRequestHeader("X-LockedIn-Workspace",S.workspaceId||"");
+    xhr.upload.onprogress=e=>{ if(e.lengthComputable)onProgress(e.loaded,e.total); };
+    xhr.done=new Promise((resolve,reject)=>{
+      const fail=(msg,extra)=>reject(Object.assign(new Error(msg),extra||{}));
+      xhr.onload=()=>{
+        if(xhr.status>=200&&xhr.status<300)return resolve(xhr.responseText);
+        // A 413 here is almost never the app: the origin has no size cap, but a proxy in front of
+        // it does (Cloudflare stops at 100 MB), and it answers in HTML, so there is no detail to
+        // read. Say what actually happened instead of a bare "Upload failed."
+        if(xhr.status===413)
+          return fail("Too big to upload in one request \u2014 the proxy in front of this server "
+            +"caps request bodies at 100 MB.",{status:413});
+        let detail="Upload failed.";
+        try{ detail=JSON.parse(xhr.responseText).detail||detail; }catch(e){}
+        fail(detail,{status:xhr.status});
+      };
+      xhr.onerror=()=>fail("The connection dropped.");
+      xhr.onabort=()=>reject(Object.assign(new Error("Upload cancelled."),{aborted:true}));
+    });
+    xhr.send(fd);
+    return xhr;
+  }
+
+  // A proxy in front of the server caps one request body (Cloudflare stops at 100 MB), so a large
+  // file is sliced and reassembled server-side. The slice is well under that cap to leave room for
+  // multipart overhead, and small enough that a failed one is cheap to resend.
+  // 32 MB keeps a multi-gigabyte file to a sane number of round trips (a 4 GB file is ~120
+  // requests, not ~500) while leaving generous headroom under the cap for multipart overhead.
+  const UPLOAD_CHUNK_BYTES=32*1024*1024;
+  // Below this a single request is simpler and quicker; slicing would only add round trips.
+  const UPLOAD_CHUNK_ABOVE=16*1024*1024;
+  const CHUNK_ATTEMPTS=5;
+
+  /* Send one file, slicing it if it is large. `onBytes` reports bytes of *this file* sent so far;
+     `track` receives each in-flight request so the caller can cancel. Returns the asset URL. */
+  async function uploadBubbleFile(slug,picked,onBytes,track,onSession){
+    const base="/api/bubbles/"+encodeURIComponent(slug)+"/assets";
+    if(picked.size<=UPLOAD_CHUNK_ABOVE){
+      const fd=new FormData(); fd.append("file",picked);
+      const xhr=uploadWithProgress(base,fd,loaded=>onBytes(loaded));
+      track(xhr);
+      const body=await xhr.done; onBytes(picked.size);
+      try{ return JSON.parse(body).url; }catch(e){ return ""; }
+    }
+    // Re-offering the same file resumes the staging already on the server, so an upload
+    // interrupted at 80% picks up at 80% instead of starting over.
+    const begun=await api(base+"/chunked/begin",
+      {method:"POST",body:JSON.stringify({filename:picked.name,total_size:picked.size})});
+    const upload_id=begun.upload_id;
+    if(onSession) onSession(upload_id);
+    const start=Math.min(begun.received||0,picked.size);
+    if(start) onBytes(start);
+    try{
+      for(let offset=start;offset<picked.size;offset+=UPLOAD_CHUNK_BYTES){
+        const end=Math.min(offset+UPLOAD_CHUNK_BYTES,picked.size);
+        // A dropped connection mid-file is the normal failure over a tunnel, and re-sending one
+        // slice is cheap. The server rejects a misplaced offset, so a retry cannot corrupt the
+        // file; a slice it already stored is recognised and accepted rather than doubled.
+        for(let attempt=1;;attempt++){
+          try{
+            const fd=new FormData();
+            fd.append("offset",String(offset));
+            fd.append("file",picked.slice(offset,end),picked.name);
+            const xhr=uploadWithProgress(base+"/chunked/"+upload_id,fd,
+              loaded=>onBytes(offset+Math.min(loaded,end-offset)));
+            track(xhr);
+            await xhr.done;
+            break;
+          }catch(e){
+            if(e.aborted||e.status||attempt>=CHUNK_ATTEMPTS)throw e;
+            await new Promise(r=>setTimeout(r,Math.min(8000,500*Math.pow(2,attempt-1))));
+          }
+        }
+        onBytes(end);
+      }
+      const done=await api(base+"/chunked/"+upload_id+"/finish",{method:"POST"});
+      return done.url;
+    }catch(e){
+      // Deliberately keep the staging: the bytes already accepted are what makes a retry cheap.
+      // Only an explicit cancel throws them away (the dialog issues that DELETE itself), and
+      // anything genuinely abandoned is swept server-side after a day.
+      e.resumable=!e.aborted;
+      throw e;
+    }
+  }
+
   function openBubbleAssets(slug){
     const overlay=el("div",{class:"overlay",role:"dialog","aria-modal":"true","aria-label":"Bubble assets"});
     const box=el("div",{class:"diffbox col",style:"width:min(760px,94vw);max-height:82vh;padding:0;overflow:hidden;gap:0"});
     const list=el("div",{class:"diffbody asset-modal-body col"});
     const file=el("input",{type:"file",multiple:"true"});
     const upload=el("button",{class:"primary small"},"Upload files");
-    const close=()=>overlay.remove();
+    const ring=el("div",{class:"upload-ring"},el("b",{},"0%"));
+    const progressLabel=el("span",{});
+    const progress=el("div",{class:"upload-progress",style:"display:none",role:"status","aria-live":"polite"},ring,progressLabel);
+    let inflight=null,session=null;
+    // Closing the dialog abandons the upload for real: without the abort the request would keep
+    // running in the background and land a file the user thought they had stopped. Cancelling is
+    // also the one path that discards the staged bytes — every other failure keeps them so the
+    // next attempt resumes.
+    const close=()=>{
+      if(inflight){
+        inflight.abort();
+        if(session) api("/api/bubbles/"+encodeURIComponent(slug)+"/assets/chunked/"+session,
+          {method:"DELETE"}).catch(()=>{});
+      }
+      overlay.remove();
+    };
     const render=async()=>{
       list.innerHTML=""; list.append(el("div",{class:"muted"},"Loading files…"));
       try{
@@ -4382,24 +4507,55 @@
     };
     upload.onclick=async()=>{
       const files=[...file.files]; if(!files.length){file.click();return;}
+      // Progress is measured over every picked file at once, so the ring fills monotonically
+      // across a multi-file upload instead of resetting per file.
+      const grandTotal=files.reduce((sum,f)=>sum+f.size,0);
+      let sentBefore=0;
+      const showProgress=(sent,total)=>{
+        const known=total>0;
+        ring.classList.toggle("indeterminate",!known);
+        const pct=known?Math.min(100,Math.round(sent/total*100)):0;
+        ring.style.setProperty("--pct",pct);
+        ring.firstChild.textContent=known?pct+"%":"";
+        progressLabel.textContent=(files.length===1?files[0].name:"Uploading "+files.length+" files")
+          +(known&&grandTotal?" \u00b7 "+formatFileSize(sent)+" of "+formatFileSize(grandTotal):"");
+      };
       upload.disabled=true; upload.textContent="Uploading…";
+      progress.style.display=""; showProgress(0,grandTotal);
+      // A large upload is minutes long. Closing the tab does not lose the bytes already staged,
+      // but it does stop the transfer, so make leaving a deliberate choice.
+      const guard=e=>{ e.preventDefault(); e.returnValue=""; };
+      window.addEventListener("beforeunload",guard);
       try{
         for(const picked of files){
-          const fd=new FormData(); fd.append("file",picked);
-          const r=await fetch("/api/bubbles/"+encodeURIComponent(slug)+"/assets",{method:"POST",credentials:"include",
-            headers:{"X-LockedIn-Workspace":S.workspaceId||""},body:fd});
-          if(!r.ok){ const d=await r.json(); throw new Error(d.detail||"Upload failed."); }
+          await uploadBubbleFile(slug,picked,
+            sent=>showProgress(sentBefore+sent,grandTotal),
+            xhr=>{inflight=xhr;}, id=>{session=id;});
+          inflight=null; session=null; sentBefore+=picked.size; showProgress(sentBefore,grandTotal);
         }
         file.value=""; toast(files.length===1?"File uploaded":"Files uploaded"); await render();
-      }catch(e){ toast(e.message); }
-      finally{upload.disabled=false;upload.textContent="Upload files";}
+      }catch(e){
+        // The staged bytes survive a failure, so say so rather than implying a fresh start.
+        if(!e.aborted)toast(e.message+(e.resumable
+          ? " Pick the same file and upload again to carry on from here." : ""));
+      }
+      finally{
+        window.removeEventListener("beforeunload",guard);
+        inflight=null; session=null;
+        progress.style.display="none"; ring.classList.remove("indeterminate");
+        upload.disabled=false; upload.textContent="Upload files";
+      }
     };
     file.onchange=()=>{ if(file.files.length)upload.textContent="Upload "+file.files.length+" file"+(file.files.length===1?"":"s"); };
     box.append(
       el("div",{class:"asset-modal-header"},el("b",{},ic("folder"),"Bubble assets"),el("span",{class:"spacer"}),el("button",{class:"ghost small icon-btn",title:"Close",onclick:close},ic("close"))),
       list,
-      el("div",{class:"asset-modal-footer"},file,el("span",{class:"spacer"}),upload));
-    overlay.append(box); overlay.onclick=e=>{if(e.target===overlay)close();}; document.body.append(overlay); render();
+      el("div",{class:"asset-modal-footer"},file,el("span",{class:"spacer"}),progress,upload));
+    overlay.append(box);
+    // Clicking the backdrop closes the dialog, but not while a file is going up: a 4 GB upload
+    // is minutes long, and a stray click beside the box should not be able to bin it silently.
+    overlay.onclick=e=>{ if(e.target===overlay&&!inflight)close(); };
+    document.body.append(overlay); render();
   }
 
   // Copying is new in this app, so both halves are here: the modern API, and execCommand for the
@@ -4498,6 +4654,9 @@
          " — run it inside a folder to check that folder's worker and its connection.");
       li(chip("lockedin-scientist resync"),
          " — restarts a worker that died or got stuck. No arguments; it remembers this bubble.");
+      li(chip("lockedin-scientist assets"),
+         " — large files (datasets, archives) are listed but never synced automatically. "
+         + "Add ", chip("pull"), " or ", chip("push"), " with a filename to move one.");
       const last=li("Still stuck? Run a fresh line from step 2 — it repairs the folder in place "
         + "and installs the client first if it is missing. To do the same by hand:");
       const manual=el("ol",{class:"setup-steps"});

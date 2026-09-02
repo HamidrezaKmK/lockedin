@@ -120,6 +120,16 @@ def bubble_assets_dir(slug: str) -> Path:
     return bubble_dir(slug) / "assets"
 
 
+def bubble_uploads_dir(slug: str) -> Path:
+    """Staging for in-progress chunked uploads.
+
+    Deliberately a sibling of ``assets/`` rather than a child: the assets listing walks that tree
+    recursively, so a half-uploaded file staged inside it would surface as a real (unservable)
+    figure.
+    """
+    return bubble_dir(slug) / ".uploads"
+
+
 def bubble_comments_dir(slug: str) -> Path:
     """Private review-thread metadata, kept separate from report Markdown."""
     return bubble_dir(slug) / "comments"

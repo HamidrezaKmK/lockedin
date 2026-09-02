@@ -21,6 +21,7 @@ import re
 import secrets
 import shutil
 import threading
+import time
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -1840,10 +1841,8 @@ def ensure_looping_gif(data: bytes) -> bytes:
     return data[:offset] + _GIF_LOOP_EXTENSION + data[offset:]
 
 
-def save_bubble_image(slug: str, filename: str, data: bytes) -> str:
-    """Save an uploaded image under assets/ with a safe unique name; return its URL."""
-    adir = paths.bubble_assets_dir(slug)
-    adir.mkdir(parents=True, exist_ok=True)
+def _unique_asset_name(adir: Path, filename: str) -> str:
+    """A safe, collision-free filename for the bubble's flat assets directory."""
     stem = slugify(Path(filename).stem) or "image"
     ext = (Path(filename).suffix or ".png").lower()
     name = f"{stem}{ext}"
@@ -1851,10 +1850,163 @@ def save_bubble_image(slug: str, filename: str, data: bytes) -> str:
     while (adir / name).exists():
         name = f"{stem}-{i}{ext}"
         i += 1
-    if ext == ".gif":
+    return name
+
+
+def save_bubble_image(slug: str, filename: str, data: bytes) -> str:
+    """Save an uploaded image under assets/ with a safe unique name; return its URL."""
+    adir = paths.bubble_assets_dir(slug)
+    adir.mkdir(parents=True, exist_ok=True)
+    name = _unique_asset_name(adir, filename)
+    if name.endswith(".gif"):
         data = ensure_looping_gif(data)
     (adir / name).write_bytes(data)
     return f"/api/bubbles/{slug}/assets/{name}"
+
+
+# ---- chunked upload ----------------------------------------------------------------------
+#
+# A proxy in front of this server caps how big one request body may be (Cloudflare stops at
+# 100 MB), while the origin itself has no such limit. Large files are therefore sliced by the
+# browser and appended here, one bounded request per slice.
+
+_UPLOAD_ID_RE = re.compile(r"^[0-9a-f]{32}$")
+# Stale sessions are abandoned tabs, not errors; sweep them rather than making the user care.
+_UPLOAD_STALE_SECONDS = 24 * 60 * 60
+
+
+def _upload_session_dir(slug: str, upload_id: str) -> Path:
+    """Resolve a session directory, refusing anything that is not a generated id."""
+    if not _UPLOAD_ID_RE.match(upload_id or ""):
+        raise ValueError("Bad upload id.")
+    return paths.bubble_uploads_dir(slug) / upload_id
+
+
+def _sweep_stale_uploads(root: Path) -> None:
+    if not root.exists():
+        return
+    cutoff = time.time() - _UPLOAD_STALE_SECONDS
+    for path in root.iterdir():
+        try:
+            if path.is_dir() and path.stat().st_mtime < cutoff:
+                shutil.rmtree(path, ignore_errors=True)
+        except OSError:
+            continue
+
+
+def _resumable_session(root: Path, filename: str, total_size: int) -> tuple[str, int] | None:
+    """An unfinished session for this exact file, if one is lying around."""
+    if not root.exists():
+        return None
+    for sdir in sorted(root.iterdir(), key=lambda p: p.name):
+        meta_path, part = sdir / "meta.json", sdir / "part.tmp"
+        if not (meta_path.exists() and part.exists()):
+            continue
+        try:
+            meta = _json.loads(meta_path.read_text("utf-8"))
+        except (OSError, ValueError):
+            continue
+        if meta.get("filename") == filename and meta.get("total_size") == total_size:
+            return sdir.name, part.stat().st_size
+    return None
+
+
+def begin_chunked_upload(slug: str, filename: str, total_size: int) -> dict:
+    """Open (or re-open) a staging session for a sliced upload.
+
+    A multi-gigabyte upload will not always survive in one go — a closed tab, a dropped tunnel,
+    a laptop lid. Re-offering the same file resumes the session already on disk rather than
+    starting from zero, so the bytes that made it stay made.
+    """
+    name = Path(filename).name
+    if not name:
+        raise ValueError("No file provided.")
+    if total_size < 0:
+        raise ValueError("Bad file size.")
+    root = paths.bubble_uploads_dir(slug)
+    root.mkdir(parents=True, exist_ok=True)
+    _sweep_stale_uploads(root)
+    resumed = _resumable_session(root, name, int(total_size))
+    if resumed:
+        return {"upload_id": resumed[0], "received": resumed[1], "resumed": True}
+    upload_id = secrets.token_hex(16)
+    sdir = root / upload_id
+    sdir.mkdir()
+    (sdir / "meta.json").write_text(_json.dumps(
+        {"filename": name, "total_size": int(total_size), "received": 0}), "utf-8")
+    (sdir / "part.tmp").touch()
+    return {"upload_id": upload_id, "received": 0, "resumed": False}
+
+
+def append_chunk(slug: str, upload_id: str, offset: int, data: bytes) -> int:
+    """Append one slice at ``offset``; returns the new byte count.
+
+    The offset is checked rather than trusted: a retried or reordered chunk must not be able to
+    staple itself into the wrong place and produce a corrupt file that still looks complete.
+    """
+    sdir = _upload_session_dir(slug, upload_id)
+    meta_path = sdir / "meta.json"
+    if not meta_path.exists():
+        raise FileNotFoundError("No such upload.")
+    meta = _json.loads(meta_path.read_text("utf-8"))
+    part = sdir / "part.tmp"
+    have = part.stat().st_size
+    if offset == have - len(data) and offset >= 0:
+        return have  # An answered chunk whose response was lost: already applied, so accept it.
+    if offset != have:
+        raise ValueError(f"Chunk out of order: expected offset {have}, got {offset}.")
+    if have + len(data) > meta["total_size"]:
+        raise ValueError("Upload is larger than it declared.")
+    with part.open("ab") as fh:
+        fh.write(data)
+    meta["received"] = part.stat().st_size
+    meta_path.write_text(_json.dumps(meta), "utf-8")
+    return meta["received"]
+
+
+def finish_chunked_upload(slug: str, upload_id: str, replace: bool = False) -> str:
+    """Move a completed staging file into assets/; return its URL.
+
+    ``replace`` overwrites an asset of the same name instead of picking a free one. The browser
+    dialog never does this — two people uploading ``figure.png`` should get two files — but a
+    Scientist client pushing back a file it pulled, edited and re-sent means that exact file.
+    """
+    sdir = _upload_session_dir(slug, upload_id)
+    meta_path = sdir / "meta.json"
+    if not meta_path.exists():
+        raise FileNotFoundError("No such upload.")
+    meta = _json.loads(meta_path.read_text("utf-8"))
+    part = sdir / "part.tmp"
+    size = part.stat().st_size
+    if size != meta["total_size"]:
+        raise ValueError(f"Upload is incomplete: got {size} of {meta['total_size']} bytes.")
+    adir = paths.bubble_assets_dir(slug)
+    adir.mkdir(parents=True, exist_ok=True)
+    if replace:
+        stem = slugify(Path(meta["filename"]).stem) or "image"
+        name = f"{stem}{(Path(meta['filename']).suffix or '.png').lower()}"
+    else:
+        name = _unique_asset_name(adir, meta["filename"])
+    if name.endswith(".gif"):
+        # The loop fix is a byte-level rewrite, so this one format still needs the whole file.
+        part.write_bytes(ensure_looping_gif(part.read_bytes()))
+    # Same filesystem by construction, so this is an atomic rename: the assets directory never
+    # observes a partially written figure.
+    part.replace(adir / name)
+    shutil.rmtree(sdir, ignore_errors=True)
+    return f"/api/bubbles/{slug}/assets/{name}"
+
+
+def abort_chunked_upload(slug: str, upload_id: str) -> bool:
+    """Discard a staging session (the user cancelled, or a chunk failed for good)."""
+    try:
+        sdir = _upload_session_dir(slug, upload_id)
+    except ValueError:
+        return False
+    if not sdir.exists():
+        return False
+    shutil.rmtree(sdir, ignore_errors=True)
+    return True
 
 
 def list_bubble_images(slug: str) -> list[str]:

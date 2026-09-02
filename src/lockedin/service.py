@@ -612,6 +612,26 @@ def save_bubble_image(home: Path, slug: str, filename: str, data: bytes) -> str:
         return bubbles.save_bubble_image(slug, filename, data)
 
 
+def begin_chunked_upload(home: Path, slug: str, filename: str, total_size: int) -> dict:
+    with paths.use_root(home):
+        return bubbles.begin_chunked_upload(slug, filename, total_size)
+
+
+def append_chunk(home: Path, slug: str, upload_id: str, offset: int, data: bytes) -> int:
+    with paths.use_root(home):
+        return bubbles.append_chunk(slug, upload_id, offset, data)
+
+
+def finish_chunked_upload(home: Path, slug: str, upload_id: str, replace: bool = False) -> str:
+    with paths.use_root(home):
+        return bubbles.finish_chunked_upload(slug, upload_id, replace=replace)
+
+
+def abort_chunked_upload(home: Path, slug: str, upload_id: str) -> bool:
+    with paths.use_root(home):
+        return bubbles.abort_chunked_upload(slug, upload_id)
+
+
 def bubble_asset_path(home: Path, slug: str, filename: str) -> Path:
     with paths.use_root(home):
         return paths.bubble_assets_dir(slug) / filename

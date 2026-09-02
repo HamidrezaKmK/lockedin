@@ -38,7 +38,7 @@ _WORKER_PATH_RE = re.compile(r"^/api/scientist/v2/bubbles/([^/]+)(?:/|$)")
 # Keep this equal to ``scientist_cli.SCIENTIST_CLIENT_VERSION``. Bump both when a Scientist
 # release needs an installed client refresh; the dependency-free installed client cannot import
 # package metadata from this server.
-SCIENTIST_CLIENT_VERSION = "2026.08.28.1"
+SCIENTIST_CLIENT_VERSION = "2026.09.02.1"
 DEMO_ACCESS_MESSAGE = (
     "Lockedin is an experimental project and currently on demo, to be able to login "
     "and play with our project, email kamkarih@mit.edu"
@@ -787,7 +787,7 @@ def _warn_slow_mutation(kind: str, started: float, slug: str, page: str) -> None
 
 
 def build_app():
-    from fastapi import (BackgroundTasks, Cookie, Depends, FastAPI, File, Form,
+    from fastapi import (BackgroundTasks, Body, Cookie, Depends, FastAPI, File, Form,
                          Header, HTTPException, Request, UploadFile)
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import FileResponse, JSONResponse
@@ -1786,6 +1786,81 @@ def build_app():
         except KeyError:
             raise HTTPException(status_code=404, detail="No such approved bubble.")
 
+    @app.get("/api/scientist/v2/bubbles/{slug}/large-assets")
+    def scientist_large_assets(slug: str, user: str = Depends(scientist_user)):
+        """What a sync skips, so the client can offer to fetch them on request."""
+        try:
+            return {"assets": scientist_sync.large_assets(home_of(user), slug),
+                    "threshold": scientist_sync.LARGE_ASSET_BYTES}
+        except KeyError:
+            raise HTTPException(status_code=404, detail="No such approved bubble.")
+
+    @app.post("/api/scientist/v2/bubbles/{slug}/large-asset")
+    def scientist_large_asset(slug: str, body: ScientistFilesIn,
+                              user: str = Depends(scientist_user)):
+        """Stream one oversized asset off disk.
+
+        Deliberately not part of ``files``: that route base64s whole files into one JSON body,
+        which is exactly what must not happen to a multi-gigabyte archive.
+        """
+        if len(body.paths) != 1:
+            raise HTTPException(status_code=400, detail="Request one asset at a time.")
+        try:
+            path = scientist_sync.large_asset_path(home_of(user), slug, body.paths[0])
+        except KeyError:
+            raise HTTPException(status_code=404, detail="No such approved bubble.")
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail="No such oversized asset.")
+        return FileResponse(path, filename=Path(body.paths[0]).name,
+                            media_type="application/octet-stream")
+
+    # Pushing a large asset has the same problem in the other direction: the proxy in front of
+    # this server caps one request body, so the client slices it. This is the same staging the
+    # browser dialog uses, reached with a Scientist token instead of a session.
+    @app.post("/api/scientist/v2/bubbles/{slug}/large-asset/push/begin")
+    def scientist_push_begin(slug: str, body: dict = Body(...),
+                             user: str = Depends(scientist_user)):
+        if not scientist_sync.bubble_is_open(home_of(user), slug):
+            raise HTTPException(status_code=404, detail="No such approved bubble.")
+        try:
+            return service.begin_chunked_upload(home_of(user), slug,
+                                                str(body.get("filename") or ""),
+                                                int(body.get("total_size") or 0))
+        except (ValueError, TypeError) as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    @app.post("/api/scientist/v2/bubbles/{slug}/large-asset/push/{upload_id}")
+    async def scientist_push_chunk(slug: str, upload_id: str, request: Request,
+                                   offset: int = 0, user: str = Depends(scientist_user)):
+        if not scientist_sync.bubble_is_open(home_of(user), slug):
+            raise HTTPException(status_code=404, detail="No such approved bubble.")
+        try:
+            received = service.append_chunk(home_of(user), slug, upload_id, offset,
+                                            await request.body())
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail="This upload has expired. Start it again.")
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        return {"received": received}
+
+    @app.post("/api/scientist/v2/bubbles/{slug}/large-asset/push/{upload_id}/finish")
+    def scientist_push_finish(slug: str, upload_id: str, user: str = Depends(scientist_user)):
+        if not scientist_sync.bubble_is_open(home_of(user), slug):
+            raise HTTPException(status_code=404, detail="No such approved bubble.")
+        try:
+            # A pushed asset replaces the one it is named after: the client is re-sending a file
+            # it pulled, not adding a second copy beside it.
+            url = service.finish_chunked_upload(home_of(user), slug, upload_id, replace=True)
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail="This upload has expired. Start it again.")
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        return {"url": url, "path": "reports/assets/" + url.rsplit("/", 1)[-1]}
+
+    @app.delete("/api/scientist/v2/bubbles/{slug}/large-asset/push/{upload_id}")
+    def scientist_push_abort(slug: str, upload_id: str, user: str = Depends(scientist_user)):
+        return {"ok": service.abort_chunked_upload(home_of(user), slug, upload_id)}
+
     @app.get("/api/scientist/v2/bubbles")
     def scientist_bubbles(user: str = Depends(scientist_user)):
         """Small preflight inventory for the installed project-local client."""
@@ -2315,6 +2390,45 @@ def build_app():
             raise HTTPException(status_code=400, detail="No file provided.")
         url = service.save_bubble_image(home_of(user), slug, file.filename, await file.read())
         return {"url": url}
+
+    # A file too big for one request body (a proxy in front of this server caps them) is sliced
+    # by the browser and reassembled here. Each slice is an ordinary bounded upload.
+    @app.post("/api/bubbles/{slug}/assets/chunked/begin")
+    def begin_chunked_asset(slug: str, payload: dict = Body(...),
+                            user: str = Depends(current_user)):
+        try:
+            return service.begin_chunked_upload(
+                home_of(user), slug, str(payload.get("filename") or ""),
+                int(payload.get("total_size") or 0))
+        except (ValueError, TypeError) as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    @app.post("/api/bubbles/{slug}/assets/chunked/{upload_id}")
+    async def append_chunk_to_asset(slug: str, upload_id: str, offset: int = Form(...),
+                                    user: str = Depends(current_user),
+                                    file: UploadFile = File(...)):
+        try:
+            received = service.append_chunk(home_of(user), slug, upload_id, offset,
+                                            await file.read())
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail="This upload has expired. Start it again.")
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        return {"received": received}
+
+    @app.post("/api/bubbles/{slug}/assets/chunked/{upload_id}/finish")
+    def finish_chunked_asset(slug: str, upload_id: str, user: str = Depends(current_user)):
+        try:
+            url = service.finish_chunked_upload(home_of(user), slug, upload_id)
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail="This upload has expired. Start it again.")
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        return {"url": url}
+
+    @app.delete("/api/bubbles/{slug}/assets/chunked/{upload_id}")
+    def abort_chunked_asset(slug: str, upload_id: str, user: str = Depends(current_user)):
+        return {"ok": service.abort_chunked_upload(home_of(user), slug, upload_id)}
 
     @app.get("/api/bubbles/{slug}/assets")
     def list_bubble_assets(slug: str, user: str = Depends(current_user)):

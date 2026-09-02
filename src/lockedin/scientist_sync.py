@@ -8,6 +8,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import os
 from pathlib import Path
 
 from slugify import slugify
@@ -17,6 +18,23 @@ from . import assets, bubbles, feedback, paths, talks
 
 def revision(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+# Assets above this are listed but never content-synced. A photo archive or dataset is not
+# something an agent reads or edits, while hashing one on every manifest poll costs more than the
+# rest of the bubble put together — a 3.9 GB zip is ~2.2 s of hashing per poll, and clients poll
+# every few seconds. ``lockedin-scientist assets`` fetches them on request instead.
+LARGE_ASSET_BYTES = int(os.environ.get("LOCKEDIN_SYNC_MAX_ASSET_BYTES") or 25 * 1024 * 1024)
+
+
+def _is_large(source: Path | bytes) -> bool:
+    return isinstance(source, Path) and source.stat().st_size > LARGE_ASSET_BYTES
+
+
+def _stamp(path: Path) -> str:
+    """A revision for a file we deliberately do not read: size and mtime, not content."""
+    st = path.stat()
+    return revision(f"{st.st_size}:{st.st_mtime_ns}".encode("utf-8"))
 
 
 def _approved(slug: str) -> bool:
@@ -210,7 +228,7 @@ def _files(home: Path, slug: str) -> dict[str, Path | bytes]:
                     continue
                 rel = path.relative_to(report)
                 # Private review comments (and legacy chats/ dirs) do not belong in an agent project.
-                if rel.parts and rel.parts[0] in {"chats", "comments"}:
+                if rel.parts and rel.parts[0] in {"chats", "comments", ".uploads"}:
                     continue
                 # Chalk talks are exported below into stable, title-independent folders. The
                 # server's flat storage names are implementation details, not agent addresses.
@@ -258,20 +276,65 @@ def _content(source: Path | bytes) -> bytes:
 
 
 def manifest(home: Path, slug: str) -> dict:
-    return {"files": [{"path": rel, "revision": revision(_content(source))}
-                      for rel, source in sorted(_files(home, slug).items())]}
+    """Every exported path, with a revision.
+
+    Oversized assets stay listed — dropping them would read as "deleted on the server" and make a
+    client bin its local copy — but carry a size/mtime revision and an ``oversize`` flag, so no
+    poll ever reads their contents and no client downloads them by accident.
+    """
+    files = []
+    for rel, source in sorted(_files(home, slug).items()):
+        if _is_large(source):
+            files.append({"path": rel, "revision": _stamp(source),
+                          "oversize": True, "size": source.stat().st_size})
+        else:
+            files.append({"path": rel, "revision": revision(_content(source))})
+    return {"files": files, "large_asset_bytes": LARGE_ASSET_BYTES}
+
+
+def bubble_is_open(home: Path, slug: str) -> bool:
+    """Whether this bubble is exported to Scientist clients at all."""
+    with paths.use_root(home):
+        return _approved(slug)
+
+
+def large_asset_path(home: Path, slug: str, rel: str) -> Path:
+    """Resolve one oversized asset for streaming; raises rather than guessing."""
+    available = _files(home, slug)
+    source = available.get(rel) if _safe_rel(rel) else None
+    if not isinstance(source, Path) or not _is_large(source):
+        raise FileNotFoundError(rel)
+    return source
+
+
+def large_assets(home: Path, slug: str) -> list[dict]:
+    """The assets a sync deliberately skips, for the on-demand fetch command."""
+    return sorted(({"path": rel, "size": source.stat().st_size,
+                    "revision": _stamp(source)}
+                   for rel, source in _files(home, slug).items() if _is_large(source)),
+                  key=lambda item: item["path"])
 
 
 def read_files(home: Path, slug: str, wanted: list[str]) -> dict:
+    """Read files by path.
+
+    Oversized assets are never returned here: this encodes whole files as base64 in one JSON
+    body, so a multi-gigabyte archive would be held in memory twice over. They are fetched
+    instead by ``large_asset_path``, which streams straight off disk.
+    """
     available = _files(home, slug)
-    files = []
+    files, skipped = [], []
     for rel in dict.fromkeys(wanted):
         if not _safe_rel(rel) or rel not in available:
             continue
-        raw = _content(available[rel])
+        source = available[rel]
+        if _is_large(source):
+            skipped.append({"path": rel, "size": source.stat().st_size, "oversize": True})
+            continue
+        raw = _content(source)
         files.append({"path": rel, "revision": revision(raw),
                       "content_b64": base64.b64encode(raw).decode("ascii")})
-    return {"files": files}
+    return {"files": files, "skipped": skipped}
 
 
 def writable_path(slug: str, rel: str) -> bool:

@@ -113,6 +113,17 @@ pulls paper assets/configuration read-only and publishes only report pages and r
 inside `.lockedin/`; it does not limit an agent's normal access to the rest of the project.
 `.lockedin/` is added to the repository's local Git exclude file, not its tracked `.gitignore`.
 
+Assets over 25 MB are listed but never carried by the sync in either direction — the manifest is
+re-read on every poll, so hashing a multi-gigabyte archive would cost more than the whole rest of
+the bubble. Move them on request:
+```bash
+lockedin-scientist assets                    # what is large, and which way it needs to move
+lockedin-scientist assets pull <filename>    # bring one down   (--all for every one)
+lockedin-scientist assets push <filename>    # send one up      (--all for every one)
+```
+Both directions slice the transfer, so any size fits through a proxy that caps request bodies, and
+both resume after an interruption. Operators can move the line with `LOCKEDIN_SYNC_MAX_ASSET_BYTES`.
+
 Manage workers or rebuild a project from the server:
 ```bash
 lockedin-scientist ps
