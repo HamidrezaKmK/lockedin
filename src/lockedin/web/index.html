@@ -33,6 +33,10 @@
     --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:24px; --sp-6:34px; --sp-7:48px;
 
     --page-pad-y:20px; --page-pad-x:24px;
+    /* Widest a column of content is allowed to get. Past this a row stops gaining anything
+       from the extra pixels: the text has already stopped at its measure and the rest is a
+       hole in the card. The surplus becomes margin instead. */
+    --content-max:980px;
     --section-gap:var(--sp-6);   /* between one titled section and the next */
     --band-gap:var(--sp-3);      /* between a section's label and its content */
     --row-gap:var(--sp-2);       /* between sibling rows or cards in a list */
@@ -270,7 +274,7 @@
   .badge .li-ic{width:12px;height:12px;vertical-align:-.14em;margin-right:3px}
   /* Prose caps out at a readable measure wherever it appears — empty states, notes, the idea
      panel. The panel still spans its column; only the text stops. */
-  .prose-measure,.tk-empty>*,.bd>p{max-width:68ch}
+  .prose-measure,.tk-empty>*,.bd>p{max-width:72ch}
   .backlink{display:inline-flex;align-items:center;gap:6px}
   .backlink .li-ic{width:14px;height:14px}
   /* ---------- Home ----------
@@ -599,8 +603,11 @@
      toggle off the right edge. Cap it and let it ellipsise: the first characters are enough to
      tell workspaces apart, and the full name is in the menu it opens. */
   #topbar .account-quick{min-width:0}
-  #topbar #accountBtn{max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-    display:inline-block;vertical-align:middle}
+  /* inline-flex, not inline-block: `button:has(.li-ic)` supplies the icon/label gap through
+     `gap`, which a block box silently ignores, so the workspace glyph sat flush against its
+     name. The ellipsis moves to the label span, which is where it can still work. */
+  #topbar #accountBtn{max-width:190px;overflow:hidden;display:inline-flex;align-items:center;
+    gap:7px;vertical-align:middle}
   #side{grid-area:side;border-right:1px solid var(--line);background:var(--panel);padding:14px 10px;
         overflow:hidden;transition:width .2s ease,padding .15s ease;display:flex;flex-direction:column;
         position:relative}
@@ -629,12 +636,20 @@
   /* minimal authorship credit, pinned to the bottom of the side pane */
   .side-credit{margin-top:auto;padding:12px 8px 4px;font-family:var(--font-ui);font-size:11px;
         color:var(--muted);line-height:1.4}
+  /* Not a button, so the icon/label gap rule never reached it and the glyphs sat on the words. */
+  .side-credit .li-ic,.landing-footer .li-ic{margin:0 2px}
   .side-credit .heart{color:var(--accent);font-size:14px;vertical-align:-1px}
   .side-credit a{color:var(--muted);text-decoration:none}
   .side-credit a:hover{color:var(--accent)}
   /* min-height/min-width:0 let the grid track govern size (no hardcoded topbar height,
      no flex/grid blowout from wide content → no surprise global scrollbars) */
   #main{grid-area:main;padding:var(--page-pad-y) var(--page-pad-x);overflow:auto;min-width:0;min-height:0;box-sizing:border-box}
+  /* Not .detailmode: that one is the two-pane editor, where the panes really do want every
+     pixel. Padding rather than a max-width on a child, so one rule caps every view at once
+     and the scroller still paints edge to edge. max() means this is inert below the cap,
+     which is where phones and laptops live. */
+  #main:not(.detailmode),#main.detailmode.home-mode{padding-inline:max(var(--page-pad-x),
+    calc((100% - var(--content-max)) / 2))}
   /* overflow:clip (with hidden fallback) — clips like hidden but is NOT a scroll container, so a
      focus/scrollIntoView inside the editor can't programmatically scroll these layout boxes and
      leave them stuck (the editor's own internal scroller absorbs it instead). */
@@ -679,7 +694,8 @@
   .model-card .model-line{font-size:12px;line-height:1.5}
   .model-card>.row:first-child{margin-bottom:var(--sp-1)}
   .account-quick{position:relative;flex:0 0 auto}
-  #accountBtn{max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #accountBtn{max-width:170px;overflow:hidden}
+  #accountBtn .account-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   #accountMenu{position:absolute;top:calc(100% + 8px);right:0;width:260px;z-index:35;
     gap:10px;padding:14px}
   #accountMenu .acct-head{display:flex;align-items:center;gap:8px;min-width:0}
@@ -1800,6 +1816,24 @@
           !document.getElementById("app").classList.contains("side-open"));
     },{passive:true});
   })();
+  // Ctrl/Cmd+B toggles the sidebar, the way it does in an editor. Bound in the capture phase so
+  // it beats the report editor's own Mod-b, and skipped whenever the keystroke belongs to
+  // something you are typing in, where Ctrl+B still has to mean bold.
+  document.addEventListener("keydown",e=>{
+    if(!(e.ctrlKey||e.metaKey)||e.shiftKey||e.altKey)return;
+    if(e.key!=="b"&&e.key!=="B")return;
+    // Both the event target and the focused node, because a rich-text editor can hand the
+    // keystroke to a wrapper while the caret lives somewhere else entirely.
+    const typing=n=>!!(n&&n.closest&&n.closest("input,textarea,select,"+
+      "[contenteditable]:not([contenteditable=false]),"+
+      ".toastui-editor-defaultUI,.ProseMirror,.cm-editor"));
+    if(typing(e.target)||typing(document.activeElement))return;
+    // Nothing to toggle until you are signed in and the app shell is on screen.
+    const app=document.getElementById("app");
+    if(!app||app.offsetParent===null)return;
+    e.preventDefault(); e.stopPropagation();
+    setSideOpen(document.body.classList.contains("side-collapsed"));
+  },true);
   // Close mobile sidebar when tapping the backdrop
   document.getElementById("app").addEventListener("click",e=>{
     if(e.target===e.currentTarget&&window.innerWidth<=700){
@@ -2846,7 +2880,8 @@
   function refreshAccountButton(){
     const btn=$("#accountBtn");
     if(btn){ const ws=(S.workspaces||[]).find(w=>w.id===S.workspaceId);
-      btn.replaceChildren(ic("workspace"), ws?ws.name:"Workspace"); }
+      btn.replaceChildren(ic("workspace"),
+        el("span",{class:"account-name"}, ws?ws.name:"Workspace")); }
   }
 
   function renderAccountMenu(){
@@ -5112,6 +5147,8 @@
     // there is nowhere to go back to, so it stays a glyph. One affordance, in the place you
     // already look — the bubble's own title.
     const onHome=!page; S.onBubbleHome=onHome;
+    // The home is prose; the editor beside it is not. Only the home takes the column cap.
+    m.classList.toggle("home-mode",!!onHome);
     // The glyph's slot is the way back, at every depth: from a page it returns to the bubble's
     // home, and from inside a chalk talk it returns to the same place. Only the home itself has
     // nowhere to go, and only there is it a glyph.

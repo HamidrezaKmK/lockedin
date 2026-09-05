@@ -110,12 +110,12 @@
 .tk-premise-top{display:flex;align-items:center;gap:10px;margin-bottom:12px}
 .tk-premise-top .tk-byline{margin:0;flex:1;min-width:0;font-size:12px;color:var(--muted)}
 .tk-premise-top button{padding:3px 10px;min-height:0;font-size:11.5px}
-.tk-premise .tk-abstract{max-width:68ch;font-family:var(--font-reading);font-size:16px;line-height:1.6;
+.tk-premise .tk-abstract{max-width:72ch;font-family:var(--font-reading);font-size:16px;line-height:1.6;
   color:var(--ink);overflow:visible}
 .tk-premise .tk-abstract p:last-child,.tk-goal .tk-md p:last-child{margin-bottom:0}
 /* The goal is a different kind of sentence from the abstract — a commitment rather than a
    description — so it is coloured rather than merely indented. */
-.tk-goal .tk-md{max-width:68ch;font-family:var(--font-reading);font-size:15.5px;line-height:1.55;overflow:visible;
+.tk-goal .tk-md{max-width:72ch;font-family:var(--font-reading);font-size:15.5px;line-height:1.55;overflow:visible;
   color:var(--accent2)}
 .tk-hint{font-size:11.5px;color:var(--muted);margin:14px 0 6px}
 .tk-hint code{font-family:var(--font-mono);background:var(--panel2);padding:1px 5px;border-radius:5px}
@@ -152,6 +152,9 @@
   padding:12px 13px;font-family:var(--font-mono);font-size:12.5px;line-height:1.6;
   white-space:pre-wrap;color:var(--ink);max-height:190px;overflow:auto}
 :root{--tk-caret:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6.2 14.6 12 8.8l5.8 5.8'/%3E%3C/svg%3E")}
+/* The bubble home is prose and lists, not an editor: cap it like every other view rather
+   than letting a card stretch to the width of the frame with its text stopped at 68ch. */
+.tk-list{max-width:var(--content-max,980px)}
 .tk-band{display:flex;align-items:center;gap:10px;margin-bottom:4px;flex-wrap:wrap}
 .tk-band .tk-addwrap{margin-left:auto}
 @media (max-width:700px){
