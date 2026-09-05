@@ -976,9 +976,24 @@
   .upload-ring.indeterminate{background:conic-gradient(var(--accent) 25%,
     color-mix(in srgb,var(--accent) 20%,transparent) 0);animation:loading-spin 1s linear infinite}
   @media (prefers-reduced-motion:reduce){.upload-ring.indeterminate{animation-duration:2.4s}}
-  @media(max-width:700px){.asset-file-row{grid-template-columns:52px minmax(92px,1fr) auto auto;gap:6px}
-    .asset-file-preview{width:52px;height:40px}.asset-file-row .asset-file-size{grid-column:2}
-    .asset-file-row a:not(.asset-file-preview),.asset-file-row button{justify-self:end}}
+  @media(max-width:700px){
+    /* Seven cells in a four-column grid wrapped into an order nobody chose, and `justify-self:end`
+       on the actions pushed them clean out of the dialog's left edge. A phone row is a small
+       stack instead: the file and its size on one line, then everything you can do to it on the
+       next, in the order they are written. */
+    .asset-file-row{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-2) var(--sp-3);
+      padding:var(--sp-3) 0}
+    .asset-file-preview{flex:0 0 52px;width:52px;height:40px}
+    .asset-file-name{flex:1 1 90px;min-width:0}
+    .asset-file-size{flex:0 0 auto}
+    .asset-tag{order:1;flex:0 0 auto}
+    /* A full-width zero-height break, so the actions start their own line as a group instead of
+       one of them riding up into whatever space the file name happened to leave. */
+    .asset-file-row::after{content:"";order:2;flex:1 0 100%;height:0}
+    .asset-file-row>a:not(.asset-file-preview),.asset-file-row>button{order:3;flex:0 0 auto}
+    .asset-file-row>a:not(.asset-file-preview){display:inline-flex}
+    .asset-tag.blank{display:none}
+  }
   /* Compact creation dialogs mirror the Help panel's clean header/body/footer rhythm. */
   .create-dialog{width:min(420px,calc(100vw - 28px));overflow:hidden;box-shadow:var(--shadow)}
   .create-dialog-header,.create-dialog-footer{padding:12px 16px;display:flex;align-items:center;gap:8px;flex-shrink:0}
@@ -2859,7 +2874,20 @@
   $("#accountBtn").onclick=e=>{
     e.stopPropagation();
     renderAccountMenu();
-    $("#accountMenu").classList.toggle("hide");
+    const menu=$("#accountMenu");
+    menu.classList.toggle("hide");
+    // Anchored to a button that sits near the right edge, a 260px menu hangs off the left of a
+    // 360px screen. On a phone, pin it to the viewport under the bar that opened it — the same
+    // treatment the presence menu gets, measured rather than guessed so it cannot drift.
+    if(!menu.classList.contains("hide") && matchMedia("(max-width:700px)").matches){
+      const bar=$("#topbar").getBoundingClientRect();
+      menu.style.position="fixed";
+      menu.style.left="12px"; menu.style.right="12px";
+      menu.style.width="auto"; menu.style.top=Math.round(bar.height+8)+"px";
+    }else{
+      menu.style.position=""; menu.style.left=""; menu.style.right="";
+      menu.style.width=""; menu.style.top="";
+    }
   };
   async function switchWorkspace(id){
     if(id===S.workspaceId)return;
