@@ -176,6 +176,60 @@ class LargeAssetTransferTests(unittest.TestCase):
             self.assertEqual(wrong.status_code, 400)
             self.assertIn("out of order", wrong.json()["detail"])
 
+    def test_a_large_asset_can_be_deleted_from_the_server(self):
+        # Deleting the local copy does not propagate — the rule that stops the file syncing down
+        # stops the deletion syncing up — so removing one needs a route of its own.
+        payload = os.urandom(CAP * 4)
+        with scientist_workspace() as (client, home, slug):
+            self._push(client, slug, "checkpoint.bin", payload)
+            with paths.use_root(home):
+                landed = paths.bubble_assets_dir(slug) / "checkpoint.bin"
+            self.assertTrue(landed.exists())
+            gone = client.post(f"/api/scientist/v2/bubbles/{slug}/large-asset/delete",
+                               json={"paths": ["reports/assets/checkpoint.bin"]})
+            self.assertEqual(gone.status_code, 200)
+            self.assertEqual(gone.json()["deleted"], ["reports/assets/checkpoint.bin"])
+            self.assertFalse(landed.exists())
+            listed = client.get(f"/api/scientist/v2/bubbles/{slug}/large-assets").json()
+            self.assertEqual([a["path"] for a in listed["assets"]], [])
+
+    def test_deleting_something_already_gone_is_reported_not_fatal(self):
+        with scientist_workspace() as (client, home, slug):
+            gone = client.post(f"/api/scientist/v2/bubbles/{slug}/large-asset/delete",
+                               json={"paths": ["reports/assets/never-existed.bin"]})
+            self.assertEqual(gone.status_code, 200)
+            self.assertEqual(gone.json(), {"deleted": [], "missing":
+                                           ["reports/assets/never-existed.bin"]})
+
+    def test_delete_refuses_anything_that_is_not_an_oversized_asset(self):
+        # A normal asset is removed by deleting it locally; a traversal is not removed at all.
+        with scientist_workspace() as (client, home, slug):
+            with paths.use_root(home):
+                adir = paths.bubble_assets_dir(slug)
+                adir.mkdir(parents=True, exist_ok=True)
+                (adir / "small.png").write_bytes(b"x" * 16)
+            for bad in ("reports/assets/small.png", "../../../etc/passwd",
+                        "reports/pages/overview.md"):
+                got = client.post(f"/api/scientist/v2/bubbles/{slug}/large-asset/delete",
+                                  json={"paths": [bad]})
+                self.assertEqual(got.json()["deleted"], [], bad)
+            with paths.use_root(home):
+                self.assertTrue((paths.bubble_assets_dir(slug) / "small.png").exists())
+
+    def test_the_listing_flags_whether_a_page_references_the_file(self):
+        # What makes deleting safe to offer from a command line.
+        payload = os.urandom(CAP * 4)
+        with scientist_workspace() as (client, home, slug):
+            self._push(client, slug, "figure.bin", payload)
+            listed = client.get(f"/api/scientist/v2/bubbles/{slug}/large-assets").json()
+            self.assertTrue(listed["assets"][0]["unused"])
+            with paths.use_root(home):
+                page = paths.bubble_pages_dir(slug)
+                target = next(page.glob("*.md"))
+                target.write_text(target.read_text() + "\n![f](assets/figure.bin)\n")
+            listed = client.get(f"/api/scientist/v2/bubbles/{slug}/large-assets").json()
+            self.assertFalse(listed["assets"][0]["unused"])
+
 
 if __name__ == "__main__":
     unittest.main()

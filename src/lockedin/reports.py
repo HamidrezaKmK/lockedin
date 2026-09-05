@@ -629,6 +629,7 @@ move only when you ask:
 lockedin-scientist assets
 lockedin-scientist assets pull <filename>
 lockedin-scientist assets push <filename>
+lockedin-scientist assets rm <filename>
 ```
 
 `assets` lists every large file on both sides and says which way each one needs to move: `pull`
@@ -636,6 +637,12 @@ brings one down into `.lockedin/reports/assets/`, `push` sends a local one up, r
 server's copy of that name. Both accept `--all` instead of a filename. Both slice the transfer so
 any size fits through the proxy in front of the server, and both resume where they stopped if the
 transfer is interrupted, so a failed 4 GB upload does not start over.
+
+`rm` deletes one from the bubble. Deleting a large file locally does not remove it from the
+server — the rule that keeps it from syncing down keeps the deletion from syncing up — so this is
+the only way to reclaim that space from a terminal, the Assets panel in the app being the other.
+It asks before it acts, refuses off a terminal without `--yes`, and will not remove a file a page
+still references unless you add `--force`.
 
 Everything under the threshold keeps syncing automatically, exactly as before. Operators can move
 the line with `LOCKEDIN_SYNC_MAX_ASSET_BYTES` in the server environment.
@@ -902,6 +909,7 @@ would cost more than the whole rest of the bubble. Move one deliberately instead
 lockedin-scientist assets
 lockedin-scientist assets pull <filename>
 lockedin-scientist assets push <filename>
+lockedin-scientist assets rm <filename>
 ```
 
 `assets` lists every large file on both sides and says which way each one needs to move. If you
@@ -910,6 +918,12 @@ generate a big artifact — a dataset, an archive, a model checkpoint — writin
 its filename (or `--all`) to send it, and say so in your report to the user. Likewise, a large
 file the listing shows as `on server` is not on disk until you `pull` it. Both directions slice
 the transfer and resume after an interruption, so a large file never has to start over.
+
+Deleting a large file locally does **not** remove it from the bubble — the same rule that stops
+it syncing down stops the deletion syncing up. Use `lockedin-scientist assets rm` with its
+filename (or `--all`) for that; it is irreversible, so it asks first, and off a terminal it
+refuses without `--yes`. It will not delete a file a page still references unless you add
+`--force`, because that breaks the page rather than reclaiming space.
 
 Figures you actually embed in a page are far below this limit and sync normally; this applies
 only to genuinely large binaries.

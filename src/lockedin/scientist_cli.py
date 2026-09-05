@@ -23,7 +23,7 @@ import webbrowser
 from pathlib import Path
 
 APP = "lockedin-scientist"
-SCIENTIST_CLIENT_VERSION = "2026.09.02.2"
+SCIENTIST_CLIENT_VERSION = "2026.09.05.1"
 POLL_SECONDS = 5
 # A worker that has not completed a cycle in three polls is wedged rather than merely busy.
 # `doctor` reports that verdict and `resync` repairs exactly what `doctor` complains about, so
@@ -253,7 +253,7 @@ def account_request(account: dict, method: str, path: str, body: dict | None = N
 
 
 def download_request(account: dict, path: str, rel: str, dest: Path, *, timeout: float = 900,
-                     on_progress=None) -> int:
+                     on_progress=None, scratch: Path | None = None) -> int:
     """Stream a response body straight to disk. Never buffers the whole file in memory."""
     headers = {"Accept": "application/octet-stream",
                "User-Agent": f"{APP}/{SCIENTIST_CLIENT_VERSION}",
@@ -266,7 +266,11 @@ def download_request(account: dict, path: str, rel: str, dest: Path, *, timeout:
     req = urllib.request.Request(account["server"].rstrip("/") + path, data=body,
                                  headers=headers, method="POST")
     dest.parent.mkdir(parents=True, exist_ok=True)
-    tmp = dest.with_suffix(dest.suffix + ".part")
+    # Never beside the destination: reports/assets is what the sync pushes from, so an abandoned
+    # part-file there becomes a real asset on the next push. One did.
+    scratch = scratch or dest.parent
+    scratch.mkdir(parents=True, exist_ok=True)
+    tmp = scratch / (dest.name + ".part")
     written = 0
     try:
         with urllib.request.urlopen(req, timeout=timeout) as response:
@@ -280,11 +284,13 @@ def download_request(account: dict, path: str, rel: str, dest: Path, *, timeout:
         tmp.replace(dest)          # only a complete download replaces what was there
         return written
     except urllib.error.HTTPError as exc:
-        tmp.unlink(missing_ok=True)
         raise RuntimeError(f"server returned {exc.code}: {exc.read().decode(errors='replace')}") from exc
     except urllib.error.URLError as exc:
-        tmp.unlink(missing_ok=True)
         raise RuntimeError(f"cannot reach LockedIn server: {exc.reason}") from exc
+    finally:
+        # A completed download has already renamed tmp away, so this only ever fires on a failure
+        # — including the interrupt and the kill, which the except clauses never see.
+        tmp.unlink(missing_ok=True)
 
 
 def upload_request(account: dict, path: str, payload: bytes, *, timeout: float = 900) -> dict:
@@ -407,7 +413,7 @@ def bubbles_command(account: dict) -> list[dict]:
 
 # Bump when the guide text changes: a project only regenerates SKILL.md when this marker in its
 # copy stops matching, so an edit to the guide reaches no existing agent until this moves.
-SKILL_VERSION = 38
+SKILL_VERSION = 39
 
 # The marker is derived, never typed. It is what the staleness check compares against, so a
 # hand-written copy that drifted from SKILL_VERSION would either pin every project to a stale
@@ -1835,7 +1841,9 @@ def _push_large_asset(account: dict, bubble: str, rel: str, path: Path, *, live:
 
 
 def assets_command(project: Path, pull: list[str], pull_all: bool = False,
-                   push: list[str] | None = None, push_all: bool = False) -> None:
+                   push: list[str] | None = None, push_all: bool = False,
+                   remove: list[str] | None = None, remove_all: bool = False,
+                   assume_yes: bool = False, force: bool = False) -> None:
     """List, fetch, or send the assets a sync deliberately leaves alone.
 
     Big binaries (photo archives, datasets, model checkpoints) are listed by the manifest but
@@ -1843,6 +1851,7 @@ def assets_command(project: Path, pull: list[str], pull_all: bool = False,
     rest of the bubble, and no agent reads a zip anyway. This is how you move one on purpose.
     """
     push = push or []
+    remove = remove or []
     project = project.resolve()
     binding = read_binding(project)
     account = account_for_binding(binding)
@@ -1861,11 +1870,55 @@ def assets_command(project: Path, pull: list[str], pull_all: bool = False,
     local: dict[str, Path] = {}
     if local_dir.is_dir():
         for path in sorted(local_dir.iterdir()):
-            if path.is_file() and cap and path.stat().st_size > cap:
+            # ``.part`` is download scratch, not an asset. It is written elsewhere now, but a
+            # leftover from before must not be swept up by ``push --all`` the way one already was.
+            if path.is_file() and cap and path.stat().st_size > cap \
+                    and path.suffix != ".part":
                 local[path.name] = path
 
     def matches(name: str, chosen: list[str]) -> bool:
         return name in chosen or f"reports/assets/{name}" in chosen
+
+    if remove or remove_all:
+        chosen = remote if remove_all else [remote_by_name[Path(n).name] for n in remove
+                                            if Path(n).name in remote_by_name]
+        unknown = [n for n in remove if Path(n).name not in remote_by_name]
+        if unknown:
+            raise RuntimeError("Not a large asset on the server: " + ", ".join(unknown))
+        if not chosen:
+            heading("Deleting large assets", bubble)
+            print(dim("  Nothing to delete."))
+            return
+        # A referenced file is a figure some page draws; removing it breaks that page rather
+        # than reclaiming space nobody wanted.
+        used = [i for i in chosen if not i.get("unused", True)]
+        if used and not force:
+            raise RuntimeError(
+                "These are referenced by a page, so deleting them would break it:\n  "
+                + "\n  ".join(Path(i["path"]).name for i in used)
+                + "\n  Re-run with --force if you mean it.")
+        heading("Deleting large assets", f"{bubble} \u2014 this cannot be undone")
+        for item in chosen:
+            print(f"  {bold(Path(item['path']).name):<46} {_size_label(item['size']):>10}"
+                  + ("" if item.get("unused", True) else orange("  referenced by a page")))
+        freed = sum(i["size"] for i in chosen)
+        print(dim(f"  {len(chosen)} file(s), {_size_label(freed)} \u2014 removed from the bubble; "
+                  "any local copy is left alone."))
+        if not assume_yes:
+            if not sys.stdin.isatty():
+                raise RuntimeError("Refusing to delete without confirmation. "
+                                   "Re-run with --yes if you mean it.")
+            if input("  Type the bubble name to confirm: ").strip() != bubble:
+                print(dim("  Nothing deleted."))
+                return
+        done = account_request(
+            account, "POST", f"/api/scientist/v2/bubbles/{bubble}/large-asset/delete",
+            {"paths": [i["path"] for i in chosen]})
+        for rel in done.get("deleted", []):
+            print(green("\u2713") + f" deleted {bold(Path(rel).name)}")
+        for rel in done.get("missing", []):
+            print(orange("\u2022") + f" already gone: {Path(rel).name}")
+        return
 
     if push or push_all:
         names = sorted(local) if push_all else [n for n in local if matches(n, push)]
@@ -1915,7 +1968,8 @@ def assets_command(project: Path, pull: list[str], pull_all: bool = False,
 
             written = download_request(
                 account, f"/api/scientist/v2/bubbles/{bubble}/large-asset",
-                item["path"], dest, on_progress=progress if live else None)
+                item["path"], dest, on_progress=progress if live else None,
+                scratch=syncer.root / ".partial")
             print(f"\r{green('\u2713')} {bold(Path(item['path']).name)}  "
                   f"{_size_label(written)} \u2192 {dim(str(dest.relative_to(project)))}"
                   + (" " * 20 if live else ""))
@@ -1945,6 +1999,7 @@ def assets_command(project: Path, pull: list[str], pull_all: bool = False,
     print(dim("  re-hashing it on every poll would cost more than the rest of the bubble combined."))
     print("  Get one:   " + bold("lockedin-scientist assets pull <name>") + dim("   (or --all)"))
     print("  Send one:  " + bold("lockedin-scientist assets push <name>") + dim("   (or --all)"))
+    print("  Delete:    " + bold("lockedin-scientist assets rm <name>") + dim("     (or --all)"))
 
 
 def resync_command(project: Path) -> None:
@@ -2012,6 +2067,13 @@ def _main() -> None:
     assets_push = assets_sub.add_parser("push", help="Upload a large asset from this project.")
     assets_push.add_argument("name", nargs="*", help="Asset filename, or none with --all.")
     assets_push.add_argument("--all", action="store_true", dest="push_all")
+    assets_rm = assets_sub.add_parser("rm", help="Delete a large asset from the bubble.")
+    assets_rm.add_argument("name", nargs="*", help="Asset filename, or none with --all.")
+    assets_rm.add_argument("--all", action="store_true", dest="remove_all")
+    assets_rm.add_argument("--yes", action="store_true", dest="assume_yes",
+                           help="Skip the confirmation prompt. Required when not on a terminal.")
+    assets_rm.add_argument("--force", action="store_true",
+                           help="Delete even if a page references the file.")
     connect_p = sub.add_parser("connect", help="Set this computer up for one bubble, end to end.")
     connect_p.add_argument("--server", required=True)
     connect_p.add_argument("--workspace", required=True)
@@ -2051,6 +2113,9 @@ def _main() -> None:
             assets_command(Path.cwd(), args.name, pull_all=args.pull_all)
         elif args.assets_command == "push":
             assets_command(Path.cwd(), [], push=args.name, push_all=args.push_all)
+        elif args.assets_command == "rm":
+            assets_command(Path.cwd(), [], remove=args.name, remove_all=args.remove_all,
+                           assume_yes=args.assume_yes, force=args.force)
         else:
             assets_command(Path.cwd(), [])
         return

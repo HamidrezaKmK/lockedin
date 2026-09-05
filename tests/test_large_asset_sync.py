@@ -130,6 +130,18 @@ class LargeAssetSyncTests(unittest.TestCase):
             self.assertEqual((adir / "figure.png").read_bytes(), before)
             self.assertEqual((adir / "figure-2.png").read_bytes(), b"other")
 
+    def test_the_asset_index_says_which_files_are_not_on_disk(self):
+        # The index is what an agent reads to see what a bubble has. An oversized entry that
+        # looks identical to a local file's invites exactly the wrong conclusion.
+        import json
+        files = scientist_sync._files(self.home, self.slug)
+        index = json.loads(files["indexes/report-assets.json"])["by_name"]
+        self.assertEqual(index["figure.png"].get("synced", True), True)
+        self.assertNotIn("hint", index["figure.png"])
+        self.assertIs(index["photos.zip"]["synced"], False)
+        self.assertIn("assets pull", index["photos.zip"]["hint"])
+        self.assertEqual(index["photos.zip"]["size"], CAP * 4)
+
 
 class GuideMentionsLargeAssetsTests(unittest.TestCase):
     """The commands are useless if nobody is told they exist.
@@ -142,13 +154,14 @@ class GuideMentionsLargeAssetsTests(unittest.TestCase):
     def test_the_web_help_documents_both_directions(self):
         guide = reports.guide_section("Scientist CLI")
         for expected in ("### Large files", "lockedin-scientist assets",
-                         "assets pull", "assets push", "LOCKEDIN_SYNC_MAX_ASSET_BYTES"):
+                         "assets pull", "assets push", "assets rm",
+                         "LOCKEDIN_SYNC_MAX_ASSET_BYTES"):
             self.assertIn(expected, guide)
 
     def test_the_agent_skill_documents_both_directions(self):
         guide = reports.guide_section("Editing Guide")
         for expected in ("## Large files", "lockedin-scientist assets",
-                         "assets pull", "assets push"):
+                         "assets pull", "assets push", "assets rm"):
             self.assertIn(expected, guide)
 
 

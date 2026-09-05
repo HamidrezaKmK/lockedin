@@ -168,8 +168,18 @@ def _indexed_context(slug: str) -> dict[str, bytes]:
     if asset_root.exists():
         for path in sorted(asset_root.iterdir()):
             if path.is_file() and not path.name.endswith(".tmp"):
-                report_assets[path.name] = {"name": path.name,
-                                            "path": f"reports/assets/{path.name}"}
+                entry = {"name": path.name, "path": f"reports/assets/{path.name}",
+                         "size": path.stat().st_size}
+                # An oversized asset is listed here but is not on disk unless someone fetched it.
+                # Saying so is the difference between an agent running one command and an agent
+                # concluding the file is a dangling reference from a failed upload — which is
+                # exactly what happened when this entry looked identical to a local file's.
+                if _is_large(path):
+                    entry["synced"] = False
+                    entry["hint"] = ("Too large to sync. Run `lockedin-scientist assets` to see "
+                                     "whether it is on disk, then `assets pull` (or `push`, or "
+                                     "`rm`) with this filename.")
+                report_assets[path.name] = entry
     out["indexes/papers.json"] = _json_bytes({"version": 1, "by_id": paper_index})
     out["indexes/report-assets.json"] = _json_bytes({"version": 1, "by_name": report_assets})
     out["feedback/all.json"] = _json_bytes({"version": 1, "marks": all_feedback})
@@ -312,11 +322,31 @@ def large_asset_path(home: Path, slug: str, rel: str) -> Path:
 
 
 def large_assets(home: Path, slug: str) -> list[dict]:
-    """The assets a sync deliberately skips, for the on-demand fetch command."""
+    """The assets a sync deliberately skips, for the on-demand transfer commands.
+
+    ``unused`` says no page references the file, which is what makes deleting one safe to offer
+    from a command line: the risk of removing a large asset is a report that silently loses a
+    figure, and that is exactly the case this flags.
+    """
+    with paths.use_root(home):
+        used = bubbles.referenced_assets(slug)
     return sorted(({"path": rel, "size": source.stat().st_size,
-                    "revision": _stamp(source)}
+                    "revision": _stamp(source),
+                    "unused": Path(rel).name not in used}
                    for rel, source in _files(home, slug).items() if _is_large(source)),
                   key=lambda item: item["path"])
+
+
+def delete_large_asset(home: Path, slug: str, rel: str) -> bool:
+    """Remove one oversized asset from the server.
+
+    Scoped to oversized files on purpose: a normal asset is removed by deleting it locally and
+    letting the sync carry that across, and only the files the sync will not carry need a command
+    of their own. Deleting one here leaves any local copy alone.
+    """
+    large_asset_path(home, slug, rel)          # raises unless it is a real oversized asset
+    with paths.use_root(home):
+        return bubbles.delete_bubble_asset(slug, Path(rel).name)
 
 
 def read_files(home: Path, slug: str, wanted: list[str]) -> dict:

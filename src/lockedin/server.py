@@ -38,7 +38,7 @@ _WORKER_PATH_RE = re.compile(r"^/api/scientist/v2/bubbles/([^/]+)(?:/|$)")
 # Keep this equal to ``scientist_cli.SCIENTIST_CLIENT_VERSION``. Bump both when a Scientist
 # release needs an installed client refresh; the dependency-free installed client cannot import
 # package metadata from this server.
-SCIENTIST_CLIENT_VERSION = "2026.09.02.2"
+SCIENTIST_CLIENT_VERSION = "2026.09.05.1"
 DEMO_ACCESS_MESSAGE = (
     "Lockedin is an experimental project and currently on demo, to be able to login "
     "and play with our project, email kamkarih@mit.edu"
@@ -1856,6 +1856,26 @@ def build_app():
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
         return {"url": url, "path": "reports/assets/" + url.rsplit("/", 1)[-1]}
+
+    @app.post("/api/scientist/v2/bubbles/{slug}/large-asset/delete")
+    def scientist_large_asset_delete(slug: str, body: ScientistFilesIn,
+                                     user: str = Depends(scientist_user)):
+        """Remove oversized assets the sync will not carry.
+
+        A normal asset is deleted by deleting it locally and letting the sync push that across;
+        these never move on their own, so removing one needs saying so explicitly.
+        """
+        if not scientist_sync.bubble_is_open(home_of(user), slug):
+            raise HTTPException(status_code=404, detail="No such approved bubble.")
+        deleted, missing = [], []
+        for rel in dict.fromkeys(body.paths):
+            try:
+                ok = scientist_sync.delete_large_asset(home_of(user), slug, rel)
+            except FileNotFoundError:
+                missing.append(rel)
+                continue
+            (deleted if ok else missing).append(rel)
+        return {"deleted": deleted, "missing": missing}
 
     @app.delete("/api/scientist/v2/bubbles/{slug}/large-asset/push/{upload_id}")
     def scientist_push_abort(slug: str, upload_id: str, user: str = Depends(scientist_user)):

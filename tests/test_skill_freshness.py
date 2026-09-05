@@ -39,7 +39,7 @@ class SkillFreshnessTests(unittest.TestCase):
         # The agent-facing guide is the Editing Guide; the CLI section never reaches SKILL.md.
         guide = reports.guide_section("Editing Guide")
         for expected in ("## Large files", "lockedin-scientist assets",
-                         "assets pull", "assets push"):
+                         "assets pull", "assets push", "assets rm"):
             self.assertIn(expected, guide,
                           "the agent's guide must say how to move a large file; "
                           "if you changed this text, bump SKILL_VERSION so projects pick it up")
