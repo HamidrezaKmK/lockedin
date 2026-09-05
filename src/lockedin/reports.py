@@ -644,6 +644,10 @@ the only way to reclaim that space from a terminal, the Assets panel in the app 
 It asks before it acts, refuses off a terminal without `--yes`, and will not remove a file a page
 still references unless you add `--force`.
 
+Because these files are not on disk in a synchronized project, nothing there would otherwise show
+they exist. A generated `reports/assets/NOT-SYNCED.md` lists them with their sizes, so an agent
+listing that folder sees what is in the bubble rather than concluding the files were lost.
+
 Everything under the threshold keeps syncing automatically, exactly as before. Operators can move
 the line with `LOCKEDIN_SYNC_MAX_ASSET_BYTES` in the server environment.
 
@@ -924,6 +928,10 @@ it syncing down stops the deletion syncing up. Use `lockedin-scientist assets rm
 filename (or `--all`) for that; it is irreversible, so it asks first, and off a terminal it
 refuses without `--yes`. It will not delete a file a page still references unless you add
 `--force`, because that breaks the page rather than reclaiming space.
+
+`reports/assets/NOT-SYNCED.md` is generated and lists every large file in the bubble with its
+size, so listing that directory shows what is there but not on disk. Do not edit or delete it —
+it is rewritten on every sync and disappears by itself once no large files remain.
 
 Figures you actually embed in a page are far below this limit and sync normally; this applies
 only to genuinely large binaries.

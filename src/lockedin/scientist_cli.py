@@ -23,7 +23,7 @@ import webbrowser
 from pathlib import Path
 
 APP = "lockedin-scientist"
-SCIENTIST_CLIENT_VERSION = "2026.09.05.1"
+SCIENTIST_CLIENT_VERSION = "2026.09.05.2"
 POLL_SECONDS = 5
 # A worker that has not completed a cycle in three polls is wedged rather than merely busy.
 # `doctor` reports that verdict and `resync` repairs exactly what `doctor` complains about, so
@@ -413,7 +413,7 @@ def bubbles_command(account: dict) -> list[dict]:
 
 # Bump when the guide text changes: a project only regenerates SKILL.md when this marker in its
 # copy stops matching, so an edit to the guide reaches no existing agent until this moves.
-SKILL_VERSION = 39
+SKILL_VERSION = 40
 
 # The marker is derived, never typed. It is what the staleness check compares against, so a
 # hand-written copy that drifted from SKILL_VERSION would either pin every project to a stale
@@ -1297,7 +1297,9 @@ class ProjectSync:
             tracked[current] = tracked.pop(legacy)
 
         def pushable_path(rel: str) -> bool:
-            if rel in oversize:
+            # Server-generated, so it arrives through the read-only path below and is never sent
+            # back; pushing a copy would make the marker a real asset in the bubble.
+            if rel in oversize or rel == NOT_SYNCED_PATH:
                 return False
             parts = Path(rel).parts
             return bool(
@@ -1315,7 +1317,7 @@ class ProjectSync:
             except OSError: return False
 
         report_local = {r for r in self._report_paths()
-                        if r not in oversize and not local_oversize(r)}
+                        if r not in oversize and r != NOT_SYNCED_PATH and not local_oversize(r)}
         deletes, writes, creates = [], [], []
         for rel, old in list(tracked.items()):
             if not pushable_path(rel): continue
@@ -1383,6 +1385,15 @@ class ProjectSync:
                     or tracked.get(rel, {}).get("revision") != remote[rel]):
                 item = fetch(rel); self._write_remote(item)
             tracked[rel] = {"revision": remote[rel]}
+        # The marker disappears from the manifest as soon as the last large asset is gone.
+        # Nothing prunes reports/, so a stale copy would sit there claiming files that no longer
+        # exist — the exact confusion it was added to prevent.
+        if NOT_SYNCED_PATH not in remote:
+            marker = self._local(NOT_SYNCED_PATH)
+            if marker.exists():
+                try: os.chmod(marker, 0o644); marker.unlink()
+                except OSError: pass
+            tracked.pop(NOT_SYNCED_PATH, None)
         math_revision = remote.get("config/math.yaml", "")
         # The version marker is checked here as well as in validate_or_initialize, which only runs
         # when a worker starts: a project whose worker has been up since before a SKILL_VERSION
@@ -1777,6 +1788,9 @@ def _size_label(n: int) -> str:
 
 # Same reasoning as the browser dialog: comfortably under the 100 MB body cap a proxy in front
 # of the server imposes, and big enough that a multi-gigabyte file is not thousands of requests.
+# Kept equal to scientist_sync.NOT_SYNCED_PATH; the installed client cannot import it.
+NOT_SYNCED_PATH = "reports/assets/NOT-SYNCED.md"
+
 PUSH_CHUNK_BYTES = 32 * 1024 * 1024
 
 # One request must stay well under what a proxy in front of the server will carry (Cloudflare
