@@ -408,12 +408,17 @@
   .landing{width:100%;min-height:100vh}
   .landing-inner{width:min(1160px,calc(100vw - 48px));margin:0 auto}
   .landing-hero{min-height:0;display:grid;grid-template-columns:minmax(0,1.1fr) minmax(310px,.82fr);
-    grid-template-areas:"lead auth" "detail auth";gap:0 48px;align-items:start;padding:40px 0 30px}
+    /* The card is a third the height of the column beside it, so spanning it down both rows left
+       a void under it as tall as the card itself. The prose now sits beside the card and the
+       three points run the full width beneath, which is the width they wanted anyway. */
+    grid-template-areas:"lead auth" "copy auth" "points points";
+    gap:0 48px;align-items:start;padding:40px 0 30px}
   .landing-lead{grid-area:lead}
-  .landing-detail{grid-area:detail;margin-top:22px}
-  /* Top-aligned, not vertically centred: centring floated the card against nothing, leaving a
-     band of dead space above and below it. Its top edge now starts with the kicker, so the two
-     hero columns begin on the same line. */
+  /* The wrapper stops being a box so its two children can be placed in the hero grid directly.
+     Mobile puts it back to a block, where the source order is already the right order. */
+  .landing-detail{display:contents}
+  .landing-copy{grid-area:copy}
+  .landing-points{grid-area:points;margin-top:26px}
   .landing-auth-panel{grid-area:auth;align-self:start;margin-top:0}
   .landing-kicker{display:inline-flex;align-items:center;gap:8px;color:var(--accent2);font-size:12px;
     font-weight:700;text-transform:uppercase;letter-spacing:.12em;margin-bottom:14px}
@@ -426,12 +431,14 @@
   .landing h1 .lock{color:var(--accent2)}
   .landing-lede{max-width:30ch;font-family:var(--font-ui);font-weight:700;letter-spacing:-.012em;
     font-size:clamp(19px,1.8vw,25px);line-height:1.2;color:var(--ink);margin:0;text-wrap:balance}
-  .landing-copy{max-width:62ch;color:var(--muted);font-size:14.5px;line-height:1.6;margin:0 0 22px}
+  .landing-copy{max-width:62ch;color:var(--muted);font-size:14.5px;line-height:1.6;margin:18px 0 0}
   /* Stacked, not a 3-across row: each point is a couple of sentences now, and three narrow
      columns turned them into tall thin towers. */
-  .landing-points{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;max-width:760px}
+  /* Three across at full width: stacked, they were a narrow column beside empty space. */
+  .landing-points{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;max-width:none}
   .landing-point{border-left:2px solid color-mix(in srgb,var(--accent) 60%,var(--line));padding:8px 12px;
     background:color-mix(in srgb,var(--panel) 40%,transparent);border-radius:0 8px 8px 0}
+  .landing-point{height:100%}
   .landing-point b{display:block;margin-bottom:2px}
   .landing-point span{display:block;color:var(--muted);font-size:12.5px;line-height:1.5;text-wrap:pretty}
   .landing-auth-panel{background:color-mix(in srgb,var(--panel) 94%,transparent);border:1px solid var(--line);
@@ -1440,6 +1447,9 @@
     .landing-inner{width:min(100% - 32px,1160px)}
     .landing-hero{min-height:auto;grid-template-columns:minmax(0,1fr);
       grid-template-areas:"lead" "auth" "detail";gap:20px;padding:20px 0 30px}
+    .landing-detail{display:block;grid-area:detail}
+    .landing-copy{margin:0 0 18px}
+    .landing-points{margin-top:0}
     .landing-lead,.landing-detail,.landing-auth-panel{margin-top:0}
     .landing h1{font-size:clamp(38px,11vw,52px);line-height:1;margin-bottom:12px}
     .landing-lede{font-size:clamp(17px,4.6vw,21px);line-height:1.2;max-width:28ch}
@@ -3227,12 +3237,15 @@
     createBox.append(el("b",{},"Create a workspace"),
       el("div",{class:"muted",style:"font-size:12px"},"Create a shared research space, then invite approved LockedIn users."));
     const makeName=el("input",{placeholder:"New shared workspace name"});
-    createBox.append(el("div",{class:"row"},makeName,el("button",{class:"primary small",onclick:async()=>{
+    // A "+" beside the field, not a two-line wall of text: the label repeats the heading above it
+    // and the field's own placeholder, and at that size it wrapped.
+    createBox.append(el("div",{class:"row"},makeName,el("button",{class:"primary small icon-btn",
+      title:"Create workspace","aria-label":"Create workspace",onclick:async()=>{
       try{const r=await api("/api/workspaces",{method:"POST",body:JSON.stringify({name:makeName.value})});
         S.workspaces.push({id:r.workspace.id,name:r.workspace.name,kind:r.workspace.kind,role:"admin",owner_user:S.user});
         makeName.value=""; refreshAccountButton(); refreshWorkspaceSettings(main); toast("Workspace created");
       }catch(e){toast(e.message);}
-    }},"Create workspace")));
+    }},ic("plus"))));
     main.append(createBox);
     if(!active)return;
     const box=el("div",{id:"workspaceSettings",class:"card col stack-card",style:"gap:10px"});
