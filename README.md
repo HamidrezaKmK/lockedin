@@ -120,9 +120,15 @@ the bubble. Move them on request:
 lockedin-scientist assets                    # what is large, and which way it needs to move
 lockedin-scientist assets pull <filename>    # bring one down   (--all for every one)
 lockedin-scientist assets push <filename>    # send one up      (--all for every one)
+lockedin-scientist assets rm <filename>      # delete it from the bubble
 ```
-Both directions slice the transfer, so any size fits through a proxy that caps request bodies, and
-both resume after an interruption. Operators can move the line with `LOCKEDIN_SYNC_MAX_ASSET_BYTES`.
+Both transfer directions slice the request, so any size fits through a proxy that caps request
+bodies, and both resume after an interruption. Deleting a large file locally does *not* remove it
+from the bubble — the rule that stops it syncing down stops the deletion syncing up — so `rm` is
+what does that; it asks first, needs `--yes` off a terminal, and refuses a file a page still
+references unless you add `--force`. A generated `reports/assets/NOT-SYNCED.md` lists the large
+files a project is not carrying, so they are visible from the folder they are missing from.
+Operators can move the line with `LOCKEDIN_SYNC_MAX_ASSET_BYTES`.
 
 Manage workers or rebuild a project from the server:
 ```bash

@@ -129,6 +129,7 @@ def welcome() -> None:
     print(bold("Large files"))
     print(f"  {cyan('\u2022')} {dim('Big binaries are listed but never synced automatically \u2014 move them on request')}\n     {cyan('lockedin-scientist assets')}")
     print(f"  {cyan('\u2022')} {dim('Bring one down, or send one up (both take --all)')}\n     {cyan('lockedin-scientist assets pull <filename>')}\n     {cyan('lockedin-scientist assets push <filename>')}")
+    print(f"  {cyan('\u2022')} {dim('Delete one from the bubble \u2014 deleting it locally does not')}\n     {cyan('lockedin-scientist assets rm <filename>')}")
     print()
     print(bold("Native agent skills"))
     print(f"  {cyan('•')} {dim('Install the LockedIn Scientist skill once for your agent')}\n     {cyan('lockedin-scientist <codex|claude|agy> setup')}")
