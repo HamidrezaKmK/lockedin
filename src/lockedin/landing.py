@@ -21,12 +21,12 @@ DEFAULT_LANDING: dict[str, Any] = {
         "kicker": "Collaborative Research with AI",
         "title_accent": "locked",
         "title_rest": "in",
-        "lede": "AI should not be limited to chat threads.",
+        "lede": "AI should not be limited to chat threads",
         "copy": "Lockedin was built out of my fascination — and frustration — working with AI for research. More often than not, my sessions turned into walls of text and jargon that neither I nor the agent could follow. Rather than automating research and replacing humans, Lockedin focuses on keeping them in the loop, and make agents good colleagues and collaborators, while enriching how they express their thoughts.",
         "points": [
-            {"title": "Review Together", "text": "Meet with your agent, then mark the work directly."},
-            {"title": "Research Hub", "text": "Keep papers, code, Overleaf, and resources in one shared context."},
-            {"title": "Bring Your AI", "text": "Use your OpenAI, Anthropic, or Google AI subscription."},
+            {"title": "Review Together", "text": "Working with an agent should feel like working with a colleague. Meet with it, draw your feedback straight onto the board, attach visuals, prototype code on the fly, and discuss interactively. None of it trapped in a chat thread."},
+            {"title": "Research Hub", "text": "A central hub for every part of a research project: papers and resources, meeting notes, Overleaf, Slack, and code, all in one place, so the AI works from real context instead of a fresh window."},
+            {"title": "Bring Your AI", "text": "Lockedin doesn't reinvent intelligence. It takes the frontier subscription you already pay for, or a free model you host yourself, and gives it a better way to communicate."},
         ],
     },
     "auth": {

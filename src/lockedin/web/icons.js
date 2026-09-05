@@ -23,9 +23,12 @@
   // caller caring. A plain string means "stroked path"; {d,fill:1} means "solid".
   var P = {
     /* ---------- brand & navigation ---------- */
-    lock: ["M8 10.6V7.4a4 4 0 0 1 8 0v3.2",
-           "M5.2 10.6h13.6a1.6 1.6 0 0 1 1.6 1.6v7.2a1.6 1.6 0 0 1-1.6 1.6H5.2a1.6 1.6 0 0 1-1.6-1.6v-7.2a1.6 1.6 0 0 1 1.6-1.6Z",
-           {d: "M12 14.4a1.35 1.35 0 0 1 .8 2.44V18a.8.8 0 0 1-1.6 0v-1.16A1.35 1.35 0 0 1 12 14.4Z", fill: 1}],
+    // The brand mark: a padlock with a shell prompt inside it instead of a keyhole. The shackle is
+    // taller and the body narrower than a stock padlock, because at 15px a wide body under a
+    // shallow arc reads as a shopping bag. Keep this drawing and the two favicons in step.
+    lock: ["M8.8 11.2V7.4a3.2 3.2 0 0 1 6.4 0v3.8",
+           "M5.9 11.2h12.2a1.5 1.5 0 0 1 1.5 1.5v6.6a1.5 1.5 0 0 1-1.5 1.5H5.9a1.5 1.5 0 0 1-1.5-1.5v-6.6a1.5 1.5 0 0 1 1.5-1.5Z",
+           "M10.6 13.8 13.6 16l-3 2.2"],
     home: ["M3.6 10.4 12 3.5l8.4 6.9v8.4a1.6 1.6 0 0 1-1.6 1.6H5.2a1.6 1.6 0 0 1-1.6-1.6Z",
            "M9.4 20.4v-5.6h5.2v5.6"],
     // Three overlapping circles — the bubble cluster, kept from 🫧 but drawn to the grid.

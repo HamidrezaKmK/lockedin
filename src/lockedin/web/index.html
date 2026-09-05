@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>lockedin — research assistant</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234dd9b8' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'><rect x='3.6' y='10.6' width='16.8' height='10.4' rx='1.6'/><path d='M8 10.6V7.4a4 4 0 0 1 8 0v3.2'/></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234dd9b8' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'><path d='M8.8 11.2V7.4a3.2 3.2 0 0 1 6.4 0v3.8'/><path d='M5.9 11.2h12.2a1.5 1.5 0 0 1 1.5 1.5v6.6a1.5 1.5 0 0 1-1.5 1.5H5.9a1.5 1.5 0 0 1-1.5-1.5v-6.6a1.5 1.5 0 0 1 1.5-1.5Z'/><path d='M10.6 13.8 13.6 16l-3 2.2'/></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -224,7 +224,7 @@
   button:has(.li-ic){display:inline-flex;align-items:center;gap:7px}
   .feature-icon .li-ic{width:19px;height:19px;color:var(--accent)}
   .brand .li-ic{width:19px;height:19px;color:var(--accent2)}
-  .landing-lock .li-ic{width:15px;height:15px}
+  .landing-lock .li-ic{width:18px;height:18px}
   .side-credit .li-ic,.landing-footer .li-ic{width:13px;height:13px;vertical-align:-.16em}
   .side-credit .li-ic.heart,.landing-footer .li-ic.heart{color:var(--accent);
     fill:currentColor;stroke-width:1.2}
@@ -411,25 +411,29 @@
     grid-template-areas:"lead auth" "detail auth";gap:0 48px;align-items:start;padding:40px 0 30px}
   .landing-lead{grid-area:lead}
   .landing-detail{grid-area:detail;margin-top:22px}
-  .landing-auth-panel{grid-area:auth;align-self:center;margin-top:0}
+  /* Top-aligned, not vertically centred: centring floated the card against nothing, leaving a
+     band of dead space above and below it. Its top edge now starts with the kicker, so the two
+     hero columns begin on the same line. */
+  .landing-auth-panel{grid-area:auth;align-self:start;margin-top:0}
   .landing-kicker{display:inline-flex;align-items:center;gap:8px;color:var(--accent2);font-size:12px;
     font-weight:700;text-transform:uppercase;letter-spacing:.12em;margin-bottom:14px}
-  .landing-lock{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;
-    border-radius:7px;background:color-mix(in srgb,var(--accent2) 16%,transparent);
+  .landing-lock{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;
+    border-radius:8px;background:color-mix(in srgb,var(--accent2) 16%,transparent);
     border:1px solid color-mix(in srgb,var(--accent2) 34%,var(--line));letter-spacing:0}
-  /* The wordmark is a lockup now, not the headline: it says who is speaking, and the line under
-     it says the thing worth reading. */
-  .landing h1{font-family:var(--font-ui);font-size:clamp(22px,2vw,27px);line-height:1;margin:0 0 10px;
-    letter-spacing:-.01em;font-weight:700}
+  /* The wordmark leads the lockup — sized above the lede so the brand reads first. */
+  .landing h1{font-family:var(--font-ui);font-size:clamp(46px,5.2vw,72px);line-height:1;margin:0 0 14px;
+    letter-spacing:-.025em;font-weight:700}
   .landing h1 .lock{color:var(--accent2)}
-  .landing-lede{max-width:26ch;font-family:var(--font-ui);font-weight:700;letter-spacing:-.012em;
-    font-size:clamp(24px,2.5vw,34px);line-height:1.14;color:var(--ink);margin:0;text-wrap:balance}
+  .landing-lede{max-width:30ch;font-family:var(--font-ui);font-weight:700;letter-spacing:-.012em;
+    font-size:clamp(19px,1.8vw,25px);line-height:1.2;color:var(--ink);margin:0;text-wrap:balance}
   .landing-copy{max-width:62ch;color:var(--muted);font-size:14.5px;line-height:1.6;margin:0 0 22px}
-  .landing-points{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;max-width:760px}
+  /* Stacked, not a 3-across row: each point is a couple of sentences now, and three narrow
+     columns turned them into tall thin towers. */
+  .landing-points{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;max-width:760px}
   .landing-point{border-left:2px solid color-mix(in srgb,var(--accent) 60%,var(--line));padding:8px 12px;
     background:color-mix(in srgb,var(--panel) 40%,transparent);border-radius:0 8px 8px 0}
   .landing-point b{display:block;margin-bottom:2px}
-  .landing-point span{display:block;color:var(--muted);font-size:12px;line-height:1.45}
+  .landing-point span{display:block;color:var(--muted);font-size:12.5px;line-height:1.5;text-wrap:pretty}
   .landing-auth-panel{background:color-mix(in srgb,var(--panel) 94%,transparent);border:1px solid var(--line);
     border-radius:8px;padding:22px;box-shadow:var(--shadow);position:relative;overflow:hidden}
   .landing-auth-panel::before{content:"";position:absolute;inset:0 0 auto;height:3px;
@@ -441,15 +445,19 @@
   .landing-section{padding:54px 0;border-top:1px solid color-mix(in srgb,var(--line) 72%,transparent)}
   .landing-section-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:10px 30px;margin-bottom:24px}
   .landing-section-head>:first-child{flex:0 1 auto}
-  .landing-section-head>p{flex:1 1 300px;max-width:56ch}
+  /* Wide enough that a one-sentence section blurb stays on one line at desktop widths — a 56ch
+     cap broke them into a long line plus a three-word orphan. */
+  .landing-section-head>p{flex:1 1 300px;max-width:92ch}
   /* Balanced wrapping and a size that fits the column: a headline that breaks as
      "…like a / PI" reads like a typo. */
   .landing-section h2{font-size:23px;line-height:1.2;margin:0;letter-spacing:0;text-wrap:balance}
-  /* The page thesis should read as one thought, including at desktop browser zoom levels. */
-  #why-title{white-space:nowrap;text-wrap:nowrap}
+  /* The page thesis should read as one thought, including at desktop browser zoom levels. But
+     only where it fits: below ~700px this headline is wider than the viewport, and nowrap made
+     it push the whole page sideways instead of wrapping. */
+  @media (min-width:701px){#why-title{white-space:nowrap;text-wrap:nowrap}}
   .landing-section[aria-labelledby="why-title"] .landing-section-head{display:block}
   .landing-section[aria-labelledby="why-title"] h2{margin-bottom:8px}
-  .landing-section-head p{margin:0;color:var(--muted);text-wrap:pretty}
+  .landing-section-head p{margin:0;color:var(--muted);text-wrap:balance}
   .workflow-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}
   @media (max-width:1000px){.workflow-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
   .workflow-step,.feature-card{background:var(--panel);border:1px solid var(--line);
@@ -1433,15 +1441,16 @@
     .landing-hero{min-height:auto;grid-template-columns:minmax(0,1fr);
       grid-template-areas:"lead" "auth" "detail";gap:20px;padding:20px 0 30px}
     .landing-lead,.landing-detail,.landing-auth-panel{margin-top:0}
-    .landing h1{font-size:23px;line-height:1;margin-bottom:8px}
-    .landing-lede{font-size:clamp(21px,5.8vw,27px);line-height:1.12;max-width:24ch}
+    .landing h1{font-size:clamp(38px,11vw,52px);line-height:1;margin-bottom:12px}
+    .landing-lede{font-size:clamp(17px,4.6vw,21px);line-height:1.2;max-width:28ch}
     .landing-kicker{font-size:10.5px;letter-spacing:.1em;margin-bottom:10px}
     .landing-points{grid-template-columns:minmax(0,1fr)}
     .landing-section{padding:36px 0}
     .demo-board{display:block}
     .demo-note{margin-top:14px}
     .landing-section-head{display:block;margin-bottom:18px}
-    .landing-section h2{font-size:23px;margin-bottom:8px}
+    .landing-section h2{font-size:23px;margin-bottom:8px;text-wrap:balance}
+    #why-title{white-space:normal}
     .workflow-grid,.feature-grid,.scientist-steps{grid-template-columns:minmax(0,1fr)}
     .workflow-step,.feature-card{min-height:0}
     .open-source-panel{display:block}
@@ -1465,14 +1474,14 @@
         <div class="landing-lead">
           <div class="landing-kicker"><span class="landing-lock"><svg class="li-ic" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#li-i-lock"/></svg></span> Collaborative Research with AI</div>
           <h1 id="landing-title"><span class="lock">locked</span>in</h1>
-          <p class="landing-lede">AI should not be limited to chat threads.</p>
+          <p class="landing-lede">AI should not be limited to chat threads</p>
         </div>
         <div class="landing-detail">
           <p class="landing-copy">Lockedin was built out of my fascination — and frustration — working with AI for research. More often than not, my sessions turned into walls of text and jargon that neither I nor the agent could follow. Rather than automating research and replacing humans, Lockedin focuses on keeping them in the loop, and make agents good colleagues and collaborators, while enriching how they express their thoughts.</p>
           <div class="landing-points">
-            <div class="landing-point"><b>Review Together</b><span>Meet with your agent, then mark the work directly.</span></div>
-            <div class="landing-point"><b>Research Hub</b><span>Keep papers, code, Overleaf, and resources in one shared context.</span></div>
-            <div class="landing-point"><b>Bring Your AI</b><span>Use your OpenAI, Anthropic, or Google AI subscription.</span></div>
+            <div class="landing-point"><b>Review Together</b><span>Working with an agent should feel like working with a colleague. Meet with it, draw your feedback straight onto the board, attach visuals, prototype code on the fly, and discuss interactively. None of it trapped in a chat thread.</span></div>
+            <div class="landing-point"><b>Research Hub</b><span>A central hub for every part of a research project: papers and resources, meeting notes, Overleaf, Slack, and code, all in one place, so the AI works from real context instead of a fresh window.</span></div>
+            <div class="landing-point"><b>Bring Your AI</b><span>Lockedin doesn&#39;t reinvent intelligence. It takes the frontier subscription you already pay for, or a free model you host yourself, and gives it a better way to communicate.</span></div>
           </div>
         </div>
         <form class="landing-auth-panel col" onsubmit="return false" aria-label="Account access">
@@ -4311,10 +4320,19 @@
     }
     m.append(refWrap);
 
-    // delete — blocked while referenced (server enforces this too)
+    // delete — blocked while referenced (server enforces this too). The button stays enabled so a
+    // blocked delete says why, instead of looking clickable and silently doing nothing.
     const del=el("button",{class:"ghost small",style:"margin-top:18px"},ic("trash"),"Delete TODO");
-    if(refs.length){ del.disabled=true; del.title="Referenced — remove the @"+t.id+" references first."; }
-    else del.onclick=async()=>{ if(!confirm("Delete TODO @"+t.id+"?"))return;
+    if(refs.length) del.title="Referenced — remove the @"+t.id+" references first.";
+    del.onclick=async()=>{
+      if(refs.length){
+        const names=refs.map(r=>r.bubble_name+" \u2192 "+r.page_title);
+        const where=names.slice(0,2).join(", ")+(names.length>2?" and "+(names.length-2)+" more":"");
+        toast("Can't delete @"+t.id+" \u2014 still referenced in "+where+". Remove the @"+t.id+
+          (refs.length>1?" references":" reference")+" first.");
+        return;
+      }
+      if(!confirm("Delete TODO @"+t.id+"?"))return;
       try{ await api("/api/todos/"+t.id,{method:"DELETE"}); toast("TODO deleted"); S.todoFilter="open"; viewTodos(); }
       catch(e){ toast(e.message); } };
     m.append(del);
