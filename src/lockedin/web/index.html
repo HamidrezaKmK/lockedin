@@ -33,10 +33,11 @@
     --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:24px; --sp-6:34px; --sp-7:48px;
 
     --page-pad-y:20px; --page-pad-x:24px;
-    /* Widest a column of content is allowed to get. Past this a row stops gaining anything
-       from the extra pixels: the text has already stopped at its measure and the rest is a
-       hole in the card. The surplus becomes margin instead. */
-    --content-max:980px;
+    /* Widest a column of content is allowed to get. Wide enough that a large monitor is used
+       rather than framed by two empty margins, bounded so a 2560px screen does not hand you a
+       200-character line. Anything with its own reading measure sits inside this, not instead
+       of it. */
+    --content-max:1400px;
     --section-gap:var(--sp-6);   /* between one titled section and the next */
     --band-gap:var(--sp-3);      /* between a section's label and its content */
     --row-gap:var(--sp-2);       /* between sibling rows or cards in a list */
@@ -2549,6 +2550,29 @@
     return out;
   }
 
+  // Clicking a highlight should show you the mark it belongs to, which means opening the marks
+  // column first when it is closed — otherwise the click looks broken and the only way through
+  // is a toggle in the toolbar that gives no hint it is related.
+  function revealMark(id){
+    if(id==null)return;
+    S.selectedComment=id;
+    if(!S.paneRight)setPane("right",true);   // rebuilds the gutter on its way through
+    // On a phone the column is a bottom sheet that opens collapsed to its header; a mark you
+    // asked to see should be the thing you land on, not a handle to drag.
+    const sheet=$("#reviewWrap");
+    if(sheet&&window.innerWidth<=900)sheet.classList.add("notes-open");
+    // setPane repaints synchronously, but a fresh gutter can still be a frame away.
+    let tries=0;
+    const land=()=>{
+      const card=document.querySelector('#reviewWrap .tk-note[data-note="'+CSS.escape(String(id))+'"]');
+      if(!card){ if(++tries<12)requestAnimationFrame(land); return; }
+      card.scrollIntoView({block:"center",behavior:"smooth"});
+      card.style.borderColor="var(--accent)";
+      setTimeout(()=>{card.style.borderColor="";},900);
+    };
+    land();
+  }
+
   // One mark surface for the whole product: the same five kinds, picker, gutter card and
   // quote-plus-context anchor a chalk-talk slide uses, pointed at the rendered page. Nothing is
   // written into the page Markdown — the anchor lives in a sidecar beside it.
@@ -2559,7 +2583,7 @@
     // The marks column controls visibility, not whether a reader can start a mark. In reading
     // mode the selection picker must still open; otherwise the most direct feedback gesture
     // appears broken until someone discovers the unrelated right-pane toggle.
-    window.LockedInMarks.paint(wrap,S.comments||[]);
+    window.LockedInMarks.paint(wrap,S.comments||[],revealMark);
     if(S.paneRight&&gutter&&!S.commentDraftAnchor){
       window.LockedInMarks.gutter(gutter,S.comments||[],
         {onDelete:id=>markDelete(id),onEdit:(id,text)=>markEdit(id,text),
@@ -5852,10 +5876,7 @@
       const hit=(S.reviewHitTargets||[]).find(target=>target.rects.some(rect=>
         e.clientX>=rect.left&&e.clientX<=rect.right&&e.clientY>=rect.top&&e.clientY<=rect.bottom));
       if(!hit)return;
-      S.selectedComment=hit.id;
-      const card=document.querySelector('#reviewWrap .tk-note[data-note="'+CSS.escape(String(hit.id))+'"]');
-      if(card){card.scrollIntoView({block:"nearest"});card.style.borderColor="var(--accent)";
-        setTimeout(()=>{card.style.borderColor="";},900);}
+      revealMark(hit.id);
     };
     const captureSelection=()=>requestAnimationFrame(()=>{snapshotReviewSelection();scheduleEditorCommentHighlights();});
     // Bind to the stable editor host. Toast replaces its ProseMirror root during setMarkdown;
