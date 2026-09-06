@@ -23,15 +23,17 @@
   // caller caring. A plain string means "stroked path"; {d,fill:1} means "solid".
   var P = {
     /* ---------- brand & navigation ---------- */
-    // The brand mark: a padlock held between two angle brackets. The brackets are outside the
-    // lock rather than inside its body — the body is small at UI sizes and only has room for the
-    // keyhole. The shackle is a squared arch over a deep body; a shallow arc on a wide shallow
-    // box reads as a shopping bag. Keep this drawing and the two favicons in step.
-    lock: ["M5 5.4 2 12l3 6.6",
-           "M19 5.4 22 12l-3 6.6",
-           "M9.5 10.4V8.1a1.7 1.7 0 0 1 1.7-1.7h1.6a1.7 1.7 0 0 1 1.7 1.7v2.3",
-           "M8.8 10.4h6.4a1.9 1.9 0 0 1 1.9 1.9v6a1.9 1.9 0 0 1-1.9 1.9H8.8a1.9 1.9 0 0 1-1.9-1.9v-6a1.9 1.9 0 0 1 1.9-1.9Z",
-           {d: "M12 12.85a1.45 1.45 0 0 1 .87 2.6v1.75a.87.87 0 0 1-1.74 0v-1.75a1.45 1.45 0 0 1 .87-2.6Z", fill: 1}],
+    // The brand mark: a padlock held between two angle brackets. The brackets stay outside the
+    // lock — inside the body they had to share eight pixels of height with the keyhole at UI
+    // sizes and turned to mush. Both sit on the same centre line: the lock's full span, shackle
+    // top to body bottom, is 5.6..18.4, which centres on 12 like the brackets' apexes. The
+    // shackle is a squared arch over a deep body, because a shallow arc on a wide shallow box
+    // reads as a shopping bag. Keep this drawing and the two favicons in step.
+    lock: ["M4.6 5.6 1.8 12l2.8 6.4",
+           "M19.4 5.6 22.2 12l-2.8 6.4",
+           "M9.9 9.9V6.9a1.3 1.3 0 0 1 1.3-1.3h1.6a1.3 1.3 0 0 1 1.3 1.3v3",
+           "M9.6 9.9h4.8a1.7 1.7 0 0 1 1.7 1.7v5.1a1.7 1.7 0 0 1-1.7 1.7H9.6a1.7 1.7 0 0 1-1.7-1.7v-5.1a1.7 1.7 0 0 1 1.7-1.7Z",
+           {d: "M12 12.75a1.25 1.25 0 0 1 .75 2.25v1.55a.75.75 0 0 1-1.5 0v-1.55a1.25 1.25 0 0 1 .75-2.25Z", fill: 1}],
     home: ["M3.6 10.4 12 3.5l8.4 6.9v8.4a1.6 1.6 0 0 1-1.6 1.6H5.2a1.6 1.6 0 0 1-1.6-1.6Z",
            "M9.4 20.4v-5.6h5.2v5.6"],
     // Three overlapping circles — the bubble cluster, kept from 🫧 but drawn to the grid.
