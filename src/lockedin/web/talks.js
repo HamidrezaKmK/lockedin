@@ -530,7 +530,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
      widens the slide without also resizing the footer underneath it. The footer keeps one
      width in both states: a pager that reflows when you toggle the pane moves the very button
      you just pressed out from under your thumb. */
-  .tk-col{padding:12px 12px 24px 12px}
+  .tk-col{padding:12px 12px 10px 12px}
   /* Width, not a right margin: the slide is width:100%, so a margin pushes it under the spine
      instead of pulling its edge in. */
   .tk-slide{width:calc(100% - var(--tk-handle) + 2px);margin-left:0;margin-right:auto}
@@ -568,7 +568,13 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
    Wrap the row and give the instrument its own full-width line, segments sharing the width. */
 @media(max-width:560px){
   /* Right padding clears the FAB's column so the → pager button is never underneath it. */
-  .tk-foot{flex-wrap:wrap;gap:9px;padding:14px calc(var(--tk-handle) + 64px) 4px 2px}
+  /* One row, not two. Four controls and the slide dots share what is left after the column
+     reserved for the pencil and the spine, so the buttons are tighter and the dots are the
+     thing that gives: they shrink and scroll rather than pushing the row onto a second line.
+     The height that buys goes back to the slide, which is what people are here to read. */
+  .tk-foot{flex-wrap:nowrap;gap:6px;padding:8px calc(var(--tk-handle) + 58px) 2px 2px}
+  .tk-foot>button{padding:5px 8px;min-height:32px}
+  .tk-foot .tk-cnt{margin-left:4px}
   /* On phones the six tools left the footer: as a second wrapped row they slid behind the
      notes sheet. They live behind a floating button now — the pill becomes a vertical popover
      above it, same buttons, same handlers, just summoned instead of resident. */
@@ -588,8 +594,10 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
      (its corner is drawing surface, not chrome). */
   .tk-overlay.notes-open .tk-fab,.tk-overlay.notes-open .tk-foot .tk-seg,
   body:has(.tk-inkdraw) .tk-fab,body:has(.tk-draw) .tk-overlay .tk-fab{display:none}
-  .tk-dots{flex:0 1 auto;min-width:0;flex-wrap:wrap}
-  .tk-resync{min-width:38px}
+  .tk-dots{flex:1 1 auto;min-width:0;flex-wrap:nowrap;overflow:hidden;gap:5px}
+  .tk-overlay .tk-dot{width:7px;height:7px}
+  .tk-overlay .tk-dot.on{width:20px}
+  .tk-resync{min-width:34px}
 }`;
     document.head.append(st);
   }
