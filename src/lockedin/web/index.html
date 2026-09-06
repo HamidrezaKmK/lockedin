@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>lockedin — research assistant</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234dd9b8' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M8.6 9.6V7a1.8 1.8 0 0 1 1.8-1.8h3.2A1.8 1.8 0 0 1 15.4 7v2.6'/><path d='M5.8 9.6h12.4a2.2 2.2 0 0 1 2.2 2.2v6.8a2.2 2.2 0 0 1-2.2 2.2H5.8a2.2 2.2 0 0 1-2.2-2.2v-6.8a2.2 2.2 0 0 1 2.2-2.2Z'/><path d='M12 12.4a1.9 1.9 0 0 1 1.15 3.4v2.3a1.15 1.15 0 0 1-2.3 0v-2.3A1.9 1.9 0 0 1 12 12.4Z' fill='%234dd9b8' stroke='none'/><path d='M8.7 13.2 6.9 15.4l1.8 2.2'/><path d='M15.3 13.2l1.8 2.2-1.8 2.2'/></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234dd9b8' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M5 5.4 2 12l3 6.6'/><path d='M19 5.4 22 12l-3 6.6'/><path d='M9.5 10.4V8.1a1.7 1.7 0 0 1 1.7-1.7h1.6a1.7 1.7 0 0 1 1.7 1.7v2.3'/><path d='M8.8 10.4h6.4a1.9 1.9 0 0 1 1.9 1.9v6a1.9 1.9 0 0 1-1.9 1.9H8.8a1.9 1.9 0 0 1-1.9-1.9v-6a1.9 1.9 0 0 1 1.9-1.9Z'/><path d='M12 12.85a1.45 1.45 0 0 1 .87 2.6v1.75a.87.87 0 0 1-1.74 0v-1.75a1.45 1.45 0 0 1 .87-2.6Z' fill='%234dd9b8' stroke='none'/></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -228,8 +228,8 @@
   /* Buttons that pair an icon with a word: one gap rule, so no caller has to add a space. */
   button:has(.li-ic){display:inline-flex;align-items:center;gap:7px}
   .feature-icon .li-ic{width:19px;height:19px;color:var(--accent)}
-  .brand .li-ic{width:22px;height:22px;color:var(--accent2)}
-  .landing-lock .li-ic{width:20px;height:20px}
+  .brand .li-ic{width:24px;height:24px;color:var(--accent2)}
+  .landing-lock .li-ic{width:22px;height:22px}
   .side-credit .li-ic,.landing-footer .li-ic{width:13px;height:13px;vertical-align:-.16em}
   .side-credit .li-ic.heart,.landing-footer .li-ic.heart{color:var(--accent);
     fill:currentColor;stroke-width:1.2}
@@ -427,7 +427,7 @@
   .landing-auth-panel{grid-area:auth;align-self:start;margin-top:0}
   .landing-kicker{display:inline-flex;align-items:center;gap:8px;color:var(--accent2);font-size:12px;
     font-weight:700;text-transform:uppercase;letter-spacing:.12em;margin-bottom:14px}
-  .landing-lock{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;
+  .landing-lock{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;
     border-radius:8px;background:color-mix(in srgb,var(--accent2) 16%,transparent);
     border:1px solid color-mix(in srgb,var(--accent2) 34%,var(--line));letter-spacing:0}
   /* The wordmark leads the lockup — sized above the lede so the brand reads first. */
@@ -736,21 +736,28 @@
   .acard>.row{min-width:0}
   .acard h4{margin:0 0 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
   /* One block of facts about the card, set tight, so it reads as metadata rather than as two
-     more things in the stack. */
-  .acard-meta{display:flex;flex-direction:column;gap:2px;font-size:12px;line-height:1.5}
-  /* A bubble's name is what identifies its card, so it gets two lines before it clips. The
-     actions beside it were made icons precisely so there is room for them. */
+     more things in the stack. Left-aligned with the rest of the card: this class had two rules
+     written for two different cards, and the pair combined into a centred column. */
+  .acard-meta{display:flex;flex-direction:column;align-items:flex-start;gap:2px;
+    font-size:12px;line-height:1.5;color:var(--muted)}
+  /* A paper's facts are three fragments of one sentence, so they sit on a line. */
+  .acard-meta.row-meta{flex-direction:row;align-items:center;gap:6px;flex-wrap:wrap}
+  /* The name is what identifies a card, so it gets two lines before it clips — a paper title
+     and a bubble name alike. The actions beside it were made icons precisely so there is room. */
   .acard h4.acard-name{white-space:normal;text-overflow:clip;display:-webkit-box;
     -webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.25;overflow-wrap:anywhere}
-  .acard-head{display:flex;gap:9px;align-items:flex-start;min-width:0}
-  .acard-title{min-width:0;flex:1}
+  /* The badges are the least important thing in this row and the first that should give way.
+     They wrap onto their own line rather than squeezing the title to four characters: without
+     a basis, `flex:1` let the title shrink to nothing while the badges held their full width. */
+  .acard-head{display:flex;gap:9px;align-items:flex-start;min-width:0;flex-wrap:wrap}
+  .acard-title{min-width:0;flex:1 1 150px}
+  .acard-head>.row{min-width:0;flex:0 1 auto}
   .acard-title h4{margin:0}
   .acard-tags{min-height:24px;max-height:58px;overflow:hidden}
   .tag-summary{height:26px;display:flex;align-items:center;gap:6px;min-width:0;
     color:var(--muted);font-size:12px}
   .tag-summary-main{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .tag-summary-more{flex:0 0 auto;color:var(--accent);font-weight:600}
-  .acard-meta{font-size:12px;color:var(--muted);display:flex;gap:6px;align-items:center;flex-wrap:wrap}
   .acard-actions{display:flex;gap:8px;align-items:center;margin-top:auto;flex-wrap:wrap}
   .truncate{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .badge{font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid var(--warn);
@@ -3834,7 +3841,7 @@
   function assetCard(a){
     const c=el("div",{class:"acard"});
     const paperTitle=a.extracted_title||a.title||"Extracting paper title…";
-    const titleBox=el("div",{class:"acard-title"},el("h4",{},paperTitle));
+    const titleBox=el("div",{class:"acard-title"},el("h4",{class:"acard-name"},paperTitle));
     if((a.authors||[]).length){
       titleBox.append(el("div",{class:"muted truncate",style:"font-size:11px;margin-top:2px",title:(a.authors||[]).join(", ")},
         (a.authors||[]).join(", ")));
@@ -3846,7 +3853,7 @@
     if(badges.childNodes.length)head.append(badges);
     c.append(head);
     c.append(renderAssetTags(a));
-    c.append(el("div",{class:"acard-meta"},
+    c.append(el("div",{class:"acard-meta row-meta"},
       el("span",{},a.summarized?"summarized":"processing"),
       el("span",{},"•"),
       el("span",{},(a.date_added||"").slice(0,10)||"undated")));
