@@ -553,6 +553,18 @@ class SlideRenderingTests(unittest.TestCase):
         # A target with no page behind it stays visibly broken rather than reading as prose.
         self.assertIn(".tk-md .tk-wikilink.unresolved", self.js)
 
+    def test_the_premise_preview_contains_its_own_text(self):
+        # .tk-md and .tk-preview both land on that element and .tk-md is written further down
+        # the sheet, so at equal specificity its overflow:visible won: a premise longer than the
+        # box painted out through the bottom border and under the Cancel/Save row.
+        self.assertIn(".tk-md.tk-preview{max-height:min(44vh,420px);overflow-y:auto", self.js)
+        # The single-class rule must not carry an overflow of its own any more; it would be
+        # silently overridden again and read as if it were doing the work.
+        preview = self.js.split(".tk-preview{", 1)[1].split("}", 1)[0]
+        self.assertNotIn("overflow", preview)
+        # And on a phone the card is the only scroller, rather than one inside another.
+        self.assertIn(".tk-md.tk-preview{max-height:none;overflow:visible}", self.js)
+
     def test_the_slide_dots_keep_the_current_slide_in_view(self):
         # Ten dots overflowed the strip and overflow:hidden clipped it from the right, so from
         # slide 7 on there was no marker at all.

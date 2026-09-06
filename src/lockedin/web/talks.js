@@ -119,8 +119,16 @@
   color:var(--accent2)}
 .tk-hint{font-size:11.5px;color:var(--muted);margin:14px 0 6px}
 .tk-hint code{font-family:var(--font-mono);background:var(--panel2);padding:1px 5px;border-radius:5px}
+/* Two classes on one element, and .tk-md is written further down this sheet: at equal
+   specificity its overflow:visible was quietly winning, so the preview never clipped or
+   scrolled — a premise longer than the box simply painted out through the bottom border and
+   under the Cancel/Save row, sliced across the middle of its last line. .tk-md.tk-preview
+   settles it. The clamp is also generous enough that an ordinary paragraph-and-a-goal fits
+   whole rather than being cut one line short of the end. */
 .tk-preview{border:1px solid var(--line);border-radius:9px;background:var(--panel2);padding:11px 13px;
-  font-family:var(--font-reading);font-size:14.5px;line-height:1.6;max-height:190px;overflow:auto}
+  font-family:var(--font-reading);font-size:14.5px;line-height:1.6}
+.tk-md.tk-preview{max-height:min(44vh,420px);overflow-y:auto;overflow-x:hidden;
+  overscroll-behavior:contain}
 .tk-goal{margin-top:12px;padding-top:11px;border-top:1px dashed var(--line);display:flex;gap:10px;
   font-family:var(--font-reading);font-size:15.5px}
 .tk-goal b{font-size:14px;line-height:1.5;padding-top:2px;flex:0 0 auto}
@@ -665,6 +673,10 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
      not a position indicator, it is a smudge. Drop them here and let the counter carry the
      same fact in a form that survives the width; it is shown for every deck length on a phone,
      not just a long one. */
+  /* One scroll surface, not two. The card already scrolls on a phone, and a preview that
+     scrolls inside it is a nested touch target the size of a thumb — the box grows here and
+     the card carries it. */
+  .tk-md.tk-preview{max-height:none;overflow:visible}
   .tk-foot .tk-dots{display:none}
   /* :not(.tk-editing) so this does not undo the edit-mode row above, which drops both on
      purpose to give the keyboard-squeezed editor its height back. */
