@@ -1333,19 +1333,29 @@
     :root{--page-pad-x:16px; --page-pad-y:var(--sp-4);
           --row-gap:var(--sp-3); --section-gap:var(--sp-7); --band-gap:var(--sp-3)}
     /* The marks pane was simply display:none here, which made the ◨ toggle a switch wired to
-       nothing. It is now the same bottom sheet the chalk talks use — collapsed to its header,
-       pulled up by the grab bar or a tap, sharing bindSheetDrag and the .tk-gh header the
-       gutter already renders. ◨ still hides it outright via the marks-off rule. */
-    #reviewWrap{position:fixed;inset:auto 0 0 0;flex:none;min-width:0;border-left:0;
-      border-top:1px solid var(--accent);border-radius:16px 16px 0 0;background:var(--panel);
-      z-index:20;max-height:52px;overflow:hidden;padding:13px 13px 0;gap:18px;
-      transition:max-height .22s ease}
-    #reviewWrap.notes-open{max-height:64vh;overflow:auto;padding-bottom:13px}
+       nothing. It is the same right-edge drawer the chalk talks use — collapsed to its spine,
+       pulled out by a drag or a tap, sharing bindSheetDrag and the .tk-gh header the gutter
+       already renders. ◨ still hides it outright via the marks-off rule. */
+    /* Anchored to the bottom-right with a bounded height, not the full viewport: a drawer that
+       started at top:0 would lie across the top bar's own controls. */
+    #reviewWrap{--tk-handle:44px;
+      position:fixed;top:auto;right:0;bottom:0;left:auto;flex:none;min-width:0;
+      width:min(86vw,340px);height:min(76vh,660px);max-height:none;
+      border-left:1px solid var(--accent);border-top:0;
+      border-radius:16px 0 0 16px;background:var(--panel);z-index:20;gap:18px;
+      padding:calc(13px + env(safe-area-inset-top)) calc(13px + env(safe-area-inset-right))
+              calc(13px + env(safe-area-inset-bottom)) calc(var(--tk-handle) + 10px);
+      overflow:hidden;overscroll-behavior:contain;
+      box-shadow:-20px 0 44px -26px rgba(0,0,0,.9);
+      transform:translateX(calc(100% - var(--tk-handle)));
+      transition:transform .24s cubic-bezier(.22,.61,.36,1)}
+    #reviewWrap.notes-open{transform:translateX(0);overflow-y:auto}
     #reviewWrap:not(.notes-open) .tk-note,#reviewWrap:not(.notes-open) .tk-empty{display:none}
-    #reviewWrap::before{content:"";position:absolute;left:50%;top:6px;transform:translateX(-50%);
-      width:38px;height:4px;border-radius:999px;background:var(--line);z-index:4;pointer-events:none}
-    /* The sheet sits over the page's tail; keep the last lines readable above it. */
-    #editorHost:not(.marks-off) #previewWrap{padding-bottom:64px}
+    /* The gutter's own open class lives on the pane here, not on an overlay above it, so the
+       caret needs its own rule to turn round. */
+    #reviewWrap.notes-open .tk-gh::after{transform:rotate(90deg)}
+    /* The drawer sits over the page's right edge; keep the lines clear of its spine. */
+    #editorHost:not(.marks-off) #previewWrap{padding-right:calc(44px + 10px)}
     /* Safari zooms the viewport when focusing a form field below 16px. Keep every editable
        control at the platform threshold; the viewport declaration above also disables pinch zoom. */
     input,textarea,select{font-size:16px!important}

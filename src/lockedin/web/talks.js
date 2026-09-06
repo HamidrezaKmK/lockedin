@@ -485,26 +485,47 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
   font-size:11px!important;line-height:1!important}
 
 @media(max-width:900px){
-  .tk-gutter{position:fixed;inset:auto 0 0 0;flex:none;border-left:0;border-top:1px solid var(--accent);
-    border-radius:16px 16px 0 0;background:var(--panel);z-index:20;max-height:52px;overflow:hidden;
-    padding:13px 13px 0;transition:max-height .22s ease}
-  .tk-overlay.notes-open .tk-gutter{max-height:64vh;overflow:auto;padding-bottom:13px}
+  /* The notes pane is a right-edge drawer on a phone, not a bottom sheet. A slide is tall and
+     narrow here, so width is the cheaper thing to spend, and the collapsed handle stops sitting
+     on top of the pager and the draw button. Opening moves the transform, which the compositor
+     carries on its own thread; the old sheet animated max-height, which it cannot, and every
+     open juddered. */
+  .tk-overlay{--tk-handle:44px}
+  /* Absolute inside the stage rather than fixed to the viewport, so the drawer begins under the
+     talk's own header instead of covering its title and ⋮ menu. No magic offset to keep in step
+     with the header's height. */
+  .tk-stage{position:relative}
+  .tk-gutter{position:absolute;top:0;right:0;bottom:0;left:auto;flex:none;
+    width:min(86vw,340px);max-height:none;gap:14px;
+    border-left:1px solid var(--accent);border-top:0;border-radius:16px 0 0 16px;
+    background:var(--panel);z-index:20;
+    padding:calc(13px + env(safe-area-inset-top)) calc(13px + env(safe-area-inset-right))
+            calc(13px + env(safe-area-inset-bottom)) calc(var(--tk-handle) + 10px);
+    overflow:hidden;overscroll-behavior:contain;
+    box-shadow:-20px 0 44px -26px rgba(0,0,0,.9);
+    transform:translateX(calc(100% - var(--tk-handle)));
+    transition:transform .24s cubic-bezier(.22,.61,.36,1)}
+  .tk-overlay.notes-open .tk-gutter{transform:translateX(0);overflow-y:auto}
   .tk-overlay:not(.notes-open) .tk-note,.tk-overlay:not(.notes-open) .tk-empty-notes{display:none}
-  /* The header's negative margins are sized to the desktop gutter's 18px padding; this pane
-     has 13px, so it was hanging 5px off each edge of its own sheet. */
-  /* touch-action:none so a vertical drag on the handle is ours, and not the browser scrolling
-     the page or triggering pull-to-refresh underneath the sheet. */
-  .tk-gh{cursor:grab;position:relative;z-index:3;margin:0 -13px 6px;padding:16px 13px 12px;
+  /* The header becomes the drawer's spine: a full-height grab strip down the edge your thumb
+     meets first. Vertical writing rather than a rotated box, so it is still a normal flex
+     container and the tag and caret keep laying themselves out.
+     touch-action:none so a sideways drag on the spine is ours, and not the browser scrolling
+     the deck underneath it. */
+  .tk-gh{position:absolute;left:0;top:0;bottom:0;width:var(--tk-handle);box-sizing:border-box;
+    margin:0;padding:calc(16px + env(safe-area-inset-top)) 0 calc(16px + env(safe-area-inset-bottom));
+    gap:12px;writing-mode:vertical-rl;justify-content:flex-start;
+    border-bottom:0;border-right:1px solid color-mix(in srgb,var(--line) 80%,transparent);
+    border-radius:16px 0 0 16px;cursor:grab;z-index:3;
     touch-action:none;-webkit-user-select:none;user-select:none}
   .tk-gh:active{cursor:grabbing}
-  /* The grab bar every bottom sheet has: the thing that says "pull me" before you read a word. */
-  .tk-gutter::before{content:"";position:absolute;left:50%;top:6px;transform:translateX(-50%);
-    width:38px;height:4px;border-radius:999px;background:var(--line);z-index:4;pointer-events:none}
-  .tk-gh::after{content:"";margin-left:auto;width:15px;height:15px;flex:0 0 auto;
+  /* Points the way it wants to be pulled, and turns to face the way out once it is open. */
+  .tk-gh::after{content:"";margin:0;width:15px;height:15px;flex:0 0 auto;
     background:currentColor;color:var(--accent);transition:transform .2s ease;
+    transform:rotate(-90deg);
     -webkit-mask:var(--tk-caret) center/contain no-repeat;mask:var(--tk-caret) center/contain no-repeat}
-  .tk-overlay.notes-open .tk-gh::after{transform:rotate(180deg)}
-  .tk-col{padding:12px 12px 62px}
+  .tk-overlay.notes-open .tk-gh::after{transform:rotate(90deg)}
+  .tk-col{padding:12px calc(var(--tk-handle) + 8px) 24px 12px}
   .tk-pop{width:calc(100vw - 24px);left:12px!important}
   .tk-list{padding:14px 13px 30px}
   /* 40px of inset on a 358px card leaves about thirty characters a line. */
@@ -549,7 +570,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
   .tk-foot .tk-seg button+button{border-left:0;border-top:1px solid var(--line)}
   /* .tk-overlay .tk-fab, for specificity: the overlay's generic button rule (class+element)
      out-ranked a lone class and repainted the FAB as one more grey square. */
-  .tk-overlay .tk-fab{display:flex;position:fixed;right:14px;bottom:74px;z-index:22;
+  .tk-overlay .tk-fab{display:flex;position:fixed;right:calc(var(--tk-handle) + 13px);bottom:22px;z-index:22;
     width:46px;height:46px;border-radius:50%;align-items:center;justify-content:center;
     min-height:0;padding:0;background:var(--accent);border:1px solid var(--accent);
     color:var(--bg);font-size:19px;box-shadow:var(--shadow)}
@@ -1508,50 +1529,56 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     return el;
   }
 
-  /** Let the notes sheet be pulled up by its header, not just poked by the ▲.
+  /** Let the notes drawer be pulled out by its spine, not just poked by the caret.
    *
-   *  On a phone the pane is a bottom sheet, and the gesture people reach for is dragging it
-   *  open. The arrow was a ~12px target in the corner. The header follows the finger while it
-   *  moves — a sheet that jumps only on release does not feel attached to the hand — and on
-   *  release snaps to whichever end it was heading for. A press that never travels is still a
-   *  tap, so the old toggle keeps working.
+   *  On a phone the pane is a right-edge drawer, and the gesture people reach for is dragging
+   *  it out. The caret alone was a ~12px target. The spine follows the finger while it moves —
+   *  a drawer that jumps only on release does not feel attached to the hand — and on release
+   *  snaps to whichever end it was heading for. A press that never travels is still a tap, so
+   *  the old toggle keeps working.
+   *
+   *  It follows the finger with `transform`, never `width`: a width animation relayouts every
+   *  note card on every frame, which is what made the old sheet judder. Transform is composited
+   *  and costs nothing per frame, and the inline one is dropped on release so the class governs
+   *  again and the CSS transition plays out the snap.
    */
   function bindSheetDrag(gh, root) {
-    const COLLAPSED = 52, SNAP = 40;
+    const SNAP = 44, TAP = 6;
     // Resolved per gesture, not here: this runs while the header is still detached — the caller
     // appends it to the gutter afterwards — so binding against closest() at this point found
     // nothing and silently dropped both the drag and the tap.
     let sheet = null;
-    const maxH = () =>
-      Math.round(((window.visualViewport && window.visualViewport.height) || innerHeight) * 0.64);
-    let startY = 0, startH = 0, dy = 0, wasOpen = false, dragging = false;
+    let startX = 0, dx = 0, shut = 0, wasOpen = false, dragging = false;
+    const handle = () =>
+      parseFloat(getComputedStyle(sheet).getPropertyValue("--tk-handle")) || 44;
 
     gh.addEventListener("pointerdown", e => {
-      if (innerWidth > 900) return;          // the gutter is a column here, not a sheet
-      sheet = gh.closest(".tk-gutter,#reviewWrap");   // the doc page's marks pane is a sheet too
+      if (innerWidth > 900) return;          // the gutter is a column here, not a drawer
+      sheet = gh.closest(".tk-gutter,#reviewWrap");   // the doc page's marks pane is a drawer too
       if (!sheet) return;
-      dragging = true; dy = 0; startY = e.clientY;
+      dragging = true; dx = 0; startX = e.clientX;
       wasOpen = root.classList.contains("notes-open");
-      startH = sheet.getBoundingClientRect().height;
+      shut = Math.max(0, sheet.getBoundingClientRect().width - handle());
       sheet.style.transition = "none";       // follow the finger, don't ease behind it
       try { gh.setPointerCapture(e.pointerId); } catch (err) { /* capture is a nicety */ }
     });
 
     gh.addEventListener("pointermove", e => {
       if (!dragging) return;
-      dy = startY - e.clientY;               // up is positive
-      const height = Math.max(COLLAPSED, Math.min(maxH(), startH + dy));
-      sheet.style.maxHeight = height + "px";
+      dx = e.clientX - startX;               // leftwards (opening) is negative
+      const x = Math.max(0, Math.min(shut, (wasOpen ? 0 : shut) + dx));
+      sheet.style.transform = `translateX(${x}px)`;
       // Reveal the notes as it travels, so what you are dragging out is what you see.
-      root.classList.toggle("notes-open", height > COLLAPSED + 8);
+      root.classList.toggle("notes-open", x < shut - 8);
       e.preventDefault();
     });
 
     const settle = () => {
       if (!dragging) return;
       dragging = false;
-      sheet.style.transition = ""; sheet.style.maxHeight = "";
-      root.classList.toggle("notes-open", Math.abs(dy) < SNAP ? !wasOpen : dy > 0);
+      sheet.style.transition = ""; sheet.style.transform = "";
+      root.classList.toggle("notes-open",
+        Math.abs(dx) < TAP ? !wasOpen : (wasOpen ? dx < SNAP : dx < -SNAP));
     };
     gh.addEventListener("pointerup", settle);
     gh.addEventListener("pointercancel", settle);
@@ -1725,7 +1752,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
       if (e.touches.length !== 1 || S.view !== "deck" || S.edit) return;
       if (document.querySelector(".tk-inkdraw,.tk-draw,.tk-pop,.tk-modal")) return;
       for (let n = e.target; n && n !== el; n = n.parentElement) {
-        if (n.classList && n.classList.contains("tk-gutter")) return;   // the sheet drags vertically
+        if (n.classList && n.classList.contains("tk-gutter")) return;   // the drawer owns this drag
         if (n.scrollWidth > n.clientWidth + 4 && /auto|scroll/.test(getComputedStyle(n).overflowX)) return;
       }
       t0 = Date.now(); x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; live = true;
