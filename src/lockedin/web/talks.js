@@ -329,7 +329,8 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
 .tk-seg button:hover{border-color:var(--line);background:color-mix(in srgb,var(--accent) 13%,transparent)}
 .tk-seg button.tk-danger:hover{background:color-mix(in srgb,var(--bad) 13%,transparent);color:var(--bad);
   border-left-color:var(--line)}
-.tk-seg [data-notes].off{color:var(--muted)}
+.tk-notestoggle.off{color:var(--muted)}
+.tk-notestoggle{flex:0 0 auto}
 /* Notes off = clean reading: the pane goes, and so does every kind of ink on the slide.
    Inline marks keep their text and only lose their paint — display:none would eat words. */
 .tk-overlay.no-notes .tk-gutter{display:none}
@@ -525,7 +526,15 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     transform:rotate(-90deg);
     -webkit-mask:var(--tk-caret) center/contain no-repeat;mask:var(--tk-caret) center/contain no-repeat}
   .tk-overlay.notes-open .tk-gh::after{transform:rotate(90deg)}
-  .tk-col{padding:12px calc(var(--tk-handle) + 8px) 24px 12px}
+  /* The inset for the spine sits on the slide, not on the column, so that hiding the pane
+     widens the slide without also resizing the footer underneath it. The footer keeps one
+     width in both states: a pager that reflows when you toggle the pane moves the very button
+     you just pressed out from under your thumb. */
+  .tk-col{padding:12px 12px 24px 12px}
+  /* Width, not a right margin: the slide is width:100%, so a margin pushes it under the spine
+     instead of pulling its edge in. */
+  .tk-slide{width:calc(100% - var(--tk-handle) + 2px);margin-left:0;margin-right:auto}
+  .tk-overlay.no-notes .tk-slide{width:100%}
   .tk-pop{width:calc(100vw - 24px);left:12px!important}
   .tk-list{padding:14px 13px 30px}
   /* 40px of inset on a 358px card leaves about thirty characters a line. */
@@ -559,7 +568,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
    Wrap the row and give the instrument its own full-width line, segments sharing the width. */
 @media(max-width:560px){
   /* Right padding clears the FAB's column so the → pager button is never underneath it. */
-  .tk-foot{flex-wrap:wrap;gap:9px;padding:14px 64px 4px 2px}
+  .tk-foot{flex-wrap:wrap;gap:9px;padding:14px calc(var(--tk-handle) + 64px) 4px 2px}
   /* On phones the six tools left the footer: as a second wrapped row they slid behind the
      notes sheet. They live behind a floating button now — the pill becomes a vertical popover
      above it, same buttons, same handlers, just summoned instead of resident. */
@@ -1401,14 +1410,15 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
           ${S.talk.slides.length > 8 ? `<span class="tk-cnt">${S.slide + 1} / ${S.talk.slides.length}</span>` : ""}
           <button data-nav="-1" aria-label="Previous slide">${LI_IC("arrow-left")}</button><button class="tk-resync ${S.syncState}" data-resync="1"
             title="${esc(syncTitle())}" aria-label="${esc(syncTitle())}">${LI_IC("refresh")}</button><button data-nav="1" aria-label="Next slide">${LI_IC("arrow-right")}</button>
+          <button data-notes="1" class="tk-notestoggle${S.notes ? "" : " off"}"
+            title="${S.notes ? "hide" : "show"} the notes pane and the marks on the slide"
+            aria-pressed="${S.notes ? "true" : "false"}">${LI_IC(S.notes ? "panel-right" : "panel-left")}</button>
           <div class="tk-seg">
             <button data-draw="1" title="mark region — drag a box over the slide">${LI_IC("marquee")}</button>
             <button data-ink="1" title="draw — freehand strokes become the feedback">${LI_IC("mark-ink","mark")}</button>
             <button data-editdeck="1" title="edit this slide's markdown by hand">${LI_IC("pencil")}</button>
             <button data-add="1" title="add a blank slide after this one" aria-label="Add a slide">${LI_IC("plus")}</button>
             <button data-del="1" class="tk-danger" title="delete this slide and its marks">${LI_IC("trash")}</button>
-            <button data-notes="1" class="${S.notes ? "" : "off"}"
-              title="${S.notes ? "hide" : "show"} the notes pane and the marks on the slide">${LI_IC(S.notes ? "panel-right" : "panel-left")}</button>
           </div>
           <button class="tk-fab" data-fab="1" title="slide tools" aria-label="slide tools"
             aria-haspopup="true">${LI_IC("pencil")}</button>
