@@ -5193,8 +5193,10 @@
     // there is nowhere to go back to, so it stays a glyph. One affordance, in the place you
     // already look — the bubble's own title.
     const onHome=!page; S.onBubbleHome=onHome;
-    // The home is prose; the editor beside it is not. Only the home takes the column cap.
-    m.classList.toggle("home-mode",!!onHome);
+    // The home is prose; the editor beside it is not, and neither is an open chalk talk — a
+    // deck is a slide next to a notes column, and capping that to a reading measure left a band
+    // of empty screen to the right of the notes on a wide monitor.
+    m.classList.toggle("home-mode",!!onHome && !talk);
     // The glyph's slot is the way back, at every depth: from a page it returns to the bubble's
     // home, and from inside a chalk talk it returns to the same place. Only the home itself has
     // nowhere to go, and only there is it a glyph.
@@ -5262,6 +5264,10 @@
           return view=>{
             const cur=titleRow.firstChild, want=view==="home"?glyph:deckBack;
             if(cur!==want)titleRow.replaceChild(want,cur);
+            // A deck opens inside the mounted host without re-rendering #main, so the column
+            // cap has to be lifted here too — otherwise the notes column stops short of the
+            // screen and leaves a band of empty pixels beside it on a wide monitor.
+            m.classList.toggle("home-mode",onHome&&view==="home");
           };
         })()});
     }

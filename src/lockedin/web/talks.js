@@ -212,7 +212,7 @@
    nothing to overflow, which is what sank the fixed floor: it pushed small frames into forced
    scrolling. A slide taller than the frame is unchanged: grow only distributes *free* space,
    so the column scrolls it exactly as before. */
-.tk-slide{width:100%;max-width:720px;margin:auto;background:var(--panel);border:1px solid var(--line-strong);
+.tk-slide{width:100%;max-width:720px;margin:auto auto 0;background:var(--panel);border:1px solid var(--line-strong);
   border-radius:14px;box-shadow:var(--shadow);padding:34px 40px 32px;position:relative;
   flex:0 0 auto;min-height:min(56vh,520px);display:flex;flex-direction:column}
 .tk-slide .tk-md{flex:1}
@@ -353,8 +353,15 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
    leaves the pill 81px to hold 262px of buttons and four tools end up outside the column
    entirely. flex:0 0 auto stops the instrument being shrunk below its contents; wrapping gives
    it its own line the moment it no longer fits, at any width. */
+/* The slide takes the free space above it and the footer takes the free space below, so the
+   two centre together as one block. Pinning the footer to the bottom of the column instead put
+   a band of empty screen between a short slide and its own controls. */
 .tk-foot{display:flex;flex-wrap:wrap;align-items:center;gap:11px;padding:16px 4px 4px;width:100%;
-  max-width:720px;margin:0 auto;flex:0 0 auto}
+  max-width:720px;margin:0 auto auto;flex:0 0 auto;position:relative;justify-content:center}
+/* The dots claim a zero-basis share on the left and this claims the mirror of it on the right,
+   so the controls between them sit on the slide's centre line rather than wherever the dots
+   happened to leave them. */
+.tk-foot::after{content:"";flex:1 1 0;min-width:0}
 .tk-foot .tk-seg{flex:0 0 auto}
 .tk-overlay .tk-fab{display:none}
 /* Shown while the bubble's own content is in flight. The shell arrives before the idea, the
@@ -373,7 +380,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
 .tk-skel i:nth-child(3){width:45%;animation-delay:.3s}
 @keyframes tk-pulse{0%,100%{opacity:.45}50%{opacity:.9}}
 @media(prefers-reduced-motion:reduce){.tk-spin,.tk-skel i{animation:none}}
-.tk-dots{display:flex;gap:6px;align-items:center}
+.tk-dots{display:flex;gap:6px;align-items:center;flex:1 1 0;min-width:0;overflow:hidden}
 .tk-overlay .tk-dot{width:9px;height:9px;border-radius:50%;background:var(--line);cursor:pointer;
   border:0;padding:0;min-height:0;flex:0 0 auto}
 .tk-overlay .tk-dot:hover{background:var(--muted)}
@@ -381,7 +388,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
 .tk-overlay .tk-dot.note{background:var(--warn)}
 /* nowrap + no shrink: as a flex item this had been compressed to 11px, which broke "2 / 4"
    across three lines and made the pager twice as tall as the buttons beside it. */
-.tk-cnt{font:500 11px var(--font-mono);color:var(--muted);margin-left:auto;
+.tk-cnt{font:500 11px var(--font-mono);color:var(--muted);
   white-space:nowrap;flex:0 0 auto}
 .tk-resync{color:var(--good);border-color:color-mix(in srgb,var(--good) 45%,var(--line))!important;
   font-size:20px!important;line-height:1!important;padding:5px 10px!important;min-width:42px}
@@ -600,7 +607,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
   .tk-overlay.notes-open .tk-fab,
   body:has(.tk-inkdraw) .tk-fab,body:has(.tk-draw) .tk-overlay .tk-fab{visibility:hidden}
   .tk-overlay.notes-open .tk-foot .tk-seg{display:none}
-  .tk-dots{flex:1 1 auto;min-width:0;flex-wrap:nowrap;overflow:hidden;gap:5px}
+  .tk-dots{flex-wrap:nowrap;gap:5px}
   .tk-overlay .tk-dot{width:7px;height:7px}
   .tk-overlay .tk-dot.on{width:20px}
   .tk-resync{min-width:34px}
