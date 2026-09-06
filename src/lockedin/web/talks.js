@@ -245,7 +245,9 @@
 .tk-cite{color:var(--accent2);text-decoration:none;border-bottom:1px dotted var(--accent2)}
 .tk-cite:hover{color:var(--ink);border-bottom-color:var(--ink)}
 .tk-cite.unresolved{color:var(--warn);border-bottom:1px dotted var(--warn);cursor:help}
-.tk-md .tk-math{white-space:normal}
+/* Unscoped: a rendered formula and a page link also appear in a slide's title and subtitle,
+   which are one line of markdown rather than a .tk-md document. */
+.tk-math{white-space:normal}
 .tk-md .katex-display{margin:10px 0;overflow-x:auto;overflow-y:hidden}
 .tk-md blockquote{border-left:3px solid var(--accent2);margin:0 0 15px;padding:10px 16px;
   background:color-mix(in srgb,var(--accent2) 8%,transparent);border-radius:0 9px 9px 0}
@@ -279,11 +281,19 @@
 .tk-md tbody tr:nth-child(even){background:color-mix(in srgb,var(--panel2) 45%,transparent)}
 /* A link to another page of the document, the same mark the report pages use. An unresolved
    target stays visible and obviously broken rather than silently reading as prose. */
-.tk-md .tk-wikilink{color:var(--accent);text-decoration:none;
+.tk-wikilink{color:var(--accent);text-decoration:none;
   border-bottom:1px solid color-mix(in srgb,var(--accent) 40%,transparent);cursor:pointer}
-.tk-md .tk-wikilink:hover{border-bottom-color:var(--accent)}
-.tk-md .tk-wikilink.unresolved{color:var(--warn);
+.tk-wikilink:hover{border-bottom-color:var(--accent)}
+.tk-wikilink.unresolved{color:var(--warn);
   border-bottom:1px dotted var(--warn);cursor:help}
+/* One line of markdown rendered in place — a slide's title or subtitle, a contact-sheet
+   caption. It keeps the type it already had; all this does is undo the block spacing that
+   renderMarkdown assumes it is laying out a document with. */
+.tk-line>p{margin:0}
+.tk-line .katex-display{display:inline-block;margin:0;text-align:left}
+/* KaTeX's default 1.21em towers over a 14px subtitle and stretches the line it sits on. A
+   formula in a title or a caption is part of that line, so it takes nearly the line's size. */
+.tk-line .katex{font-size:1.08em}
 /* The provisional mark, held while the composer is open. */
 /* A pending mark appears in both a slide (.tk-md) and the regular document preview, so this
    cannot be scoped to .tk-md — otherwise the browser's default bright-yellow <mark> leaks in. */
@@ -865,6 +875,9 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
         const a = document.createElement("a");
         a.className = "tk-wikilink" + (page ? "" : " unresolved");
         a.textContent = explicit || (page ? page.title || page.page_slug : want);
+        // Its own source, the way a rendered formula keeps one: a mark quoted over this link
+        // has to read back as [[target]] to be findable in the slide markdown.
+        a.dataset.md = m[0];
         if (page) { a.dataset.page = page.page_slug; a.title = "Open “" + (page.title || page.page_slug) + "”"; }
         else a.title = "No page named “" + want + "” in this bubble";
         frag.append(a);
@@ -963,6 +976,18 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     });
   }
 
+  /** One line of markdown, rendered in place. A slide's title and subtitle were printed with
+   *  esc(), so a subtitle naming a figure's axes showed its own source — `$2\times10^{-3}$`
+   *  and `[[vamp only]]` sat there as literal text beside a body that rendered both. They are
+   *  slide content, not chrome, and go through the same pipeline; the lone wrapping <p> is
+   *  unwrapped so the line keeps the type of the element it was written into. */
+  function renderInline(md, into) {
+    renderMarkdown(String(md || ""), into);
+    into.classList.add("tk-line");
+    if (into.childNodes.length === 1 && into.firstChild.tagName === "P")
+      into.firstChild.replaceWith(...into.firstChild.childNodes);
+  }
+
   /* --------------------------------------------------------------- anchoring */
   // Map a selection made over *rendered* text back to a substring of the markdown source.
   // Markdown eats emphasis characters, so an exact match often fails on text the reader sees
@@ -972,10 +997,14 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     if (!want) return null;
     const direct = source.indexOf(want);
     if (direct >= 0) return want;
+    // Whitespace is optional everywhere, not just where the selection had some. Rendering
+    // both eats it (markdown collapses runs) and adds it: selectionSource pads a formula or a
+    // link with spaces so it cannot glue itself to the word beside it, which is how a caption
+    // reading "($0$ to $0.9$)" came back as "( $0$ to $0.9$ )" and matched nothing.
     const pat = want.split("").map(ch => {
       const c = ch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      return ch === " " ? "[\\s]+" : c;
-    }).join("[*_`~]*");
+      return ch === " " ? "\\s*" : c;
+    }).join("[*_`~\\s]*");
     const m = new RegExp(pat).exec(source);
     return m ? m[0] : null;
   }
@@ -1065,6 +1094,12 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
       if (ch === "$") {
         const close = collapsed.indexOf("$", i + 1);
         if (close > i) { pat += "[\\s\\S]{0,160}?"; i = close + 1; continue; }
+      }
+      // A wikilink draws its label, so its source is no more findable in rendered text than a
+      // formula's is. Same treatment: bridge it.
+      if (ch === "[" && collapsed[i + 1] === "[") {
+        const close = collapsed.indexOf("]]", i + 2);
+        if (close > i) { pat += "[\\s\\S]{0,160}?"; i = close + 2; continue; }
       }
       const esc2 = ch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       pat += /[*_`~]/.test(ch) ? esc2 + "?" : esc2;
@@ -1568,8 +1603,8 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
         <div class="tk-slide">
           <span class="kind">${esc(sl.kind)}</span>
           <span class="tk-stamp"><span>${esc(sl.date || "")}</span></span>
-          <h2>${esc(sl.title)}</h2>
-          ${sl.sub ? `<div class="sub">${esc(sl.sub)}</div>` : ""}
+          <h2 data-line="title"></h2>
+          ${sl.sub ? `<div class="sub" data-line="sub"></div>` : ""}
           <div class="tk-md"></div>
         </div>
         <div class="tk-foot">
@@ -1598,6 +1633,9 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
 
     const md = wrap.querySelector(".tk-md");
     const annotationSurface = wrap.querySelector(".tk-slide");
+    renderInline(sl.title, wrap.querySelector('[data-line="title"]'));
+    const subEl = wrap.querySelector('[data-line="sub"]');
+    if (subEl) renderInline(sl.sub, subEl);
     renderMarkdown(sl.body, md);
     // A slide's title and subtitle are source text too, not decorative chrome. Paint and
     // select across this whole surface so they can carry the same review marks as its body.
@@ -1900,16 +1938,19 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
         notesOn(i).forEach(n => (by[n.kind] = (by[n.kind] || 0) + 1));
         return `<div class="tk-mini${i === S.slide ? " cur" : ""}" data-i="${i}">
           <div class="n">${String(i + 1).padStart(2, "0")} · ${esc(s.kind)}</div>
-          <div class="t">${esc(s.title)}</div>
-          <div class="s">${esc(s.sub || "")}</div>
+          <div class="t" data-line="title"></div>
+          <div class="s" data-line="sub"></div>
           <div class="nb">${Object.entries(by).map(([k, c]) =>
             `<i style="--kc:${KINDS[k].color}">${KINDS[k].glyph}${c}</i>`).join("")}</div>
         </div>`;
       }).join("")}
     </div></div>`).firstChild;
-    el.querySelectorAll(".tk-mini").forEach(m => (m.onclick = () => {
-      S.slide = Number(m.dataset.i); S.view = "deck"; render();
-    }));
+    el.querySelectorAll(".tk-mini").forEach(m => {
+      const s = S.talk.slides[Number(m.dataset.i)] || {};
+      renderInline(s.title, m.querySelector('[data-line="title"]'));
+      renderInline(s.sub, m.querySelector('[data-line="sub"]'));
+      m.onclick = () => { S.slide = Number(m.dataset.i); S.view = "deck"; render(); };
+    });
     return el;
   }
 
@@ -1961,11 +2002,14 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
   /* ------------------------------------------------------------- mark picker */
   // A selection that clips into rendered math must be widened to the whole formula: half of a
   // KaTeX subtree is not a substring of anything the agent wrote.
-  function widenToMath(range, md) {
+  /** Grow a selection out to whole rendered atoms — a formula, a page link — so a mark never
+   *  starts or ends in the middle of something whose source is not what it draws. */
+  function widenToAtoms(range, md) {
     const climb = node => {
       let el = node && node.nodeType === 3 ? node.parentNode : node;
       while (el && el !== md) {
-        if (el.classList && el.classList.contains("tk-math")) return el;
+        if (el.classList &&
+            (el.classList.contains("tk-math") || el.classList.contains("tk-wikilink"))) return el;
         el = el.parentNode;
       }
       return null;
@@ -1982,6 +2026,11 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     const frag = range.cloneContents();
     frag.querySelectorAll(".tk-math").forEach(n =>
       n.replaceWith(document.createTextNode(" " + (n.dataset.md || "") + " ")));
+    // A wikilink draws its label, not its target, so without this a selection crossing one
+    // reads back as "Pretrained VAMP" and can never be found in source that says
+    // [[pretrained-vamp]].
+    frag.querySelectorAll("a.tk-wikilink").forEach(n =>
+      n.replaceWith(document.createTextNode(n.dataset.md || n.textContent)));
     return frag.textContent.replace(/\s+/g, " ").trim();
   }
 
@@ -1994,7 +2043,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     // subtitle and body as one editable slide surface.
     const selectedEl = sel.anchorNode.nodeType === Node.TEXT_NODE ? sel.anchorNode.parentElement : sel.anchorNode;
     if (!selectedEl || !selectedEl.closest("h2,.sub,.tk-md")) return;
-    const range = widenToMath(sel.getRangeAt(0).cloneRange(), surface);
+    const range = widenToAtoms(sel.getRangeAt(0).cloneRange(), surface);
     const text = selectionSource(range);
     if (text.length < 2) return;
     clearPending();

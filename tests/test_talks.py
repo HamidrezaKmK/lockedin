@@ -551,7 +551,25 @@ class SlideRenderingTests(unittest.TestCase):
         self.assertIn('e.target.closest("a.tk-wikilink")', self.js)
         self.assertIn("S.onPage(a.dataset.page)", self.js)
         # A target with no page behind it stays visibly broken rather than reading as prose.
-        self.assertIn(".tk-md .tk-wikilink.unresolved", self.js)
+        self.assertIn(".tk-wikilink.unresolved", self.js)
+        # It keeps its own source, so a mark quoted across one reads back as [[target]] and can
+        # still be found in — and painted onto — the slide markdown.
+        self.assertIn("a.dataset.md = m[0];", self.js)
+        self.assertIn('frag.querySelectorAll("a.tk-wikilink").forEach', self.js)
+        self.assertIn('el.classList.contains("tk-wikilink")', self.js)
+
+    def test_a_slide_title_and_subtitle_render_their_own_markdown(self):
+        # They were printed with esc(), so a subtitle naming a figure's axes showed raw
+        # $2\times10^{-3}$ and [[vamp only]] beside a body that rendered both.
+        self.assertIn("function renderInline(md, into)", self.js)
+        self.assertIn('renderInline(sl.title, wrap.querySelector(\'[data-line="title"]\'));', self.js)
+        self.assertIn("if (subEl) renderInline(sl.sub, subEl);", self.js)
+        self.assertNotIn("<h2>${esc(sl.title)}</h2>", self.js)
+        self.assertNotIn('<div class="sub">${esc(sl.sub)}</div>', self.js)
+        # The contact sheet shows the same two lines and must not disagree with the slide.
+        self.assertNotIn('<div class="t">${esc(s.title)}</div>', self.js)
+        # One line, so the block spacing renderMarkdown lays out a document with comes off.
+        self.assertIn(".tk-line>p{margin:0}", self.js)
 
     def test_the_premise_preview_contains_its_own_text(self):
         # .tk-md and .tk-preview both land on that element and .tk-md is written further down
@@ -564,6 +582,17 @@ class SlideRenderingTests(unittest.TestCase):
         self.assertNotIn("overflow", preview)
         # And on a phone the card is the only scroller, rather than one inside another.
         self.assertIn(".tk-md.tk-preview{max-height:none;overflow:visible}", self.js)
+
+    def test_a_quote_can_span_a_rendered_formula_or_link(self):
+        """A mark's quote is source; the slide shows rendered text. Both directions have to
+        bridge whatever rendering put in between, or a caption reading "($0$ to $0.9$)" is
+        unmarkable and an existing mark on one never paints."""
+        # Painting: [[...]] becomes a bounded wildcard, the way $...$ already was.
+        self.assertIn('if (ch === "[" && collapsed[i + 1] === "[")', self.js)
+        # Matching back to source: whitespace is optional everywhere, because selectionSource
+        # pads an atom with spaces so it cannot glue itself to the word beside it.
+        self.assertIn('return ch === " " ? "\\\\s*" : c;', self.js)
+        self.assertIn('.join("[*_`~\\\\s]*")', self.js)
 
     def test_the_slide_dots_keep_the_current_slide_in_view(self):
         # Ten dots overflowed the strip and overflow:hidden clipped it from the right, so from

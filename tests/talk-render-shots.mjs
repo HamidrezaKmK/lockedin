@@ -25,9 +25,9 @@ $$\E[\psi] = \int \psi \, dp$$
 `;
 
 const RICH = String.raw`<!-- slide: kind=derivation -->
-# The clock, and what it reads
+# The clock $\E[\psi]$, and what it reads
 
-*Every clock needs a thing to read it off*
+*Figure from [[Pretrained VAMP]] §2.1. Held-out error on the vertical axis (log scale, roughly $2\times10^{-3}$ to $6\times10^{-2}$), source time on the horizontal axis ($0$ to $0.9$).*
 
 The bridge expectation $\E[\psi(X_T) \mid X_s]$ is the object the sampler actually
 evaluates, and $\Var[\psi]$ is what the estimator's variance is written in.
@@ -162,6 +162,49 @@ async function main(){
       const d=document.querySelector(".tk-dots"),on=d.querySelector(".tk-dot.on");
       const r=d.getBoundingClientRect(),o=on.getBoundingClientRect();
       return {visible:o.left>=r.left-1&&o.right<=r.right+1,fade:d.dataset.fade};
+    })));
+    // Title and subtitle are slide content: maths and page links have to render there too.
+    await goSlide(1);
+    console.log("PROBE headings:",JSON.stringify(await p.evaluate(()=>{
+      const t=document.querySelector(".tk-slide h2"),sub=document.querySelector(".tk-slide .sub");
+      return {titleMath:t.querySelectorAll(".katex").length, titleRaw:/\$/.test(t.textContent),
+              subMath:sub.querySelectorAll(".katex").length, subRaw:/\$|\[\[/.test(sub.textContent),
+              subLinks:[...sub.querySelectorAll("a.tk-wikilink")].map(a=>a.textContent)};
+    })));
+    await shot("04-headings",".tk-slide");
+    // A subtitle is markable slide source. Rendering it must not break quote anchoring: select
+    // a phrase that straddles the rendered formula and check the mark picker opens.
+    console.log("PROBE sub-mark:",JSON.stringify(await p.evaluate(async()=>{
+      const sub=document.querySelector(".tk-slide .sub");
+      const r=document.createRange(); r.selectNodeContents(sub);
+      const sel=getSelection(); sel.removeAllRanges(); sel.addRange(r);
+      sub.closest(".tk-slide").dispatchEvent(new MouseEvent("mouseup",{bubbles:true}));
+      await new Promise(res=>setTimeout(res,300));
+      const pop=document.querySelector(".tk-pop");
+      const toast=document.querySelector(".tk-toast");
+      return {picker:!!pop, toast:toast?toast.textContent:null};
+    })));
+    // Pin it, and check it paints back onto the subtitle: quotePattern has to bridge the
+    // rendered formula and the rendered link the same way it bridges maths in the body.
+    await p.click('.tk-pop .tk-kb[data-k="q"]');
+    await p.fill(".tk-pop textarea","Which held-out split?");
+    await p.click(".tk-pop [data-pin]");
+    await p.waitForSelector(".tk-gutter .tk-note, .tk-gutter [data-note]",{timeout:10000}).catch(()=>{});
+    await delay(1200);
+    console.log("PROBE mark-paints:",JSON.stringify(await p.evaluate(()=>{
+      const sub=document.querySelector(".tk-slide .sub");
+      const marks=[...document.querySelectorAll(".tk-slide mark.tk-anno")];
+      return {inSub:marks.some(m=>sub.contains(m)),
+              total:marks.length,
+              gutter:document.querySelectorAll(".tk-gutter .tk-note").length};
+    })));
+    await shot("06-sub-mark",".tk-stage");
+    // The contact sheet shows the same two lines.
+    await p.click(".tk-crumb .back"); await delay(700);
+    await shot("05-contact-sheet",".tk-sheet");
+    console.log("PROBE sheet:",JSON.stringify(await p.evaluate(()=>{
+      const m=document.querySelector(".tk-mini");
+      return {math:m.querySelectorAll(".katex").length, raw:/\$|\[\[/.test(m.textContent)};
     })));
     // Home page of the bubble: abstract also goes through the same markdown pipeline.
     await p.goto(`${base}/#bubble/${slug}`,{waitUntil:"networkidle"}); await delay(900);
