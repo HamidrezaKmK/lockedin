@@ -506,8 +506,65 @@ class SlideFigureTests(unittest.TestCase):
         # Anchored on the link, not the caption: a caption holding `]` (any LaTeX interval)
         # defeated a caption-shaped pattern and the figure silently 404'd.
         self.assertIn(r"\]\(assets\/([^\s)]+)\)", js)
-        # And the same viewer the pages use, by selector so re-renders need no re-binding.
-        self.assertIn('window.LockedInLightbox.watch(".tk-md")', js)
+        # And the same viewer the pages use, by selector so re-renders need no re-binding —
+        # handed this surface's macros, because a caption is Markdown and may carry maths.
+        self.assertIn('window.LockedInLightbox.watch(".tk-md", { macros: mathMacros })', js)
+
+
+class SlideRenderingTests(unittest.TestCase):
+    """A slide is bubble content, so it must render like one: the workspace's macros, real
+    tables, and wikilinks you can click. Each of these shipped broken."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.js = (Path(__file__).resolve().parents[1] / "src/lockedin/web/talks.js").read_text()
+
+    def test_slide_math_uses_the_workspace_macros(self):
+        # It looked for `window.S`, which is index.html's script-scoped const and never lands on
+        # window — so every \E on every slide rendered as a red error.
+        self.assertNotIn("window.S && window.S.mathMacros", self.js)
+        self.assertIn("macros: mathMacros()", self.js)
+        # Handed down by the host (so Settings edits are live), with its own fetch as fallback.
+        self.assertIn('S.macros = (opts && opts.macros) || null;', self.js)
+        # Fetched anyway: the SPA does not await its own macros request, so a deck opened
+        # straight from a URL would otherwise render its first slide without them.
+        self.assertIn('await api("/api/settings/math")', self.js)
+        self.assertIn("await loadMathMacros();", self.js)
+        index = (Path(__file__).resolve().parents[1] / "src/lockedin/web/index.html").read_text()
+        self.assertIn("macros:()=>S.mathMacros,", index)
+
+    def test_a_slide_table_is_ruled_and_scrolls_inside_the_card(self):
+        # marked emits the <table>; without any CSS for it a comparison table arrived as
+        # unruled columns of text, which is the one block a slide is most likely to hold.
+        self.assertIn(".tk-md th,.tk-md td{border:1px solid var(--line)", self.js)
+        self.assertIn(".tk-md thead th{background:var(--panel2)", self.js)
+        self.assertIn('box.className = "tk-tablewrap";', self.js)
+        self.assertIn(".tk-md .tk-tablewrap{overflow-x:auto", self.js)
+
+    def test_a_slide_wikilink_becomes_a_link_to_that_page(self):
+        self.assertIn("function linkifyWikilinks(root)", self.js)
+        self.assertIn("linkifyWikilinks(into);", self.js)
+        # Resolved the way the server resolves them on save: slug, then title, prefix dropped.
+        self.assertIn("function resolveWikiTarget(raw)", self.js)
+        self.assertIn('target.split("/").pop().trim()', self.js)
+        # And clicking one navigates, from a single delegated listener.
+        self.assertIn('e.target.closest("a.tk-wikilink")', self.js)
+        self.assertIn("S.onPage(a.dataset.page)", self.js)
+        # A target with no page behind it stays visibly broken rather than reading as prose.
+        self.assertIn(".tk-md .tk-wikilink.unresolved", self.js)
+
+    def test_the_slide_dots_keep_the_current_slide_in_view(self):
+        # Ten dots overflowed the strip and overflow:hidden clipped it from the right, so from
+        # slide 7 on there was no marker at all.
+        self.assertIn("function centerDots()", self.js)
+        self.assertIn("centerDots();", self.js)
+        self.assertNotIn(".tk-dots{display:flex;gap:6px;align-items:center;flex:1 1 0;"
+                         "min-width:0;overflow:hidden}", self.js)
+        self.assertIn("overflow-x:auto;overflow-y:hidden;scrollbar-width:none", self.js)
+        # On a phone the strip is too narrow for even one dot, so the counter carries it there
+        # and is emitted for every deck length rather than only long ones.
+        self.assertIn(".tk-foot .tk-dots{display:none}", self.js)
+        self.assertIn('<span class="tk-cnt${S.talk.slides.length > 8 ? "" : " few"}">', self.js)
 
 
 class PageMarkTests(unittest.TestCase):

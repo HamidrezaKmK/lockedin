@@ -1174,6 +1174,9 @@
   .toastui-editor-md-custom-block-line-background{background-color:transparent!important}
   .toastui-editor-md-custom-block{color:inherit!important}
   .wikilink{color:var(--accent2);border-bottom:1px dashed var(--accent2);cursor:pointer}
+  /* A target with no page behind it stays visible and obviously broken: a link that reads as
+     ordinary prose is how a mistyped title survives a proofread. */
+  .wikilink.unresolved{color:var(--warn);border-bottom-color:var(--warn);cursor:help}
   .centered-text{text-align:center}
   .todoref{color:var(--accent);font-weight:500;cursor:pointer;text-decoration:none;
     background:rgba(124,156,255,.12);padding:0 4px;border-radius:4px}
@@ -5244,6 +5247,10 @@
       window.LockedInTalks.mount(homeHost,slug,{name:b.name,user:S.user,
         owner:activeWorkspaceOwner(),workspaceId:S.workspaceId,
         onPage:p=>gotoRoute("bubble/"+slug+"/"+encodeURIComponent(p)),
+        // A getter, not a snapshot: the macros arrive from /api/settings/math after boot and
+        // change again whenever Settings saves them. A slide's maths is bubble content like a
+        // page's, so it has to resolve \E the same way.
+        macros:()=>S.mathMacros,
         talkId:talk, slide, edit,
         // A talk is part of the bubble route, not an overlay. Replace rather than push while
         // paging through slides so refresh/bookmarks restore the exact slide without filling
@@ -6098,8 +6105,19 @@
   // id is left as literal text.
   function linkifyWikilinks(root){
     // Build slug→title lookup so links show the current page title, not the raw slug
-    const slugTitle={};
-    (S.pages||[]).forEach(p=>slugTitle[p.page_slug]=p.title);
+    const slugTitle={}, titleSlug={};
+    (S.pages||[]).forEach(p=>{ slugTitle[p.page_slug]=p.title;
+      titleSlug[String(p.title||"").trim().toLowerCase()]=p.page_slug; });
+    // Same resolution the server applies on save (bubbles.normalize_wikilinks): by slug, then
+    // by title, after dropping an invented "Section/" prefix. Content that was never written
+    // through the editor — a slide, a pushed page — arrives unnormalized, so a link written as
+    // the human title has to resolve here too rather than dead-ending on a missing slug.
+    const resolveTarget=t=>{
+      let want=String(t||"").trim();
+      if(want.includes("/"))want=want.split("/").pop().trim();
+      if(slugTitle[want]!==undefined)return want;
+      return titleSlug[want.toLowerCase()]||want;
+    };
     const RE=/\[\[([^\]]+)\]\]|@(\d+)/g;
     const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT,null);
     const targets=[]; let n; while(n=walker.nextNode()){ RE.lastIndex=0;
@@ -6112,11 +6130,14 @@
         if(mm[1]!=null){
           const raw=mm[1].trim();
           const pipe=raw.indexOf("|");
-          const target=pipe===-1?raw:raw.slice(0,pipe).trim();
+          const target=resolveTarget(pipe===-1?raw:raw.slice(0,pipe));
           const explicitLabel=pipe!==-1?raw.slice(pipe+1).trim():null;
-          const label=explicitLabel||(slugTitle[target]||target);
+          const known=slugTitle[target]!==undefined;
+          const label=explicitLabel||(known?slugTitle[target]:target);
           const a=document.createElement("a"); a.href="page:"+encodeURIComponent(target);
-          a.textContent=label; a.className="wikilink"; frag.append(a);
+          a.textContent=label; a.className="wikilink"+(known?"":" unresolved");
+          a.title=known?"Open “"+slugTitle[target]+"”":"No page named “"+target+"” in this bubble";
+          frag.append(a);
         } else {
           const id=mm[2], todo=S.todosById[+id];
           if(!todo){ frag.append(mm[0]); }

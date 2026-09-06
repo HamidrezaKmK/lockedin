@@ -37,7 +37,7 @@
   const S = { slug: null, name: "", owner: "", workspaceId: "", view: "home", talk: null, data: null, bubble: null,
               slide: 0, kind: "q", pending: null, editPremise: false, suppressRoute: false,
               edit: false, editorObj: null, notes: true, user: "", syncState: "synced",
-              syncTimer: null, syncBusy: false };
+              syncTimer: null, syncBusy: false, macros: null, mathMacros: {} };
   let root = null;
 
   const api = async (path, opts = {}) => {
@@ -241,6 +241,41 @@
 .tk-md .katex-display{margin:10px 0;overflow-x:auto;overflow-y:hidden}
 .tk-md blockquote{border-left:3px solid var(--accent2);margin:0 0 15px;padding:10px 16px;
   background:color-mix(in srgb,var(--accent2) 8%,transparent);border-radius:0 9px 9px 0}
+/* A slide carries the same markdown a report page does, so it needs the same vocabulary of
+   blocks. Without these a heading came out at the browser's default 2em, a fenced block had no
+   box, and a table arrived as four unruled columns of text — which is how a comparison table,
+   the one thing a slide is most likely to hold, stopped reading as a table at all. */
+.tk-md h1,.tk-md h2,.tk-md h3,.tk-md h4,.tk-md h5,.tk-md h6{font-family:var(--font-ui);
+  font-weight:650;line-height:1.3;letter-spacing:-.012em;margin:20px 0 9px}
+.tk-md>:first-child{margin-top:0}
+.tk-md h1{font-size:19px}.tk-md h2{font-size:17px}.tk-md h3{font-size:15.5px}
+.tk-md h4,.tk-md h5,.tk-md h6{font-size:14px;color:var(--muted)}
+.tk-md hr{border:0;border-top:1px solid var(--line);margin:20px 0}
+.tk-md pre{background:var(--panel2);border:1px solid var(--line);border-radius:9px;
+  padding:11px 13px;margin:0 0 15px;overflow-x:auto}
+.tk-md pre code{background:none;padding:0;font-size:12.5px}
+/* The slide is a fixed-width card: a table wider than it scrolls inside its own box rather
+   than stretching the card out from under the frame. */
+.tk-md .tk-tablewrap{overflow-x:auto;overflow-y:hidden;margin:0 0 15px;
+  border:1px solid var(--line);border-radius:9px}
+.tk-md .tk-tablewrap table{margin:0;border:0;width:100%}
+.tk-md table{border-collapse:collapse;margin:0 0 15px;font-family:var(--font-ui);
+  font-size:13.5px;line-height:1.45}
+.tk-md th,.tk-md td{border:1px solid var(--line);padding:7px 11px;text-align:left;
+  vertical-align:top}
+.tk-md .tk-tablewrap tr>:first-child{border-left:0}
+.tk-md .tk-tablewrap tr>:last-child{border-right:0}
+.tk-md .tk-tablewrap thead tr:first-child>*{border-top:0}
+.tk-md .tk-tablewrap tbody tr:last-child>*{border-bottom:0}
+.tk-md thead th{background:var(--panel2);font-weight:650}
+.tk-md tbody tr:nth-child(even){background:color-mix(in srgb,var(--panel2) 45%,transparent)}
+/* A link to another page of the document, the same mark the report pages use. An unresolved
+   target stays visible and obviously broken rather than silently reading as prose. */
+.tk-md .tk-wikilink{color:var(--accent);text-decoration:none;
+  border-bottom:1px solid color-mix(in srgb,var(--accent) 40%,transparent);cursor:pointer}
+.tk-md .tk-wikilink:hover{border-bottom-color:var(--accent)}
+.tk-md .tk-wikilink.unresolved{color:var(--warn);
+  border-bottom:1px dotted var(--warn);cursor:help}
 /* The provisional mark, held while the composer is open. */
 /* A pending mark appears in both a slide (.tk-md) and the regular document preview, so this
    cannot be scoped to .tk-md — otherwise the browser's default bright-yellow <mark> leaks in. */
@@ -380,7 +415,22 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
 .tk-skel i:nth-child(3){width:45%;animation-delay:.3s}
 @keyframes tk-pulse{0%,100%{opacity:.45}50%{opacity:.9}}
 @media(prefers-reduced-motion:reduce){.tk-spin,.tk-skel i{animation:none}}
-.tk-dots{display:flex;gap:6px;align-items:center;flex:1 1 0;min-width:0;overflow:hidden}
+/* The dots are a strip, not a list that must fit: a ten-slide deck overflowed the space
+   between the title and the arrows, and overflow:hidden clipped it from the right — so from
+   slide 7 on, the marker for where you actually were was outside the box. It scrolls now, and
+   centerDots() keeps the current slide in the middle of whatever width there is. The scrollbar
+   is hidden (it would be taller than the dots) and the ends fade, which is what says there is
+   more deck on either side. */
+.tk-dots{display:flex;gap:6px;align-items:center;flex:1 1 0;min-width:0;
+  overflow-x:auto;overflow-y:hidden;scrollbar-width:none;-ms-overflow-style:none;
+  scroll-behavior:auto;overscroll-behavior-x:contain}
+.tk-dots::-webkit-scrollbar{display:none}
+.tk-dots[data-fade~="start"]{-webkit-mask-image:linear-gradient(90deg,transparent 0,#000 14px);
+  mask-image:linear-gradient(90deg,transparent 0,#000 14px)}
+.tk-dots[data-fade~="end"]{-webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 14px),transparent 100%);
+  mask-image:linear-gradient(90deg,#000 calc(100% - 14px),transparent 100%)}
+.tk-dots[data-fade~="start"][data-fade~="end"]{-webkit-mask-image:linear-gradient(90deg,transparent 0,#000 14px,#000 calc(100% - 14px),transparent 100%);
+  mask-image:linear-gradient(90deg,transparent 0,#000 14px,#000 calc(100% - 14px),transparent 100%)}
 .tk-overlay .tk-dot{width:9px;height:9px;border-radius:50%;background:var(--line);cursor:pointer;
   border:0;padding:0;min-height:0;flex:0 0 auto}
 .tk-overlay .tk-dot:hover{background:var(--muted)}
@@ -390,6 +440,9 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
    across three lines and made the pager twice as tall as the buttons beside it. */
 .tk-cnt{font:500 11px var(--font-mono);color:var(--muted);
   white-space:nowrap;flex:0 0 auto}
+/* A short deck's dots already say where you are, so the number beside them is noise. It is
+   emitted anyway because the phone layout drops the dots and needs it — see below. */
+.tk-cnt.few{display:none}
 .tk-resync{color:var(--good);border-color:color-mix(in srgb,var(--good) 45%,var(--line))!important;
   font-size:20px!important;line-height:1!important;padding:5px 10px!important;min-width:42px}
 .tk-resync.stale{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 65%,var(--line))!important;
@@ -607,9 +660,16 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
   .tk-overlay.notes-open .tk-fab,
   body:has(.tk-inkdraw) .tk-fab,body:has(.tk-draw) .tk-overlay .tk-fab{visibility:hidden}
   .tk-overlay.notes-open .tk-foot .tk-seg{display:none}
-  .tk-dots{flex-wrap:nowrap;gap:5px}
-  .tk-overlay .tk-dot{width:7px;height:7px}
-  .tk-overlay .tk-dot.on{width:20px}
+  /* Four controls, the tools button and the notes toggle already fill a 390px row, so the dots
+     were being handed about fourteen pixels — one dot, half of it under the edge fade. That is
+     not a position indicator, it is a smudge. Drop them here and let the counter carry the
+     same fact in a form that survives the width; it is shown for every deck length on a phone,
+     not just a long one. */
+  .tk-foot .tk-dots{display:none}
+  /* :not(.tk-editing) so this does not undo the edit-mode row above, which drops both on
+     purpose to give the keyboard-squeezed editor its height back. */
+  .tk-stage:not(.tk-editing) .tk-foot .tk-cnt,
+  .tk-stage:not(.tk-editing) .tk-foot .tk-cnt.few{display:inline;margin-right:auto}
   .tk-resync{min-width:34px}
 }`;
     document.head.append(st);
@@ -738,6 +798,71 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     });
   }
 
+  /** The workspace's KaTeX macros. A slide is bubble content like any other, so `\\E` has to
+   *  mean what Settings says it means here too — it read as a red error on every slide because
+   *  this file looked for `window.S`, which is the SPA's script-scoped `const` and never lands
+   *  on `window`. The host now hands them down (staying live when they are edited in Settings)
+   *  and a standalone mount falls back to asking the server itself. */
+  function mathMacros() {
+    const m = typeof S.macros === "function" ? S.macros() : S.macros;
+    return (m && Object.keys(m).length ? m : S.mathMacros) || {};
+  }
+  // Fetched unconditionally, even when the host offers a getter: the SPA fires its own request
+  // for these without awaiting it, so a deck opened straight from a URL can render before the
+  // host has any. Its copy still wins once it arrives, which is what keeps a Settings edit live.
+  async function loadMathMacros() {
+    try { S.mathMacros = (await api("/api/settings/math")).macros || {}; }
+    catch (e) { S.mathMacros = {}; }
+  }
+
+  /** `[[target]]` / `[[target|label]]` → a link to a page of this bubble's document.
+   *  Resolution mirrors bubbles.normalize_wikilinks(): by slug, then by title
+   *  (case-insensitive), after dropping any invented `Section/` prefix. Slide sources are not
+   *  normalized on save the way page sources are, so a deck usually carries the human title. */
+  function resolveWikiTarget(raw) {
+    const pages = (S.bubble && S.bubble.pages) || [];
+    let target = String(raw || "").trim();
+    if (target.includes("/")) target = target.split("/").pop().trim();
+    const bySlug = pages.find(p => p.page_slug === target);
+    if (bySlug) return bySlug;
+    const lower = target.toLowerCase();
+    return pages.find(p => String(p.title || "").trim().toLowerCase() === lower) || null;
+  }
+  /** Walk the rendered text and turn wikilinks into anchors. Done on the DOM rather than on the
+   *  markdown string so `[[...]]` written inside code or inside a link stays literal, and so a
+   *  target containing markdown punctuation cannot be half-eaten by marked. */
+  function linkifyWikilinks(root) {
+    const RE = /\[\[([^\]\n]+)\]\]/g;
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+    const targets = [];
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      RE.lastIndex = 0;
+      if (RE.test(n.nodeValue) && n.parentElement && !n.parentElement.closest("a,code,pre"))
+        targets.push(n);
+    }
+    targets.forEach(node => {
+      const text = node.nodeValue, frag = document.createDocumentFragment();
+      let last = 0, m;
+      RE.lastIndex = 0;
+      while ((m = RE.exec(text))) {
+        if (m.index > last) frag.append(text.slice(last, m.index));
+        const raw = m[1].trim(), pipe = raw.indexOf("|");
+        const want = (pipe === -1 ? raw : raw.slice(0, pipe)).trim();
+        const explicit = pipe === -1 ? null : raw.slice(pipe + 1).trim();
+        const page = resolveWikiTarget(want);
+        const a = document.createElement("a");
+        a.className = "tk-wikilink" + (page ? "" : " unresolved");
+        a.textContent = explicit || (page ? page.title || page.page_slug : want);
+        if (page) { a.dataset.page = page.page_slug; a.title = "Open “" + (page.title || page.page_slug) + "”"; }
+        else a.title = "No page named “" + want + "” in this bubble";
+        frag.append(a);
+        last = RE.lastIndex;
+      }
+      if (last < text.length) frag.append(text.slice(last));
+      node.parentNode.replaceChild(frag, node);
+    });
+  }
+
   function stashMath(md) {
     const found = [];
     const take = (src, display) => { found.push({ src, display }); return MATH_TOKEN(found.length - 1); };
@@ -769,7 +894,9 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
   // from the document, so this is idempotent and survives every re-render.
   function watchFigures() {
     if (!window.LockedInLightbox) return;
-    try { window.LockedInLightbox.watch(".tk-md"); } catch (e) { /* the viewer is optional */ }
+    // A caption is Markdown alt text and may carry maths, so the viewer needs the same macros.
+    try { window.LockedInLightbox.watch(".tk-md", { macros: mathMacros }); }
+    catch (e) { /* the viewer is optional */ }
   }
 
   function renderMarkdown(md, into) {
@@ -798,6 +925,16 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
       html = html.split(`@@LICAP${i}@@`).join(esc(cap));
     });
     into.innerHTML = html;
+    // A slide is a fixed-width card, so give every table its own scroll box instead of letting
+    // a wide one push the card past the frame.
+    into.querySelectorAll("table").forEach(t => {
+      if (t.parentElement && t.parentElement.classList.contains("tk-tablewrap")) return;
+      const box = document.createElement("div");
+      box.className = "tk-tablewrap";
+      t.parentNode.insertBefore(box, t);
+      box.append(t);
+    });
+    linkifyWikilinks(into);
     watchFigures();
     into.querySelectorAll(".tk-math").forEach(node => {
       const m = found[Number(node.dataset.i)];
@@ -808,8 +945,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
       if (!window.katex) { node.textContent = m.src; return; }
       try {
         node.innerHTML = window.katex.renderToString(body, {
-          displayMode: m.display, throwOnError: false,
-          macros: (window.S && window.S.mathMacros) || undefined,
+          displayMode: m.display, throwOnError: false, macros: mathMacros(),
         });
       } catch (e) { node.textContent = m.src; }
     });
@@ -1428,7 +1564,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
           <div class="tk-dots">${S.talk.slides.map((s, i) =>
             `<button class="tk-dot${i === S.slide ? " on" : ""}${notesOn(i).some(n => n.status === "open") ? " note" : ""}"
               data-i="${i}" title="${esc(s.title)}"></button>`).join("")}</div>
-          ${S.talk.slides.length > 8 ? `<span class="tk-cnt">${S.slide + 1} / ${S.talk.slides.length}</span>` : ""}
+          <span class="tk-cnt${S.talk.slides.length > 8 ? "" : " few"}">${S.slide + 1} / ${S.talk.slides.length}</span>
           <button data-nav="-1" aria-label="Previous slide">${LI_IC("arrow-left")}</button><button class="tk-resync ${S.syncState}" data-resync="1"
             title="${esc(syncTitle())}" aria-label="${esc(syncTitle())}">${LI_IC("refresh")}</button><button data-nav="1" aria-label="Next slide">${LI_IC("arrow-right")}</button>
           <button data-notes="1" class="tk-notestoggle${S.notes ? "" : " off"}"
@@ -1683,7 +1819,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
           <div class="tk-dots">${S.talk.slides.map((s, i) =>
             `<button class="tk-dot${i === S.slide ? " on" : ""}${notesOn(i).length ? " note" : ""}"
               data-i="${i}" title="${esc(s.title)}"></button>`).join("")}</div>
-          ${S.talk.slides.length > 8 ? `<span class="tk-cnt">${S.slide + 1} / ${S.talk.slides.length}</span>` : ""}
+          <span class="tk-cnt${S.talk.slides.length > 8 ? "" : " few"}">${S.slide + 1} / ${S.talk.slides.length}</span>
           <button data-nav="-1" aria-label="Previous slide">${LI_IC("arrow-left")}</button><button class="tk-resync ${S.syncState}" data-resync="1"
             title="${esc(syncTitle())}" aria-label="${esc(syncTitle())}">${LI_IC("refresh")}</button><button data-nav="1" aria-label="Next slide">${LI_IC("arrow-right")}</button>
           <span class="tk-sp"></span>
@@ -2293,7 +2429,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
 
   /* -------------------------------------------------------- modals + chrome */
   function toast(msg) {
-    const t = h(`<div style="position:fixed;left:50%;bottom:34px;transform:translateX(-50%);
+    const t = h(`<div class="tk-toast" style="position:fixed;left:50%;bottom:34px;transform:translateX(-50%);
       background:var(--panel);border:1px solid var(--accent);border-radius:10px;padding:10px 16px;
       z-index:980;font-size:13.5px;box-shadow:var(--shadow)">${esc(msg)}</div>`).firstChild;
     document.body.append(t);
@@ -2366,7 +2502,37 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
       if (S.edit && !leaveEditOk()) return;
       S.edit = !S.edit; render();
     });
+    centerDots();
     publishRoute();
+  }
+
+  /** Hold the current slide's dot in the middle of the strip. The dots overflow their space on
+   *  any deck longer than about eight slides, and a marker you cannot see is worse than no
+   *  marker: from slide 7 of 10 the pager looked identical to slide 10 of 10. Measured after a
+   *  frame, because the strip has no width until it has been laid out. */
+  function centerDots() {
+    if (!root) return;
+    requestAnimationFrame(() => {
+      root.querySelectorAll(".tk-dots").forEach(strip => {
+        const on = strip.querySelector(".tk-dot.on");
+        const slack = strip.scrollWidth - strip.clientWidth;
+        // Only the side that is actually hiding dots fades, so the first and last slides do not
+        // have their own marker dimmed by an edge with nothing behind it.
+        const fade = () => { strip.dataset.fade =
+          [strip.scrollLeft > 1 ? "start" : "", strip.scrollLeft < slack - 1 ? "end" : ""]
+            .filter(Boolean).join(" "); };
+        if (!on || slack <= 0) { strip.dataset.fade = ""; return; }
+        // Measured off rects, not offsetLeft: the dot's offsetParent is the overlay, not the
+        // strip, so offsetLeft would be an offset into the wrong box.
+        const rel = on.getBoundingClientRect().left - strip.getBoundingClientRect().left
+                    + strip.scrollLeft;
+        strip.scrollLeft = Math.max(0, Math.min(slack,
+          rel - (strip.clientWidth - on.offsetWidth) / 2));
+        fade();
+        // Dragging the strip by hand is allowed too, and the edges have to follow it.
+        strip.onscroll = fade;
+      });
+    });
   }
 
   function onKey(e) {
@@ -2409,6 +2575,9 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     S.owner = (opts && opts.owner) || "";
     S.workspaceId = (opts && opts.workspaceId) || "";
     S.onPage = (opts && opts.onPage) || null;
+    // A getter, not a snapshot: the host loads them asynchronously and Settings can change them
+    // while a deck is open.
+    S.macros = (opts && opts.macros) || null;
     S.onView = (opts && opts.onView) || null;
     S.onRoute = (opts && opts.onRoute) || null;
     S.view = "home";
@@ -2424,9 +2593,20 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
       <div class="tk-skel"><i></i><i></i><i></i></div>
     </div>`).firstChild);
     bindSlideSwipe(root);
+    // Wikilinks are rendered by every surface here — the premise, a slide, a note — so navigate
+    // from one delegated listener rather than binding each render.
+    root.addEventListener("click", e => {
+      const a = e.target.closest && e.target.closest("a.tk-wikilink");
+      if (!a) return;
+      e.preventDefault();
+      if (!a.dataset.page) { toast(a.title || "No such page in this bubble"); return; }
+      if (S.onPage) S.onPage(a.dataset.page);
+    });
     document.addEventListener("keydown", onKey);
     S.suppressRoute = true;
     try {
+      // Before the first render: the premise on the home screen is markdown with maths in it.
+      await loadMathMacros();
       await loadHome(false);
       if (opts && opts.talkId) {
         S.slide = Math.max(0, Number(opts.slide) || 0);

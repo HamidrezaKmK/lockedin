@@ -101,6 +101,18 @@ class WikilinkNormalization(unittest.TestCase):
                 stored = bubbles.get_page(slug, "overview")
         self.assertIn("[[Nonexistent Page]]", stored)
 
+    def test_the_browser_resolves_the_same_forms_the_server_does(self):
+        """Content that never went through save_page — a slide, a pushed page — arrives
+        unnormalized, so the renderer has to resolve a title to a slug itself or the link
+        dead-ends on a target that is not a page."""
+        index = (Path(__file__).resolve().parents[1] / "src/lockedin/web/index.html").read_text()
+        self.assertIn("const resolveTarget=t=>{", index)
+        self.assertIn('want=want.split("/").pop().trim();', index)
+        self.assertIn("titleSlug[want.toLowerCase()]||want", index)
+        # An unresolved target stays visibly broken instead of reading as ordinary prose.
+        self.assertIn('a.className="wikilink"+(known?"":" unresolved");', index)
+        self.assertIn(".wikilink.unresolved{", index)
+
 
 # --------------------------------------------------------------------------- #
 # Bubble identity: the slug is identity, the display name is cosmetic. Re-tagging
