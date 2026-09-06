@@ -572,28 +572,34 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
      reserved for the pencil and the spine, so the buttons are tighter and the dots are the
      thing that gives: they shrink and scroll rather than pushing the row onto a second line.
      The height that buys goes back to the slide, which is what people are here to read. */
-  .tk-foot{flex-wrap:nowrap;gap:6px;padding:8px calc(var(--tk-handle) + 58px) 2px 2px}
+  .tk-foot{flex-wrap:nowrap;gap:6px;padding:8px calc(var(--tk-handle) + 8px) 2px 2px}
   .tk-foot>button{padding:5px 8px;min-height:32px}
   .tk-foot .tk-cnt{margin-left:4px}
   /* On phones the six tools left the footer: as a second wrapped row they slid behind the
      notes sheet. They live behind a floating button now — the pill becomes a vertical popover
      above it, same buttons, same handlers, just summoned instead of resident. */
-  .tk-foot .tk-seg{display:none;position:fixed;right:14px;bottom:132px;z-index:22;
+  .tk-foot .tk-seg{display:none;position:fixed;right:calc(var(--tk-handle) + 20px);bottom:56px;z-index:22;
     flex-direction:column;border-radius:14px;box-shadow:var(--shadow)}
   .tk-overlay.tools-open .tk-foot .tk-seg{display:flex}
   .tk-foot .tk-seg button{padding:0 14px;min-height:46px;font-size:17px}
   .tk-foot .tk-seg button+button{border-left:0;border-top:1px solid var(--line)}
-  /* .tk-overlay .tk-fab, for specificity: the overlay's generic button rule (class+element)
-     out-ranked a lone class and repainted the FAB as one more grey square. */
-  .tk-overlay .tk-fab{display:flex;position:fixed;right:calc(var(--tk-handle) + 13px);bottom:22px;z-index:22;
-    width:46px;height:46px;border-radius:50%;align-items:center;justify-content:center;
-    min-height:0;padding:0;background:var(--accent);border:1px solid var(--accent);
-    color:var(--bg);font-size:19px;box-shadow:var(--shadow)}
+  /* The pencil takes the shape of the controls it sits with — same height, same corner, same
+     row — and keeps the accent fill to stay the one thing here that is an action rather than a
+     way to move around. .tk-overlay .tk-fab for specificity: the overlay's generic button rule
+     (class+element) out-ranks a lone class and would repaint it as one more grey square. */
+  .tk-overlay .tk-fab{display:flex;position:static;flex:0 0 auto;
+    align-items:center;justify-content:center;
+    width:auto;height:auto;padding:5px 8px;min-height:32px;border-radius:9px;
+    background:var(--accent);border:1px solid var(--accent);
+    color:var(--on-accent);font-size:inherit;box-shadow:none}
   .tk-overlay.tools-open .tk-fab{background:var(--panel2);color:var(--ink);border-color:var(--line)}
-  /* Out of the way when something bigger is happening: the sheet expanded, or a draw layer up
-     (its corner is drawing surface, not chrome). */
-  .tk-overlay.notes-open .tk-fab,.tk-overlay.notes-open .tk-foot .tk-seg,
-  body:has(.tk-inkdraw) .tk-fab,body:has(.tk-draw) .tk-overlay .tk-fab{display:none}
+  /* Out of the way when something bigger is happening: the drawer out, or a draw layer up
+     (its corner is drawing surface, not chrome). Hidden but still holding its place, because
+     it is a footer button now and dropping it from the row would shuffle the controls beside
+     it every time the drawer opened. */
+  .tk-overlay.notes-open .tk-fab,
+  body:has(.tk-inkdraw) .tk-fab,body:has(.tk-draw) .tk-overlay .tk-fab{visibility:hidden}
+  .tk-overlay.notes-open .tk-foot .tk-seg{display:none}
   .tk-dots{flex:1 1 auto;min-width:0;flex-wrap:nowrap;overflow:hidden;gap:5px}
   .tk-overlay .tk-dot{width:7px;height:7px}
   .tk-overlay .tk-dot.on{width:20px}
