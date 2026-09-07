@@ -453,6 +453,72 @@ async function main() {
     await page.waitForTimeout(400);
     step("authenticated report editor loaded");
 
+    // setSync used to write SYNC_ICON[state] — a bare word like "check" or "pencil" — straight
+    // into the button's textContent, and every call site but this one already went through ic().
+    // It only broke on the first state change, which is why it looked like the mark had gone
+    // missing rather than never arriving. Drive stale -> saving -> synced by editing, so the
+    // check covers a real transition rather than only the button's initial mount.
+    const syncButton = page.locator("#syncToolbarButton");
+    const syncIconState = () => syncButton.evaluate(node => ({
+      text: node.textContent.trim(),
+      hasIcon: !!node.querySelector("svg,.li-ic"),
+      className: node.className,
+    }));
+    await page.locator(EDITOR).click();
+    await page.waitForFunction(() =>
+      !!(document.activeElement && document.activeElement.closest(".ProseMirror")));
+    await page.keyboard.press("End");
+    await page.keyboard.type(" ");
+    await page.waitForFunction(() =>
+      document.querySelector("#syncToolbarButton")?.className.includes("stale"));
+    let syncState = await syncIconState();
+    assert.notEqual(syncState.text, "pencil",
+      "the sync button must not print the literal icon name as text");
+    assert.ok(syncState.hasIcon, "the sync button must render an icon element, not bare text");
+    await page.waitForFunction(() =>
+      document.querySelector("#syncToolbarButton")?.className.includes("synced"),
+    null, { timeout: 5_000 });
+    syncState = await syncIconState();
+    assert.notEqual(syncState.text, "check",
+      "the sync button must never print the literal word \"check\"");
+    assert.ok(syncState.hasIcon, "the sync button must render an icon element after autosave completes");
+    step("sync toolbar button shows an icon, never literal text, across a state change");
+
+    // Ctrl/Cmd+B toggles the sidebar from anywhere in the app, including with the caret in the
+    // report editor: main removed Toast UI's own Mod-b (bold) via blockEditorShortcuts, which
+    // swallows it in the capture phase before the editor's keymap runs, so bold no longer
+    // competes for the chord and the sidebar answers unconditionally instead.
+    const sideCollapsed = () => page.evaluate(() => document.body.classList.contains("side-collapsed"));
+    await page.evaluate(() => document.activeElement && document.activeElement.blur());
+    const collapsedAtStart = await sideCollapsed();
+    await page.keyboard.press("Control+b");
+    await page.waitForFunction(was =>
+      document.body.classList.contains("side-collapsed") !== was, collapsedAtStart);
+    assert.equal(await sideCollapsed(), !collapsedAtStart,
+      "Ctrl+B must toggle the sidebar from an ordinary view");
+    await page.keyboard.press("Control+b");
+    await page.waitForFunction(was =>
+      document.body.classList.contains("side-collapsed") === was, collapsedAtStart);
+    step("Ctrl+B toggles the sidebar from an ordinary view");
+
+    await page.locator(EDITOR).click();
+    await page.waitForFunction(() =>
+      !!(document.activeElement && document.activeElement.closest(".ProseMirror")));
+    const markdownBeforeBold = await page.evaluate(() => globalThis.S?.editor?.getMarkdown?.() || "");
+    const collapsedBeforeBold = await sideCollapsed();
+    await page.keyboard.press("Control+b");
+    await page.waitForFunction(was =>
+      document.body.classList.contains("side-collapsed") !== was, collapsedBeforeBold);
+    assert.equal(await sideCollapsed(), !collapsedBeforeBold,
+      "Ctrl+B must toggle the sidebar even with the caret inside the report editor");
+    const markdownAfterBold = await page.evaluate(() => globalThis.S?.editor?.getMarkdown?.() || "");
+    assert.equal(markdownAfterBold, markdownBeforeBold,
+      "Ctrl+B must not insert bold markup into the report while toggling the sidebar");
+    await page.keyboard.press("Control+b");
+    await page.waitForFunction(was =>
+      document.body.classList.contains("side-collapsed") === was, collapsedBeforeBold);
+    step("Ctrl+B toggles the sidebar with the caret inside the editor, without inserting bold");
+
     // Ctrl+Shift+` toggles the marks pane even with the caret inside the report editor —
     // that is the whole reason it is bound in the capture phase, ahead of the editor's own
     // keymap. Linux's modifier is Control, matched by Playwright's "Control" name.
@@ -494,6 +560,24 @@ async function main() {
     assert.ok(!(await app.evaluate(node => node.classList.contains("bubble-focus"))),
       "pressing it again must leave the focused workspace");
     step("Alt+Enter toggles the focused workspace from inside the editor");
+
+    // The sidebar control goes quiet inside focus mode. e5e3d3b's message: applySideCollapsed
+    // writes gridTemplateColumns inline, which outranks #app.bubble-focus's single grid track,
+    // so toggling from there used to snap the document into the vanished sidebar's 220px beside
+    // an empty gutter and raise the reopen pill in a mode with no sidebar. setSideOpen returns
+    // early there now, so Ctrl+B (which calls it) must change nothing while focus mode is on.
+    await page.keyboard.press("Alt+Enter");
+    await page.waitForFunction(() => document.getElementById("app")?.classList.contains("bubble-focus"));
+    const collapsedInFocus = await sideCollapsed();
+    await page.keyboard.press("Control+b");
+    await page.waitForTimeout(200);
+    assert.equal(await sideCollapsed(), collapsedInFocus,
+      "Ctrl+B must do nothing to the sidebar while the focused workspace is on");
+    assert.ok(await page.locator("#app").evaluate(node => node.classList.contains("bubble-focus")),
+      "Ctrl+B must not exit the focused workspace either");
+    await page.keyboard.press("Alt+Enter");
+    await page.waitForFunction(() => !document.getElementById("app")?.classList.contains("bubble-focus"));
+    step("the sidebar control goes quiet while the focused workspace is on");
 
     const colorSelection = "Emoji offset guard 😀 precedes this review.";
     // Swatch hexes come from the active theme's --text-color-N variables, so the test reads
