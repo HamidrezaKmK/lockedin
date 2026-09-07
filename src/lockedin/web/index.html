@@ -1905,8 +1905,14 @@
   // surface (a document page or an open chalk talk — both live inside the bubble view).
   // Bound in the capture phase alongside the two chords above. No typing bail-out: unlike
   // Ctrl+B, Alt+Enter is not something a person types into prose.
+  // The right Alt key is AltGr on most non-US layouts: Linux reports it as key "AltGraph"
+  // with altKey false, so getModifierState is the only way to see it, while Windows reports
+  // it as Ctrl+Alt held together. Cmd+Alt+Enter stays rejected since that is a Mac chord with
+  // its own meaning, but Ctrl+Alt+Enter is let through because it is what AltGr+Enter looks
+  // like there and nothing else binds to it.
   document.addEventListener("keydown",e=>{
-    if(!e.altKey||e.ctrlKey||e.metaKey)return;
+    const alt=e.altKey||e.getModifierState("AltGraph");
+    if(!alt||e.metaKey)return;
     if(e.code!=="Enter"&&e.code!=="NumpadEnter")return;
     if(!S.bubble)return;
     e.preventDefault(); e.stopPropagation();

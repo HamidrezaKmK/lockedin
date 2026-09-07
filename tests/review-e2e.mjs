@@ -561,6 +561,61 @@ async function main() {
       "pressing it again must leave the focused workspace");
     step("Alt+Enter toggles the focused workspace from inside the editor");
 
+    // Right Alt is AltGr on most non-US layouts, and browsers report it inconsistently:
+    // Linux delivers key "AltGraph" with altKey false, so getModifierState is the only way
+    // to see it, while Windows delivers Ctrl+Alt held together. Playwright's keyboard.press
+    // cannot reliably produce AltGraph modifier state, so dispatch synthetic keydown events
+    // from the page instead, on document.activeElement so they still reach the capture-phase
+    // listener bound on document.
+    async function dispatchEnter(init) {
+      await page.evaluate(init => {
+        document.activeElement.dispatchEvent(new KeyboardEvent("keydown", {
+          code: "Enter", key: "Enter", bubbles: true, cancelable: true, ...init,
+        }));
+      }, init);
+    }
+    // Probed on an inert code (not Enter) so this check alone never trips the real handler
+    // and consumes a toggle before the assertions below run.
+    const altGraphWorks = await page.evaluate(() => {
+      let seen = false;
+      const probe = e => { seen = e.getModifierState("AltGraph"); };
+      document.addEventListener("keydown", probe, { capture: true, once: true });
+      document.activeElement.dispatchEvent(new KeyboardEvent("keydown", {
+        code: "KeyQ", key: "q", bubbles: true, cancelable: true, modifierAltGraph: true,
+      }));
+      document.removeEventListener("keydown", probe, { capture: true });
+      return seen;
+    });
+    if (altGraphWorks) {
+      await dispatchEnter({ modifierAltGraph: true });
+      await page.waitForFunction(() => document.getElementById("app")?.classList.contains("bubble-focus"));
+      assert.ok(await app.evaluate(node => node.classList.contains("bubble-focus")),
+        "AltGr reported as AltGraph (Linux-style) must enter the focused workspace");
+      await dispatchEnter({ modifierAltGraph: true });
+      await page.waitForFunction(() => !document.getElementById("app")?.classList.contains("bubble-focus"));
+      assert.ok(!(await app.evaluate(node => node.classList.contains("bubble-focus"))),
+        "pressing it again must leave the focused workspace");
+    } else {
+      step("this Chromium's getModifierState(\"AltGraph\") did not honour modifierAltGraph in the init dict; skipping the Linux AltGr shape");
+    }
+    await dispatchEnter({ ctrlKey: true, altKey: true });
+    await page.waitForFunction(() => document.getElementById("app")?.classList.contains("bubble-focus"));
+    assert.ok(await app.evaluate(node => node.classList.contains("bubble-focus")),
+      "AltGr reported as Ctrl+Alt (Windows-style) must enter the focused workspace");
+    await dispatchEnter({ ctrlKey: true, altKey: true });
+    await page.waitForFunction(() => !document.getElementById("app")?.classList.contains("bubble-focus"));
+    assert.ok(!(await app.evaluate(node => node.classList.contains("bubble-focus"))),
+      "pressing it again must leave the focused workspace");
+    await dispatchEnter({ altKey: true });
+    await page.waitForFunction(() => document.getElementById("app")?.classList.contains("bubble-focus"));
+    assert.ok(await app.evaluate(node => node.classList.contains("bubble-focus")),
+      "plain left Alt+Enter must still enter the focused workspace, unchanged by the AltGr fix");
+    await dispatchEnter({ altKey: true });
+    await page.waitForFunction(() => !document.getElementById("app")?.classList.contains("bubble-focus"));
+    assert.ok(!(await app.evaluate(node => node.classList.contains("bubble-focus"))),
+      "pressing it again must leave the focused workspace");
+    step("AltGr, in both its Linux and Windows shapes, and plain left Alt all toggle the focused workspace");
+
     // The sidebar control goes quiet inside focus mode. e5e3d3b's message: applySideCollapsed
     // writes gridTemplateColumns inline, which outranks #app.bubble-focus's single grid track,
     // so toggling from there used to snap the document into the vanished sidebar's 220px beside
