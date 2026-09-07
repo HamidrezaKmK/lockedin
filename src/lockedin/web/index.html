@@ -1875,12 +1875,23 @@
   // Ctrl/Cmd+B toggles the sidebar, the way it does in an editor, and it does so from anywhere
   // in the app including inside a report. Bound in the capture phase so it lands before the
   // editor sees the keystroke; the editor no longer binds Mod-b to bold, so nothing competes.
+  // The focused workspace hides the sidebar outright, which left this chord with nothing to
+  // do there, so inside it the same keys instead toggle the document page's left pane, the
+  // Markdown editor; on a bubble surface with no left pane at all (an open chalk talk) it
+  // stays quiet rather than falling back to the sidebar.
   document.addEventListener("keydown",e=>{
     if(!(e.ctrlKey||e.metaKey)||e.shiftKey||e.altKey)return;
     if(e.key!=="b"&&e.key!=="B")return;
     // Nothing to toggle until you are signed in and the app shell is on screen.
     const app=document.getElementById("app");
     if(!app||app.offsetParent===null)return;
+    if(S.bubbleFocus){
+      const host=document.getElementById("editorHost");
+      if(!host||host.offsetParent===null)return;
+      e.preventDefault(); e.stopPropagation();
+      setPane("left",!S.paneLeft);
+      return;
+    }
     e.preventDefault(); e.stopPropagation();
     setSideOpen(document.body.classList.contains("side-collapsed"));
   },true);
@@ -6493,8 +6504,10 @@
     // now and the modes are gone.
     const group=el("div",{class:"tabrow-group"});
     group.append(el("button",{class:"small pane-toggle"+(S.paneLeft?" on":""),id:"paneLeftToggle",
-      title:S.paneLeft?"Hide the Markdown editor":"Show the Markdown editor",
+      title:(S.paneLeft?"Hide the Markdown editor":"Show the Markdown editor")
+        +" (Control or Command plus B in focused mode)",
       "aria-label":"Toggle the Markdown editor","aria-pressed":String(!!S.paneLeft),
+      "aria-keyshortcuts":"Control+B",
       onclick:()=>setPane("left",!S.paneLeft)},ic("panel-left")));
     group.append(el("button",{class:"small",id:"bubbleFocusToggle",
       title:(S.bubbleFocus?"Exit focused workspace":"Enter focused workspace")+" (Alt+Enter)",
@@ -6827,7 +6840,8 @@
     host.classList.toggle("marks-off",!S.paneRight);
     const l=$("#paneLeftToggle"),r=$("#paneRightToggle");
     if(l){l.classList.toggle("on",!!S.paneLeft);l.setAttribute("aria-pressed",String(!!S.paneLeft));
-      l.title=S.paneLeft?"Hide the Markdown editor":"Show the Markdown editor";}
+      l.title=(S.paneLeft?"Hide the Markdown editor":"Show the Markdown editor")
+        +" (Control or Command plus B in focused mode)";}
     if(r){r.classList.toggle("on",!!S.paneRight);r.setAttribute("aria-pressed",String(!!S.paneRight));
       r.title=(S.paneRight?"Hide your marks":"Show your marks")+" (Ctrl/Cmd+Shift+backtick)";}
   }

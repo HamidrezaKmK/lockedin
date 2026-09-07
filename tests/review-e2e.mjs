@@ -616,23 +616,49 @@ async function main() {
       "pressing it again must leave the focused workspace");
     step("AltGr, in both its Linux and Windows shapes, and plain left Alt all toggle the focused workspace");
 
-    // The sidebar control goes quiet inside focus mode. e5e3d3b's message: applySideCollapsed
-    // writes gridTemplateColumns inline, which outranks #app.bubble-focus's single grid track,
-    // so toggling from there used to snap the document into the vanished sidebar's 220px beside
-    // an empty gutter and raise the reopen pill in a mode with no sidebar. setSideOpen returns
-    // early there now, so Ctrl+B (which calls it) must change nothing while focus mode is on.
+    // Inside focus mode the sidebar is not on screen at all, so e5e3d3b left Ctrl+B quiet
+    // there (applySideCollapsed writes gridTemplateColumns inline, which outranks
+    // #app.bubble-focus's single grid track, so toggling the sidebar from there used to snap
+    // the document into the vanished sidebar's 220px). That idle key now drives the document
+    // page's own left pane instead — the same signal applyPanes flips, #editorHost's
+    // mode-split/mode-view class — while leaving the sidebar itself untouched.
     await page.keyboard.press("Alt+Enter");
     await page.waitForFunction(() => document.getElementById("app")?.classList.contains("bubble-focus"));
     const collapsedInFocus = await sideCollapsed();
+    const paneLeftInFocus = await editorHost.evaluate(node => node.classList.contains("mode-split"));
     await page.keyboard.press("Control+b");
-    await page.waitForTimeout(200);
+    await page.waitForFunction(was =>
+      document.querySelector("#editorHost")?.classList.contains("mode-split") !== was, paneLeftInFocus);
     assert.equal(await sideCollapsed(), collapsedInFocus,
       "Ctrl+B must do nothing to the sidebar while the focused workspace is on");
+    assert.equal(await editorHost.evaluate(node => node.classList.contains("mode-split")), !paneLeftInFocus,
+      "Ctrl+B must toggle the document page's left pane while the focused workspace is on");
     assert.ok(await page.locator("#app").evaluate(node => node.classList.contains("bubble-focus")),
       "Ctrl+B must not exit the focused workspace either");
+    await page.keyboard.press("Control+b");
+    await page.waitForFunction(was =>
+      document.querySelector("#editorHost")?.classList.contains("mode-split") === was, paneLeftInFocus);
+    assert.equal(await sideCollapsed(), collapsedInFocus,
+      "pressing it again must still leave the sidebar alone");
+    assert.equal(await editorHost.evaluate(node => node.classList.contains("mode-split")), paneLeftInFocus,
+      "pressing it again must flip the left pane back");
+    step("Ctrl+B toggles the document page's left pane, not the sidebar, while the focused workspace is on");
+
+    // tests/review-e2e.mjs never opens a chalk talk deck, so the case where focus mode is on
+    // but there is no left pane at all (LockedInTalks' notes pane rather than #editorHost) is
+    // not covered here; that surface would need a deck fixture this file does not have.
     await page.keyboard.press("Alt+Enter");
     await page.waitForFunction(() => !document.getElementById("app")?.classList.contains("bubble-focus"));
-    step("the sidebar control goes quiet while the focused workspace is on");
+    const collapsedAfterFocus = await sideCollapsed();
+    await page.keyboard.press("Control+b");
+    await page.waitForFunction(was =>
+      document.body.classList.contains("side-collapsed") !== was, collapsedAfterFocus);
+    assert.equal(await sideCollapsed(), !collapsedAfterFocus,
+      "leaving focus mode must restore Ctrl+B's sidebar toggle");
+    await page.keyboard.press("Control+b");
+    await page.waitForFunction(was =>
+      document.body.classList.contains("side-collapsed") === was, collapsedAfterFocus);
+    step("Ctrl+B goes back to toggling the sidebar once the focused workspace is off");
 
     const colorSelection = "Emoji offset guard 😀 precedes this review.";
     // Swatch hexes come from the active theme's --text-color-N variables, so the test reads
