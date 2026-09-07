@@ -24,14 +24,25 @@ $root = Join-Path $env:LOCALAPPDATA 'LockedInScientist\client'
 $bin = Join-Path $env:LOCALAPPDATA 'LockedInScientist\bin'
 New-Item -ItemType Directory -Force -Path $root, $bin | Out-Null
 $client = Join-Path $root 'scientist_cli.py'
+$vendors = Join-Path $root 'agent_vendors.py'
 $branch = 'main'
 $commit = (Invoke-RestMethod "https://api.github.com/repos/HamidrezaKmK/lockedin/commits/$branch").sha
 if (-not $commit) { throw 'Could not resolve the current LockedIn Scientist release from main.' }
 # Fetch an immutable commit URL rather than a branch URL: raw GitHub branch responses can be
 # served from an older CDN cache immediately after a release.
 $clientTemp = Join-Path $root ("scientist_cli." + [guid]::NewGuid().ToString('N') + '.tmp')
+$vendorsTemp = Join-Path $root ("agent_vendors." + [guid]::NewGuid().ToString('N') + '.tmp')
 Invoke-WebRequest "https://raw.githubusercontent.com/HamidrezaKmK/lockedin/$commit/src/lockedin/scientist_cli.py" -OutFile $clientTemp
-Move-Item -Force -Path $clientTemp -Destination $client
+Invoke-WebRequest "https://raw.githubusercontent.com/HamidrezaKmK/lockedin/$commit/src/lockedin/agent_vendors.py" -OutFile $vendorsTemp
+$changed = $false
+if (-not (Test-Path $vendors) -or (Get-FileHash $vendorsTemp).Hash -ne (Get-FileHash $vendors).Hash) {
+  Move-Item -Force -Path $vendorsTemp -Destination $vendors
+  $changed = $true
+} else { Remove-Item $vendorsTemp }
+if (-not (Test-Path $client) -or (Get-FileHash $clientTemp).Hash -ne (Get-FileHash $client).Hash) {
+  Move-Item -Force -Path $clientTemp -Destination $client
+  $changed = $true
+} else { Remove-Item $clientTemp }
 $pythonArgText = $pythonArgs -join ' '
 "@echo off`r`n`"$($python.Source)`" $pythonArgText `"$client`" %*`r`n" | Set-Content (Join-Path $bin 'lockedin-scientist.cmd') -NoNewline
 Copy-Item (Join-Path $bin 'lockedin-scientist.cmd') (Join-Path $bin 'lockedin_scientist.cmd')
@@ -53,7 +64,11 @@ $sessionEntries = @($env:Path -split ';' | Where-Object { $_ })
 $hasSessionEntry = $sessionEntries | Where-Object { $_.TrimEnd('\') -ieq $bin.TrimEnd('\') }
 if (-not $hasSessionEntry) { $env:Path = "$bin;$env:Path" }
 
-Write-Host "Installed only lockedin-scientist. Run: lockedin-scientist login --server https://lockedin.codes"
 Write-Host "Updated command: $bin\lockedin-scientist.cmd"
 Write-Host "Updated source:  $client"
 Write-Host "Source commit:   $commit"
+if ($changed) {
+  & (Join-Path $bin 'lockedin-scientist.cmd') upgrade-workers
+} else {
+  Write-Host 'Already current; running workers and vendor integrations were left untouched.'
+}

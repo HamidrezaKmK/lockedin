@@ -60,6 +60,7 @@ class SetupScriptServing(unittest.TestCase):
             script = response.text
             self.assertIn("install.sh | bash", script)
             self.assertIn("https://testserver/setup/scientist_cli.py", script)
+            self.assertIn("https://testserver/setup/agent_vendors.py", script)
             self.assertIn("lockedin-scientist connect", script)
             self.assertIn(f"--ticket '{ticket}'", script)
             self.assertIn(f"--bubble '{slug}'", script)
@@ -75,6 +76,7 @@ class SetupScriptServing(unittest.TestCase):
             script = api.get(f"/setup/{ticket}.ps1").text
             self.assertIn("install.ps1 | iex", script)
             self.assertIn("https://testserver/setup/scientist_cli.py", script)
+            self.assertIn("https://testserver/setup/agent_vendors.py", script)
             self.assertIn("lockedin-scientist connect", script)
             self.assertIn(f"--ticket '{ticket}'", script)
             self.assertNotIn("li_sc_", script)
@@ -95,6 +97,21 @@ class SetupScriptServing(unittest.TestCase):
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.headers["cache-control"], "no-store")
             self.assertIn(f'SKILL_VERSION = {server.scientist_cli.SKILL_VERSION}', response.text)
+
+    def test_server_exposes_the_matching_vendor_adapter_without_a_session(self):
+        with client() as (api, _slug):
+            api.post("/api/logout")
+            response = api.get("/setup/agent_vendors.py")
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.headers["cache-control"], "no-store")
+            self.assertIn("class VendorAdapter", response.text)
+
+    def test_setup_sources_are_the_running_servers_snapshot_not_live_disk_reads(self):
+        with client() as (api, _slug), patch.object(
+                server, "SCIENTIST_CLIENT_SOURCE", "# pinned client\n"), patch.object(
+                server, "SCIENTIST_VENDOR_SOURCE", "# pinned adapters\n"):
+            self.assertEqual(api.get("/setup/scientist_cli.py").text, "# pinned client\n")
+            self.assertEqual(api.get("/setup/agent_vendors.py").text, "# pinned adapters\n")
 
 
 class SetupScriptWithoutATerminal(unittest.TestCase):
@@ -131,6 +148,9 @@ class SetupScriptWithoutATerminal(unittest.TestCase):
             "true")
         script = script.replace(
             "curl -fsSL 'https://x.test/setup/scientist_cli.py' -o \"$client_tmp\"",
+            "true")
+        script = script.replace(
+            "curl -fsSL 'https://x.test/setup/agent_vendors.py' -o \"$vendors_tmp\"",
             "true")
         script = script.replace("exec lockedin-scientist connect", "echo CHOSE:")
         run = subprocess.run(["bash", "-c", script], capture_output=True, text=True,

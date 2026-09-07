@@ -28,7 +28,7 @@ from pathlib import Path
 import yaml
 from slugify import slugify
 
-from . import auth, bubbles, paths, talks
+from . import agent_vendors, auth, bubbles, paths, talks
 
 try:  # pragma: no cover - platform dependent
     import fcntl
@@ -37,7 +37,7 @@ except ImportError:  # pragma: no cover
 
 logger = logging.getLogger(__name__)
 
-VENDORS = ("codex", "claude", "agy")
+VENDORS = agent_vendors.names()
 STATUSES = ("queued", "running", "done", "failed", "cancelled")
 OPEN_STATUSES = {"queued", "running"}
 # A turn that failed only because the agent's own chat was open, not because the work was bad.

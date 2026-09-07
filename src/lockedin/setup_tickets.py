@@ -140,8 +140,11 @@ echo "Installing lockedin-scientist…"
 # dependency-free client so the setup link and the server always speak the same protocol.
 client_root="${{XDG_DATA_HOME:-$HOME/.local/share}}/lockedin-scientist/client"
 client_tmp="$(mktemp)"
-trap 'rm -f "$client_tmp"' EXIT
+vendors_tmp="$(mktemp)"
+trap 'rm -f "$client_tmp" "$vendors_tmp"' EXIT
 curl -fsSL {(origin + '/setup/scientist_cli.py')!r} -o "$client_tmp"
+curl -fsSL {(origin + '/setup/agent_vendors.py')!r} -o "$vendors_tmp"
+install -m 0644 "$vendors_tmp" "$client_root/agent_vendors.py"
 install -m 0644 "$client_tmp" "$client_root/scientist_cli.py"
 
 # install.sh does not touch PATH; it only prints where it put the command.
@@ -180,8 +183,11 @@ if [ -z "$python" ]; then
 fi
 
 client_tmp="$(mktemp)"
-trap 'rm -f "$client_tmp"' EXIT
+vendors_tmp="$(mktemp)"
+trap 'rm -f "$client_tmp" "$vendors_tmp"' EXIT
 curl -fsSL {(origin + '/setup/scientist_cli.py')!r} -o "$client_tmp"
+curl -fsSL {(origin + '/setup/agent_vendors.py')!r} -o "$vendors_tmp"
+install -m 0644 "$vendors_tmp" "$client_root/agent_vendors.py"
 install -m 0644 "$client_tmp" "$client_root/scientist_cli.py"
 
 cat > "$HOME/.local/bin/{name}" <<SHIM
@@ -193,6 +199,7 @@ SHIM
 chmod 0755 "$HOME/.local/bin/{name}"
 
 export PATH="$HOME/.local/bin:$PATH"
+"$HOME/.local/bin/{name}" upgrade-workers
 
 # stderr is silenced *before* the open is attempted: bash applies redirections left to right,
 # so the other order lets "/dev/tty: No such device" escape to an agent's log.
@@ -233,8 +240,12 @@ Write-Host "Installing lockedin-scientist…"
 # Keep a development server and its installed client protocol-matched before connecting.
 $clientRoot = Join-Path $env:LOCALAPPDATA 'LockedInScientist/client'
 $client = Join-Path $clientRoot 'scientist_cli.py'
+$vendors = Join-Path $clientRoot 'agent_vendors.py'
 $clientTemp = Join-Path $clientRoot ("scientist_cli." + [guid]::NewGuid().ToString('N') + '.tmp')
+$vendorsTemp = Join-Path $clientRoot ("agent_vendors." + [guid]::NewGuid().ToString('N') + '.tmp')
 Invoke-WebRequest {quote(origin + '/setup/scientist_cli.py')} -OutFile $clientTemp
+Invoke-WebRequest {quote(origin + '/setup/agent_vendors.py')} -OutFile $vendorsTemp
+Move-Item -Force -Path $vendorsTemp -Destination $vendors
 Move-Item -Force -Path $clientTemp -Destination $client
 
 if ([Console]::IsInputRedirected) {{
@@ -266,11 +277,16 @@ $clientRoot = Join-Path $env:LOCALAPPDATA '{name}\\client'
 $bin = Join-Path $env:LOCALAPPDATA '{name}\\bin'
 New-Item -ItemType Directory -Force -Path $clientRoot, $bin | Out-Null
 $client = Join-Path $clientRoot 'scientist_cli.py'
+$vendors = Join-Path $clientRoot 'agent_vendors.py'
 $clientTemp = Join-Path $clientRoot ("scientist_cli." + [guid]::NewGuid().ToString('N') + '.tmp')
+$vendorsTemp = Join-Path $clientRoot ("agent_vendors." + [guid]::NewGuid().ToString('N') + '.tmp')
 Invoke-WebRequest {quote(origin + '/setup/scientist_cli.py')} -OutFile $clientTemp
+Invoke-WebRequest {quote(origin + '/setup/agent_vendors.py')} -OutFile $vendorsTemp
+Move-Item -Force -Path $vendorsTemp -Destination $vendors
 Move-Item -Force -Path $clientTemp -Destination $client
 
 "@echo off`r`nsetlocal`r`nset LOCKEDIN_SCIENTIST_HOME=$env:LOCALAPPDATA\\{name}`r`nset LOCKEDIN_SCIENTIST_CLI_NAME={name}`r`n`"$($python.Source)`" `"$client`" %*`r`n" | Set-Content (Join-Path $bin '{name}.cmd') -NoNewline
+& (Join-Path $bin '{name}.cmd') upgrade-workers
 
 # Persist the command directory for future terminals and update this one immediately. Avoid
 # setx: it can truncate a long PATH and does not affect the current PowerShell process.

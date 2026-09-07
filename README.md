@@ -180,7 +180,10 @@ directory from the server instead of guessing which bubble a damaged local direc
 
 Scientist checks its compatible client version whenever it contacts the synchronized workspace.
 If it asks you to reinstall, rerun the installer for your platform above; it replaces only the
-standalone client command and keeps your authorization and projects intact.
+standalone client command, refreshes managed vendor skills, and safely restarts every project
+worker that was active before the upgrade. A worker in the middle of an agent turn restarts after
+that turn finishes. Deliberately stopped workers remain stopped; in particular, reinstalling can
+never undo **Stop Agents** or its required local reauthorization.
 </details>
 
 <details>

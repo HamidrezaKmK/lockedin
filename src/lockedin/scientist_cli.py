@@ -27,11 +27,17 @@ import uuid
 import urllib.error
 import urllib.request
 import webbrowser
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
+try:
+    from . import agent_vendors
+except ImportError:  # Standalone client installed beside agent_vendors.py.
+    import agent_vendors  # type: ignore[no-redef]
+
 APP = "lockedin-scientist"
-SCIENTIST_CLIENT_VERSION = "2026.09.06.1"
+SCIENTIST_CLIENT_VERSION = "2026.09.07.1"
 POLL_SECONDS = 5
 # A worker that has not completed a cycle in three polls is wedged rather than merely busy.
 # `doctor` reports that verdict and `resync` repairs exactly what `doctor` complains about, so
@@ -41,7 +47,7 @@ BINDING_KEYS = ("server", "user", "workspace_id", "bubble")
 WORKER_HISTORY_LIMIT = 10
 TERMINAL_WORKER_STATUSES = {"stopped"}
 ATTENTION_WORKER_STATUSES = {"degraded", "failed"}
-VENDORS = ("codex", "claude", "agy")
+VENDORS = agent_vendors.names()
 MANAGED_VENDOR_SKILL_MARKER = "<!-- Managed by lockedin-scientist -->"
 # One headless agent turn per assigned mark. The worker ends a turn that runs longer than this and
 # reports it failed; the vendor's own print-mode timeout is set to match.
@@ -49,33 +55,18 @@ MANAGED_VENDOR_SKILL_MARKER = "<!-- Managed by lockedin-scientist -->"
 # because the agent's own interactive chat held the session open, not because the work was bad.
 # Mirrors agents.BUSY_ERROR server-side; this client has no import of that module.
 AGENT_BUSY_ERROR = "the agent's chat was open, so the turn was postponed"
-AGENT_BUSY_SIGNATURES = (
-    "already has an active writer",
-    "thread-store conflict",
-    "session is already in use",
-    "another instance is running",
-    "resource temporarily unavailable",
-)
+AGENT_BUSY_SIGNATURES = agent_vendors.COMMON_BUSY_SIGNATURES
 # Substrings (matched case-insensitively) seen in real vendor CLI output when the conversation id
 # on file was deleted or otherwise not honoured, distinct from a turn that failed for its own
 # reasons. Kept specific — no bare "does not exist" — so an ordinary error is not swallowed here.
 AGENT_LOST_CONVERSATION_ERROR = "the agent's saved conversation no longer exists there; a new one is starting"
-AGENT_LOST_CONVERSATION_SIGNATURES = (
-    "conversation not found",
-    "no such conversation",
-    "unknown conversation",
-    "session not found",
-    "no such session",
-    "thread not found",
-    "could not find thread",
-    "no conversation with id",
-)
+AGENT_LOST_CONVERSATION_SIGNATURES = agent_vendors.COMMON_LOST_SIGNATURES
 AGENT_COOLDOWN_SECONDS = 60
 AGENT_TURN_SECONDS = int(os.environ.get("LOCKEDIN_AGENT_TURN_SECONDS") or 20 * 60)
 # A vendor CLI that explicitly says it is reconnecting several times is not doing useful work.
 # Give transient outages a minute and a half, then fail visibly instead of burning the whole turn.
 AGENT_NETWORK_GRACE_SECONDS = int(os.environ.get("LOCKEDIN_AGENT_NETWORK_GRACE_SECONDS") or 90)
-AGENT_NETWORK_RECONNECT_SIGNATURE = "reconnecting... waiting for network"
+AGENT_NETWORK_RECONNECT_SIGNATURE = agent_vendors.COMMON_NETWORK_SIGNATURES[0]
 # Different agents may work at once. One agent never runs two turns — the server refuses that too.
 AGENT_MAX_PARALLEL = int(os.environ.get("LOCKEDIN_AGENT_MAX_PARALLEL") or 2)
 AGENT_OUTPUT_TAIL = 4000
@@ -139,7 +130,6 @@ If there is no `.lockedin/SKILL.md` at that root, do not create a replacement an
 elsewhere. Tell the user to run `lockedin-scientist sync <bubble-slug>` from the project root.
 """
 
-AGY_PLUGIN_MANAGED_BY = "lockedin-scientist"
 
 
 def _colour(text: object, code: str) -> str:
@@ -976,58 +966,22 @@ def _write_managed_vendor_file(path: Path, content: str) -> None:
 
 def _vendor_skill_paths(vendor: str, home: Path) -> tuple[Path, ...]:
     """Return the globally discovered native skill location for a supported agent."""
-    if vendor == "codex":
-        return (home / ".codex" / "skills" / APP / "SKILL.md",)
-    if vendor == "claude":
-        return (home / ".claude" / "skills" / APP / "SKILL.md",)
-    if vendor == "agy":
-        plugin = home / ".gemini" / "antigravity-cli" / "plugins" / APP
-        return (plugin / "plugin.json", plugin / "skills" / APP / "SKILL.md")
-    raise RuntimeError(f"Unknown agent {vendor!r}. Choose one of: {', '.join(VENDORS)}.")
+    try:
+        return agent_vendors.get(vendor).skill_paths(home, APP)
+    except RuntimeError:
+        raise RuntimeError(f"Unknown agent {vendor!r}. Choose one of: {', '.join(VENDORS)}.") from None
 
 
 def setup_vendor_skill(vendor: str, *, home: Path | None = None) -> tuple[Path, ...]:
     """Install the named bootstrap in the vendor's native global skill discovery path."""
     vendor = vendor.lower()
     home = Path.home() if home is None else Path(home)
-    targets = _vendor_skill_paths(vendor, home)
-    if vendor == "agy":
-        plugin_json, skill_path = targets
-        if plugin_json.exists():
-            try:
-                plugin = json.loads(plugin_json.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError) as exc:
-                raise RuntimeError(f"Could not inspect existing agy plugin at {plugin_json}: {exc}") from exc
-            if plugin.get("managed_by") != AGY_PLUGIN_MANAGED_BY:
-                raise RuntimeError(
-                    f"Refusing to overwrite the existing agy plugin at {plugin_json.parent}. "
-                    "Move or remove that user-owned plugin, then run setup again."
-                )
-        plugin_json.parent.mkdir(parents=True, exist_ok=True)
-        plugin_manifest = json.dumps({
-            "name": APP,
-            "version": "1.0.0",
-            "description": "Project-local LockedIn Scientist bootstrap skill.",
-            "managed_by": AGY_PLUGIN_MANAGED_BY,
-        }, indent=2) + "\n"
-        plugin_json.write_text(plugin_manifest, encoding="utf-8")
-        _write_managed_vendor_file(skill_path, VENDOR_SKILL_BOOTSTRAP)
-        agy = shutil.which("agy")
-        if not agy:
-            raise RuntimeError("agy is not installed or is not on PATH, so its native skill could not be imported.")
-        try:
-            installed = subprocess.run(
-                [agy, "plugin", "install", str(plugin_json.parent)],
-                stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60,
-            )
-        except OSError as exc:
-            raise RuntimeError(f"Could not ask agy to import its native skill: {exc}") from exc
-        if installed.returncode:
-            detail = (installed.stderr or installed.stdout).strip()
-            raise RuntimeError(f"agy could not import the native {APP} skill" + (f": {detail}" if detail else "."))
-    else:
-        _write_managed_vendor_file(targets[0], VENDOR_SKILL_BOOTSTRAP)
-    return targets
+    try: adapter = agent_vendors.get(vendor)
+    except RuntimeError:
+        raise RuntimeError(f"Unknown agent {vendor!r}. Choose one of: {', '.join(VENDORS)}.") from None
+    return adapter.install_skill(home, APP, VENDOR_SKILL_BOOTSTRAP,
+                                 writer=_write_managed_vendor_file,
+                                 binary=_vendor_binary, run=subprocess.run)
 
 
 def setup_vendor_command(vendor: str) -> None:
@@ -1035,12 +989,7 @@ def setup_vendor_command(vendor: str) -> None:
     heading(f"{vendor.title()} skill installed", "The bootstrap is global; its report guide remains project-local.")
     for target in targets:
         print(green("✓") + " " + dim(str(target)))
-    if vendor == "codex":
-        print(dim("  Start Codex in a synchronized project, then invoke $lockedin-scientist."))
-    elif vendor == "claude":
-        print(dim("  Restart Claude Code if it is open, then invoke /lockedin-scientist in a synchronized project."))
-    else:
-        print(dim("  Restart agy if it is open, then use /skills to select lockedin-scientist in a synchronized project."))
+    print(dim("  " + agent_vendors.get(vendor).setup_hint(APP)))
 
 
 def _git(args: list[str], cwd: Path, *, capture: bool = False) -> subprocess.CompletedProcess:
@@ -1646,118 +1595,6 @@ def _project_root(start: Path) -> Path:
     return start
 
 
-def _worktree_paths(project: Path) -> set[str]:
-    """Every checkout of this repository: agy records the directory it was launched in."""
-    found = {str(project.resolve())}
-    try:
-        out = subprocess.run(["git", "worktree", "list", "--porcelain"], cwd=project,
-                             capture_output=True, text=True, timeout=10)
-        for line in out.stdout.splitlines():
-            if line.startswith("worktree "): found.add(str(Path(line[9:].strip()).resolve()))
-    except (OSError, subprocess.SubprocessError): pass
-    return found
-
-
-def _agy_home() -> Path: return Path(os.environ.get("ANTIGRAVITY_CLI_HOME") or Path.home() / ".gemini" / "antigravity-cli")
-def _codex_home() -> Path: return Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex")
-def _claude_home() -> Path: return Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
-
-
-def _agy_live_conversations() -> set[str]:
-    """Conversations agy has open in a terminal right now.
-
-    agy keeps ``presence/<conversation>.lock`` for every conversation it ever opened — the files
-    outlive the session — but holds an advisory ``flock`` on the one it is running. Existence
-    means nothing; a lock that cannot be taken means live.
-    """
-    presence = _agy_home() / "presence"
-    if not presence.is_dir(): return set()
-    live: set[str] = set()
-    try:
-        import fcntl
-    except ImportError:  # pragma: no cover - not Linux/macOS; assume nothing is open
-        return live
-    for path in presence.glob("*.lock"):
-        try:
-            fd = os.open(path, os.O_RDONLY)
-        except OSError:
-            continue
-        try:
-            try:
-                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                fcntl.flock(fd, fcntl.LOCK_UN)
-            except OSError:
-                live.add(path.stem)
-        finally:
-            os.close(fd)
-    return live
-
-
-def _agy_time(value: object) -> float:
-    from datetime import datetime, timezone
-    text = str(value or "").strip()
-    if not text: return 0.0
-    try:
-        stamp = datetime.fromisoformat(text.replace("Z", "+00:00").split(" m=")[0][:32].strip())
-        if stamp.tzinfo is None: stamp = stamp.replace(tzinfo=timezone.utc)
-        return stamp.timestamp()
-    except ValueError:
-        return 0.0
-
-
-def _agy_conversations_for(project: Path) -> list[tuple[str, float]]:
-    """(conversation id, recency) for agy conversations opened in this project, newest first."""
-    wanted = _worktree_paths(project)
-    scores: dict[str, float] = {}
-    db = _agy_home() / "conversation_summaries.db"
-    if db.exists():
-        try:
-            import sqlite3
-            con = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=2)
-            try:
-                rows = con.execute("select conversation_id, workspace_uris, last_modified_time "
-                                   "from conversation_summaries").fetchall()
-            finally: con.close()
-            for cid, uris, modified in rows:
-                text = str(uris or "")
-                if any(path in text for path in wanted):
-                    scores[str(cid)] = max(scores.get(str(cid), 0.0), _agy_time(modified))
-        except Exception: pass
-    history = _agy_home() / "history.jsonl"
-    if history.exists():
-        try:
-            for line in history.read_text(encoding="utf-8", errors="replace").splitlines()[-3000:]:
-                try: row = json.loads(line)
-                except json.JSONDecodeError: continue
-                cid = str(row.get("conversationId") or "")
-                if cid and str(row.get("workspace", "")) in wanted:
-                    stamp = float(row.get("timestamp", 0) or 0) / 1000.0
-                    scores[cid] = max(scores.get(cid, 0.0), stamp)
-        except OSError: pass
-    return sorted(scores.items(), key=lambda item: item[1], reverse=True)
-
-
-def _codex_conversations_for(project: Path) -> list[tuple[str, float]]:
-    """(session id, mtime) for codex sessions whose recorded cwd is this project, newest first."""
-    wanted = _worktree_paths(project)
-    sessions = _codex_home() / "sessions"
-    if not sessions.is_dir(): return []
-    found = []
-    try:
-        files = sorted(sessions.rglob("*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)[:400]
-    except OSError:
-        return []
-    for path in files:
-        try:
-            with path.open(encoding="utf-8", errors="replace") as fh: meta = json.loads(fh.readline())
-        except (OSError, json.JSONDecodeError): continue
-        payload = meta.get("payload") or {}
-        cwd, sid = str(payload.get("cwd") or ""), str(payload.get("id") or payload.get("session_id") or "")
-        if sid and cwd and str(Path(cwd).resolve()) in wanted:
-            found.append((sid, path.stat().st_mtime))
-    return found
-
-
 def conversation_exists(agent: dict) -> bool:
     """Whether the vendor still has this agent's conversation where it stores them.
 
@@ -1771,59 +1608,13 @@ def conversation_exists(agent: dict) -> bool:
     conversation = str(agent.get("conversation") or "").strip()
     if not conversation:
         return True
-    if vendor == "agy":
-        return (_agy_home() / "conversations" / f"{conversation}.db").exists()
-    if vendor == "claude":
-        return any((_claude_home() / "projects").glob(f"*/{conversation}.jsonl"))
-    if vendor == "codex":
-        sessions = _codex_home() / "sessions"
-        if sessions.is_dir():
-            try:
-                if any(sessions.rglob(f"{conversation}*.jsonl")):
-                    return True
-            except OSError:
-                return True
-        index = _codex_home() / "session_index.jsonl"
-        if index.is_file():
-            try:
-                return conversation in index.read_text(encoding="utf-8", errors="replace")
-            except OSError:
-                return True
-        return False
-    return True
+    try: return agent_vendors.get(vendor).conversation_exists(conversation)
+    except RuntimeError: return True
 
 
 def detect_conversation(project: Path, *, vendor: str = "", conversation: str = "") -> tuple[str, str]:
     """Which CLI conversation this command runs inside, so an agent never copies an id by hand."""
-    vendor = (vendor or "").strip().lower()
-    if vendor and vendor not in VENDORS:
-        raise RuntimeError(f"--vendor must be one of {', '.join(VENDORS)}")
-    if conversation:
-        if not vendor:
-            raise RuntimeError("--conversation needs --vendor <codex|claude|agy> as well.")
-        return vendor, conversation.strip()
-    env = os.environ
-    candidates: list[tuple[str, str]] = []
-    if env.get("CLAUDE_CODE_SESSION_ID"): candidates.append(("claude", env["CLAUDE_CODE_SESSION_ID"]))
-    for key, value in env.items():
-        upper = key.upper()
-        if not value or not any(word in upper for word in ("CONVERSATION", "THREAD", "SESSION")): continue
-        if upper.startswith(("ANTIGRAVITY", "AGY")): candidates.append(("agy", value))
-        elif upper.startswith("CODEX") and "ID" in upper: candidates.append(("codex", value))
-    if vendor: candidates = [c for c in candidates if c[0] == vendor]
-    if candidates: return candidates[0]
-    if vendor in ("", "agy"):
-        live = _agy_live_conversations()
-        here = [cid for cid, _ in _agy_conversations_for(project) if cid in live]
-        if len(here) == 1: return "agy", here[0]
-        if len(here) > 1:
-            raise RuntimeError("Several agy conversations are open in this project ("
-                               + ", ".join(here[:4]) + "). Pass --vendor agy --conversation <id>.")
-    if vendor in ("", "codex"):
-        here = _codex_conversations_for(project)
-        if here: return "codex", here[0][0]
-    raise RuntimeError("Could not tell which conversation this is. From inside your agent's chat, run it "
-                       "again; or pass --vendor <codex|claude|agy> --conversation <id> explicitly.")
+    return agent_vendors.detect_conversation(project, vendor=vendor, conversation=conversation)
 
 
 def _chat_pids_path(root: Path) -> Path: return root / "config" / "agent-chats.json"
@@ -1923,8 +1714,11 @@ def agent_attached(agent: dict, root: Path, *, ignore: set[int] | None = None) -
     """Whether the agent's conversation is open in a terminal, so the worker must not drive it."""
     conversation = str(agent.get("conversation") or "")
     if not conversation: return False
-    if agent.get("vendor") == "agy":
-        return conversation in _agy_live_conversations()
+    try:
+        if conversation in agent_vendors.get(str(agent.get("vendor") or "")).live_conversations():
+            return True
+    except RuntimeError:
+        pass
     pid = int(_read_chat_pids(root).get(str(agent.get("id", "")), 0) or 0)
     if pid and pid not in (ignore or set()) and _alive(pid): return True
     proc = Path("/proc")
@@ -2146,8 +1940,7 @@ def _agent_writable_roots(project: Path) -> list[tuple[Path, bool]]:
     runtime_tmp = os.environ.get("TMPDIR", "").strip()
     if runtime_tmp and Path(runtime_tmp).exists():
         roots.append((Path(runtime_tmp), False))
-    for candidate in (home / ".claude", home / ".claude.json", home / ".codex",
-                      home / ".gemini", home / ".cache", home / ".npm"):
+    for candidate in (*agent_vendors.writable_state_paths(home), home / ".cache", home / ".npm"):
         if candidate.exists():
             roots.append((candidate, False))
     for part in os.environ.get("LOCKEDIN_AGENT_WRITABLE", "").split(":"):
@@ -2249,79 +2042,33 @@ def agent_turn_command(agent: dict, prompt: str, *, new_id: str = "", mode: str 
     so callers that do not care can omit it, but takes it as a plain argument so it is unit-testable
     without touching the environment.
     """
-    vendor = str(agent.get("vendor") or "")
-    conversation, model = str(agent.get("conversation") or ""), str(agent.get("model") or "")
     minutes = max(1, AGENT_TURN_SECONDS // 60)
     mode = confinement_mode() if mode is None else mode
     permissive = mode in ("landlock", "seatbelt", "trust")
-    if vendor == "agy":
-        cmd = [_vendor_binary("agy"), "--output-format", "json", "--disable-slash-commands"]
-        cmd += ["--dangerously-skip-permissions"] if permissive else ["--mode", "accept-edits"]
-        cmd += ["--print-timeout", f"{minutes}m0s"]
-        if conversation: cmd += ["--conversation", conversation]
-        if model: cmd += ["--model", model]
-        return cmd + ["-p", prompt]
-    if vendor == "claude":
-        cmd = [_vendor_binary("claude"), "-p", "--output-format", "json"]
-        cmd += ["--permission-mode", "bypassPermissions" if permissive else "acceptEdits"]
-        cmd += ["--resume", conversation] if conversation else ["--session-id", new_id]
-        if model: cmd += ["--model", model]
-        return cmd + [prompt]
-    if vendor == "codex":
-        cmd = [_vendor_binary("codex"), "exec"]
-        cmd += ["--dangerously-bypass-approvals-and-sandbox"] if permissive else [
-            "-s", "workspace-write", "-c", "sandbox_workspace_write.network_access=true"]
-        cmd += ["--skip-git-repo-check", "--json"]
-        if model: cmd += ["-m", model]
-        if conversation: cmd += ["resume", conversation]
-        return cmd + [prompt]
-    raise RuntimeError(f"unknown vendor {vendor!r}")
+    adapter = agent_vendors.get(str(agent.get("vendor") or ""))
+    return adapter.turn_command(agent, prompt, new_id=new_id, permissive=permissive,
+                                turn_minutes=minutes, binary=_vendor_binary)
 
 
 def agent_chat_argv(agent: dict, *, new_id: str = "") -> list[str]:
-    vendor = str(agent.get("vendor") or "")
-    conversation, model = str(agent.get("conversation") or ""), str(agent.get("model") or "")
-    if vendor == "agy":
-        cmd = [_vendor_binary("agy")]
-        if conversation: cmd += ["--conversation", conversation]
-        if model: cmd += ["--model", model]
-        return cmd
-    if vendor == "claude":
-        cmd = [_vendor_binary("claude")] + (["--resume", conversation] if conversation else ["--session-id", new_id])
-        if model: cmd += ["--model", model]
-        return cmd
-    if vendor == "codex":
-        cmd = [_vendor_binary("codex")]
-        if model: cmd += ["-m", model]
-        if conversation: cmd += ["resume", conversation]
-        return cmd
-    raise RuntimeError(f"unknown vendor {vendor!r}")
+    adapter = agent_vendors.get(str(agent.get("vendor") or ""))
+    return adapter.chat_command(agent, new_id=new_id, binary=_vendor_binary)
 
 
 def _discover_conversation(vendor: str, output: str, *, started: float, project: Path) -> str:
     """The id of a conversation a fresh turn just created, from its output or the vendor's store."""
-    match = re.search(r'"(?:conversation_id|conversationId|session_id|thread_id)"\s*:\s*"([^"]+)"', output)
-    if match: return match.group(1)
-    if vendor == "agy":
-        here = [cid for cid, stamp in _agy_conversations_for(project) if stamp >= started - 2]
-        if here: return here[0]
-        conv_dir = _agy_home() / "conversations"
-        if conv_dir.is_dir():
-            fresh = [p for p in conv_dir.glob("*.db") if p.stat().st_mtime >= started - 2]
-            if len(fresh) == 1: return fresh[0].stem
-    if vendor == "codex":
-        here = [sid for sid, stamp in _codex_conversations_for(project) if stamp >= started - 2]
-        if here: return here[0]
-    return ""
+    try: return agent_vendors.get(vendor).discover_conversation(output, started=started, project=project)
+    except RuntimeError: return ""
 
 
-def _looks_vendor_busy(output: str) -> bool:
+def _looks_vendor_busy(output: str, vendor: str = "") -> bool:
     """Whether captured turn output matches a known vendor-busy signature (case-insensitive)."""
     lowered = (output or "").lower()
-    return any(signature in lowered for signature in AGENT_BUSY_SIGNATURES)
+    signatures = agent_vendors.get(vendor).busy_signatures if vendor else AGENT_BUSY_SIGNATURES
+    return any(signature in lowered for signature in signatures)
 
 
-def _looks_conversation_lost(output: str) -> bool:
+def _looks_conversation_lost(output: str, vendor: str = "") -> bool:
     """Whether captured turn output matches a known lost-conversation signature (case-insensitive).
 
     A conversation can vanish between the pre-dispatch ``conversation_exists`` check and the
@@ -2329,7 +2076,16 @@ def _looks_conversation_lost(output: str) -> bool:
     the fallback: read the vendor's own refusal instead of trusting the check alone.
     """
     lowered = (output or "").lower()
-    return any(signature in lowered for signature in AGENT_LOST_CONVERSATION_SIGNATURES)
+    signatures = agent_vendors.get(vendor).lost_signatures if vendor else AGENT_LOST_CONVERSATION_SIGNATURES
+    return any(signature in lowered for signature in signatures)
+
+
+def _vendor_network_reconnects(output: str, vendor: str) -> int:
+    """Number of known reconnect signals emitted by this vendor in captured output."""
+    lowered = (output or "").lower()
+    try: signatures = agent_vendors.get(vendor).network_signatures
+    except RuntimeError: signatures = (AGENT_NETWORK_RECONNECT_SIGNATURE,)
+    return sum(lowered.count(signature) for signature in signatures)
 
 
 def _tail(path: Path, limit: int) -> str:
@@ -2590,7 +2346,8 @@ class AgentRunner:
         (self.jobs_dir / f"{job['id']}.pid").write_text(str(proc.pid), encoding="utf-8")
         self.procs[job["id"]] = {"proc": proc, "agent": agent, "job": job, "started": started,
                                  "log": log, "stream": stream, "fresh": fresh,
-                                 "new_id": new_id if agent.get("vendor") == "claude" and fresh else ""}
+                                 "new_id": new_id if agent_vendors.get(str(agent.get("vendor") or "")).preassigns_conversation_id
+                                 and fresh else ""}
 
     def _terminate(self, job_id: str, reason: str) -> None:
         entry = self.procs.get(job_id)
@@ -2609,8 +2366,9 @@ class AgentRunner:
             if proc.poll() is None:
                 age = now - entry["started"]
                 if ("reason" not in entry and age > AGENT_NETWORK_GRACE_SECONDS
-                        and _tail(entry["log"], AGENT_OUTPUT_TAIL).lower().count(
-                            AGENT_NETWORK_RECONNECT_SIGNATURE) >= 3):
+                        and _vendor_network_reconnects(
+                            _tail(entry["log"], AGENT_OUTPUT_TAIL),
+                            str(entry["agent"].get("vendor") or "")) >= 3):
                     self._terminate(job_id, "the agent could not reach its model service after repeated reconnects")
                 elif "reason" not in entry and age > AGENT_TURN_SECONDS:
                     self._terminate(job_id, f"timed out after {AGENT_TURN_SECONDS // 60} minutes")
@@ -2643,11 +2401,11 @@ class AgentRunner:
             # interactive session held the writer) must not burn the job. Attach detection should
             # normally have caught this before dispatch, but it cannot be perfect on every vendor
             # or every OS, so fall back to sniffing the output for a known busy signature.
-            elif not reason and code != 0 and _looks_vendor_busy(output):
+            elif not reason and code != 0 and _looks_vendor_busy(output, str(agent.get("vendor") or "")):
                 self.cooldowns[aid] = time.monotonic() + AGENT_COOLDOWN_SECONDS
                 self._requeued_this_tick.add(aid)
                 self._result(job_id, "requeue", code, output, AGENT_BUSY_ERROR)
-            elif not reason and code != 0 and _looks_conversation_lost(output):
+            elif not reason and code != 0 and _looks_conversation_lost(output, str(agent.get("vendor") or "")):
                 # The conversation existed at dispatch time (or the layout could not be checked)
                 # but the vendor refused the id anyway; recognise its own words and recover the
                 # same way the pre-dispatch check does, instead of failing the job.
@@ -2796,8 +2554,9 @@ def agent_chat_command(start: Path, ref: str) -> None:
         pids = _read_chat_pids(project / ".lockedin"); pids.pop(agent["id"], None)
         _write_chat_pids(project / ".lockedin", pids)
     if fresh:
-        conversation = new_id if agent.get("vendor") == "claude" else _discover_conversation(
-            str(agent.get("vendor") or ""), "", started=started, project=project)
+        adapter = agent_vendors.get(str(agent.get("vendor") or ""))
+        conversation = new_id if adapter.preassigns_conversation_id else adapter.discover_conversation(
+            "", started=started, project=project)
         if conversation:
             sync._request("POST", f"agents/{agent['id']}", {"conversation": conversation, "fresh": False})
             print(green("✓") + f" {bold(agent['name'])} now lives in conversation {dim(conversation)}.")
@@ -2822,25 +2581,9 @@ def agent_reset_command(start: Path, ref: str) -> None:
 
 
 def _purge_conversation(vendor: str, conversation: str) -> list[str]:
-    removed: list[str] = []
-    if not conversation: return removed
-    if vendor == "agy":
-        for path in (_agy_home() / "conversations").glob(f"{conversation}.db*"):
-            try: path.unlink(); removed.append(str(path))
-            except OSError: pass
-    elif vendor == "claude":
-        for path in (_claude_home() / "projects").glob(f"*/{conversation}.jsonl"):
-            try: path.unlink(); removed.append(str(path))
-            except OSError: pass
-        folder = next(iter((_claude_home() / "projects").glob(f"*/{conversation}")), None)
-        if folder and folder.is_dir():
-            shutil.rmtree(folder, ignore_errors=True); removed.append(str(folder))
-    elif vendor == "codex":
-        try:
-            out = subprocess.run([_vendor_binary("codex"), "delete", conversation], capture_output=True, text=True, timeout=60)
-            if out.returncode == 0: removed.append(f"codex session {conversation}")
-        except (RuntimeError, OSError, subprocess.SubprocessError): pass
-    return removed
+    if not conversation: return []
+    try: return agent_vendors.get(vendor).purge_conversation(conversation, binary=_vendor_binary)
+    except RuntimeError: return []
 
 
 def agent_retire_command(start: Path, ref: str, *, purge: bool) -> None:
@@ -2938,7 +2681,8 @@ def _run_worker(worker_id: str, project: str) -> None:
     def end(*_):
         nonlocal stop; stop = True
     signal.signal(signal.SIGTERM, end); signal.signal(signal.SIGINT, end)
-    _update_worker(worker_id, status="running", pid=os.getpid(), last_error="")
+    _update_worker(worker_id, status="running", pid=os.getpid(), last_error="",
+                   client_version=SCIENTIST_CLIENT_VERSION)
     while not stop:
         try:
             sync.sync_once()
@@ -3005,6 +2749,7 @@ def start_sync(account: dict, bubble: str, project: Path, *, announce: bool = Tr
     wid = secrets.token_hex(6); log = data_root() / "runtime" / "workers" / f"{wid}.log"; log.parent.mkdir(parents=True, exist_ok=True)
     rec = {"id": wid, "pid": 0, "project": str(project.resolve()), "server": account["server"], "user": account["user"], "workspace_id": account.get("workspace_id", ""),
            "bubble": bubble, "started_at": time.time(), "last_sync": time.time(), "last_error": "", "status": "starting",
+           "client_version": SCIENTIST_CLIENT_VERSION,
            # How this client is invoked here, so a headless agent turn is told the right command.
            "cli": cli_name()}
     data.setdefault("workers", {})[wid] = rec; save_workers(data)
@@ -3139,11 +2884,7 @@ def doctor_command(project: Path) -> None:
               "if this worker already runs as a dedicated user or inside its own VM.")
 
 
-VENDOR_INVOCATION = {
-    "codex": "start codex, then invoke $lockedin-scientist",
-    "claude": "start claude, then invoke /lockedin-scientist",
-    "agy": "start agy, then use /skills to select lockedin-scientist",
-}
+VENDOR_INVOCATION = {vendor: agent_vendors.get(vendor).invocation for vendor in VENDORS}
 
 
 def _connect_account(server: str, workspace_id: str, ticket: str) -> dict:
@@ -3564,6 +3305,123 @@ def resync_command(project: Path) -> None:
     start_sync(account, bubble, project, announce=False)
 
 
+def _restart_upgraded_worker(worker_id: str, *, wait_for_jobs: bool = False) -> str:
+    """Replace one pre-upgrade worker while preserving deliberate stops and in-flight turns."""
+    if wait_for_jobs:
+        while True:
+            rec = _worker_record(worker_id)
+            if not rec or rec.get("status") == "stopped": return "stopped"
+            if not rec.get("jobs") or not _alive(int(rec.get("pid", 0))): break
+            time.sleep(POLL_SECONDS)
+    rec = _worker_record(worker_id)
+    if not rec or rec.get("status") not in {"starting", "running", "degraded"}: return "stopped"
+    project = Path(str(rec.get("project") or "")).resolve()
+    if not project.is_dir(): return "missing"
+    binding = read_binding(project)
+    account = account_for_binding(binding)
+    if _alive(int(rec.get("pid", 0))): _stop_and_wait(worker_id)
+    start_sync(account, binding["bubble"], project, announce=False)
+    return "restarted"
+
+
+@contextmanager
+def _upgrade_lock():
+    """Serialize simultaneous curl installers without leaving a stale lock after a crash."""
+    path = data_root() / "runtime" / "upgrade.lock"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    stream = path.open("a+b")
+    acquired = False
+    try:
+        try:
+            if os.name == "nt":
+                import msvcrt
+                if stream.tell() == 0: stream.write(b"0"); stream.flush()
+                stream.seek(0)
+                msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            acquired = True
+        except (OSError, ImportError):
+            acquired = False
+        yield acquired
+    finally:
+        if acquired:
+            try:
+                if os.name == "nt":
+                    import msvcrt
+                    stream.seek(0); msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
+            except (OSError, ImportError): pass
+        stream.close()
+
+
+def upgrade_workers_command() -> None:
+    """Post-install migration: refresh skills and replace workers that were active beforehand.
+
+    Workers already marked stopped are intentionally excluded. That is essential to Stop Agents:
+    reinstalling software must not undo a security stop or bypass its local reauthorization step.
+    """
+    with _upgrade_lock() as acquired:
+        if not acquired:
+            print(dim("  Another Scientist installer is already finishing this upgrade."))
+            return
+        _upgrade_workers_locked()
+
+
+def _upgrade_workers_locked() -> None:
+    heading("Finishing Scientist upgrade", "Refreshing integrations and active project workers.")
+    _install_detected_skills()
+    records = load_workers().get("workers", {})
+    active = [(worker_id, dict(rec)) for worker_id, rec in records.items()
+              if rec.get("status") in {"starting", "running", "degraded"}
+              and rec.get("client_version") != SCIENTIST_CLIENT_VERSION]
+    current = [rec for rec in records.values()
+               if rec.get("status") in {"starting", "running", "degraded"}
+               and rec.get("client_version") == SCIENTIST_CLIENT_VERSION]
+    secure_stops = [dict(rec) for rec in records.values() if rec.get("status") == "stopped"
+                    and any(word in str(rec.get("last_error") or "").lower()
+                            for word in ("authorization was revoked", "secure mode", "stop agents"))]
+    restarted = deferred = 0
+    failures: list[str] = []
+    for worker_id, rec in active:
+        if rec.get("jobs") and _alive(int(rec.get("pid", 0))):
+            try:
+                subprocess.Popen(
+                    [sys.executable, str(Path(__file__).resolve()), "_upgrade-worker", worker_id],
+                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    start_new_session=os.name != "nt",
+                    creationflags=(subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP)
+                    if os.name == "nt" else 0,
+                )
+                deferred += 1
+            except OSError as exc:
+                failures.append(f"{rec.get('project') or worker_id}: could not defer restart ({exc})")
+            continue
+        try:
+            if _restart_upgraded_worker(worker_id) == "restarted": restarted += 1
+        except RuntimeError as exc:
+            detail = str(exc)
+            if "server returned 401" in detail:
+                detail = ("authorization was revoked by Stop Agents; run login for "
+                          f"{rec.get('server')}, then resync {rec.get('project')}")
+            failures.append(f"{rec.get('project') or worker_id}: {detail}")
+    if restarted: print(green("✓") + f" Restarted {restarted} active project worker(s).")
+    if deferred: print(green("✓") + f" {deferred} busy worker restart(s) will happen after their current turns finish.")
+    if not active: print(dim("  No outdated project workers needed restarting."))
+    if current: print(dim(f"  Left {len(current)} already-current project worker(s) untouched."))
+    for failure in failures: print(orange("•") + " " + failure)
+    if failures:
+        print(dim("  The client is updated; only the projects named above need local attention."))
+    if secure_stops:
+        print(orange("•") + " Workers stopped by Stop Agents remain stopped, as a security measure.")
+        for rec in secure_stops:
+            print(dim(f"  Reauthorize with `{cli_name()} login --server {rec.get('server')}`, then run "
+                      f"`{cli_name()} resync` in {rec.get('project')}."))
+
+
 def hard_reset(account: dict, bubble: str, project: Path, *, discard_overleaf: bool = False) -> None:
     heading("Hard reset", f"Replacing {project / '.lockedin'} from bubble {bubble}.")
     overleaf = project / ".lockedin" / "overleaf"
@@ -3654,12 +3512,16 @@ def _main() -> None:
     retire_p.add_argument("agent")
     retire_p.add_argument("--purge", action="store_true", help="Also delete the conversation from the vendor's store.")
     worker_p = sub.add_parser("_worker"); worker_p.add_argument("worker_id"); worker_p.add_argument("project")
+    upgrade_worker_p = sub.add_parser("_upgrade-worker"); upgrade_worker_p.add_argument("worker_id")
+    sub.add_parser("upgrade-workers", help=argparse.SUPPRESS)
     if len(sys.argv) == 1:
         warn_if_outdated()
         welcome()
         return
     args = parser.parse_args()
     if args.command == "_worker": _run_worker(args.worker_id, args.project); return
+    if args.command == "_upgrade-worker": _restart_upgraded_worker(args.worker_id, wait_for_jobs=True); return
+    if args.command == "upgrade-workers": upgrade_workers_command(); return
     if args.command == "login": login(args.server); return
     warn_if_outdated()
     if args.command == "ps": ps_command(); return

@@ -47,7 +47,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
       - run: |
-          uv run --python 3.13 --with pyinstaller pyinstaller --onefile --name ${{ matrix.name }} src/lockedin/scientist_cli.py
+          uv run --python 3.13 --with pyinstaller pyinstaller --onefile --paths src/lockedin --hidden-import agent_vendors --name ${{ matrix.name }} src/lockedin/scientist_cli.py
           "dist/${{ matrix.asset }}" --version
           uv run --python 3.13 python -c 'import hashlib, pathlib, sys; p=pathlib.Path(sys.argv[1]); print(f"{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.name}")' "dist/${{ matrix.asset }}" > "dist/${{ matrix.asset }}.sha256"
         shell: bash

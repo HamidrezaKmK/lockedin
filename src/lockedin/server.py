@@ -18,8 +18,14 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import quote
 
-from . import agents, assets, auth, bubbles, landing, models, paths, presence, service, setup_tickets, tagger, talks, workspaces
+from . import agent_vendors, agents, assets, auth, bubbles, landing, models, paths, presence, service, setup_tickets, tagger, talks, workspaces
 from . import scientist_cli, scientist_sync
+
+# Setup downloads must be a coherent snapshot of the running process. During a deploy the files
+# on disk can change just before systemd restarts this server; reading them per request could pair
+# an old one-file setup script with a new two-file client (or the reverse).
+SCIENTIST_CLIENT_SOURCE = Path(scientist_cli.__file__).read_text(encoding="utf-8")
+SCIENTIST_VENDOR_SOURCE = Path(agent_vendors.__file__).read_text(encoding="utf-8")
 
 
 # Display-math environments (numbered) vs theorem-like environments (boxed). Shared by the
@@ -38,7 +44,7 @@ _WORKER_PATH_RE = re.compile(r"^/api/scientist/v2/bubbles/([^/]+)(?:/|$)")
 # Keep this equal to ``scientist_cli.SCIENTIST_CLIENT_VERSION``. Bump both when a Scientist
 # release needs an installed client refresh; the dependency-free installed client cannot import
 # package metadata from this server.
-SCIENTIST_CLIENT_VERSION = "2026.09.06.1"
+SCIENTIST_CLIENT_VERSION = "2026.09.07.1"
 DEMO_ACCESS_MESSAGE = (
     "Lockedin is an experimental project and currently on demo, to be able to login "
     "and play with our project, email kamkarih@mit.edu"
@@ -1789,7 +1795,14 @@ def build_app():
     def scientist_client_source():
         """Serve the client matching this running server, including unmerged prototypes."""
         from fastapi.responses import PlainTextResponse
-        return PlainTextResponse(Path(scientist_cli.__file__).read_text(),
+        return PlainTextResponse(SCIENTIST_CLIENT_SOURCE,
+                                 headers={"Cache-Control": "no-store"})
+
+    @app.get("/setup/agent_vendors.py")
+    def scientist_vendor_source():
+        """Serve the adapter matching this running server's standalone Scientist client."""
+        from fastapi.responses import PlainTextResponse
+        return PlainTextResponse(SCIENTIST_VENDOR_SOURCE,
                                  headers={"Cache-Control": "no-store"})
 
     def _setup_script(ticket: str, request: Request, shell: str):
