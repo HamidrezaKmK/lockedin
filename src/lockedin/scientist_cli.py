@@ -72,6 +72,10 @@ AGENT_LOST_CONVERSATION_SIGNATURES = (
 )
 AGENT_COOLDOWN_SECONDS = 60
 AGENT_TURN_SECONDS = int(os.environ.get("LOCKEDIN_AGENT_TURN_SECONDS") or 20 * 60)
+# A vendor CLI that explicitly says it is reconnecting several times is not doing useful work.
+# Give transient outages a minute and a half, then fail visibly instead of burning the whole turn.
+AGENT_NETWORK_GRACE_SECONDS = int(os.environ.get("LOCKEDIN_AGENT_NETWORK_GRACE_SECONDS") or 90)
+AGENT_NETWORK_RECONNECT_SIGNATURE = "reconnecting... waiting for network"
 # Different agents may work at once. One agent never runs two turns — the server refuses that too.
 AGENT_MAX_PARALLEL = int(os.environ.get("LOCKEDIN_AGENT_MAX_PARALLEL") or 2)
 AGENT_OUTPUT_TAIL = 4000
@@ -2136,6 +2140,12 @@ def _agent_writable_roots(project: Path) -> list[tuple[Path, bool]]:
         (Path("/tmp"), True),
         (Path("/dev"), True),
     ]
+    # macOS normally sets TMPDIR to /var/folders/... rather than /tmp. Network/auth libraries and
+    # vendor CLIs use it even for read-only requests; denying it can surface misleadingly as
+    # "error sending request". Preserve the process's real temporary directory explicitly.
+    runtime_tmp = os.environ.get("TMPDIR", "").strip()
+    if runtime_tmp and Path(runtime_tmp).exists():
+        roots.append((Path(runtime_tmp), False))
     for candidate in (home / ".claude", home / ".claude.json", home / ".codex",
                       home / ".gemini", home / ".cache", home / ".npm"):
         if candidate.exists():
@@ -2204,9 +2214,10 @@ def _seatbelt_profile(writable_roots: list[Path]) -> str:
     """A permissive Seatbelt profile: everything allowed by default, file writes denied except
     beneath the given roots. Best-effort only — there is no macOS machine to test this against
     here — so it is kept small and easy to audit by hand rather than clever."""
-    lines = ["(version 1)", "(allow default)", "(deny file-write*)"]
+    lines = ["(version 1)", "(allow default)", "(allow network*)", "(deny file-write*)"]
     for root in writable_roots:
-        lines.append(f'(allow file-write* (subpath "{root}"))')
+        escaped = str(root.resolve()).replace("\\", "\\\\").replace('"', '\\"')
+        lines.append(f'(allow file-write* (subpath "{escaped}"))')
     return "\n".join(lines) + "\n"
 
 
@@ -2380,6 +2391,38 @@ class AgentRunner:
 
     def _pids(self) -> set[int]: return {entry["proc"].pid for entry in self.procs.values()}
 
+    def _heartbeat_agent(self, agent: dict, budget: dict) -> dict:
+        """Describe one agent without pretending that a live process implies useful progress.
+
+        The job id and log timestamps let the site distinguish a turn that only just started from
+        one that has been quiet for a long time.  They deliberately contain no log text: prompts
+        and model output can be private, while byte/time counters are enough for diagnosis.
+        """
+        item = {
+            "id": agent["id"],
+            "attached": agent_attached(agent, self.sync.root, ignore=self._pids()),
+            "budget": budget,
+            "confinement": confinement_mode(),
+            "turn_timeout_seconds": AGENT_TURN_SECONDS,
+        }
+        entry = next((value for value in self.procs.values()
+                      if value["agent"].get("id") == agent.get("id")), None)
+        if entry:
+            try:
+                stat = entry["log"].stat()
+                log_bytes, log_updated_at = stat.st_size, stat.st_mtime
+            except OSError:
+                log_bytes, log_updated_at = 0, entry["started"]
+            item["activity"] = {
+                "job_id": entry["job"]["id"],
+                "started_at": datetime.fromtimestamp(entry["started"], tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "last_output_at": datetime.fromtimestamp(log_updated_at, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "output_bytes": log_bytes,
+                "deadline_at": datetime.fromtimestamp(entry["started"] + AGENT_TURN_SECONDS,
+                                                       tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            }
+        return item
+
     @property
     def turns_disabled(self) -> bool:
         """Whether ``LOCKEDIN_AGENT_TURNS`` currently asks dispatch to pause; see the class docstring."""
@@ -2448,9 +2491,10 @@ class AgentRunner:
         budget, budget_error = self._budget(time.time())
         beat = self.sync._request("POST", "agents/heartbeat", {
             "worker_id": self.sync.worker_uid(),
-            "agents": [{"id": a["id"], "attached": agent_attached(a, self.sync.root, ignore=self._pids())}
-                       for a in agents],
+            "agents": [self._heartbeat_agent(a, budget) for a in agents],
             "running_job_ids": self.running_job_ids(),
+            # Kept at top level for compatibility with clients/tests that used the original
+            # telemetry shape. The authoritative per-agent copy above is what the server stores.
             "budget": budget, "confinement": confinement_mode()})
         if beat.get("secure_mode"):
             for job_id in list(self.procs):
@@ -2563,7 +2607,12 @@ class AgentRunner:
         for job_id, entry in list(self.procs.items()):
             proc = entry["proc"]
             if proc.poll() is None:
-                if "reason" not in entry and now - entry["started"] > AGENT_TURN_SECONDS:
+                age = now - entry["started"]
+                if ("reason" not in entry and age > AGENT_NETWORK_GRACE_SECONDS
+                        and _tail(entry["log"], AGENT_OUTPUT_TAIL).lower().count(
+                            AGENT_NETWORK_RECONNECT_SIGNATURE) >= 3):
+                    self._terminate(job_id, "the agent could not reach its model service after repeated reconnects")
+                elif "reason" not in entry and age > AGENT_TURN_SECONDS:
                     self._terminate(job_id, f"timed out after {AGENT_TURN_SECONDS // 60} minutes")
                 elif "deadline" in entry and now > entry["deadline"]:
                     try: os.killpg(proc.pid, signal.SIGKILL) if os.name != "nt" else proc.kill()

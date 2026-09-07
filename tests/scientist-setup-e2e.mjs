@@ -124,10 +124,10 @@ async function main() {
       nodes => nodes.map(node => node.className));
     assert.equal(segments.length, 2, `expected people and agents segments, saw ${segments}`);
     await agentsSegment.click();
-    const connect = page.locator(".presence-menu .presence-add", { hasText: "Connect an agent" });
+    const connect = page.locator(".presence-menu .presence-add", { hasText: "Manage agents" });
     await connect.waitFor({ state: "visible", timeout: 2_000 });
     await shoot(page, "setup-presence-menu");
-    step("the agents segment keeps Connect an agent one click away");
+    step("the agents segment keeps Manage agents one click away");
 
     await connect.click();
     const dialog = page.getByRole("dialog", { name: "Connect an agent" });

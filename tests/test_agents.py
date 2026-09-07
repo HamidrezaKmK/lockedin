@@ -391,6 +391,46 @@ class Jobs(AgentFixture):
         self.assertEqual(beat["cancelled"], [job["id"]])
         self.assertEqual((moved["status"], moved["agent_name"], moved["attempts"]), ("queued", "Bob", 2))
 
+    def test_repeated_cancel_and_assign_while_chat_is_open_only_offers_the_last_job(self):
+        """Stress the observed register-before-exit flow. Cancelled queued attempts must never
+        leak back into dispatch when the chat eventually closes and the worker polls again."""
+        ada = self.register(name="Ada", conversation="c1", worker_id="w1")
+        with paths.use_root(self.home):
+            cancelled_ids = []
+            for _ in range(20):
+                old = agents.create_job(self.slug, agent_id=ada["id"], mark_key=self.page_key)
+                cancelled_ids.append(old["id"])
+                agents.cancel_job(self.slug, old["id"])
+            final = agents.create_job(self.slug, agent_id=ada["id"], mark_key=self.page_key)
+            beat = agents.heartbeat(self.slug, worker_id="w1",
+                                    agents=[{"id": ada["id"], "attached": False}], running_job_ids=[])
+            snapshot = agents.overview(self.slug)
+        self.assertEqual([job["id"] for job in beat["jobs"]], [final["id"]])
+        self.assertEqual([job["id"] for job in snapshot["jobs"]["open"]], [final["id"]])
+        self.assertTrue(all(job["status"] == "cancelled" for job in snapshot["jobs"]["recent"]
+                            if job["id"] in cancelled_ids))
+
+    def test_heartbeat_progress_and_budget_reach_the_owner_overview(self):
+        ada = self.register(name="Ada", conversation="c1", worker_id="w1")
+        with paths.use_root(self.home):
+            job = agents.create_job(self.slug, agent_id=ada["id"], mark_key=self.page_key)
+            agents.start_job(self.slug, job["id"], worker_id="w1")
+            activity = {"job_id": job["id"], "started_at": "2026-09-07T17:20:56Z",
+                        "last_output_at": "2026-09-07T17:21:04Z", "output_bytes": 812,
+                        "deadline_at": "2026-09-07T17:40:56Z"}
+            agents.heartbeat(self.slug, worker_id="w1", running_job_ids=[job["id"]],
+                             agents=[{"id": ada["id"], "attached": False,
+                                      "budget": {"hour_used": 3, "hour_cap": 20,
+                                                 "day_used": 7, "day_cap": 100},
+                                      "confinement": "landlock", "turn_timeout_seconds": 1200,
+                                      "activity": activity}])
+            view = agents.overview(self.slug, workers=[{"worker_id": "w1", "state": "live"}])
+        row = view["agents"][0]
+        self.assertEqual(row["budget"]["hour_used"], 3)
+        self.assertEqual(row["confinement"], "landlock")
+        self.assertEqual(row["turn_timeout_seconds"], 1200)
+        self.assertEqual(view["jobs"]["open"][0]["activity"], activity)
+
     def test_a_queued_job_whose_mark_was_deleted_is_cancelled_at_heartbeat(self):
         agent = self.register(worker_id="w1")
         with paths.use_root(self.home):
@@ -560,7 +600,12 @@ class HttpFlow(unittest.TestCase):
 
                 beat = client.post("/api/scientist/v2/bubbles/diffusion/agents/heartbeat", headers=scientist,
                                    json={"worker_id": "w1", "agents": [{"id": agent_id, "attached": False}],
-                                         "running_job_ids": []})
+                                         "running_job_ids": [],
+                                         # Compatibility shape used by workers already running
+                                         # before per-agent telemetry was introduced.
+                                         "budget": {"hour_used": 4, "hour_cap": 20,
+                                                    "day_used": 9, "day_cap": 100},
+                                         "confinement": "landlock"})
                 self.assertEqual(beat.status_code, 200, beat.text)
                 self.assertEqual([j["id"] for j in beat.json()["jobs"]], [job_id])
                 self.assertEqual(beat.json()["jobs"][0]["mark"]["quote"], "The variance term")
@@ -570,6 +615,8 @@ class HttpFlow(unittest.TestCase):
                 self.assertEqual(started.status_code, 200, started.text)
                 view = client.get("/api/bubbles/diffusion/agents").json()
                 self.assertEqual(view["agents"][0]["status"], "working")
+                self.assertEqual(view["agents"][0]["budget"]["hour_used"], 4)
+                self.assertEqual(view["agents"][0]["confinement"], "landlock")
                 self.assertEqual(view["jobs"]["by_mark"][key][0]["status"], "running")
 
                 replied = client.post(f"/api/scientist/v2/bubbles/diffusion/jobs/{job_id}/reply",

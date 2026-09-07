@@ -1094,6 +1094,10 @@ def build_app():
         worker_id: str
         agents: list[dict] = []
         running_job_ids: list[str] = []
+        # Older agent-queue clients sent these once for the whole worker. New clients include
+        # them on each agent so mixed configurations remain representable; accept both shapes.
+        budget: dict = {}
+        confinement: str = ""
 
     class JobCreateIn(BaseModel):
         agent_id: str
@@ -2042,7 +2046,13 @@ def build_app():
     def scientist_agent_heartbeat(slug: str, body: AgentHeartbeatIn, user: str = Depends(scientist_user)):
         """The worker's per-poll check-in: which agents are attached, which turns still run."""
         home = _open_bubble(user, slug)
-        return service.agent_heartbeat(home, slug, worker_id=body.worker_id, agents=body.agents,
+        reported = [dict(item) for item in body.agents]
+        for item in reported:
+            if body.budget and "budget" not in item:
+                item["budget"] = body.budget
+            if body.confinement and "confinement" not in item:
+                item["confinement"] = body.confinement
+        return service.agent_heartbeat(home, slug, worker_id=body.worker_id, agents=reported,
                                        running_job_ids=body.running_job_ids,
                                        secure=auth.secure_mode(user), owner=user)
 

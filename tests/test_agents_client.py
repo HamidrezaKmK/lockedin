@@ -529,6 +529,27 @@ class AlwaysOfferFakeAgentServer(FakeAgentServer):
         return {}
 
 
+class CancelAfterStartFakeAgentServer(FakeAgentServer):
+    """Offer once, then tell the worker that the user cancelled the running turn."""
+
+    def request(self, method: str, suffix: str, body: dict | None = None) -> dict:
+        self.calls.append((method, suffix, body))
+        if suffix == "agents/heartbeat":
+            self._heartbeat_calls += 1
+            if not getattr(self, "started", False):
+                return {"jobs": self.heartbeat_jobs, "cancelled": []}
+            if not getattr(self, "cancel_sent", False):
+                self.cancel_sent = True
+                return {"jobs": [], "cancelled": [self.heartbeat_jobs[0]["id"]]}
+            return {"jobs": [], "cancelled": []}
+        if suffix.endswith("/start"):
+            self.started = True
+            return {"job": {}}
+        if suffix.endswith("/result"):
+            return {"job": {}}
+        return {}
+
+
 class RecoveringFakeAgentServer(FakeAgentServer):
     """Simulates what the real service does when the runner clears a conversation: a
     ``POST agents/<id>`` update changes the agent record, and the job keeps being offered (it was
@@ -625,7 +646,10 @@ class AgentRunnerEndToEndTests(unittest.TestCase):
             heartbeats = fake.calls_for("agents/heartbeat")
             self.assertEqual(len(heartbeats), 1)
             self.assertEqual(heartbeats[0][2]["worker_id"], "w1")
-            self.assertEqual(heartbeats[0][2]["agents"], [{"id": "ag-1", "attached": False}])
+            reported = heartbeats[0][2]["agents"][0]
+            self.assertEqual((reported["id"], reported["attached"]), ("ag-1", False))
+            self.assertIn("budget", reported)
+            self.assertIn("confinement", reported)
 
             starts = fake.calls_for("jobs/j-000001/start")
             self.assertEqual(len(starts), 1)
@@ -680,9 +704,68 @@ class AgentRunnerEndToEndTests(unittest.TestCase):
                 runner = self._runner(project, fake)
                 runner.tick()
                 heartbeats = fake.calls_for("agents/heartbeat")
-                self.assertEqual(heartbeats[0][2]["agents"], [{"id": "ag-1", "attached": True}])
+                reported = heartbeats[0][2]["agents"][0]
+                self.assertEqual((reported["id"], reported["attached"]), ("ag-1", True))
                 self.assertEqual(fake.calls_for("jobs/j-000001/start"), [])
                 self.assertEqual(runner.procs, {})
+
+    def test_open_chat_then_cancel_a_hung_turn_never_duplicates_a_turn(self):
+        """Regression for the Ada demo sequence: registration happens inside an open Codex chat,
+        so repeated polls must leave the job queued. Once the chat closes exactly one turn may
+        start, and cancelling that hung turn must kill it without another dispatch."""
+        codex_agent = {**AGENT_AG1, "vendor": "codex", "conversation": "thread-1"}
+        project = _build_project({"ag-1": codex_agent}, {"w1": ["ag-1"]})
+        job = {"id": "j-000001", "agent": codex_agent, "mark": PAGE_MARK, "instruction": ""}
+        fake = CancelAfterStartFakeAgentServer(heartbeat_jobs=[job])
+        # Each offered queued job is checked once for the heartbeat and again immediately before
+        # dispatch, so fifty open-chat polls consume one hundred positive observations.
+        attached = [True] * 100 + [False] * 40
+        script = "import time; time.sleep(30)"
+        with tempfile.TemporaryDirectory() as data_home, patch.dict(
+                os.environ, {"LOCKEDIN_SCIENTIST_HOME": data_home}), patch.object(
+                scientist_cli, "agent_attached", side_effect=lambda *a, **kw: attached.pop(0)), patch.object(
+                scientist_cli, "conversation_exists", return_value=True), patch.object(
+                scientist_cli, "agent_turn_command", lambda agent, prompt, **kw: _fake_vendor_cmd(script)):
+            runner = self._runner(project, fake)
+            for _ in range(50):
+                runner.tick()
+            self.assertEqual(fake.calls_for("jobs/j-000001/start"), [])
+            self.assertEqual(runner.procs, {})
+
+            runner.tick()  # the original chat closed: one and only one headless turn starts
+            self.assertEqual(len(fake.calls_for("jobs/j-000001/start")), 1)
+            self.assertIn("j-000001", runner.procs)
+            runner.tick()  # cancellation reaches the next heartbeat
+            deadline = time.time() + 10
+            while runner.procs and time.time() < deadline:
+                time.sleep(0.05)
+                runner.tick()
+            self.assertEqual(runner.procs, {})
+            self.assertEqual(len(fake.calls_for("jobs/j-000001/start")), 1)
+            results = fake.calls_for("jobs/j-000001/result")
+            self.assertEqual(len(results), 1)
+            self.assertEqual(results[0][2]["status"], "failed")
+            self.assertEqual(results[0][2]["error"], "cancelled by the user")
+
+    def test_running_heartbeat_exposes_only_progress_counters_and_deadline(self):
+        project = _build_project({"ag-1": AGENT_AG1}, {"w1": ["ag-1"]})
+        job = {"id": "j-000001", "agent": AGENT_AG1, "mark": PAGE_MARK, "instruction": ""}
+        fake = FakeAgentServer(heartbeat_jobs=[job])
+        script = "import time; print('started', flush=True); time.sleep(30)"
+        with tempfile.TemporaryDirectory() as data_home, patch.dict(
+                os.environ, {"LOCKEDIN_SCIENTIST_HOME": data_home}), patch.object(
+                scientist_cli, "agent_turn_command", lambda agent, prompt, **kw: _fake_vendor_cmd(script)):
+            runner = self._runner(project, fake)
+            runner.tick()
+            time.sleep(0.1)
+            runner.tick()
+            item = fake.calls_for("agents/heartbeat")[-1][2]["agents"][0]
+            self.assertEqual(item["activity"]["job_id"], "j-000001")
+            self.assertGreater(item["activity"]["output_bytes"], 0)
+            self.assertTrue(item["activity"]["last_output_at"].endswith("Z"))
+            self.assertTrue(item["activity"]["deadline_at"].endswith("Z"))
+            self.assertNotIn("output", item["activity"])
+            runner.shutdown()
 
     def test_a_fresh_agent_learns_its_new_conversation_id(self):
         fresh_agent = {"id": "ag-1", "name": "Ada", "vendor": "agy", "conversation": "", "model": "", "fresh": True}
@@ -745,6 +828,29 @@ class AgentRunnerEndToEndTests(unittest.TestCase):
             self.assertEqual(len(results), 1)
             self.assertEqual(results[0][2]["status"], "failed")
             self.assertIn("timed out", results[0][2]["error"])
+
+    def test_repeated_vendor_network_reconnects_fail_fast(self):
+        project = _build_project({"ag-1": AGENT_AG1}, {"w1": ["ag-1"]})
+        job = {"id": "j-000001", "agent": AGENT_AG1, "mark": PAGE_MARK, "instruction": ""}
+        fake = FakeAgentServer(heartbeat_jobs=[job])
+        script = ("import time; print('Reconnecting... waiting for network', flush=True); "
+                  "print('Reconnecting... waiting for network', flush=True); "
+                  "print('Reconnecting... waiting for network', flush=True); time.sleep(30)")
+        with tempfile.TemporaryDirectory() as data_home, patch.dict(
+                os.environ, {"LOCKEDIN_SCIENTIST_HOME": data_home}), patch.object(
+                scientist_cli, "AGENT_NETWORK_GRACE_SECONDS", 0), patch.object(
+                scientist_cli, "agent_turn_command", lambda agent, prompt, **kw: _fake_vendor_cmd(script)):
+            runner = self._runner(project, fake)
+            runner.tick()
+            time.sleep(0.1)
+            deadline = time.time() + 10
+            while runner.procs and time.time() < deadline:
+                runner.tick()
+                time.sleep(0.05)
+            self.assertEqual(runner.procs, {})
+            result = fake.calls_for("jobs/j-000001/result")[0][2]
+            self.assertEqual(result["status"], "failed")
+            self.assertIn("repeated reconnects", result["error"])
 
     def test_a_busy_chat_error_requeues_instead_of_failing_and_blocks_redispatch(self):
         """Real captured failure: `codex exec resume <id>` exited 1 with a thread-store conflict
@@ -1123,6 +1229,20 @@ class ConfinementModeTests(unittest.TestCase):
 
 def _landlock_available() -> bool:
     return scientist_cli.landlock_abi() >= 1
+
+
+class SeatbeltProfileTests(unittest.TestCase):
+    def test_macos_temp_directory_and_network_are_explicitly_allowed(self):
+        with tempfile.TemporaryDirectory() as project_dir, tempfile.TemporaryDirectory() as mac_tmp, patch.dict(
+                os.environ, {"TMPDIR": mac_tmp}):
+            project = Path(project_dir)
+            (project / ".lockedin").mkdir()
+            roots = [root for root, required in scientist_cli._agent_writable_roots(project)
+                     if required or root.exists()]
+            profile = scientist_cli._seatbelt_profile(roots)
+        self.assertIn("(allow network*)", profile)
+        self.assertIn(f'(allow file-write* (subpath "{Path(mac_tmp).resolve()}"))', profile)
+        self.assertIn(f'(allow file-write* (subpath "{(project / ".lockedin").resolve()}"))', profile)
 
 
 class RealLandlockConfinementTests(unittest.TestCase):

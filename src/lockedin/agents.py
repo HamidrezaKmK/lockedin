@@ -907,11 +907,21 @@ def heartbeat(slug: str, *, worker_id: str, agents: list[dict], running_job_ids:
                if a.get("worker_id") == worker_id and (not owner or _owner_of(a) == owner)}
         for aid, agent in mine.items():
             item = reported.get(aid, {})
-            agent["heartbeat"] = {"at": now, "attached": bool(item.get("attached"))}
+            heartbeat = {"at": now, "attached": bool(item.get("attached"))}
+            activity = item.get("activity")
+            if isinstance(activity, dict) and activity.get("job_id"):
+                heartbeat["activity"] = {
+                    key: activity.get(key) for key in
+                    ("job_id", "started_at", "last_output_at", "output_bytes", "deadline_at")
+                }
+            agent["heartbeat"] = heartbeat
             if "budget" in item:
                 agent["budget"] = item.get("budget")
             if "confinement" in item:
                 agent["confinement"] = str(item.get("confinement") or "")
+            if "turn_timeout_seconds" in item:
+                try: agent["turn_timeout_seconds"] = max(0, int(item.get("turn_timeout_seconds") or 0))
+                except (TypeError, ValueError): pass
         if mine:
             _save_agents(slug, registry)
         data = _jobs(slug)
@@ -977,6 +987,14 @@ def overview(slug: str, *, workers: list[dict] | None = None, viewer: str = "") 
         jobs = [j for j in jobs if j.get("owner", "") == viewer]
     running = {j["agent_id"] for j in jobs if j.get("status") == "running"}
     summaries = sorted((_job_summary(j, agents) for j in jobs), key=lambda j: j["created_at"])
+    activity_by_job = {}
+    for agent in agents.values():
+        activity = (agent.get("heartbeat") or {}).get("activity") or {}
+        if activity.get("job_id"):
+            activity_by_job[str(activity["job_id"])] = dict(activity)
+    for job in summaries:
+        if job["id"] in activity_by_job:
+            job["activity"] = activity_by_job[job["id"]]
     by_mark: dict[str, list[dict]] = {}
     for job in summaries:
         by_mark.setdefault(job["mark_key"], []).append(job)

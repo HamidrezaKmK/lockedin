@@ -5448,8 +5448,9 @@
           (a.turns_last_hour||0)+" this hour · "+(a.turns_today||0)+" today"));
         if(a.budget){
           const bud=a.budget;
-          const budLine=el("span",{},bud.hour_used+"/"+bud.hour_cap+" this hour · "+
-            bud.day_used+"/"+bud.day_cap+" today");
+          const hourLeft=bud.hour_cap>0?Math.max(0,bud.hour_cap-bud.hour_used):"unlimited";
+          const dayLeft=bud.day_cap>0?Math.max(0,bud.day_cap-bud.day_used):"unlimited";
+          const budLine=el("span",{},hourLeft+" turns left this hour · "+dayLeft+" left today");
           if(bud.exhausted){
             budLine.style.color="var(--warn)";
             const at=formatResumesAt(bud.resumes_at);
@@ -5497,12 +5498,12 @@
       menu.append(el("div",{class:"presence-group"},"Agents whose folder is not syncing"));
       orphanAgents.forEach(workerAgentRow);
     }
-    // Always the last word in this menu: whatever is or isn't syncing above, adding another
-    // agent is one click away, not a separate round button elsewhere in the header.
+    // Always the last word in this menu: setup, attachment and troubleshooting belong under a
+    // management label. A plus falsely implied that this entry could only create another agent.
     menu.append(el("button",{class:"presence-item presence-add",
       onclick:()=>{ closePresenceMenu(); openScientistSetup(S.bubble); }},
-      ic("plus"),
-      el("span",{class:"presence-name"},"Connect an agent")));
+      ic("settings"),
+      el("span",{class:"presence-name"},"Manage agents")));
     }
     return menu;
   }

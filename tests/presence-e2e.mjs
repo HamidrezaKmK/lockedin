@@ -218,7 +218,7 @@ async function main() {
     const menuText = await menu.innerText();
     for (const expected of ["thesis-repo", "side-notes", "old-clone",
                             "3 folders syncing", "no agents",
-                            "2 directories are syncing this bubble", "Connect an agent"]) {
+                            "2 directories are syncing this bubble", "Manage agents"]) {
       assert.ok(menuText.includes(expected), `dropdown is missing ${expected}:\n${menuText}`);
     }
     assert.ok(!menuText.includes(username), `the agents menu must not list people:\n${menuText}`);

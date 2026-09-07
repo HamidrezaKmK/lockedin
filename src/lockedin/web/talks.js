@@ -1225,15 +1225,31 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     const list = (M.jobs && key && M.jobs[key]) || [];
     return list.length ? list[list.length - 1] : null;
   }
+  function jobAge(iso) {
+    const then = Date.parse(iso || "");
+    if (!Number.isFinite(then)) return "";
+    const seconds = Math.max(0, Math.floor((Date.now() - then) / 1000));
+    if (seconds < 60) return seconds + "s";
+    if (seconds < 3600) return Math.floor(seconds / 60) + "m";
+    return Math.floor(seconds / 3600) + "h " + Math.floor((seconds % 3600) / 60) + "m";
+  }
   function jobChip(key) {
     const job = latestJob(key);
     if (!job) return "";
+    const age = jobAge(job.status === "running" ? job.started_at : job.created_at);
+    const agent = M.agents.find(a => a.id === job.agent_id) || {};
+    const quiet = job.activity && jobAge(job.activity.last_output_at);
+    const deadline = job.activity && jobAge(job.activity.deadline_at);
     const title = job.status === "failed" && job.error ? job.error
+      : job.status === "queued" && agent.status === "attached" ? job.agent_name + "'s chat is open; it will start after the chat closes"
+      : job.status === "queued" && agent.status === "offline" ? job.agent_name + "'s project folder is not syncing"
       : job.status === "queued" ? "waiting for " + job.agent_name + "'s sync worker"
-      : job.status === "running" ? job.agent_name + " is on it"
+      : job.status === "running" ? job.agent_name + " has been working for " + (age || "a moment")
+          + (quiet ? "; last output " + quiet + " ago" : "")
+          + (deadline && job.activity.deadline_at ? "; the worker has a hard deadline" : "")
       : job.status === "done" ? "answered by " + job.agent_name : job.error || job.status;
     return `<span class="tk-job ${esc(job.status)}" data-jobmenu="${esc(job.id)}" title="${esc(title)}">${
-      LI_IC("agent")} ${esc(JOB_WORD[job.status] || job.status)} · ${esc(job.agent_name || "agent")}</span>`;
+      LI_IC("agent")} ${esc(JOB_WORD[job.status] || job.status)}${age && (job.status === "queued" || job.status === "running") ? " " + esc(age) : ""} · ${esc(job.agent_name || "agent")}</span>`;
   }
   function paintJobChips(host) {
     (host || document).querySelectorAll(".tk-note[data-jobkey]").forEach(card => {
