@@ -18,6 +18,8 @@ path, unaffected by the ticket having expired.
 """
 from __future__ import annotations
 
+import os
+import re
 import secrets
 import threading
 import time
@@ -34,6 +36,16 @@ MAX_TICKETS = 500
 # fourth copy of them in the frontend.
 INSTALL_UNIX = "curl -fsSL https://raw.githubusercontent.com/HamidrezaKmK/lockedin/main/install.sh | bash"
 INSTALL_POWERSHELL = "irm https://raw.githubusercontent.com/HamidrezaKmK/lockedin/main/install.ps1 | iex"
+
+DEFAULT_CLIENT_NAME = "lockedin-scientist"
+
+
+def client_name() -> str:
+    """The command this server installs. A development instance names its own, so its setup
+    link can never replace the production client on a machine that syncs both."""
+    name = (os.environ.get("LOCKEDIN_CLIENT_NAME") or "").strip()
+    return name if re.fullmatch(r"[a-z][a-z0-9_-]{0,39}", name) else DEFAULT_CLIENT_NAME
+
 
 _LOCK = threading.Lock()
 # ticket id -> {user, token, workspace_id, slug, created_at}
@@ -105,13 +117,20 @@ def unix_script(origin: str, ticket: str, workspace_id: str, slug: str) -> str:
     also the case where the client is least likely to be installed already (a fresh cloud box),
     so failing there would break the one path that could have set it up. With nobody to ask, the
     directory the script was run from *is* the project, which is what a person would have answered.
+
+    A server's :func:`client_name` decides which command this installs. The production name keeps
+    today's script byte-for-byte, since a change there would touch every machine already synced to
+    it. Any other name skips the public installer entirely and writes a self-contained client and
+    shim under that name, so a development link can never overwrite the production command.
     """
-    connect = (f"lockedin-scientist connect \\\n"
-               f"    --server {origin!r} \\\n"
-               f"    --workspace {workspace_id!r} \\\n"
-               f"    --bubble {slug!r} \\\n"
-               f"    --ticket {ticket!r}")
-    return f"""#!/usr/bin/env bash
+    name = client_name()
+    if name == DEFAULT_CLIENT_NAME:
+        connect = (f"lockedin-scientist connect \\\n"
+                   f"    --server {origin!r} \\\n"
+                   f"    --workspace {workspace_id!r} \\\n"
+                   f"    --bubble {slug!r} \\\n"
+                   f"    --ticket {ticket!r}")
+        return f"""#!/usr/bin/env bash
 set -euo pipefail
 
 echo "Installing lockedin-scientist…"
@@ -139,6 +158,53 @@ else
 fi
 """
 
+    connect = (f"{name} connect \\\n"
+               f"    --server {origin!r} \\\n"
+               f"    --workspace {workspace_id!r} \\\n"
+               f"    --bubble {slug!r} \\\n"
+               f"    --ticket {ticket!r}")
+    return f"""#!/usr/bin/env bash
+set -euo pipefail
+
+echo "Installing {name} (a non-production LockedIn Scientist client)…"
+
+# Named after this server instance, not "lockedin-scientist" — so this link can never replace
+# the production client on a machine that also syncs a production bubble.
+client_root="$HOME/.local/share/{name}/client"
+mkdir -p "$client_root" "$HOME/.local/bin"
+
+python="$(command -v python3 || command -v python || true)"
+if [ -z "$python" ]; then
+  echo "Python 3.11+ is required (install it and rerun this link)." >&2
+  exit 1
+fi
+
+client_tmp="$(mktemp)"
+trap 'rm -f "$client_tmp"' EXIT
+curl -fsSL {(origin + '/setup/scientist_cli.py')!r} -o "$client_tmp"
+install -m 0644 "$client_tmp" "$client_root/scientist_cli.py"
+
+cat > "$HOME/.local/bin/{name}" <<SHIM
+#!/usr/bin/env bash
+export LOCKEDIN_SCIENTIST_HOME="$HOME/.local/share/{name}"
+export LOCKEDIN_SCIENTIST_CLI_NAME="{name}"
+exec "$python" "$client_root/scientist_cli.py" "\\$@"
+SHIM
+chmod 0755 "$HOME/.local/bin/{name}"
+
+export PATH="$HOME/.local/bin:$PATH"
+
+# stderr is silenced *before* the open is attempted: bash applies redirections left to right,
+# so the other order lets "/dev/tty: No such device" escape to an agent's log.
+if : 2>/dev/null < /dev/tty; then
+  exec {connect} < /dev/tty
+else
+  echo "No terminal to ask on — connecting the current directory: $PWD"
+  exec {connect} \\
+    --project "$PWD"
+fi
+"""
+
 
 def powershell_script(origin: str, ticket: str, workspace_id: str, slug: str) -> str:
     """The PowerShell the Windows snippet pipes into ``iex``.
@@ -146,16 +212,21 @@ def powershell_script(origin: str, ticket: str, workspace_id: str, slug: str) ->
     Same two environments as :func:`unix_script`. Read-Host reads the console directly, so there
     is no ``/dev/tty`` dance — but with input redirected (an agent, CI) it cannot prompt either,
     and the current directory stands in for the answer.
+
+    Mirrors :func:`unix_script`'s split on :func:`client_name`: the production name keeps today's
+    script exactly, any other name skips the public installer and writes its own client and shim.
     """
     def quote(value: str) -> str:
         return "'" + str(value).replace("'", "''") + "'"
 
-    connect = (f"lockedin-scientist connect `\n"
-               f"    --server {quote(origin)} `\n"
-               f"    --workspace {quote(workspace_id)} `\n"
-               f"    --bubble {quote(slug)} `\n"
-               f"    --ticket {quote(ticket)}")
-    return f"""$ErrorActionPreference = 'Stop'
+    name = client_name()
+    if name == DEFAULT_CLIENT_NAME:
+        connect = (f"lockedin-scientist connect `\n"
+                   f"    --server {quote(origin)} `\n"
+                   f"    --workspace {quote(workspace_id)} `\n"
+                   f"    --bubble {quote(slug)} `\n"
+                   f"    --ticket {quote(ticket)}")
+        return f"""$ErrorActionPreference = 'Stop'
 Write-Host "Installing lockedin-scientist…"
 {INSTALL_POWERSHELL}
 
@@ -165,6 +236,60 @@ $client = Join-Path $clientRoot 'scientist_cli.py'
 $clientTemp = Join-Path $clientRoot ("scientist_cli." + [guid]::NewGuid().ToString('N') + '.tmp')
 Invoke-WebRequest {quote(origin + '/setup/scientist_cli.py')} -OutFile $clientTemp
 Move-Item -Force -Path $clientTemp -Destination $client
+
+if ([Console]::IsInputRedirected) {{
+  Write-Host "No terminal to ask on - connecting the current directory: $PWD"
+  {connect} `
+    --project "$PWD"
+}} else {{
+  {connect}
+}}
+"""
+
+    connect = (f"{name} connect `\n"
+               f"    --server {quote(origin)} `\n"
+               f"    --workspace {quote(workspace_id)} `\n"
+               f"    --bubble {quote(slug)} `\n"
+               f"    --ticket {quote(ticket)}")
+    return f"""$ErrorActionPreference = 'Stop'
+Write-Host "Installing {name} (a non-production LockedIn Scientist client)…"
+
+# Named after this server instance, not "lockedin-scientist" — so this link can never replace
+# the production client on a machine that also syncs a production bubble.
+$python = $null
+if ($env:PYTHON) {{ $python = Get-Command $env:PYTHON -ErrorAction SilentlyContinue }}
+if (-not $python) {{ $python = Get-Command python -ErrorAction SilentlyContinue }}
+if (-not $python) {{ $python = Get-Command python3 -ErrorAction SilentlyContinue }}
+if (-not $python) {{ throw 'Python 3.11+ is required. Install Python from python.org, then rerun this command.' }}
+
+$clientRoot = Join-Path $env:LOCALAPPDATA '{name}\\client'
+$bin = Join-Path $env:LOCALAPPDATA '{name}\\bin'
+New-Item -ItemType Directory -Force -Path $clientRoot, $bin | Out-Null
+$client = Join-Path $clientRoot 'scientist_cli.py'
+$clientTemp = Join-Path $clientRoot ("scientist_cli." + [guid]::NewGuid().ToString('N') + '.tmp')
+Invoke-WebRequest {quote(origin + '/setup/scientist_cli.py')} -OutFile $clientTemp
+Move-Item -Force -Path $clientTemp -Destination $client
+
+"@echo off`r`nsetlocal`r`nset LOCKEDIN_SCIENTIST_HOME=$env:LOCALAPPDATA\\{name}`r`nset LOCKEDIN_SCIENTIST_CLI_NAME={name}`r`n`"$($python.Source)`" `"$client`" %*`r`n" | Set-Content (Join-Path $bin '{name}.cmd') -NoNewline
+
+# Persist the command directory for future terminals and update this one immediately. Avoid
+# setx: it can truncate a long PATH and does not affect the current PowerShell process.
+$userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+$userEntries = @($userPath -split ';' | Where-Object {{ $_ }})
+$hasUserEntry = $userEntries | Where-Object {{ $_.TrimEnd('\\') -ieq $bin.TrimEnd('\\') }}
+if (-not $hasUserEntry) {{
+  try {{
+    [Environment]::SetEnvironmentVariable('Path', (($userEntries + $bin) -join ';'), 'User')
+    Write-Host "Added $bin to your user PATH."
+  }} catch {{
+    Write-Warning "Could not update your user PATH. Run this command directly: $bin\\{name}.cmd"
+  }}
+}}
+$sessionEntries = @($env:Path -split ';' | Where-Object {{ $_ }})
+$hasSessionEntry = $sessionEntries | Where-Object {{ $_.TrimEnd('\\') -ieq $bin.TrimEnd('\\') }}
+if (-not $hasSessionEntry) {{ $env:Path = "$bin;$env:Path" }}
+
+Write-Host "Updated command: $bin\\{name}.cmd"
 
 if ([Console]::IsInputRedirected) {{
   Write-Host "No terminal to ask on - connecting the current directory: $PWD"

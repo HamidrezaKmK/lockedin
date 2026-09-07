@@ -14,7 +14,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
-from lockedin import assets, bubbles, paths, scientist_cli, scientist_sync, service
+from lockedin import assets, bubbles, paths, scientist_cli, scientist_sync, service, setup_tickets
 from lockedin import server
 
 
@@ -1147,6 +1147,69 @@ class ScientistProfileAndWorkersTest(unittest.TestCase):
             path.write_text("# My skill\n")
             with self.assertRaisesRegex(RuntimeError, "Refusing to overwrite"):
                 scientist_cli.setup_vendor_skill("claude", home=Path(directory))
+
+
+
+class SetupScriptClientNameTest(unittest.TestCase):
+    """A development server must never mint a link that overwrites the production client."""
+
+    def test_client_name_defaults_when_env_unset(self):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("LOCKEDIN_CLIENT_NAME", None)
+            self.assertEqual(setup_tickets.client_name(), setup_tickets.DEFAULT_CLIENT_NAME)
+
+    def test_client_name_rejects_junk(self):
+        for junk in ("../evil", "Has Spaces", ""):
+            with patch.dict(os.environ, {"LOCKEDIN_CLIENT_NAME": junk}):
+                self.assertEqual(setup_tickets.client_name(), setup_tickets.DEFAULT_CLIENT_NAME)
+
+    def test_unix_script_default_is_the_production_installer(self):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("LOCKEDIN_CLIENT_NAME", None)
+            script = setup_tickets.unix_script("https://lockedin.codes", "t", "ws", "slug")
+        self.assertIn(setup_tickets.INSTALL_UNIX, script)
+        self.assertIn(".local/share}/lockedin-scientist/client", script)
+        self.assertIn("lockedin-scientist connect", script)
+        self.assertNotIn("lockedin-scientist-dev", script)
+
+    def test_unix_script_with_custom_name_never_touches_the_production_client(self):
+        with patch.dict(os.environ, {"LOCKEDIN_CLIENT_NAME": "lockedin-scientist-dev"}):
+            script = setup_tickets.unix_script("https://lockedin.codes", "t", "ws", "slug")
+        self.assertNotIn(setup_tickets.INSTALL_UNIX, script)
+        self.assertNotIn("raw.githubusercontent.com", script)
+        self.assertIn(".local/share/lockedin-scientist-dev/client", script)
+        self.assertIn('"$HOME/.local/bin/lockedin-scientist-dev"', script)
+        self.assertIn("LOCKEDIN_SCIENTIST_HOME", script)
+        self.assertIn("LOCKEDIN_SCIENTIST_CLI_NAME", script)
+        self.assertIn("lockedin-scientist-dev connect", script)
+        self.assertNotIn("/lockedin-scientist/client", script)
+
+    def test_powershell_script_default_is_the_production_installer(self):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("LOCKEDIN_CLIENT_NAME", None)
+            script = setup_tickets.powershell_script("https://lockedin.codes", "t", "ws", "slug")
+        self.assertIn(setup_tickets.INSTALL_POWERSHELL, script)
+        self.assertIn("LockedInScientist/client", script)
+        self.assertIn("lockedin-scientist connect", script)
+        self.assertNotIn("lockedin-scientist-dev", script)
+        self.assertNotIn("SetEnvironmentVariable('Path'", script)
+        self.assertNotIn("'User'", script)
+        self.assertNotIn("setlocal", script)
+
+    def test_powershell_script_with_custom_name_never_touches_the_production_client(self):
+        with patch.dict(os.environ, {"LOCKEDIN_CLIENT_NAME": "lockedin-scientist-dev"}):
+            script = setup_tickets.powershell_script("https://lockedin.codes", "t", "ws", "slug")
+        self.assertNotIn(setup_tickets.INSTALL_POWERSHELL, script)
+        self.assertNotIn("raw.githubusercontent.com", script)
+        self.assertIn("lockedin-scientist-dev\\client", script)
+        self.assertIn("lockedin-scientist-dev.cmd", script)
+        self.assertIn("LOCKEDIN_SCIENTIST_HOME", script)
+        self.assertIn("LOCKEDIN_SCIENTIST_CLI_NAME", script)
+        self.assertIn("lockedin-scientist-dev connect", script)
+        self.assertNotIn("LockedInScientist/client", script)
+        self.assertIn("SetEnvironmentVariable('Path'", script)
+        self.assertIn("'User'", script)
+        self.assertIn("setlocal", script)
 
 
 if __name__ == "__main__":

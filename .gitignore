@@ -229,3 +229,4 @@ ops/tunnel.env
 ops/lockedin.env
 ops/monitor.log
 ops/.state/
+ops/lockedin-dev.env
