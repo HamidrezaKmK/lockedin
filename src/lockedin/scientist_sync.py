@@ -72,8 +72,14 @@ def _page_feedback_items(slug: str) -> list[dict]:
     return items
 
 
-def _indexed_context(slug: str) -> dict[str, bytes]:
-    """Generated JSON routing layer for token-bounded Scientist discovery."""
+def _indexed_context(slug: str, *, owner: str = "") -> dict[str, bytes]:
+    """Generated JSON routing layer for token-bounded Scientist discovery.
+
+    ``owner``, when given, restricts ``indexes/agents.json`` and ``indexes/jobs.json`` (and the
+    counts in ``index.json``) to that owner's agents and jobs — agents belong to one person and
+    a Scientist client should never learn that another member's agent exists. The default ``""``
+    means everything on the bubble, which every pre-existing caller relies on.
+    """
     records = talks.ensure_sync_ids(slug)
     sync_by_talk = {str(rec["id"]): str(rec["sync_id"]) for rec in records}
     talk_details = {str(rec["id"]): talks.talk_detail(slug, str(rec["id"])) for rec in records}
@@ -193,7 +199,7 @@ def _indexed_context(slug: str) -> dict[str, bytes]:
     # Agents registered on this bubble and the marks handed to them. The worker reads
     # ``by_worker`` to learn whether this directory owns any agent at all — when it does not,
     # the job machinery costs it nothing, not even a request.
-    agent_index, job_index = agents.indexes(slug)
+    agent_index, job_index = agents.indexes(slug, owner=owner)
     out["indexes/agents.json"] = _json_bytes(agent_index)
     out["indexes/jobs.json"] = _json_bytes(job_index)
     entry = bubbles.load_registry().get(slug, {})
@@ -291,8 +297,12 @@ def _idea_markdown(slug: str) -> bytes | None:
     return ("\n".join(out) + "\n").encode()
 
 
-def _files(home: Path, slug: str) -> dict[str, Path | bytes]:
-    """Map v2 project-local paths to source files for one bubble."""
+def _files(home: Path, slug: str, *, owner: str = "") -> dict[str, Path | bytes]:
+    """Map v2 project-local paths to source files for one bubble.
+
+    ``owner`` narrows the generated agent/job indexes to one person's agents; see
+    :func:`_indexed_context`. Default ``""`` is unfiltered, for backwards compatibility.
+    """
     with paths.use_root(home):
         if not _approved(slug):
             raise KeyError(slug)
@@ -341,7 +351,7 @@ def _files(home: Path, slug: str) -> dict[str, Path | bytes]:
         out.update(feedback.images(slug))
         # JSON indexes are always present, even in a clean bubble. Their tiny counts tell an
         # agent whether deeper retrieval is needed without loading any deck or feedback body.
-        out.update(_indexed_context(slug))
+        out.update(_indexed_context(slug, owner=owner))
         for rec in talks.ensure_sync_ids(slug):
             out[f"reports/talks/{rec['sync_id']}/slides.md"] = paths.bubble_talk_path(slug, rec["id"])
         return out
@@ -351,15 +361,17 @@ def _content(source: Path | bytes) -> bytes:
     return source if isinstance(source, bytes) else source.read_bytes()
 
 
-def manifest(home: Path, slug: str) -> dict:
+def manifest(home: Path, slug: str, *, owner: str = "") -> dict:
     """Every exported path, with a revision.
 
     Oversized assets stay listed — dropping them would read as "deleted on the server" and make a
     client bin its local copy — but carry a size/mtime revision and an ``oversize`` flag, so no
     poll ever reads their contents and no client downloads them by accident.
+
+    ``owner`` narrows the agent/job indexes to one person's agents; see :func:`_files`.
     """
     files = []
-    for rel, source in sorted(_files(home, slug).items()):
+    for rel, source in sorted(_files(home, slug, owner=owner).items()):
         if _is_large(source):
             files.append({"path": rel, "revision": _stamp(source),
                           "oversize": True, "size": source.stat().st_size})
@@ -415,14 +427,17 @@ def delete_large_asset(home: Path, slug: str, rel: str) -> bool:
         return bubbles.delete_bubble_asset(slug, Path(rel).name)
 
 
-def read_files(home: Path, slug: str, wanted: list[str]) -> dict:
+def read_files(home: Path, slug: str, wanted: list[str], *, owner: str = "") -> dict:
     """Read files by path.
 
     Oversized assets are never returned here: this encodes whole files as base64 in one JSON
     body, so a multi-gigabyte archive would be held in memory twice over. They are fetched
     instead by ``large_asset_path``, which streams straight off disk.
+
+    ``owner`` narrows the agent/job indexes should the client ask for one of them; see
+    :func:`_files`.
     """
-    available = _files(home, slug)
+    available = _files(home, slug, owner=owner)
     files, skipped = [], []
     for rel in dict.fromkeys(wanted):
         if not _safe_rel(rel) or rel not in available:
@@ -492,7 +507,10 @@ def _author_for(slug: str, sync_id: str, decoded: str):
         nonlocal by_mark
         if by_mark is None:
             by_mark = {}
-            jobs_by_mark = agents.overview(slug).get("jobs", {}).get("by_mark", {})
+            # Any owner's agent may have posted the reply, so this deliberately does not filter
+            # by owner (``viewer=None``): resolving credit for a legacy deck reply is a
+            # cross-owner lookup, not a per-user view.
+            jobs_by_mark = agents.overview(slug, viewer=None).get("jobs", {}).get("by_mark", {})
             for mark_key, jobs in jobs_by_mark.items():
                 running = next((j for j in jobs if j.get("status") == "running"), None)
                 queued = next((j for j in jobs if j.get("status") == "queued"), None)

@@ -70,8 +70,8 @@ async function stopProcess(child) {
   ]);
 }
 
-async function api(request, baseUrl, method, pathname, data) {
-  const response = await request.fetch(`${baseUrl}${pathname}`, { method, data, failOnStatusCode: false });
+async function api(request, baseUrl, method, pathname, data, headers) {
+  const response = await request.fetch(`${baseUrl}${pathname}`, { method, data, headers, failOnStatusCode: false });
   const raw = await response.text();
   let body = {};
   try { body = raw ? JSON.parse(raw) : {}; } catch (_) { body = { raw }; }
@@ -95,7 +95,7 @@ async function scientistToken(request, baseUrl) {
 }
 
 /** One ordinary sync poll, carrying the presence headers a real worker sends. */
-async function workerPoll(request, baseUrl, token, slug, worker) {
+async function workerPoll(request, baseUrl, token, slug, worker, workspaceId) {
   const headers = {
     Authorization: `Bearer ${token}`,
     "X-LockedIn-Scientist-Version": CLIENT_VERSION,
@@ -103,19 +103,21 @@ async function workerPoll(request, baseUrl, token, slug, worker) {
     "X-LockedIn-Worker-Label": worker.label,
   };
   if (worker.status) headers["X-LockedIn-Worker-Status"] = worker.status;
+  if (workspaceId) headers["X-LockedIn-Workspace"] = workspaceId;
   const response = await request.fetch(
     `${baseUrl}/api/scientist/v2/bubbles/${slug}/manifest`, { headers, failOnStatusCode: false });
   return response.status();
 }
 
 /** A Scientist-side call, carrying the bearer token and the worker's presence headers. */
-async function scientistApi(request, baseUrl, token, method, pathname, data) {
+async function scientistApi(request, baseUrl, token, method, pathname, data, workspaceId) {
   const headers = {
     Authorization: `Bearer ${token}`,
     "X-LockedIn-Scientist-Version": CLIENT_VERSION,
     "X-LockedIn-Worker": WORKER_ID,
     "X-LockedIn-Worker-Label": WORKER_LABEL,
   };
+  if (workspaceId) headers["X-LockedIn-Workspace"] = workspaceId;
   const response = await request.fetch(`${baseUrl}${pathname}`, { method, data, headers, failOnStatusCode: false });
   const raw = await response.text();
   let body = {};
@@ -194,12 +196,19 @@ async function main() {
     const context = await browser.newContext({ viewport: { width: 1500, height: 950 } });
     const username = `agents-e2e-${Date.now()}`;
     await api(context.request, baseUrl, "POST", "/api/signup", { username, password: "temporary-agents-password" });
-    const created = await api(context.request, baseUrl, "POST", "/api/bubbles", { name: "Agent Demo" });
+    // A shared (non-personal) workspace, not the owner's Personal one: a personal workspace
+    // cannot take a second member, and a later step needs to invite a guest into this same
+    // bubble to prove agents are now filtered per owner.
+    const workspaceId = (await api(context.request, baseUrl, "POST", "/api/workspaces",
+      { name: "Agents E2E Workspace" })).workspace.id;
+    const wsHeaders = { "X-LockedIn-Workspace": workspaceId };
+    step(`shared workspace ${workspaceId} created`);
+    const created = await api(context.request, baseUrl, "POST", "/api/bubbles", { name: "Agent Demo" }, wsHeaders);
     const slug = created.slug;
-    await api(context.request, baseUrl, "POST", `/api/bubbles/${slug}/approve`, { instructions: "" });
+    await api(context.request, baseUrl, "POST", `/api/bubbles/${slug}/approve`, { instructions: "" }, wsHeaders);
     step(`bubble ${slug} created and approved`);
 
-    const detail = await api(context.request, baseUrl, "GET", `/api/bubbles/${slug}`);
+    const detail = await api(context.request, baseUrl, "GET", `/api/bubbles/${slug}`, undefined, wsHeaders);
     const pageSlug = detail.bubble.home || "overview";
     const targetSentence = "The variance term vanishes in the limit.";
     const filler = Array.from(
@@ -207,21 +216,21 @@ async function main() {
     ).join("\n\n");
     const content = `# Agent Demo\n\n${filler}\n\n${targetSentence}\n\n${filler}\n`;
     await api(context.request, baseUrl, "PUT", `/api/bubbles/${slug}/pages/${pageSlug}`,
-      { content, base_mtime: null });
+      { content, base_mtime: null }, wsHeaders);
     step(`page ${pageSlug} written with the target sentence`);
 
     const token = await scientistToken(context.request, baseUrl);
     step("authorized a Scientist client");
 
     assert.equal(await workerPoll(context.request, baseUrl, token, slug,
-      { id: WORKER_ID, label: WORKER_LABEL, status: "running" }), 200);
+      { id: WORKER_ID, label: WORKER_LABEL, status: "running" }, workspaceId), 200);
     step("the worker polled once and counts as live");
 
     const registered = await scientistApi(context.request, baseUrl, token, "POST",
       `/api/scientist/v2/bubbles/${slug}/agents`,
       { name: "Ada", role: "reviewer", goal: "answer marks about the variance bound",
         personality: "terse", vendor: "agy", conversation: "conv-1",
-        model: "gemini-3.8-flash-low", worker_id: WORKER_ID, project_label: "demo" });
+        model: "gemini-3.8-flash-low", worker_id: WORKER_ID, project_label: "demo" }, workspaceId);
     const agent = registered.agent;
     assert.equal(agent.name, "Ada");
     step("registered agent Ada through the Scientist route");
@@ -229,8 +238,11 @@ async function main() {
     const page = await context.newPage();
     page.on("pageerror", error => { throw error; });
     let dialogAccepted = false;
-    page.on("dialog", d => { dialogAccepted = true; d.accept(); });
-    await page.goto(`${baseUrl}/#bubble/${slug}/${pageSlug}`, { waitUntil: "domcontentloaded" });
+    page.on("dialog", d => {
+      dialogAccepted = true;
+      d.accept(d.type() === "prompt" ? "temporary-agents-password" : undefined);
+    });
+    await page.goto(`${baseUrl}/#w/${workspaceId}/bubble/${slug}/${pageSlug}`, { waitUntil: "domcontentloaded" });
     await page.waitForFunction(expected => {
       const node = document.querySelector("#previewWrap");
       return node && node.textContent && node.textContent.includes(expected);
@@ -279,7 +291,13 @@ async function main() {
     await assignBtn.click();
     const agentMenu = page.locator(".tk-agentmenu");
     await agentMenu.waitFor({ state: "visible", timeout: 2_000 });
-    await agentMenu.locator("button.tk-am[data-agent]").first().click();
+    const [assignResponse] = await Promise.all([
+      page.waitForResponse(response => response.request().method() === "POST"
+        && new URL(response.url()).pathname === `/api/bubbles/${slug}/jobs`),
+      agentMenu.locator("button.tk-am[data-agent]").first().click(),
+    ]);
+    assert.ok(assignResponse.ok(),
+      `assigning Ada failed (${assignResponse.status()}): ${await assignResponse.text()}`);
     step("picked Ada from the assign menu");
 
     const jobKeyCard = page.locator(".tk-note[data-jobkey]").filter({ has: page.locator(".tk-job") });
@@ -299,20 +317,20 @@ async function main() {
     // ---- step 5: run the job through the Scientist routes ----
     const heartbeat = await scientistApi(context.request, baseUrl, token, "POST",
       `/api/scientist/v2/bubbles/${slug}/agents/heartbeat`,
-      { worker_id: WORKER_ID, agents: [{ id: agent.id, attached: false }], running_job_ids: [] });
+      { worker_id: WORKER_ID, agents: [{ id: agent.id, attached: false }], running_job_ids: [] }, workspaceId);
     assert.equal(heartbeat.jobs.length, 1, `expected exactly one queued job, got ${JSON.stringify(heartbeat.jobs)}`);
     const job = heartbeat.jobs[0];
     assert.match(job.mark.quote, /variance term/, "the job's mark pointer is missing the quoted text");
     step("heartbeat handed the worker one queued job");
 
     await scientistApi(context.request, baseUrl, token, "POST",
-      `/api/scientist/v2/bubbles/${slug}/jobs/${job.id}/start`, { worker_id: WORKER_ID });
+      `/api/scientist/v2/bubbles/${slug}/jobs/${job.id}/start`, { worker_id: WORKER_ID }, workspaceId);
     await page.waitForSelector(".tk-note[data-jobkey] .tk-job.running", { timeout: 9_000 });
     step("the chip turned running within one poll cycle");
 
     await scientistApi(context.request, baseUrl, token, "POST",
       `/api/scientist/v2/bubbles/${slug}/jobs/${job.id}/reply`,
-      { text: "I wrote the bound in one line." });
+      { text: "I wrote the bound in one line." }, workspaceId);
     await page.waitForSelector(".tk-note[data-jobkey] .tk-job.done", { timeout: 9_000 });
     await page.waitForFunction(() => {
       const card = document.querySelector(".tk-note[data-jobkey]");
@@ -338,19 +356,127 @@ async function main() {
       "the card's assign button must be gone once an agent has answered");
     step("the chip still offers redo, and the card's own assign button is gone now that Ada answered");
 
-    // ---- step 7: retire Ada from the presence menu ----
-    await syncSeg.click();
-    await presenceMenu.waitFor({ state: "visible", timeout: 2_000 });
-    await adaRow.waitFor({ state: "visible", timeout: 2_000 });
-    await adaRow.click();
-    const retireBtn = page.locator(".presence-detail button", { hasText: "retire" });
-    await retireBtn.waitFor({ state: "visible", timeout: 2_000 });
-    await retireBtn.click();
-    await page.waitForTimeout(400);
-    assert.ok(dialogAccepted, "retiring an agent must ask for confirmation");
-    const afterRetire = await api(context.request, baseUrl, "GET", `/api/bubbles/${slug}/agents`);
-    assert.equal((afterRetire.agents || []).length, 0, "the agent must be gone after retiring");
-    step("Ada was retired through the presence menu");
+    // ---- step 7: a second user, invited into the same workspace, only ever sees their own
+    // agents. Ada is the owner's — a guest with no agents of their own must see none of her,
+    // even on the exact same bubble and the exact same mark she already answered. ----
+    const guestUsername = `agents-e2e-guest-${Date.now()}`;
+    const guestPassword = "temporary-guest-password";
+    await api(context.request, baseUrl, "POST", "/api/signup", { username: guestUsername, password: guestPassword });
+    await api(context.request, baseUrl, "PUT", `/api/admin/users/${guestUsername}/approval`, { approved: true });
+    await api(context.request, baseUrl, "POST", `/api/workspaces/${workspaceId}/members`, { username: guestUsername });
+    step(`invited ${guestUsername} into the shared workspace`);
+
+    const guestContext = await browser.newContext({ viewport: { width: 1500, height: 950 } });
+    await api(guestContext.request, baseUrl, "POST", "/api/login", { username: guestUsername, password: guestPassword });
+    const guestPage = await guestContext.newPage();
+    guestPage.on("pageerror", error => { throw error; });
+    await guestPage.goto(`${baseUrl}/#w/${workspaceId}/bubble/${slug}/${pageSlug}`, { waitUntil: "domcontentloaded" });
+    await guestPage.waitForFunction(expected => {
+      const node = document.querySelector("#previewWrap");
+      return node && node.textContent && node.textContent.includes(expected);
+    }, targetSentence, { timeout: 30_000 });
+    step("the invited guest opened the very same bubble page");
+
+    const guestAgentsSeg = guestPage.locator(".presence-seg").nth(1);
+    await guestAgentsSeg.waitFor({ state: "visible", timeout: 10_000 });
+    assert.equal((await guestAgentsSeg.locator(".presence-count").innerText()).trim(), "0",
+      "the guest's own presence pill must read zero agents even though Ada exists for the owner");
+    step("the guest's presence pill reads zero agents while the owner's still shows Ada");
+
+    assert.equal(await guestPage.locator(".tk-note[data-jobkey] .tk-job").count(), 0,
+      "the guest must not see the owner's completed job chip");
+    const guestOverview = await api(guestContext.request, baseUrl, "GET",
+      `/api/bubbles/${slug}/agents`, undefined, wsHeaders);
+    assert.deepEqual(guestOverview.agents || [], [], "the guest API must not expose Ada");
+    assert.deepEqual((guestOverview.jobs && guestOverview.jobs.by_mark) || {}, {},
+      "the guest API must not expose any of the owner's jobs");
+    step("the guest sees neither Ada nor her completed job in the UI or API");
+    await guestContext.close();
+
+    // Keep one unanswered mark around for the secure-mode UI checks below. Its ordinary assign
+    // button is a cleaner assertion than reusing the completed job's redo menu after navigation.
+    const secureTarget = "Background paragraph 2:";
+    await selectPreview(page, secureTarget);
+    await page.waitForTimeout(150);
+    const securePicker = page.locator(".tk-pop");
+    await securePicker.waitFor({ state: "visible", timeout: 5_000 });
+    await securePicker.locator("[data-pin]").click();
+    const secureMark = page.locator(".tk-note", { hasText: secureTarget });
+    await secureMark.locator("[data-assign]").waitFor({ state: "visible", timeout: 10_000 });
+    step("pinned a second, unanswered mark for the secure-mode assignment check");
+
+    // ---- step 8: Stop agents is destructive, so the sidebar switch explains and confirms it
+    // before revoking clients, removing owned agents, cancelling work, and stopping sync. ----
+    const sideSwitch = page.locator("#sideSecureSwitch");
+    await sideSwitch.waitFor({ state: "visible", timeout: 5_000 });
+    assert.equal(await sideSwitch.getAttribute("aria-checked"), "false", "secure mode starts off");
+    await sideSwitch.click();
+    const stopDialog = page.getByRole("dialog", { name: "Stop agents confirmation" });
+    await stopDialog.waitFor({ state: "visible", timeout: 2_000 });
+    const consequences = (await stopDialog.innerText()).toLowerCase();
+    for (const word of ["revoked", "removed", "cancelled", "sync workers", "does not restore"]) {
+      assert.ok(consequences.includes(word), `the confirmation is missing ${word}:\n${consequences}`);
+    }
+    await stopDialog.getByRole("button", { name: "Cancel" }).click();
+    assert.equal(await sideSwitch.getAttribute("aria-checked"), "false",
+      "cancelling the confirmation must leave agents running");
+    await sideSwitch.click();
+    await stopDialog.getByRole("button", { name: "Yes, stop agents" }).click();
+    await page.waitForFunction(() => document.getElementById("sideSecureSwitch")?.getAttribute("aria-checked") === "true",
+      { timeout: 5_000 });
+    step("the Stop agents switch required an explicit consequences confirmation");
+
+    await page.waitForSelector("#secureModeBanner", { timeout: 5_000 });
+    assert.match(await page.locator("#secureModeBanner").innerText(), /agents stopped/i);
+    step("the banner appeared on the bubble view without a reload");
+
+    await page.locator('.navbtn[data-view="settings"]').click();
+    await page.waitForSelector("#secureModeSection", { timeout: 10_000 });
+    await page.waitForFunction(() =>
+      document.querySelector("#secureModeSection input[type=checkbox]")?.checked === true, { timeout: 5_000 });
+    assert.equal(await page.locator("#sideSecureSwitch").getAttribute("aria-checked"), "true",
+      "the sidebar switch must still read on while looking at Settings");
+    step("the Settings card's own toggle reflects the sidebar switch, with no reload between them");
+
+    // Back to the bubble (SPA history, not a reload): Ada and her worker must be absent, not just
+    // painted as paused, and the unanswered mark can no longer offer an assignment.
+    await page.goBack({ waitUntil: "domcontentloaded" });
+    await page.waitForFunction(expected => {
+      const node = document.querySelector("#previewWrap");
+      return node && node.textContent && node.textContent.includes(expected);
+    }, targetSentence, { timeout: 30_000 });
+    await page.waitForFunction(() => {
+      const seg = document.querySelectorAll(".presence-seg")[1];
+      return !!seg && seg.classList.contains("sync-dead");
+    }, { timeout: 10_000 });
+    step("back on the bubble, the pill's agents segment turned dead-coloured");
+
+    assert.equal((await page.locator(".presence-seg").nth(1).locator(".presence-count").innerText()).trim(), "0");
+    assert.equal(await page.locator(".presence-item.presence-agent", { hasText: "Ada" }).count(), 0);
+    assert.equal(await secureMark.locator("[data-assign]").count(), 0);
+    const stoppedOverview = await api(context.request, baseUrl, "GET",
+      `/api/bubbles/${slug}/agents`, undefined, wsHeaders);
+    assert.deepEqual(stoppedOverview.agents || [], []);
+    const revokedPoll = await context.request.fetch(
+      `${baseUrl}/api/scientist/v2/bubbles/${slug}/manifest`, {
+        headers: { Authorization: `Bearer ${token}`, "X-LockedIn-Workspace": workspaceId,
+          "X-LockedIn-Scientist-Version": CLIENT_VERSION }, failOnStatusCode: false });
+    assert.equal(revokedPoll.status(), 401, "the old Scientist token must be revoked");
+    step("Ada, her worker presence, assignment UI, and the old Scientist authorization are gone");
+
+    // Turning the setting off requires the password, but deliberately restores nothing.
+    await sideSwitch.click();
+    await page.waitForFunction(() => document.getElementById("sideSecureSwitch")?.getAttribute("aria-checked") === "false",
+      { timeout: 5_000 });
+    await page.waitForFunction(() => !document.getElementById("secureModeBanner"), { timeout: 5_000 });
+    await page.waitForFunction(() => {
+      const seg = document.querySelectorAll(".presence-seg")[1];
+      return !!seg && !seg.classList.contains("sync-dead");
+    }, { timeout: 10_000 });
+    assert.equal(await secureMark.locator("[data-assign]").count(), 0,
+      "turning the setting off must not recreate removed agents");
+    assert.equal((await page.locator(".presence-seg").nth(1).locator(".presence-count").innerText()).trim(), "0");
+    step("password-confirmed disable cleared the warning but restored no clients, workers, or agents");
 
     step("all agents checks passed");
   } catch (error) {

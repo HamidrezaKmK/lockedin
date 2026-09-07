@@ -45,9 +45,19 @@
     // browser falls back to each account's Personal workspace, so collaborators see different
     // copies of the same-looking talk and replies appear to vanish between accounts.
     const headers = { "Content-Type": "application/json", ...(opts.headers || {}) };
-    if (S.workspaceId) headers["X-LockedIn-Workspace"] = S.workspaceId;
+    // A chalk talk owns S.workspaceId through mount(); the report-page mark surface is mounted
+    // independently and owns M.workspaceId through setUser(). Both use this API helper.
+    const workspaceId = S.workspaceId || M.workspaceId;
+    if (workspaceId) headers["X-LockedIn-Workspace"] = workspaceId;
     const r = await fetch(path, { credentials: "include", ...opts, headers });
-    if (!r.ok) throw new Error((await r.text()) || r.status);
+    if (!r.ok) {
+      // Mirrors index.html's api(): the server's `detail` is the whole point of a 403/409/429
+      // (whose agent, which cap, why secure mode blocked it) — surface it clean, with the
+      // status attached so callers can tell those apart from a generic failure.
+      let d; try { d = (await r.json()).detail; } catch (e) { d = r.statusText; }
+      if (d && typeof d === "object") d = d.message || d.error || JSON.stringify(d);
+      const err = new Error(d || "Error"); err.status = r.status; throw err;
+    }
     return r.json();
   };
   /** Same job as index.html's workspaceUrl, for the URLs the browser fetches by itself.
@@ -538,6 +548,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
 .tk-agentmenu button.tk-am[data-status=working] .tk-am-note{color:var(--warn)}
 .tk-agentmenu .tk-am-empty{padding:8px;font-size:12px;color:var(--muted)}
 .tk-agentmenu .tk-am-err{padding:4px 8px 8px;font-size:11.5px;color:var(--bad);overflow-wrap:anywhere}
+.tk-agentmenu .tk-am-secure{padding:2px 8px 6px;font-size:11px;letter-spacing:.02em;color:var(--warn)}
 .tk-editta{width:100%;min-height:64px;background:var(--panel2);border:1px solid var(--accent);
   border-radius:8px;color:var(--ink);font:inherit;font-size:13.5px;padding:8px;resize:vertical;
   outline:none;font-family:var(--font-reading)}
@@ -1249,7 +1260,8 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     wireJobs(host || document);
   }
   function closeAgentMenu() { document.querySelectorAll(".tk-agentmenu").forEach(m => m.remove()); }
-  /** A small list of agents under `anchor`; `onPick(agent)`. Offline agents are shown but inert. */
+  /** A small list of agents under `anchor`; `onPick(agent)`. Offline agents are shown but inert,
+   *  and while secure mode has stopped every agent of yours, every row is inert alongside them. */
   function agentMenu(anchor, onPick, { title = "Assign to", extra = "" } = {}) {
     closeAgentMenu();
     const statusNote = { idle: "", working: " · busy now", attached: " · chat open", offline: " · offline" };
@@ -1258,13 +1270,16 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
       working: "It is running another mark now. This will be queued.",
       offline: "Its folder is not syncing, so nothing will run until it is back.",
     };
+    const secureTitle = "Secure mode is on. Your agents are stopped, so nothing can be assigned right now.";
     const rows = M.agents.length ? M.agents.map(a => `<button class="tk-am" data-agent="${esc(a.id)}" data-status="${esc(a.status)}"${
-        a.status === "offline" ? " disabled" : ""} title="${esc(statusTitle[a.status] || (a.role || "") + (a.goal ? " — " + a.goal : ""))}">
+        (M.secureMode || a.status === "offline") ? " disabled" : ""} title="${esc(M.secureMode ? secureTitle
+          : (statusTitle[a.status] || (a.role || "") + (a.goal ? " — " + a.goal : "")))}">
         <span class="tk-am-dot ${esc(a.status)}"></span><span class="tk-am-name">${esc(a.name)}</span>
         <span class="tk-am-note">${esc(a.vendor)}${a.model ? " · " + esc(a.model) : ""}${
           statusNote[a.status] != null ? statusNote[a.status] : " · " + esc(a.status)}</span></button>`).join("")
       : `<div class="tk-am-empty">No agents yet. From a codex/claude/agy chat in the synced project, ask it to register as an agent.</div>`;
-    const menu = h(`<div class="tk-agentmenu"><div class="tk-am-title">${esc(title)}</div>${rows}${extra}</div>`).firstChild;
+    const secureNote = M.secureMode ? `<div class="tk-am-secure">secure mode is on</div>` : "";
+    const menu = h(`<div class="tk-agentmenu"><div class="tk-am-title">${esc(title)}</div>${secureNote}${rows}${extra}</div>`).firstChild;
     document.body.append(menu);
     const r = anchor.getBoundingClientRect();
     const w = menu.offsetWidth || 240, hgt = menu.offsetHeight || 120;
@@ -1272,7 +1287,9 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     menu.style.top = (r.bottom + 6 + hgt > innerHeight ? Math.max(8, r.top - hgt - 6) : r.bottom + 6) + "px";
     menu.onclick = e => e.stopPropagation();
     menu.querySelectorAll("[data-agent]").forEach(b => (b.onclick = e => {
-      e.stopPropagation(); closeAgentMenu();
+      e.stopPropagation();
+      if (b.disabled) return;
+      closeAgentMenu();
       const agent = M.agents.find(a => a.id === b.dataset.agent);
       if (agent) onPick(agent);
     }));
@@ -1288,6 +1305,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     try {
       const r = await api(`/api/bubbles/${encodeURIComponent(slug)}/agents`);
       M.agents = r.agents || []; M.jobs = (r.jobs && r.jobs.by_mark) || {}; M.jobsMtime = r.jobs_mtime || 0;
+      M.secureMode = !!r.secure_mode;
     } catch (e) { return; }
     paintJobChips(document);
   }
@@ -1298,7 +1316,10 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
         body: JSON.stringify({ agent_id: agent.id, mark_key: key, instruction: instruction || "" }) });
       toast("Assigned to " + agent.name + (agent.status === "attached" ? " — it runs once their chat is closed" : ""));
     } catch (e) {
-      toast("Could not assign: " + String(e.message || e).replace(/^\{"detail":"|"\}$/g, ""));
+      // 403 (not your agent), 429 (a cap hit) and 409 (secure mode is on) each carry a detail
+      // written to be read as-is; anything else falls back to a generic line.
+      const legible = e.status === 403 || e.status === 409 || e.status === 429;
+      toast(legible && e.message ? e.message : "Could not assign: " + String(e.message || e));
     }
     await refreshAgents();
   }
@@ -2906,8 +2927,8 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
    * This file owns the vocabulary and the look. Offsets, the wrapper and its storage stay in
    * the SPA, which already has all three.
    * ===================================================================================== */
-  const M = { kind: "q", gutter: null, preview: null, handlers: null, user: "", owner: "",
-              slug: "", agents: [], jobs: {}, jobsMtime: 0 };
+  const M = { kind: "q", gutter: null, preview: null, handlers: null, user: "", owner: "", workspaceId: "",
+              slug: "", agents: [], jobs: {}, jobsMtime: 0, secureMode: false };
 
   function markPicker(x, y, quote, onPick) {
     injectStyles();   // a page view may never have opened a deck
@@ -3005,7 +3026,10 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
                              const gh = gutterEl && gutterEl.querySelector(".tk-gh");
                              if (gh && !gh._sheetBound) { gh._sheetBound = true; bindSheetDrag(gh, rootEl); }
                            },
-                           setUser: (user, owner) => { M.user = String(user || ""); M.owner = String(owner || ""); },
+                           setUser: (user, owner, workspaceId) => {
+                             M.user = String(user || ""); M.owner = String(owner || "");
+                             M.workspaceId = String(workspaceId || "");
+                           },
                            // The page view owns the agents request (it polls jobs_mtime already);
                            // it hands the result here so cards on both surfaces read one list.
                            setAgents: (slug, agents, jobsByMark, jobsMtime) => {
@@ -3013,6 +3037,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
                              if (jobsMtime != null) M.jobsMtime = jobsMtime;
                              paintJobChips(document);
                            },
+                           setSecureMode: (enabled) => { M.secureMode = !!enabled; },
                            refreshAgents,
                            pendingRange: paintPendingRange, clearPending };
 })();

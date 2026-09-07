@@ -116,21 +116,23 @@ async function main() {
     page.on("pageerror", error => { throw error; });
     await page.goto(`${baseUrl}/#bubble/${slug}`, { waitUntil: "domcontentloaded" });
 
-    // The robot is the third segment of the presence card: that card says who is reading this
-    // bubble and what is syncing it, and this is how you attach one more.
-    const robot = page.locator(".bubble-title .presence-robot");
-    await robot.waitFor({ state: "visible", timeout: 10_000 });
+    // The two-part presence card says who is reading and which agents are attached. Connecting
+    // another agent is the final row inside the agents half, rather than a third icon-only segment.
+    const agentsSegment = page.locator(".bubble-title .presence-seg").nth(1);
+    await agentsSegment.waitFor({ state: "visible", timeout: 10_000 });
     const segments = await page.locator(".presence-seg").evaluateAll(
       nodes => nodes.map(node => node.className));
-    assert.equal(segments.length, 3, `expected three segments, saw ${segments}`);
-    assert.ok(segments[2].includes("presence-robot"),
-      `the robot must be the last segment: ${segments}`);
-    await shoot(page, "setup-robot");
-    step("the robot is the last segment of the presence card");
+    assert.equal(segments.length, 2, `expected people and agents segments, saw ${segments}`);
+    await agentsSegment.click();
+    const connect = page.locator(".presence-menu .presence-add", { hasText: "Connect an agent" });
+    await connect.waitFor({ state: "visible", timeout: 2_000 });
+    await shoot(page, "setup-presence-menu");
+    step("the agents segment keeps Connect an agent one click away");
 
-    await robot.click();
+    await connect.click();
     const dialog = page.getByRole("dialog", { name: "Connect an agent" });
-    const snippet = dialog.locator(".setup-snippet");
+    const installStep = dialog.locator(".setup-step", { hasText: "Run this there" });
+    const snippet = installStep.locator(".setup-snippet");
     await dialog.waitFor({ state: "visible", timeout: 5_000 });
     await page.waitForFunction(
       () => !/Preparing/.test(document.querySelector(".setup-snippet")?.textContent || ""),
@@ -154,9 +156,10 @@ async function main() {
       return style.color === resolved;
     }), "the expiry warning must use the theme's warning colour");
 
-    // Four numbered steps: open a terminal, run the line, start the agent, walk away.
+    // Six numbered steps: install in the folder, start and name the agent, reconnect an existing
+    // one, and keep recovery commands close at hand.
     const steps = await dialog.locator(".setup-step").count();
-    assert.equal(steps, 4, "the dialog must walk through all four steps");
+    assert.equal(steps, 6, "the dialog must walk through all six steps");
     const stepText = (await dialog.locator(".setup-step").allInnerTexts()).join("\n").toLowerCase();
     // An agent already open in the folder is the other way to run this, and the repair that needs
     // nothing installed — both have to be findable from the dialog itself.
@@ -177,8 +180,8 @@ async function main() {
       "#li-i-refresh",
       "the fresh-link control is a circular arrow, not a second kind of link");
     // The controls act on the snippet, so they live beside it.
-    assert.equal(await dialog.locator(".setup-run .setup-snippet").count(), 1);
-    assert.equal(await dialog.locator(".setup-run button").count(), 2,
+    assert.equal(await installStep.locator(".setup-run .setup-snippet").count(), 1);
+    assert.equal(await installStep.locator(".setup-run button").count(), 2,
       "Copy and the fresh-link control belong next to the link box");
     assert.equal(await dialog.locator(".create-dialog-footer").count(), 0,
       "with the controls moved up, the footer has nothing left to hold");
@@ -203,7 +206,7 @@ async function main() {
     }
     step("each agent tab explains how to load the skill");
 
-    await dialog.locator("button", { hasText: /^Copy$/ }).click();
+    await installStep.locator("button", { hasText: /^Copy$/ }).click();
     await page.waitForFunction(
       () => /Copied/.test([...document.querySelectorAll(".setup-run button")]
         .map(node => node.textContent).join(" ")), null, { timeout: 5_000 });

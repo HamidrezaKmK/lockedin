@@ -779,6 +779,19 @@ async function main() {
       "the home view must not enter the focused workspace out of the chord");
     step("Alt+Enter is inert on a non-bubble view");
 
+    // The bubble *home* (the page/chalk-talk listing, before any page is opened) satisfies
+    // S.bubble just like a document page does, but it has no #bubbleFocusToggle button — so
+    // the chord must stay inert there too, not just on the app-level home view above.
+    await page.goto(`${baseUrl}/#bubble/${slug}`, { waitUntil: "domcontentloaded" });
+    await page.waitForFunction(() => !document.querySelector("#editorHost"));
+    assert.equal(await page.locator("#bubbleFocusToggle").count(), 0,
+      "the bubble home must not have a full-screen toggle to guard");
+    await page.keyboard.press("Alt+Enter");
+    await page.waitForTimeout(200);
+    assert.ok(!(await page.locator("#app").evaluate(node => node.classList.contains("bubble-focus"))),
+      "the bubble home must not enter the focused workspace out of the chord");
+    step("Alt+Enter is inert on the bubble home too");
+
     await context.close();
     step("all browser review lifecycle checks passed");
   } catch (error) {

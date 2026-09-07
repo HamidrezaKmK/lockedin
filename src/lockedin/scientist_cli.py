@@ -7,7 +7,10 @@ from __future__ import annotations
 
 import argparse
 import base64
+import ctypes
+import ctypes.util
 import difflib
+import functools
 import json
 import os
 import re
@@ -15,6 +18,8 @@ import secrets
 import shlex
 import shutil
 import signal
+import stat
+import struct
 import subprocess
 import sys
 import time
@@ -22,6 +27,7 @@ import uuid
 import urllib.error
 import urllib.request
 import webbrowser
+from datetime import datetime, timezone
 from pathlib import Path
 
 APP = "lockedin-scientist"
@@ -69,6 +75,17 @@ AGENT_TURN_SECONDS = int(os.environ.get("LOCKEDIN_AGENT_TURN_SECONDS") or 20 * 6
 # Different agents may work at once. One agent never runs two turns — the server refuses that too.
 AGENT_MAX_PARALLEL = int(os.environ.get("LOCKEDIN_AGENT_MAX_PARALLEL") or 2)
 AGENT_OUTPUT_TAIL = 4000
+# A worker-local budget the server cannot override by offering more jobs: zero or negative means
+# unlimited. Persisted turn start times (see AgentRunner._record_turn_start) survive a worker
+# restart, so this is a real cap, not merely a per-process counter.
+AGENT_MAX_TURNS_PER_HOUR = int(os.environ.get("LOCKEDIN_AGENT_MAX_TURNS_PER_HOUR") or 20)
+AGENT_MAX_TURNS_PER_DAY = int(os.environ.get("LOCKEDIN_AGENT_MAX_TURNS_PER_DAY") or 100)
+AGENT_BUDGET_HOUR_SECONDS = 3600
+AGENT_BUDGET_DAY_SECONDS = 24 * 3600
+
+
+class SecureModeStop(RuntimeError):
+    """The server ordered this sync worker to stop until the user starts it locally again."""
 
 
 def agent_turns_disabled() -> bool:
@@ -470,7 +487,7 @@ def bubbles_command(account: dict) -> list[dict]:
 
 # Bump when the guide text changes: a project only regenerates SKILL.md when this marker in its
 # copy stops matching, so an edit to the guide reaches no existing agent until this moves.
-SKILL_VERSION = 46
+SKILL_VERSION = 47
 
 # The marker is derived, never typed. It is what the staleness check compares against, so a
 # hand-written copy that drifted from SKILL_VERSION would either pin every project to a stale
@@ -604,7 +621,13 @@ For any report-related search, search only inside `.lockedin/`: use
 `.lockedin/reports/pages/` for report source, `.lockedin/reports/assets/` for report figures,
 `.lockedin/indexes/papers.json` for attached-paper discovery, and `.lockedin/assets/` for
 the one selected paper's material. Do not search the surrounding repository unless the user
-explicitly asks to combine it with project code or files.""",
+explicitly asks to combine it with project code or files.
+
+## Scratch
+
+`.lockedin/scratch/` is yours: throwaway code, virtual environments, and outputs. Nothing there is
+synchronized — it never reaches the bubble and is never pruned during sync — so it is the right
+place for anything you do not need to keep.""",
 
     'reports.md': """\
 # Writing reports
@@ -761,6 +784,18 @@ optionally a personality. Once registered, the user can **assign a mark to you f
 page** instead of coming here to ask. While this chat is closed, the sync worker runs one
 headless turn of this same conversation per assigned mark: you keep your memory, your name, and
 everything already discussed. Nothing runs while no mark is assigned.
+
+## Where a turn may write
+
+A headless turn may read anything on the machine, but it may write only under `.lockedin/`:
+throwaway code, environments, and outputs go in `.lockedin/scratch/`; anything meant to reach the
+bubble goes in `.lockedin/reports/`. This is enforced by the worker itself — not by trusting the
+vendor's own flags — so treat it as a real boundary, not a convention. The intended pattern for
+stress-testing or trying out project code without risking it: write a script under
+`.lockedin/scratch/` that imports from the project (e.g. adds the project root to `sys.path` and
+imports its modules) and calls into it, writing any result under `.lockedin/scratch/`. A write
+aimed at the project itself failing is the guarantee working as intended, not an error to route
+around.
 
 ## Registering (once per conversation)
 
@@ -1247,6 +1282,14 @@ class ProjectSync:
             (self.root / "reports" / "pages").mkdir(parents=True)
             (self.root / "reports" / "assets").mkdir(parents=True)
             self.config.mkdir(parents=True)
+        # The agent's throwaway space: code, venvs, outputs. Never synced — see sync_once, which
+        # only ever reads/writes/deletes paths under reports/. Created unconditionally (not only
+        # when `created`) so a project bound before this feature existed still gets one.
+        # `.pycache` is where a scratch script's imports of project code land their bytecode cache
+        # (see AgentRunner._dispatch's PYTHONPYCACHEPREFIX), inside the boundary instead of failing
+        # silently beside a read-only module.
+        (self.root / "scratch" / ".pycache").mkdir(parents=True, exist_ok=True)
+        if created:
             _atomic_json(self.binding_path, wanted)
             self._write_state({"files": {}})
             self._exclude_from_git()
@@ -1403,6 +1446,10 @@ class ProjectSync:
     def sync_once(self) -> None:
         self.validate_or_initialize()
         response = self._request("GET", "manifest")
+        if response.get("secure_mode"):
+            raise SecureModeStop(
+                "Secure mode is on: this sync worker has stopped. Turn it off, then run "
+                "lockedin-scientist resync locally to resume.")
         entries = response.get("files", [])
         remote = {f["path"]: f["revision"] for f in entries}
         cap = int(response.get("large_asset_bytes") or 0)
@@ -1888,9 +1935,10 @@ def agent_attached(agent: dict, root: Path, *, ignore: set[int] | None = None) -
     return False
 
 
-def agent_turn_prompt(job: dict, *, cli: str, fresh: bool) -> str:
+def agent_turn_prompt(job: dict, *, cli: str, fresh: bool, mode: str | None = None) -> str:
     """One job, briefly. A resumed conversation already knows who it is and how this project works."""
     agent, mark = job.get("agent") or {}, job.get("mark") or {}
+    mode = confinement_mode() if mode is None else mode
     lines: list[str] = []
     if fresh:
         persona = f"You are {agent.get('name') or 'an agent'}"
@@ -1900,7 +1948,13 @@ def agent_turn_prompt(job: dict, *, cli: str, fresh: bool) -> str:
         if agent.get("personality"): persona += f" Personality: {agent['personality']}."
         lines += [persona,
                   "This is a new conversation. Read `.lockedin/SKILL.md` and `.lockedin/guides/agents.md` "
-                  "first; they describe this project and how you answer a mark.", ""]
+                  "first; they describe this project and how you answer a mark.",
+                  "You may read anything on this machine, but write only under `.lockedin/`: "
+                  "throwaway code, environments, and outputs go in `.lockedin/scratch/`; anything "
+                  "meant to reach the bubble goes in `.lockedin/reports/`."]
+        if mode == "none":
+            lines.append("Nothing on this machine enforces that boundary right now — keep to it yourself.")
+        lines.append("")
     lines += [f"LockedIn job {job['id']}. Do it now, without asking questions.", ""]
     kind = f"{mark.get('glyph')} ({mark.get('means')})" if mark.get("glyph") else str(mark.get("means") or "mark")
     if mark.get("surface") == "page":
@@ -1938,24 +1992,275 @@ def _vendor_binary(vendor: str) -> str:
     return found
 
 
-def agent_turn_command(agent: dict, prompt: str, *, new_id: str = "") -> list[str]:
-    """One headless turn of the agent's conversation. Flags first: agy reads `-p` as the prompt's flag."""
+# ---------------------------------------------------------------------------
+# Confinement: where a headless turn may write, enforced by the worker itself
+# ---------------------------------------------------------------------------
+#
+# All three vendors keep full capability inside a turn — bash, python, prototypes — but WHERE they
+# may write is confined to this project's `.lockedin/` plus the handful of paths a vendor needs to
+# persist its own conversation store. That boundary is enforced by the OS underneath the vendor,
+# not by trusting codex/claude/agy's own sandbox flags, so all three end up with the same access.
+#
+# Landlock (Linux, unprivileged — ABI 6 as tested on this machine) is the primary mechanism: no
+# root, no dedicated user, no namespace, no container. bubblewrap was tried here and found unusable
+# without a sysctl change; a ctypes probe confirmed Landlock needs none of that — a confined child
+# could write inside an allowed directory, was denied writes to the home directory and elsewhere,
+# could read and execute everywhere, and kept network access (only `/dev/null` failed until `/dev`
+# was added to the writable list). macOS gets a best-effort Seatbelt profile instead (untestable
+# here, so kept small). Everywhere else — or when Landlock's syscalls are not available — the mode
+# is "none": the turn runs with conservative vendor-side flags and no OS enforcement at all.
+#
+# LOCKEDIN_AGENT_CONFINEMENT overrides the auto-detected mode:
+#   "none"  — force unconfined, conservative vendor flags (today's historical behaviour).
+#   "trust" — the operator accepts full, unconfined capability deliberately, for example because
+#             the worker itself already runs as a dedicated user or inside a VM of their own
+#             making, so an escape from the OS sandbox here would not escape that outer boundary
+#             either. Vendors get the same permissive flags as a confined turn, but nothing on
+#             this machine enforces the write boundary.
+
+LANDLOCK_CREATE_RULESET_VERSION = 1
+_LANDLOCK_SYS_CREATE_RULESET = 444
+_LANDLOCK_SYS_ADD_RULE = 445
+_LANDLOCK_SYS_RESTRICT_SELF = 446
+_LANDLOCK_RULE_PATH_BENEATH = 1
+_PR_SET_NO_NEW_PRIVS = 38
+
+LANDLOCK_ACCESS_FS_EXECUTE = 1 << 0
+LANDLOCK_ACCESS_FS_WRITE_FILE = 1 << 1
+LANDLOCK_ACCESS_FS_READ_FILE = 1 << 2
+LANDLOCK_ACCESS_FS_READ_DIR = 1 << 3
+LANDLOCK_ACCESS_FS_REMOVE_DIR = 1 << 4
+LANDLOCK_ACCESS_FS_REMOVE_FILE = 1 << 5
+LANDLOCK_ACCESS_FS_MAKE_CHAR = 1 << 6
+LANDLOCK_ACCESS_FS_MAKE_DIR = 1 << 7
+LANDLOCK_ACCESS_FS_MAKE_REG = 1 << 8
+LANDLOCK_ACCESS_FS_MAKE_SOCK = 1 << 9
+LANDLOCK_ACCESS_FS_MAKE_FIFO = 1 << 10
+LANDLOCK_ACCESS_FS_MAKE_BLOCK = 1 << 11
+LANDLOCK_ACCESS_FS_MAKE_SYM = 1 << 12
+LANDLOCK_ACCESS_FS_REFER = 1 << 13      # needs ABI >= 2
+LANDLOCK_ACCESS_FS_TRUNCATE = 1 << 14   # needs ABI >= 3
+LANDLOCK_ACCESS_FS_IOCTL_DEV = 1 << 15  # needs ABI >= 5
+LANDLOCK_ACCESS_FS_READ_EXECUTE = (
+    LANDLOCK_ACCESS_FS_EXECUTE | LANDLOCK_ACCESS_FS_READ_FILE | LANDLOCK_ACCESS_FS_READ_DIR)
+# Rights the kernel only accepts on a rule whose path is a directory: everything about what a
+# directory may *contain* (creating, removing, listing, or re-linking an entry beneath it). A rule
+# on a regular file is legal (state a vendor writes, like ~/.claude.json), but the kernel rejects
+# any of these bits for one with EINVAL, so they are masked out when the rule's target is not a
+# directory — see `_landlock_child_confine`'s `add_rule`.
+LANDLOCK_ACCESS_FS_DIR_ONLY = (
+    LANDLOCK_ACCESS_FS_READ_DIR | LANDLOCK_ACCESS_FS_REMOVE_DIR | LANDLOCK_ACCESS_FS_REMOVE_FILE |
+    LANDLOCK_ACCESS_FS_MAKE_CHAR | LANDLOCK_ACCESS_FS_MAKE_DIR | LANDLOCK_ACCESS_FS_MAKE_REG |
+    LANDLOCK_ACCESS_FS_MAKE_SOCK | LANDLOCK_ACCESS_FS_MAKE_FIFO | LANDLOCK_ACCESS_FS_MAKE_BLOCK |
+    LANDLOCK_ACCESS_FS_MAKE_SYM | LANDLOCK_ACCESS_FS_REFER)
+
+# (minimum ABI, bit) for every access right this client knows about; a bit is only ever handed to
+# the ruleset when the running kernel's ABI actually supports it, as the syscall requires.
+_LANDLOCK_ABI_BITS = (
+    (1, LANDLOCK_ACCESS_FS_EXECUTE), (1, LANDLOCK_ACCESS_FS_WRITE_FILE), (1, LANDLOCK_ACCESS_FS_READ_FILE),
+    (1, LANDLOCK_ACCESS_FS_READ_DIR), (1, LANDLOCK_ACCESS_FS_REMOVE_DIR), (1, LANDLOCK_ACCESS_FS_REMOVE_FILE),
+    (1, LANDLOCK_ACCESS_FS_MAKE_CHAR), (1, LANDLOCK_ACCESS_FS_MAKE_DIR), (1, LANDLOCK_ACCESS_FS_MAKE_REG),
+    (1, LANDLOCK_ACCESS_FS_MAKE_SOCK), (1, LANDLOCK_ACCESS_FS_MAKE_FIFO), (1, LANDLOCK_ACCESS_FS_MAKE_BLOCK),
+    (1, LANDLOCK_ACCESS_FS_MAKE_SYM),
+    (2, LANDLOCK_ACCESS_FS_REFER),
+    (3, LANDLOCK_ACCESS_FS_TRUNCATE),
+    (5, LANDLOCK_ACCESS_FS_IOCTL_DEV),
+)
+
+
+def _landlock_handled_access(abi: int) -> int:
+    """Every access bit the running kernel's Landlock ABI supports, OR'd together."""
+    mask = 0
+    for min_abi, bit in _LANDLOCK_ABI_BITS:
+        if abi >= min_abi:
+            mask |= bit
+    return mask
+
+
+def _libc() -> ctypes.CDLL:
+    return ctypes.CDLL(ctypes.util.find_library("c") or "libc.so.6", use_errno=True)
+
+
+def _raw_syscall(libc: ctypes.CDLL, number: int, *args: int) -> int:
+    """The Landlock syscalls have no glibc wrapper on many still-current systems, so they are
+    issued directly. Arguments are passed as ``long`` — wide enough for both small integers and
+    the pointer values (buffer addresses, file descriptors) this module passes through it."""
+    libc.syscall.restype = ctypes.c_long
+    libc.syscall.argtypes = [ctypes.c_long] + [ctypes.c_long] * len(args)
+    return int(libc.syscall(number, *args))
+
+
+def landlock_abi() -> int:
+    """The kernel's Landlock ABI version, or -1 when Landlock is unavailable.
+
+    ``landlock_create_ruleset(NULL, 0, LANDLOCK_CREATE_RULESET_VERSION)`` is the kernel's documented
+    probe: it reports the ABI version without creating anything, on any kernel new enough to know
+    the syscall at all, and fails (ENOSYS or similar) otherwise.
+    """
+    try:
+        ret = _raw_syscall(_libc(), _LANDLOCK_SYS_CREATE_RULESET, 0, 0, LANDLOCK_CREATE_RULESET_VERSION)
+        return ret if ret > 0 else -1
+    except OSError:
+        return -1
+
+
+def confinement_mode() -> str:
+    """How a headless turn's writes are confined on this machine: "landlock", "seatbelt", "trust",
+    or "none". Read at call time, not cached, so an operator's environment change — or a test's
+    patch — takes effect on the very next turn.
+    """
+    override = os.environ.get("LOCKEDIN_AGENT_CONFINEMENT", "").strip().lower()
+    if override == "none": return "none"
+    if override == "trust": return "trust"
+    if sys.platform.startswith("linux"):
+        return "landlock" if landlock_abi() >= 1 else "none"
+    if sys.platform == "darwin" and os.path.exists("/usr/bin/sandbox-exec"):
+        return "seatbelt"
+    return "none"
+
+
+def _agent_writable_roots(project: Path) -> list[tuple[Path, bool]]:
+    """Every path a headless turn may write beneath, each paired with whether it must exist.
+
+    The project's own `.lockedin`, `/tmp`, and `/dev` are required: `/dev` is what makes
+    `/dev/null`, `/dev/shm`, and GPU device nodes usable, and a missing required root means
+    confinement itself cannot be set up correctly, so the turn must fail rather than quietly run
+    with less confinement than asked. Vendor state directories are added only when they already
+    exist, so a machine missing one vendor is never penalized for it. `LOCKEDIN_AGENT_WRITABLE` is
+    colon-separated and deliberate — an operator opening a conda env should have a typo there fail
+    loudly, not silently grant less access than requested.
+    """
+    home = Path.home()
+    roots: list[tuple[Path, bool]] = [
+        (project / ".lockedin", True),
+        (Path("/tmp"), True),
+        (Path("/dev"), True),
+    ]
+    for candidate in (home / ".claude", home / ".claude.json", home / ".codex",
+                      home / ".gemini", home / ".cache", home / ".npm"):
+        if candidate.exists():
+            roots.append((candidate, False))
+    for part in os.environ.get("LOCKEDIN_AGENT_WRITABLE", "").split(":"):
+        part = part.strip()
+        if part:
+            roots.append((Path(part), True))
+    return roots
+
+
+def _landlock_child_confine(project: Path) -> None:
+    """Run as ``preexec_fn`` in the forked child, before exec: restrict the child (and everything
+    it execs) to read+execute beneath `/`, full access only beneath the project's `.lockedin` and
+    the other writable roots. Any failure here writes one line to stderr and exits 97 rather than
+    letting the turn run unconfined — ``AgentRunner._reap`` recognises exit 97 as "could not
+    confine the turn", so a confinement failure is a failed job, never a silent escape.
+    """
+    try:
+        libc = _libc()
+        abi = landlock_abi()
+        if abi < 1:
+            raise OSError("Landlock ABI not reported by this kernel")
+        libc.prctl.restype = ctypes.c_int
+        libc.prctl.argtypes = [ctypes.c_int, ctypes.c_ulong, ctypes.c_ulong, ctypes.c_ulong, ctypes.c_ulong]
+        if libc.prctl(_PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
+            raise OSError(ctypes.get_errno(), "prctl(PR_SET_NO_NEW_PRIVS) failed")
+        handled = _landlock_handled_access(abi)
+        attr = struct.pack("=QQ", handled, 0) if abi >= 4 else struct.pack("=Q", handled)
+        attr_buf = ctypes.create_string_buffer(attr, len(attr))
+        ruleset_fd = _raw_syscall(libc, _LANDLOCK_SYS_CREATE_RULESET,
+                                  ctypes.addressof(attr_buf), len(attr), 0)
+        if ruleset_fd < 0:
+            raise OSError(ctypes.get_errno(), "landlock_create_ruleset failed")
+
+        def add_rule(path: Path, allowed_access: int) -> None:
+            fd = os.open(str(path), os.O_PATH | os.O_CLOEXEC)
+            try:
+                if not stat.S_ISDIR(os.fstat(fd).st_mode):
+                    allowed_access &= ~LANDLOCK_ACCESS_FS_DIR_ONLY
+                rule = struct.pack("=Qi", allowed_access, fd)
+                rule_buf = ctypes.create_string_buffer(rule, len(rule))
+                ret = _raw_syscall(libc, _LANDLOCK_SYS_ADD_RULE, ruleset_fd, _LANDLOCK_RULE_PATH_BENEATH,
+                                   ctypes.addressof(rule_buf), 0)
+                if ret != 0:
+                    raise OSError(ctypes.get_errno(), f"landlock_add_rule failed for {path}")
+            finally:
+                os.close(fd)
+
+        add_rule(Path("/"), LANDLOCK_ACCESS_FS_READ_EXECUTE)
+        for root, required in _agent_writable_roots(project):
+            if required or root.exists():
+                add_rule(root, handled)
+        if _raw_syscall(libc, _LANDLOCK_SYS_RESTRICT_SELF, ruleset_fd, 0) != 0:
+            raise OSError(ctypes.get_errno(), "landlock_restrict_self failed")
+        os.close(ruleset_fd)
+    except Exception as exc:
+        try:
+            os.write(2, f"lockedin: could not confine the turn ({exc})\n".encode(errors="replace"))
+        except OSError:
+            pass
+        os._exit(97)
+
+
+def _seatbelt_profile(writable_roots: list[Path]) -> str:
+    """A permissive Seatbelt profile: everything allowed by default, file writes denied except
+    beneath the given roots. Best-effort only — there is no macOS machine to test this against
+    here — so it is kept small and easy to audit by hand rather than clever."""
+    lines = ["(version 1)", "(allow default)", "(deny file-write*)"]
+    for root in writable_roots:
+        lines.append(f'(allow file-write* (subpath "{root}"))')
+    return "\n".join(lines) + "\n"
+
+
+def seatbelt_command(cmd: list[str], project: Path) -> list[str]:
+    """Best-effort macOS confinement: wrap the vendor command under ``sandbox-exec``."""
+    roots = [root for root, required in _agent_writable_roots(project) if required or root.exists()]
+    return ["/usr/bin/sandbox-exec", "-p", _seatbelt_profile(roots), *cmd]
+
+
+def apply_confinement(cmd: list[str], mode: str, project: Path) -> tuple[list[str], dict]:
+    """Wrap or annotate a vendor command so ``mode`` is actually enforced, returning the (possibly
+    wrapped) argv and any extra ``subprocess.Popen`` keyword arguments. The turn's cwd stays the
+    project root either way: confinement here is by path, not by cwd, so every path in the guides
+    and prompts keeps meaning what it means today."""
+    if mode == "landlock":
+        return cmd, {"preexec_fn": functools.partial(_landlock_child_confine, project)}
+    if mode == "seatbelt":
+        return seatbelt_command(cmd, project), {}
+    return cmd, {}
+
+
+def agent_turn_command(agent: dict, prompt: str, *, new_id: str = "", mode: str | None = None) -> list[str]:
+    """One headless turn of the agent's conversation. Flags first: agy reads `-p` as the prompt's flag.
+
+    ``mode`` selects the vendor flags (see ``confinement_mode``): a confined turn or an operator's
+    explicit "trust" gets each vendor's most permissive flags, because the OS boundary — or the
+    operator's own judgement — replaces the vendor's own sandbox; "none" keeps today's conservative
+    flags, under which bash is unavailable to claude and agy. Defaults to the machine's actual mode
+    so callers that do not care can omit it, but takes it as a plain argument so it is unit-testable
+    without touching the environment.
+    """
     vendor = str(agent.get("vendor") or "")
     conversation, model = str(agent.get("conversation") or ""), str(agent.get("model") or "")
     minutes = max(1, AGENT_TURN_SECONDS // 60)
+    mode = confinement_mode() if mode is None else mode
+    permissive = mode in ("landlock", "seatbelt", "trust")
     if vendor == "agy":
-        cmd = [_vendor_binary("agy"), "--output-format", "json", "--disable-slash-commands",
-               "--mode", "accept-edits", "--print-timeout", f"{minutes}m0s"]
+        cmd = [_vendor_binary("agy"), "--output-format", "json", "--disable-slash-commands"]
+        cmd += ["--dangerously-skip-permissions"] if permissive else ["--mode", "accept-edits"]
+        cmd += ["--print-timeout", f"{minutes}m0s"]
         if conversation: cmd += ["--conversation", conversation]
         if model: cmd += ["--model", model]
         return cmd + ["-p", prompt]
     if vendor == "claude":
-        cmd = [_vendor_binary("claude"), "-p", "--output-format", "json", "--permission-mode", "acceptEdits"]
+        cmd = [_vendor_binary("claude"), "-p", "--output-format", "json"]
+        cmd += ["--permission-mode", "bypassPermissions" if permissive else "acceptEdits"]
         cmd += ["--resume", conversation] if conversation else ["--session-id", new_id]
         if model: cmd += ["--model", model]
         return cmd + [prompt]
     if vendor == "codex":
-        cmd = [_vendor_binary("codex"), "exec", "-s", "workspace-write", "--skip-git-repo-check", "--json"]
+        cmd = [_vendor_binary("codex"), "exec"]
+        cmd += ["--dangerously-bypass-approvals-and-sandbox"] if permissive else [
+            "-s", "workspace-write", "-c", "sandbox_workspace_write.network_access=true"]
+        cmd += ["--skip-git-repo-check", "--json"]
         if model: cmd += ["-m", model]
         if conversation: cmd += ["resume", conversation]
         return cmd + [prompt]
@@ -2041,6 +2346,9 @@ class AgentRunner:
     def __init__(self, sync: ProjectSync, worker_id: str, cli: str):
         self.sync, self.worker_id, self.cli = sync, worker_id, cli
         self.jobs_dir = data_root() / "runtime" / "workers" / worker_id / "jobs"
+        # Turn start times, pruned to the last day: a restart cannot reset the budget below, since
+        # this is what tick() reads and appends to, not an in-memory counter.
+        self.turns_path = data_root() / "runtime" / "workers" / worker_id / "turns.json"
         self.procs: dict[str, dict] = {}
         self.error = ""
         # Per-agent backstop: agent id -> a monotonic deadline after a busy-chat requeue, so we
@@ -2077,6 +2385,58 @@ class AgentRunner:
         """Whether ``LOCKEDIN_AGENT_TURNS`` currently asks dispatch to pause; see the class docstring."""
         return agent_turns_disabled()
 
+    def _load_turns(self) -> list[float]:
+        try:
+            data = json.loads(self.turns_path.read_text(encoding="utf-8"))
+            return [float(t) for t in data.get("turns", []) if isinstance(t, (int, float))]
+        except (OSError, json.JSONDecodeError, AttributeError, TypeError, ValueError):
+            return []
+
+    def _record_turn_start(self, now: float) -> None:
+        """Called once a turn actually spawns a vendor process — never for a dispatch that bails
+        out before that (a missing conversation, a build-command failure, and so on)."""
+        times = [t for t in self._load_turns() if now - t < AGENT_BUDGET_DAY_SECONDS]
+        times.append(now)
+        try:
+            _atomic_json(self.turns_path, {"turns": times})
+        except OSError:
+            pass
+
+    @staticmethod
+    def _budget_window(times: list[float], now: float, seconds: int, cap: int) -> tuple[int, float]:
+        """(turns actually started in the trailing ``seconds`` window, when the oldest of those
+        would age out and free a slot — 0.0 when ``cap`` is unlimited or the window is not at its
+        cap). ``used`` is reported even when ``cap`` is unlimited, for observability."""
+        recent = sorted(t for t in times if now - t < seconds)
+        used = len(recent)
+        resumes_at = recent[used - cap] + seconds if cap > 0 and used >= cap else 0.0
+        return used, resumes_at
+
+    def _budget(self, now: float) -> tuple[dict, str]:
+        """The current turn budget, and — only when it is exhausted — the line to put in
+        ``self.error``. A cap of zero or less (``AGENT_MAX_TURNS_PER_HOUR``/``_DAY``) means
+        unlimited, reported here as a cap of 0 and never exhausted."""
+        times = self._load_turns()
+        hour_used, hour_resume = self._budget_window(times, now, AGENT_BUDGET_HOUR_SECONDS, AGENT_MAX_TURNS_PER_HOUR)
+        day_used, day_resume = self._budget_window(times, now, AGENT_BUDGET_DAY_SECONDS, AGENT_MAX_TURNS_PER_DAY)
+        hour_cap = max(AGENT_MAX_TURNS_PER_HOUR, 0)
+        day_cap = max(AGENT_MAX_TURNS_PER_DAY, 0)
+        hour_hit = bool(hour_cap) and hour_used >= hour_cap
+        day_hit = bool(day_cap) and day_used >= day_cap
+        exhausted = hour_hit or day_hit
+        error = ""
+        resumes_epoch = 0.0
+        if exhausted:
+            cap, used, window, resumes_epoch = (
+                (hour_cap, hour_used, "hour", hour_resume) if hour_hit else (day_cap, day_used, "day", day_resume))
+            when = time.strftime("%H:%M", time.localtime(resumes_epoch)) if resumes_epoch else "?"
+            error = f"budget: {cap} turns in the last {window}; next turn at {when}"
+        resumes_iso = (datetime.fromtimestamp(resumes_epoch, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                       if resumes_epoch else "")
+        budget = {"hour_used": hour_used, "hour_cap": hour_cap, "day_used": day_used, "day_cap": day_cap,
+                  "exhausted": exhausted, "resumes_at": resumes_iso}
+        return budget, error
+
     def tick(self) -> None:
         if self.turns_disabled:
             self.error = "agent turns are disabled by LOCKEDIN_AGENT_TURNS=off"
@@ -2085,13 +2445,23 @@ class AgentRunner:
         self._reap()
         agents = self.my_agents()
         if not agents and not self.procs: return
+        budget, budget_error = self._budget(time.time())
         beat = self.sync._request("POST", "agents/heartbeat", {
             "worker_id": self.sync.worker_uid(),
             "agents": [{"id": a["id"], "attached": agent_attached(a, self.sync.root, ignore=self._pids())}
                        for a in agents],
-            "running_job_ids": self.running_job_ids()})
+            "running_job_ids": self.running_job_ids(),
+            "budget": budget, "confinement": confinement_mode()})
+        if beat.get("secure_mode"):
+            for job_id in list(self.procs):
+                self._terminate(job_id, "secure mode is on")
+            self.error = "secure mode is on: agents stopped"
+            return
         for job_id in beat.get("cancelled", []):
             self._terminate(job_id, "cancelled by the user")
+        if budget["exhausted"]:
+            self.error = budget_error
+            return
         busy = {entry["agent"].get("id") for entry in self.procs.values()}
         now = time.monotonic()
         for job in beat.get("jobs", []):
@@ -2139,30 +2509,42 @@ class AgentRunner:
             return
         fresh = bool(agent.get("fresh")) or not agent.get("conversation")
         new_id = str(uuid.uuid4())
-        prompt = agent_turn_prompt(job, cli=self.cli, fresh=fresh)
+        mode = confinement_mode()
+        prompt = agent_turn_prompt(job, cli=self.cli, fresh=fresh, mode=mode)
         self.jobs_dir.mkdir(parents=True, exist_ok=True)
         log = self.jobs_dir / f"{job['id']}.log"
         try:
-            cmd = agent_turn_command(agent, prompt, new_id=new_id)
+            cmd = agent_turn_command(agent, prompt, new_id=new_id, mode=mode)
         except RuntimeError as exc:
             log.write_text(str(exc) + "\n", encoding="utf-8")
             self._result(job["id"], "failed", None, "", str(exc)); return
+        cmd, popen_kwargs = apply_confinement(cmd, mode, self.sync.project)
         env = {**os.environ, "LOCKEDIN_JOB_ID": job["id"], "LOCKEDIN_BUBBLE": self.sync.bubble,
                "LOCKEDIN_PROJECT": str(self.sync.project), "LOCKEDIN_AGENT": str(agent.get("name") or ""),
                "LOCKEDIN_SCIENTIST_CLI": str(Path(__file__).resolve()), "NO_COLOR": "1"}
+        # A scratch script that imports project code (the intended pattern — see guides/agents.md)
+        # compiles it on the fly; without this, Python tries to write the .pyc beside the read-only
+        # module, fails silently, and just recompiles every run. Point the cache inside the one tree
+        # the turn can write, unless the operator already pointed it somewhere themselves.
+        if not env.get("PYTHONPYCACHEPREFIX"):
+            env["PYTHONPYCACHEPREFIX"] = str(self.sync.root / "scratch" / ".pycache")
         with log.open("w", encoding="utf-8") as fh:
             fh.write(f"# {time.strftime('%Y-%m-%d %H:%M:%S')} job {job['id']} → {agent.get('name')} "
-                     f"({agent.get('vendor')}{' ' + agent['model'] if agent.get('model') else ''})\n")
+                     f"({agent.get('vendor')}{' ' + agent['model'] if agent.get('model') else ''}, "
+                     f"confinement={mode})\n")
             fh.write("# " + " ".join(shlex.quote(part) for part in cmd[:-1]) + " <prompt>\n\n" + prompt + "\n\n---- output ----\n")
         stream = log.open("ab")
+        started = time.time()
         try:
             proc = subprocess.Popen(cmd, cwd=str(self.sync.project), env=env, stdin=subprocess.DEVNULL,
-                                    stdout=stream, stderr=subprocess.STDOUT, start_new_session=os.name != "nt")
+                                    stdout=stream, stderr=subprocess.STDOUT, start_new_session=os.name != "nt",
+                                    **popen_kwargs)
         except OSError as exc:
             stream.close()
             self._result(job["id"], "failed", None, "", f"could not start {agent.get('vendor')}: {exc}"); return
+        self._record_turn_start(started)
         (self.jobs_dir / f"{job['id']}.pid").write_text(str(proc.pid), encoding="utf-8")
-        self.procs[job["id"]] = {"proc": proc, "agent": agent, "job": job, "started": time.time(),
+        self.procs[job["id"]] = {"proc": proc, "agent": agent, "job": job, "started": started,
                                  "log": log, "stream": stream, "fresh": fresh,
                                  "new_id": new_id if agent.get("vendor") == "claude" and fresh else ""}
 
@@ -2202,12 +2584,17 @@ class AgentRunner:
                                   f"run `{self.cli} agent chat {agent.get('name')}` once to create it")
             reason, code = entry.get("reason", ""), proc.returncode
             aid = agent.get("id")
+            # `_landlock_child_confine` exits exactly 97 when it could not set up confinement, by
+            # design — a confinement failure must be a failed job, never a silent escape into an
+            # unconfined turn, so this is checked before any output-sniffing recovery path below.
+            if not reason and code == 97:
+                self._result(job_id, "failed", code, output, "could not confine the turn")
             # Backstop: a turn that failed only because the agent's own chat was open (a real
             # captured case: `codex exec resume` exited 1 with a thread-store conflict because an
             # interactive session held the writer) must not burn the job. Attach detection should
             # normally have caught this before dispatch, but it cannot be perfect on every vendor
             # or every OS, so fall back to sniffing the output for a known busy signature.
-            if not reason and code != 0 and _looks_vendor_busy(output):
+            elif not reason and code != 0 and _looks_vendor_busy(output):
                 self.cooldowns[aid] = time.monotonic() + AGENT_COOLDOWN_SECONDS
                 self._requeued_this_tick.add(aid)
                 self._result(job_id, "requeue", code, output, AGENT_BUSY_ERROR)
@@ -2514,7 +2901,24 @@ def _run_worker(worker_id: str, project: str) -> None:
             _update_worker(worker_id, status="degraded" if blocking else "running",
                            last_sync=time.time(), last_error=blocking, warnings=warnings)
             sync.report = {"status": "degraded" if blocking else "running", "error": blocking}
+        except SecureModeStop as exc:
+            # This process itself is the remote execution path. End it permanently; turning the
+            # web switch back off cannot restart anything on this machine. Resuming requires the
+            # local `resync` command, so a stolen browser session cannot undo the stop remotely.
+            runner.shutdown()
+            _update_worker(worker_id, status="stopped", stopped_at=time.time(),
+                           last_error=str(exc), agent_error=str(exc), jobs=[])
+            return
         except Exception as exc:
+            # Enabling secure mode atomically revokes every Scientist bearer token. The next poll
+            # therefore reaches this path instead of receiving a manifest stop flag. Treat an
+            # explicit deauthorization as terminal; a dead worker cannot be revived from the web.
+            if "server returned 401" in str(exc):
+                runner.shutdown()
+                message = "Scientist authorization was revoked; authorize and resync locally to resume."
+                _update_worker(worker_id, status="stopped", stopped_at=time.time(),
+                               last_error=message, agent_error=message, jobs=[])
+                return
             _update_worker(worker_id, status="degraded", last_error=str(exc))
             sync.report = {"status": "degraded", "error": str(exc)}
         # Agents ride on the same cycle: one heartbeat when this directory owns any, nothing when
@@ -2677,6 +3081,13 @@ def doctor_command(project: Path) -> None:
     account = account_for_binding(binding)
     account_request(account, "GET", f"/api/scientist/v2/bubbles/{binding['bubble']}/manifest")
     print(green("✓") + f" Worker {bold(rec['id'])} is healthy and can reach bubble {bold(binding['bubble'])}.")
+    mode = confinement_mode()
+    print(dim(f"  Agent turns run under confinement: {mode}."))
+    if mode == "none":
+        print(orange("•") + " Agents run unconfined on this machine: nothing stops a headless turn "
+              "from writing outside .lockedin, and as a result bash is unavailable to claude and agy "
+              "here. Set LOCKEDIN_AGENT_CONFINEMENT=trust to lift that at your own risk, for example "
+              "if this worker already runs as a dedicated user or inside its own VM.")
 
 
 VENDOR_INVOCATION = {

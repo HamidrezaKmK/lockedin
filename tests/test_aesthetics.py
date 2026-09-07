@@ -254,7 +254,8 @@ class AestheticsConfigTests(unittest.TestCase):
 
     def test_chalk_talk_requests_keep_the_selected_workspace(self):
         source = (Path(server.WEB_DIR) / "talks.js").read_text()
-        self.assertIn('headers["X-LockedIn-Workspace"] = S.workspaceId', source)
+        self.assertIn('const workspaceId = S.workspaceId || M.workspaceId', source)
+        self.assertIn('headers["X-LockedIn-Workspace"] = workspaceId', source)
         self.assertIn("workspaceId:S.workspaceId", (Path(server.WEB_DIR) / "index.html").read_text())
 
     def test_chalk_talk_card_titles_are_editable_from_bubble_tools(self):

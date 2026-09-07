@@ -807,14 +807,15 @@ def reply_talk_note(home: Path, slug: str, talk_id: str, note_id: str, author: s
 
 
 # ---- agents: named CLI conversations a mark can be assigned to ----
-def agents_overview(home: Path, slug: str, *, workers: list[dict] | None = None) -> dict:
+def agents_overview(home: Path, slug: str, *, workers: list[dict] | None = None,
+                    viewer: str = "") -> dict:
     with paths.use_root(home):
-        return agents.overview(slug, workers=workers)
+        return agents.overview(slug, workers=workers, viewer=viewer)
 
 
-def list_agents(home: Path, slug: str) -> list[dict]:
+def list_agents(home: Path, slug: str, *, owner: str | None = None) -> list[dict]:
     with paths.use_root(home):
-        return agents.list_agents(slug)
+        return agents.list_agents(slug, owner=owner)
 
 
 def register_agent(home: Path, slug: str, **kw) -> dict:
@@ -822,24 +823,25 @@ def register_agent(home: Path, slug: str, **kw) -> dict:
         return agents.register_agent(slug, **kw)
 
 
-def update_agent(home: Path, slug: str, agent_id: str, **fields) -> dict:
+def update_agent(home: Path, slug: str, agent_id: str, *, owner: str | None = None, **fields) -> dict:
     with paths.use_root(home):
-        return agents.update_agent(slug, agent_id, **fields)
+        return agents.update_agent(slug, agent_id, owner=owner, **fields)
 
 
-def reset_agent(home: Path, slug: str, agent_id: str, conversation: str = "") -> dict:
+def reset_agent(home: Path, slug: str, agent_id: str, conversation: str = "", *,
+                owner: str | None = None) -> dict:
     with paths.use_root(home):
-        return agents.reset_agent(slug, agent_id, conversation)
+        return agents.reset_agent(slug, agent_id, conversation, owner=owner)
 
 
-def remove_agent(home: Path, slug: str, agent_id: str) -> dict:
+def remove_agent(home: Path, slug: str, agent_id: str, *, owner: str | None = None) -> dict:
     with paths.use_root(home):
-        return agents.remove_agent(slug, agent_id)
+        return agents.remove_agent(slug, agent_id, owner=owner)
 
 
-def get_agent(home: Path, slug: str, ref: str) -> dict:
+def get_agent(home: Path, slug: str, ref: str, *, owner: str | None = None) -> dict:
     with paths.use_root(home):
-        return agents.get_agent(slug, ref)
+        return agents.get_agent(slug, ref, owner=owner)
 
 
 def create_job(home: Path, slug: str, **kw) -> dict:
@@ -847,19 +849,19 @@ def create_job(home: Path, slug: str, **kw) -> dict:
         return agents.create_job(slug, **kw)
 
 
-def get_job(home: Path, slug: str, job_id: str) -> dict:
+def get_job(home: Path, slug: str, job_id: str, *, owner: str | None = None) -> dict:
     with paths.use_root(home):
-        return agents.get_job(slug, job_id)
+        return agents.get_job(slug, job_id, owner=owner)
 
 
-def cancel_job(home: Path, slug: str, job_id: str) -> dict:
+def cancel_job(home: Path, slug: str, job_id: str, *, actor: str = "") -> dict:
     with paths.use_root(home):
-        return agents.cancel_job(slug, job_id)
+        return agents.cancel_job(slug, job_id, actor=actor)
 
 
-def reassign_job(home: Path, slug: str, job_id: str, agent_id: str) -> dict:
+def reassign_job(home: Path, slug: str, job_id: str, agent_id: str, *, actor: str = "") -> dict:
     with paths.use_root(home):
-        return agents.reassign_job(slug, job_id, agent_id=agent_id)
+        return agents.reassign_job(slug, job_id, agent_id=agent_id, actor=actor)
 
 
 def agent_heartbeat(home: Path, slug: str, **kw) -> dict:
@@ -867,9 +869,9 @@ def agent_heartbeat(home: Path, slug: str, **kw) -> dict:
         return agents.heartbeat(slug, **kw)
 
 
-def start_job(home: Path, slug: str, job_id: str, worker_id: str) -> dict:
+def start_job(home: Path, slug: str, job_id: str, worker_id: str, *, actor: str = "") -> dict:
     with paths.use_root(home):
-        return agents.start_job(slug, job_id, worker_id=worker_id)
+        return agents.start_job(slug, job_id, worker_id=worker_id, actor=actor)
 
 
 def finish_job(home: Path, slug: str, job_id: str, **kw) -> dict:

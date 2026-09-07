@@ -181,8 +181,8 @@ async function main() {
       "the right segment counts agents, not folders");
     assert.ok(await seg(1).evaluate(node => node.classList.contains("is-zero")),
       "with no agents connected the segment dims");
-    assert.match(await seg(1).getAttribute("title"), /No agents on this bubble yet\. Connect one\./,
-      "with zero agents the title invites connecting one, rather than reporting folder count alone");
+    assert.match(await seg(1).getAttribute("title"), /None of your agents are on this bubble yet\. Connect one\./,
+      "with zero owned agents the title invites connecting one, rather than reporting folder count alone");
     // Health is the colour of the icon and the count — no separate dot, and scoped to the segment
     // it concerns. `worst` here is a rejected client, i.e. dead.
     assert.ok(await seg(1).evaluate(node => node.classList.contains("sync-dead")),

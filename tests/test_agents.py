@@ -73,6 +73,16 @@ class AgentFixture(unittest.TestCase):
     def talk_key(self):
         return f"{self.sync_id}:{self.note['id']}"
 
+    def make_marks(self, n):
+        """``n`` distinct real marks on the talk deck, for cap tests that need to fill a queue."""
+        keys = []
+        with paths.use_root(self.home):
+            for i in range(n):
+                note = talks.add_note(self.slug, self.talk, slide=1, kind="bad", author="hamid",
+                                      quote="which kills the variance term", text=f"note {i}")
+                keys.append(f"{self.sync_id}:{note['id']}")
+        return keys
+
 
 class Registry(AgentFixture):
     def test_registering_the_same_conversation_twice_refreshes_rather_than_duplicates(self):
@@ -616,6 +626,299 @@ class HttpFlow(unittest.TestCase):
                                                 "X-LockedIn-Scientist-Version": "2020.01.01.1"},
                                        json={"worker_id": "w1"})
             self.assertEqual(response.status_code, 426)
+
+
+class Ownership(AgentFixture):
+    """Agents belong to one person and are invisible to everyone else."""
+
+    def test_two_owners_can_each_register_an_agent_called_ada(self):
+        with paths.use_root(self.home):
+            ada1 = agents.register_agent(self.slug, name="Ada", role="r", goal="g", vendor="agy",
+                                         conversation="c1", worker_id="w1", registered_by="hamid")
+            ada2 = agents.register_agent(self.slug, name="Ada", role="r", goal="g", vendor="agy",
+                                         conversation="c2", worker_id="w2", registered_by="hamid2")
+        self.assertNotEqual(ada1["id"], ada2["id"])
+        self.assertNotEqual(ada1["key"], ada2["key"])
+        self.assertTrue(ada1["key"].startswith("hamid-"))
+        self.assertTrue(ada2["key"].startswith("hamid2-"))
+        with paths.use_root(self.home):
+            view1 = agents.overview(self.slug, viewer="hamid")
+            view2 = agents.overview(self.slug, viewer="hamid2")
+        self.assertEqual([a["id"] for a in view1["agents"]], [ada1["id"]])
+        self.assertEqual([a["id"] for a in view2["agents"]], [ada2["id"]])
+
+    def test_a_member_cannot_see_or_touch_another_members_agent_over_http(self):
+        from lockedin import auth, workspaces
+        from lockedin.scientist_cli import SCIENTIST_CLIENT_VERSION
+        with temp_base():
+            auth.create_user("hamid", "pw12")
+            auth.create_user("hamid2", "pw12")
+            auth.set_approved("hamid2", True)
+            shared = workspaces.create("hamid", "Shared")
+            workspaces.invite("hamid", shared["id"], "hamid2")
+            home = workspaces.workspace_home(shared["id"])
+            service.ensure_workspace(home)
+            service.create_bubble(home, "Diffusion")
+            service.approve_bubble(home, "diffusion")
+            with paths.use_root(home):
+                bubbles.ensure_pages("diffusion")
+                page = bubbles.list_pages("diffusion")[0]["page_slug"]
+            service.save_page(home, "diffusion", page, PAGE)
+            thread = create_review_comment(home, "diffusion", page, "hamid", "why?",
+                                           {"quote": "The variance term",
+                                            "start": PAGE.index("The variance")})
+            key = f"page:{page}:{thread['id']}"
+            token1 = auth.new_scientist_token("hamid", "w1")
+            token2 = auth.new_scientist_token("hamid2", "w2")
+            ws = {"X-LockedIn-Workspace": shared["id"]}
+            hdr1 = {**ws, "Authorization": "Bearer " + token1,
+                   "X-LockedIn-Scientist-Version": SCIENTIST_CLIENT_VERSION}
+            hdr2 = {**ws, "Authorization": "Bearer " + token2,
+                   "X-LockedIn-Scientist-Version": SCIENTIST_CLIENT_VERSION}
+            with TestClient(server_app(), base_url="https://testserver") as client:
+                client.post("/api/login", json={"username": "hamid", "password": "pw12"})
+                reg = client.post("/api/scientist/v2/bubbles/diffusion/agents", headers=hdr1,
+                                  json={"name": "Ada", "role": "r", "goal": "g", "vendor": "agy",
+                                        "conversation": "c1", "worker_id": "w1"})
+                self.assertEqual(reg.status_code, 200, reg.text)
+                agent_id = reg.json()["agent"]["id"]
+
+                # Registered by hamid2, this shows up nowhere hamid can see.
+                reg2 = client.post("/api/scientist/v2/bubbles/diffusion/agents", headers=hdr2,
+                                   json={"name": "Ada", "role": "r", "goal": "g", "vendor": "agy",
+                                         "conversation": "c2", "worker_id": "w2"})
+                bob_id = reg2.json()["agent"]["id"]
+                self.assertEqual(reg2.status_code, 200, reg2.text)
+                self.assertNotEqual(agent_id, bob_id)
+
+                client.post("/api/logout")
+                client.post("/api/login", json={"username": "hamid2", "password": "pw12"})
+                seen = client.get("/api/bubbles/diffusion/agents", headers=ws).json()["agents"]
+                self.assertEqual([a["id"] for a in seen], [bob_id])
+                scientist_seen = client.get("/api/scientist/v2/bubbles/diffusion/agents",
+                                            headers=hdr2).json()["agents"]
+                self.assertEqual([a["id"] for a in scientist_seen], [bob_id])
+
+                # hamid2 cannot retire hamid's agent by id: 404, not leaked.
+                self.assertEqual(client.delete(f"/api/bubbles/diffusion/agents/{agent_id}",
+                                               headers=ws).status_code, 404)
+                # ...nor assign to it: 403.
+                self.assertEqual(client.post("/api/bubbles/diffusion/jobs", headers=ws,
+                                             json={"agent_id": agent_id, "mark_key": key}).status_code, 403)
+                # ...nor touch it over the Scientist API with hamid2's own token.
+                self.assertEqual(client.post(f"/api/scientist/v2/bubbles/diffusion/agents/{agent_id}",
+                                             headers=hdr2, json={"role": "hacked"}).status_code, 404)
+                self.assertEqual(client.post(f"/api/scientist/v2/bubbles/diffusion/agents/{agent_id}/reset",
+                                             headers=hdr2, json={}).status_code, 404)
+                self.assertEqual(client.delete(f"/api/scientist/v2/bubbles/diffusion/agents/{agent_id}",
+                                               headers=hdr2).status_code, 404)
+
+                # hamid assigns a real job to their own agent, then hamid2 cannot cancel/reassign it.
+                client.post("/api/logout")
+                client.post("/api/login", json={"username": "hamid", "password": "pw12"})
+                created = client.post("/api/bubbles/diffusion/jobs", headers=ws,
+                                      json={"agent_id": agent_id, "mark_key": key})
+                self.assertEqual(created.status_code, 200, created.text)
+                job_id = created.json()["job"]["id"]
+                client.post("/api/logout")
+                client.post("/api/login", json={"username": "hamid2", "password": "pw12"})
+                self.assertEqual(client.post(f"/api/bubbles/diffusion/jobs/{job_id}/cancel",
+                                             headers=ws).status_code, 403)
+                self.assertEqual(client.post(f"/api/bubbles/diffusion/jobs/{job_id}/reassign", headers=ws,
+                                             json={"agent_id": bob_id}).status_code, 403)
+                self.assertEqual(client.post(f"/api/scientist/v2/bubbles/diffusion/jobs/{job_id}/start",
+                                             headers=hdr2, json={"worker_id": "w2"}).status_code, 403)
+                self.assertEqual(client.get(f"/api/scientist/v2/bubbles/diffusion/jobs/{job_id}",
+                                            headers=hdr2).status_code, 404)
+                foreign_beat = client.post("/api/scientist/v2/bubbles/diffusion/agents/heartbeat",
+                                           headers=hdr2,
+                                           json={"worker_id": "w2",
+                                                 "agents": [{"id": bob_id, "attached": False}],
+                                                 "running_job_ids": []})
+                self.assertEqual(foreign_beat.status_code, 200, foreign_beat.text)
+                self.assertEqual(foreign_beat.json()["jobs"], [])
+                self.assertEqual(client.post(f"/api/scientist/v2/bubbles/diffusion/jobs/{job_id}/reply",
+                                             headers=hdr2, json={"text": "sneaky"}).status_code, 403)
+                self.assertEqual(client.post(f"/api/scientist/v2/bubbles/diffusion/jobs/{job_id}/result",
+                                             headers=hdr2,
+                                             json={"status": "done", "exit_code": 0}).status_code, 403)
+                self.assertEqual(client.post(f"/api/scientist/v2/bubbles/diffusion/jobs/{job_id}/fail",
+                                             headers=hdr2, json={"reason": "nope"}).status_code, 403)
+
+
+class Caps(AgentFixture):
+    def test_the_11th_open_job_for_one_agent_raises_too_many(self):
+        agent = self.register(registered_by="hamid")
+        keys = self.make_marks(agents.MAX_OPEN_JOBS_PER_AGENT + 1)
+        with paths.use_root(self.home):
+            for key in keys[:agents.MAX_OPEN_JOBS_PER_AGENT]:
+                agents.create_job(self.slug, agent_id=agent["id"], mark_key=key, created_by="hamid")
+            with self.assertRaises(agents.TooMany):
+                agents.create_job(self.slug, agent_id=agent["id"], mark_key=keys[-1], created_by="hamid")
+
+    def test_the_41st_open_job_for_one_owner_raises_too_many(self):
+        # Five agents so no single one's open-job cap (10) trips before the owner-wide one (40).
+        with paths.use_root(self.home):
+            targets = [agents.register_agent(
+                self.slug, name=f"A{i}", role="r", goal="g", vendor="agy",
+                conversation=f"c{i}", worker_id="w1", registered_by="hamid") for i in range(5)]
+        keys = self.make_marks(agents.MAX_OPEN_JOBS_PER_OWNER + 1)
+        with paths.use_root(self.home):
+            for i, key in enumerate(keys[:agents.MAX_OPEN_JOBS_PER_OWNER]):
+                agents.create_job(self.slug, agent_id=targets[i % 5]["id"], mark_key=key,
+                                  created_by="hamid")
+            with self.assertRaises(agents.TooMany):
+                agents.create_job(self.slug, agent_id=targets[0]["id"], mark_key=keys[-1],
+                                  created_by="hamid")
+
+    def test_the_61st_job_created_in_an_hour_raises_too_many_but_old_ones_do_not_count(self):
+        agent = self.register(registered_by="hamid")
+        keys = self.make_marks(agents.MAX_JOBS_PER_USER_PER_HOUR + 1)
+        with paths.use_root(self.home):
+            data = agents._jobs(self.slug)
+            # Backdate a pile of fake jobs well outside the hour window; they must not count.
+            old_ts = "2000-01-01T00:00:00+00:00"
+            for i in range(agents.MAX_JOBS_PER_USER_PER_HOUR):
+                jid = f"j-old{i:04d}"
+                data["jobs"][jid] = {"id": jid, "agent_id": agent["id"], "owner": "hamid",
+                                     "mark_key": "irrelevant", "status": "cancelled",
+                                     "created_at": old_ts, "finished_at": old_ts, "attempts": 1,
+                                     "result": {}}
+            agents._save_jobs(self.slug, data)
+            # Fresh creations, cancelled right away so the open-job caps never trip — only the
+            # hourly creation cap is under test here.
+            for key in keys[:agents.MAX_JOBS_PER_USER_PER_HOUR]:
+                job = agents.create_job(self.slug, agent_id=agent["id"], mark_key=key, created_by="hamid")
+                agents.cancel_job(self.slug, job["id"])
+            with self.assertRaises(agents.TooMany):
+                agents.create_job(self.slug, agent_id=agent["id"], mark_key=keys[-1], created_by="hamid")
+
+
+class SecureMode(AgentFixture):
+    def test_secure_mode_stops_heartbeat_start_and_create_and_overview_shows_stopped(self):
+        from lockedin import auth
+        with temp_base():
+            auth.create_user("hamid", "pw12")
+            agent = self.register(registered_by="hamid", worker_id="w1")
+            with paths.use_root(self.home):
+                job = agents.create_job(self.slug, agent_id=agent["id"], mark_key=self.page_key,
+                                        created_by="hamid")
+                agents.start_job(self.slug, job["id"], worker_id="w1", actor="hamid")
+                auth.set_secure_mode("hamid", True)
+                beat = agents.heartbeat(self.slug, worker_id="w1", agents=[],
+                                        running_job_ids=[job["id"]], secure=True)
+                self.assertEqual(beat, {"jobs": [], "cancelled": [job["id"]], "secure_mode": True})
+                with self.assertRaises(agents.Conflict):
+                    agents.start_job(self.slug, job["id"], worker_id="w1", actor="hamid")
+                with self.assertRaises(agents.Conflict):
+                    agents.create_job(self.slug, agent_id=agent["id"], mark_key=self.talk_key,
+                                      created_by="hamid")
+                view = agents.overview(self.slug, viewer="hamid")
+                self.assertTrue(view["secure_mode"])
+                self.assertEqual([a["status"] for a in view["agents"]], ["stopped"])
+
+                auth.set_secure_mode("hamid", False)
+                beat_off = agents.heartbeat(self.slug, worker_id="w1", agents=[], running_job_ids=[])
+                self.assertFalse(beat_off["secure_mode"])
+                view_off = agents.overview(self.slug, viewer="hamid")
+                self.assertFalse(view_off["secure_mode"])
+
+    def test_secure_mode_settings_route_and_me_round_trip(self):
+        from lockedin import auth
+        with temp_base():
+            auth.create_user("hamid", "pw12")
+            token = auth.new_scientist_token("hamid", "demo worker")
+            with TestClient(server_app(), base_url="https://testserver") as client:
+                client.post("/api/login", json={"username": "hamid", "password": "pw12"})
+                self.assertEqual(client.get("/api/settings/secure-mode").json(), {"enabled": False})
+                self.assertFalse(client.get("/api/me").json()["secure_mode"])
+                put = client.put("/api/settings/secure-mode", json={"enabled": True})
+                self.assertEqual(put.json(), {"enabled": True, "revoked_clients": 1,
+                                              "retired_agents": 0, "cancelled_jobs": 0,
+                                              "removed_workers": 0})
+                self.assertTrue(client.get("/api/me").json()["secure_mode"])
+                self.assertIsNone(auth.scientist_token_user(token))
+                with self.assertRaisesRegex(ValueError, "Secure mode is on"):
+                    auth.new_scientist_token("hamid", "attacker")
+                refused = client.put("/api/settings/secure-mode",
+                                     json={"enabled": False, "current_password": "wrong"})
+                self.assertEqual(refused.status_code, 403)
+                self.assertTrue(client.get("/api/settings/secure-mode").json()["enabled"])
+                resumed = client.put("/api/settings/secure-mode",
+                                     json={"enabled": False, "current_password": "pw12"})
+                self.assertEqual(resumed.json(), {"enabled": False, "revoked_clients": 0,
+                                                  "retired_agents": 0, "cancelled_jobs": 0,
+                                                  "removed_workers": 0})
+                self.assertFalse(client.get("/api/settings/secure-mode").json()["enabled"])
+
+
+class BudgetAndConfinement(AgentFixture):
+    def test_budget_and_confinement_ride_the_heartbeat_and_show_on_the_row(self):
+        agent = self.register(worker_id="w1")
+        budget = {"hour_used": 3, "hour_cap": 10, "day_used": 5, "day_cap": 40,
+                  "exhausted": False, "resumes_at": ""}
+        with paths.use_root(self.home):
+            agents.heartbeat(self.slug, worker_id="w1",
+                             agents=[{"id": agent["id"], "attached": False,
+                                     "budget": budget, "confinement": "landlock"}],
+                             running_job_ids=[])
+            view = agents.overview(self.slug)
+        row = view["agents"][0]
+        self.assertEqual(row["budget"], budget)
+        self.assertEqual(row["confinement"], "landlock")
+
+    def test_turns_last_hour_and_today_count_from_started_at(self):
+        agent = self.register(worker_id="w1")
+        keys = self.make_marks(3)
+        with paths.use_root(self.home):
+            for key in keys:
+                job = agents.create_job(self.slug, agent_id=agent["id"], mark_key=key)
+                agents.start_job(self.slug, job["id"], worker_id="w1")
+                agents.reply_job(self.slug, job["id"], text="done")
+            data = agents._jobs(self.slug)
+            # Push one job's started_at outside the last hour but still within today.
+            import datetime as _dt
+            stale = next(iter(data["jobs"].values()))
+            stale["started_at"] = (_dt.datetime.now(_dt.timezone.utc)
+                                   - _dt.timedelta(hours=2)).isoformat(timespec="seconds")
+            agents._save_jobs(self.slug, data)
+            view = agents.overview(self.slug)
+        row = view["agents"][0]
+        self.assertEqual(row["turns_today"], 3)
+        self.assertEqual(row["turns_last_hour"], 2)
+
+
+class SyncExportOwners(AgentFixture):
+    def test_indexed_context_and_files_are_scoped_to_one_owner(self):
+        with paths.use_root(self.home):
+            ada = agents.register_agent(self.slug, name="Ada", role="r", goal="g", vendor="agy",
+                                        conversation="c1", worker_id="w1", registered_by="hamid")
+            bob = agents.register_agent(self.slug, name="Bob", role="r", goal="g", vendor="agy",
+                                        conversation="c2", worker_id="w2", registered_by="hamid2")
+            agents.create_job(self.slug, agent_id=ada["id"], mark_key=self.page_key, created_by="hamid")
+            agents.create_job(self.slug, agent_id=bob["id"], mark_key=self.talk_key, created_by="hamid2")
+
+            ctx = scientist_sync._indexed_context(self.slug, owner="hamid")
+            # Unfiltered (default) still returns everything, as pre-existing callers rely on.
+            everyone = scientist_sync._indexed_context(self.slug)
+        agent_index = json.loads(ctx["indexes/agents.json"])
+        job_index = json.loads(ctx["indexes/jobs.json"])
+        router = json.loads(ctx["index.json"])
+        self.assertEqual(list(agent_index["by_id"]), [ada["id"]])
+        self.assertEqual(router["counts"]["agents"], 1)
+        self.assertTrue(all(job["owner"] == "hamid" for job in job_index["by_id"].values()))
+
+        files = scientist_sync._files(self.home, self.slug, owner="hamid")
+        agent_index2 = json.loads(files["indexes/agents.json"])
+        self.assertEqual(list(agent_index2["by_id"]), [ada["id"]])
+
+        self.assertEqual(sorted(json.loads(everyone["indexes/agents.json"])["by_id"]),
+                         sorted([ada["id"], bob["id"]]))
+
+
+def server_app():
+    from lockedin import server
+    return server.build_app()
 
 
 if __name__ == "__main__":

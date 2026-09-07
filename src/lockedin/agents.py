@@ -26,8 +26,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import yaml
+from slugify import slugify
 
-from . import bubbles, paths, talks
+from . import auth, bubbles, paths, talks
 
 try:  # pragma: no cover - platform dependent
     import fcntl
@@ -51,6 +52,10 @@ JOB_MAX_SECONDS = 45 * 60
 ATTACHED_TTL = 30.0
 RETAIN_DAYS = 7
 RETAIN_COUNT = 200
+# Bounds so a runaway agent or a stolen cookie cannot pile up unbounded work.
+MAX_OPEN_JOBS_PER_AGENT = 10
+MAX_OPEN_JOBS_PER_OWNER = 40
+MAX_JOBS_PER_USER_PER_HOUR = 60
 _NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 _.\-]{0,39}$")
 _CONVERSATION_RE = re.compile(r"^[A-Za-z0-9._\-]{1,120}$")
 _JOB_ID_RE = re.compile(r"^j-\d{6}$")
@@ -62,6 +67,14 @@ class AgentError(ValueError):
 
 class Conflict(AgentError):
     """The state machine refuses the transition (409)."""
+
+
+class Forbidden(AgentError):
+    """The actor is not entitled to touch this agent or job (403)."""
+
+
+class TooMany(AgentError):
+    """A concurrency or rate cap was hit (429)."""
 
 
 class NotFound(KeyError):
@@ -317,32 +330,52 @@ def _clean(value: object, limit: int) -> str:
     return " ".join(str(value or "").split())[:limit]
 
 
-def _find_agent(data: dict, ref: str) -> dict | None:
+def _owner_of(agent: dict) -> str:
+    return str(agent.get("owner") or agent.get("registered_by") or "")
+
+
+def _find_agent(data: dict, ref: str, owner: str | None = None) -> dict | None:
     agents = data.get("agents", {})
-    if ref in agents:
-        return agents[ref]
+    agent = agents.get(ref)
+    if agent is not None:
+        if owner is not None and _owner_of(agent) != owner:
+            return None
+        return agent
     wanted = str(ref or "").strip().lower()
-    return next((a for a in agents.values() if str(a.get("name", "")).lower() == wanted), None)
+    for a in agents.values():
+        if owner is not None and _owner_of(a) != owner:
+            continue
+        if str(a.get("name", "")).lower() == wanted:
+            return a
+    return None
 
 
-def get_agent(slug: str, ref: str) -> dict:
+def get_agent(slug: str, ref: str, *, owner: str | None = None) -> dict:
     with _bubble_lock(slug):
-        agent = _find_agent(_agents(slug), ref)
+        agent = _find_agent(_agents(slug), ref, owner=owner)
     if not agent:
         raise NotFound(ref)
     return dict(agent)
 
 
-def list_agents(slug: str) -> list[dict]:
+def list_agents(slug: str, *, owner: str | None = None) -> list[dict]:
     with _bubble_lock(slug):
         agents = list(_agents(slug).get("agents", {}).values())
+    if owner is not None:
+        agents = [a for a in agents if _owner_of(a) == owner]
     return sorted((dict(a) for a in agents), key=lambda a: a.get("created_at", ""))
 
 
 def register_agent(slug: str, *, name: str, role: str, goal: str, personality: str = "",
                    vendor: str, conversation: str, model: str = "", worker_id: str,
                    project_label: str = "", registered_by: str = "") -> dict:
-    """Create an agent, or refresh the one already bound to this exact conversation."""
+    """Create an agent, or refresh the one already bound to this exact conversation.
+
+    Agents belong to one person: ``owner`` (the account that registered them, ``registered_by``)
+    scopes both the upsert match and the name-uniqueness check, so two different owners on the
+    same bubble may each have an agent called "Ada". ``key`` is a stable, human-readable,
+    server-side identifier — ``f"{owner}-{slug-of-name}"`` — unique per bubble, used in logs.
+    """
     name = _clean(name, 40)
     if not _NAME_RE.match(name):
         raise AgentError("An agent name is 1–40 letters, digits, spaces, dots, dashes or underscores.")
@@ -355,23 +388,29 @@ def register_agent(slug: str, *, name: str, role: str, goal: str, personality: s
     worker_id = _clean(worker_id, 64)
     if not worker_id:
         raise AgentError("worker_id is required.")
+    owner = _clean(registered_by, 80)
     now = _now_iso()
     with _bubble_lock(slug):
         data = _agents(slug)
         agents = data["agents"]
         existing = next((a for a in agents.values()
-                         if a.get("vendor") == vendor and a.get("conversation") == conversation), None)
+                         if a.get("vendor") == vendor and a.get("conversation") == conversation
+                         and _owner_of(a) == owner), None)
         clash = next((a for a in agents.values()
                       if str(a.get("name", "")).lower() == name.lower()
+                      and _owner_of(a) == owner
                       and a is not existing), None)
         if clash:
-            raise Conflict(f"Another agent on this bubble is already called {clash['name']!r}.")
+            raise Conflict(f"Another agent of yours on this bubble is already called {clash['name']!r}.")
         if existing is None:
             agent_id = "ag-" + secrets.token_hex(4)
             while agent_id in agents:
                 agent_id = "ag-" + secrets.token_hex(4)
-            existing = {"id": agent_id, "created_at": now, "registered_by": _clean(registered_by, 80)}
+            existing = {"id": agent_id, "created_at": now, "registered_by": owner, "owner": owner}
             agents[agent_id] = existing
+        existing["owner"] = owner
+        existing["registered_by"] = existing.get("registered_by") or owner
+        existing["key"] = f"{owner or 'anon'}-{slugify(name) or 'agent'}"
         existing.update({
             "name": name, "role": _clean(role, 80), "goal": _clean(goal, 600),
             "personality": _clean(personality, 600), "vendor": vendor,
@@ -384,14 +423,19 @@ def register_agent(slug: str, *, name: str, role: str, goal: str, personality: s
         return dict(existing)
 
 
-def update_agent(slug: str, agent_id: str, **fields) -> dict:
-    """Worker- or user-side field updates: conversation, model, fresh, persona text."""
+def update_agent(slug: str, agent_id: str, *, owner: str | None = None, **fields) -> dict:
+    """Worker- or user-side field updates: conversation, model, fresh, persona text.
+
+    ``owner``, when given, scopes the lookup: an id belonging to a different owner is reported as
+    :class:`NotFound` (404) rather than :class:`Forbidden`, so a probe by id cannot learn that
+    someone else's agent exists.
+    """
     allowed = {"conversation": 120, "model": 80, "role": 80, "goal": 600, "personality": 600,
                "name": 40}
     with _bubble_lock(slug):
         data = _agents(slug)
         agent = data["agents"].get(agent_id)
-        if not agent:
+        if not agent or (owner is not None and _owner_of(agent) != owner):
             raise NotFound(agent_id)
         for key, value in fields.items():
             if key == "fresh":
@@ -401,7 +445,9 @@ def update_agent(slug: str, agent_id: str, **fields) -> dict:
                 if key == "name":
                     if not _NAME_RE.match(cleaned):
                         raise AgentError("Bad agent name.")
+                    agent_owner = _owner_of(agent)
                     if any(a is not agent and str(a.get("name", "")).lower() == cleaned.lower()
+                           and _owner_of(a) == agent_owner
                            for a in data["agents"].values()):
                         raise Conflict(f"Another agent is already called {cleaned!r}.")
                 if key == "conversation" and cleaned and not _CONVERSATION_RE.match(cleaned):
@@ -412,18 +458,19 @@ def update_agent(slug: str, agent_id: str, **fields) -> dict:
         return dict(agent)
 
 
-def reset_agent(slug: str, agent_id: str, conversation: str = "") -> dict:
+def reset_agent(slug: str, agent_id: str, conversation: str = "", *, owner: str | None = None) -> dict:
     """Forget the conversation; the next job starts a new one and re-introduces the persona."""
-    return update_agent(slug, agent_id, conversation=conversation, fresh=True)
+    return update_agent(slug, agent_id, owner=owner, conversation=conversation, fresh=True)
 
 
-def remove_agent(slug: str, agent_id: str) -> dict:
+def remove_agent(slug: str, agent_id: str, *, owner: str | None = None) -> dict:
     """Retire an agent and cancel whatever it had not finished."""
     with _bubble_lock(slug):
         data = _agents(slug)
-        agent = data["agents"].pop(agent_id, None)
-        if not agent:
+        agent = data["agents"].get(agent_id)
+        if not agent or (owner is not None and _owner_of(agent) != owner):
             raise NotFound(agent_id)
+        data["agents"].pop(agent_id, None)
         _save_agents(slug, data)
         jobs = _jobs(slug)
         changed = False
@@ -438,6 +485,31 @@ def remove_agent(slug: str, agent_id: str) -> dict:
         return dict(agent)
 
 
+def remove_owner(slug: str, owner: str) -> dict:
+    """Retire every agent owned by one account on a bubble and cancel its open jobs."""
+    owner = str(owner or "").strip().lower()
+    with _bubble_lock(slug):
+        registry = _agents(slug)
+        removed = [dict(agent) for agent in registry["agents"].values()
+                   if _owner_of(agent) == owner]
+        removed_ids = {agent["id"] for agent in removed}
+        if removed_ids:
+            registry["agents"] = {aid: agent for aid, agent in registry["agents"].items()
+                                  if aid not in removed_ids}
+            _save_agents(slug, registry)
+        data = _jobs(slug)
+        cancelled = 0
+        for job in data["jobs"].values():
+            if job.get("owner", "") == owner and job.get("status") in OPEN_STATUSES:
+                job["status"] = "cancelled"
+                job["finished_at"] = _now_iso()
+                job["error"] = "the owner stopped and removed all agents"
+                cancelled += 1
+        if cancelled:
+            _save_jobs(slug, data)
+    return {"agents": len(removed), "cancelled_jobs": cancelled}
+
+
 # --------------------------------------------------------------------------- #
 # Jobs
 # --------------------------------------------------------------------------- #
@@ -448,7 +520,8 @@ def _job_summary(job: dict, agents: dict) -> dict:
     # the history of what it accomplished. Older jobs (pre-denormalization) have no stored name.
     agent_name = agent.get("name") or job.get("agent_name", "")
     return {"id": job["id"], "agent_id": job.get("agent_id", ""),
-            "agent_name": agent_name, "mark_key": job.get("mark_key", ""),
+            "agent_name": agent_name, "owner": job.get("owner", ""),
+            "mark_key": job.get("mark_key", ""),
             "instruction": job.get("instruction", ""), "status": job.get("status", ""),
             "created_by": job.get("created_by", ""), "created_at": job.get("created_at", ""),
             "started_at": job.get("started_at", ""), "finished_at": job.get("finished_at", ""),
@@ -457,6 +530,24 @@ def _job_summary(job: dict, agents: dict) -> dict:
             "result": {"exit_code": result.get("exit_code"),
                        "output_tail": str(result.get("output_tail") or "")[-1200:],
                        "confirmed": bool(result.get("confirmed"))}}
+
+
+def _open_count(jobs: dict, *, agent_id: str | None = None, owner: str | None = None) -> int:
+    def matches(j: dict) -> bool:
+        if j.get("status") not in OPEN_STATUSES:
+            return False
+        if agent_id is not None and j.get("agent_id") != agent_id:
+            return False
+        if owner is not None and j.get("owner", "") != owner:
+            return False
+        return True
+    return sum(1 for j in jobs.values() if matches(j))
+
+
+def _created_last_hour(jobs: dict, owner: str) -> int:
+    cutoff = datetime.now(timezone.utc).timestamp() - 3600
+    return sum(1 for j in jobs.values()
+               if j.get("owner", "") == owner and _parse_ts(j.get("created_at")) >= cutoff)
 
 
 def create_job(slug: str, *, agent_id: str, mark_key: str, instruction: str = "",
@@ -469,17 +560,31 @@ def create_job(slug: str, *, agent_id: str, mark_key: str, instruction: str = ""
         agent = _find_agent({"agents": agents}, agent_id)
         if not agent:
             raise NotFound(agent_id)
+        owner = _owner_of(agent)
+        created_by = _clean(created_by, 80)
+        if owner and created_by and owner != created_by:
+            raise Forbidden(f"{agent['name']} belongs to another owner.")
+        if owner and auth.secure_mode(owner):
+            raise Conflict("Secure mode is on for this account: turn it off before assigning new work.")
         data = _jobs(slug)
         for job in data["jobs"].values():
             if (job.get("agent_id") == agent["id"] and job.get("mark_key") == mark_key
                     and job.get("status") in OPEN_STATUSES):
                 raise Conflict(f"{agent['name']} already has this mark in progress ({job['id']}).")
+        if _open_count(data["jobs"], agent_id=agent["id"]) >= MAX_OPEN_JOBS_PER_AGENT:
+            raise TooMany(f"{agent['name']} already has {MAX_OPEN_JOBS_PER_AGENT} open jobs.")
+        if owner:
+            if _open_count(data["jobs"], owner=owner) >= MAX_OPEN_JOBS_PER_OWNER:
+                raise TooMany(f"You already have {MAX_OPEN_JOBS_PER_OWNER} open jobs on this bubble.")
+            if _created_last_hour(data["jobs"], owner) >= MAX_JOBS_PER_USER_PER_HOUR:
+                raise TooMany(f"You have created {MAX_JOBS_PER_USER_PER_HOUR} jobs in the last hour.")
         seq = int(data.get("next_seq", 1) or 1)
         job_id = f"j-{seq:06d}"
         data["next_seq"] = seq + 1
-        job = {"id": job_id, "agent_id": agent["id"], "agent_name": agent["name"], "mark_key": mark_key,
+        job = {"id": job_id, "agent_id": agent["id"], "agent_name": agent["name"], "owner": owner,
+               "mark_key": mark_key,
                "instruction": _clean(instruction, 2000), "status": "queued",
-               "created_by": _clean(created_by, 80), "created_at": _now_iso(),
+               "created_by": created_by, "created_at": _now_iso(),
                "started_at": "", "finished_at": "", "worker_id": "", "attempts": 1,
                "result": {"exit_code": None, "output_tail": "", "reply_message_id": "",
                           "confirmed": False}, "error": ""}
@@ -495,17 +600,32 @@ def _get_job(data: dict, job_id: str) -> dict:
     return job
 
 
-def get_job(slug: str, job_id: str) -> dict:
+def _require_owner(job_or_agent_owner: str, actor: str, message: str) -> None:
+    """Raise :class:`Forbidden` when both sides are known and disagree.
+
+    Silent (no check) whenever either side is unset — an empty owner means the record predates
+    ownership (or was created directly in a test without one), and an empty actor means the
+    caller did not ask for enforcement, matching every pre-existing call site.
+    """
+    if job_or_agent_owner and actor and job_or_agent_owner != actor:
+        raise Forbidden(message)
+
+
+def get_job(slug: str, job_id: str, *, owner: str | None = None) -> dict:
     with _bubble_lock(slug):
         agents = _agents(slug)["agents"]
-        return _job_summary(_get_job(_jobs(slug), job_id), agents)
+        job = _get_job(_jobs(slug), job_id)
+        if owner is not None and job.get("owner", "") != owner:
+            raise NotFound(job_id)
+        return _job_summary(job, agents)
 
 
-def start_job(slug: str, job_id: str, *, worker_id: str) -> dict:
+def start_job(slug: str, job_id: str, *, worker_id: str, actor: str = "") -> dict:
     with _bubble_lock(slug):
         agents = _agents(slug)["agents"]
         data = _jobs(slug)
         job = _get_job(data, job_id)
+        _require_owner(job.get("owner", ""), actor, f"{job_id} belongs to another owner.")
         if job.get("status") != "queued":
             raise Conflict(f"{job_id} is {job.get('status')}, not queued.")
         agent = agents.get(job.get("agent_id", ""))
@@ -513,6 +633,9 @@ def start_job(slug: str, job_id: str, *, worker_id: str) -> dict:
             job["status"] = "cancelled"; job["error"] = "the agent no longer exists"
             job["finished_at"] = _now_iso(); _save_jobs(slug, data)
             raise Conflict("The agent no longer exists.")
+        agent_owner = _owner_of(agent)
+        if agent_owner and auth.secure_mode(agent_owner):
+            raise Conflict("Secure mode is on for this account: no new turns may start.")
         if agent.get("worker_id") != worker_id:
             raise Conflict("This job belongs to another directory's worker.")
         if any(j.get("agent_id") == agent["id"] and j.get("status") == "running"
@@ -557,7 +680,7 @@ def requeue_job(slug: str, job_id: str, *, reason: str = "") -> dict:
 
 
 def finish_job(slug: str, job_id: str, *, status: str, exit_code: int | None = None,
-               output_tail: str = "", error: str = "") -> dict:
+               output_tail: str = "", error: str = "", actor: str = "") -> dict:
     """The worker's verdict on a finished turn. A reply that already landed wins over exit code."""
     if status == "requeue":
         return requeue_job(slug, job_id, reason=error)
@@ -567,6 +690,7 @@ def finish_job(slug: str, job_id: str, *, status: str, exit_code: int | None = N
         agents = _agents(slug)["agents"]
         data = _jobs(slug)
         job = _get_job(data, job_id)
+        _require_owner(job.get("owner", ""), actor, f"{job_id} belongs to another owner.")
         result = job.setdefault("result", {})
         result["exit_code"] = exit_code
         result["output_tail"] = str(output_tail or "")[-4000:]
@@ -623,6 +747,7 @@ def reply_job(slug: str, job_id: str, *, text: str, actor: str = "") -> dict:
         agents = _agents(slug)["agents"]
         data = _jobs(slug)
         job = _get_job(data, job_id)
+        _require_owner(job.get("owner", ""), actor, f"{job_id} belongs to another owner.")
         result = job.get("result") or {}
         if result.get("confirmed") or result.get("reply_message_id"):
             raise Conflict(f"{job_id} was already answered.")
@@ -655,6 +780,7 @@ def fail_job(slug: str, job_id: str, *, reason: str, actor: str = "") -> dict:
         agents = _agents(slug)["agents"]
         data = _jobs(slug)
         job = _get_job(data, job_id)
+        _require_owner(job.get("owner", ""), actor, f"{job_id} belongs to another owner.")
         result = job.get("result") or {}
         if result.get("confirmed") or result.get("reply_message_id"):
             raise Conflict(f"{job_id} was already answered.")
@@ -677,11 +803,12 @@ def fail_job(slug: str, job_id: str, *, reason: str, actor: str = "") -> dict:
         return _job_summary(job, agents)
 
 
-def cancel_job(slug: str, job_id: str) -> dict:
+def cancel_job(slug: str, job_id: str, *, actor: str = "") -> dict:
     with _bubble_lock(slug):
         agents = _agents(slug)["agents"]
         data = _jobs(slug)
         job = _get_job(data, job_id)
+        _require_owner(job.get("owner", ""), actor, f"{job_id} belongs to another owner.")
         if job.get("status") not in OPEN_STATUSES:
             raise Conflict(f"{job_id} is already {job.get('status')}.")
         job["status"] = "cancelled"
@@ -691,20 +818,28 @@ def cancel_job(slug: str, job_id: str) -> dict:
         return _job_summary(job, agents)
 
 
-def reassign_job(slug: str, job_id: str, *, agent_id: str) -> dict:
+def reassign_job(slug: str, job_id: str, *, agent_id: str, actor: str = "") -> dict:
     with _bubble_lock(slug):
         agents = _agents(slug)["agents"]
+        data = _jobs(slug)
+        job = _get_job(data, job_id)
+        _require_owner(job.get("owner", ""), actor, f"{job_id} belongs to another owner.")
         agent = _find_agent({"agents": agents}, agent_id)
         if not agent:
             raise NotFound(agent_id)
-        data = _jobs(slug)
-        job = _get_job(data, job_id)
+        target_owner = _owner_of(agent)
+        _require_owner(target_owner, actor, f"{agent['name']} belongs to another owner.")
         if job.get("status") == "running":
             raise Conflict(f"{job_id} is running; cancel it first.")
         if any(j is not job and j.get("agent_id") == agent["id"] and j.get("mark_key") == job.get("mark_key")
                and j.get("status") in OPEN_STATUSES for j in data["jobs"].values()):
             raise Conflict(f"{agent['name']} already has this mark in progress.")
-        job.update({"agent_id": agent["id"], "agent_name": agent["name"], "status": "queued", "started_at": "",
+        if _open_count(data["jobs"], agent_id=agent["id"]) >= MAX_OPEN_JOBS_PER_AGENT:
+            raise TooMany(f"{agent['name']} already has {MAX_OPEN_JOBS_PER_AGENT} open jobs.")
+        if target_owner and _open_count(data["jobs"], owner=target_owner) >= MAX_OPEN_JOBS_PER_OWNER:
+            raise TooMany(f"You already have {MAX_OPEN_JOBS_PER_OWNER} open jobs on this bubble.")
+        job.update({"agent_id": agent["id"], "agent_name": agent["name"], "owner": target_owner,
+                    "status": "queued", "started_at": "",
                     "finished_at": "", "worker_id": "", "error": "",
                     "attempts": int(job.get("attempts", 1) or 1) + 1,
                     "result": {"exit_code": None, "output_tail": "", "reply_message_id": "",
@@ -751,16 +886,32 @@ def reconcile(slug: str, *, worker_id: str = "", running_job_ids: list[str] | No
             _save_jobs(slug, data)
 
 
-def heartbeat(slug: str, *, worker_id: str, agents: list[dict], running_job_ids: list[str]) -> dict:
-    """The worker's per-poll check-in. Returns what it should run and what it should stop."""
+def heartbeat(slug: str, *, worker_id: str, agents: list[dict], running_job_ids: list[str],
+             secure: bool = False, owner: str = "") -> dict:
+    """The worker's per-poll check-in. Returns what it should run and what it should stop.
+
+    ``secure`` is the caller's secure-mode switch (see ``auth.secure_mode``): while on, every
+    running turn for this owner is told to stop and nothing new is handed out, so a person who
+    stepped away is never surprised by more agent activity happening on their behalf. ``owner``,
+    when given, additionally scopes which agents this worker is allowed to touch to that owner —
+    belt and braces alongside the ``worker_id`` match, since a worker id is not itself a secret.
+    """
+    if secure:
+        return {"jobs": [], "cancelled": list(running_job_ids or []), "secure_mode": True}
     reconcile(slug, worker_id=worker_id, running_job_ids=list(running_job_ids or []))
     now = _now_iso()
-    reported = {str(item.get("id", "")): bool(item.get("attached")) for item in agents or []}
+    reported = {str(item.get("id", "")): item for item in agents or []}
     with _bubble_lock(slug):
         registry = _agents(slug)
-        mine = {aid: a for aid, a in registry["agents"].items() if a.get("worker_id") == worker_id}
+        mine = {aid: a for aid, a in registry["agents"].items()
+               if a.get("worker_id") == worker_id and (not owner or _owner_of(a) == owner)}
         for aid, agent in mine.items():
-            agent["heartbeat"] = {"at": now, "attached": reported.get(aid, False)}
+            item = reported.get(aid, {})
+            agent["heartbeat"] = {"at": now, "attached": bool(item.get("attached"))}
+            if "budget" in item:
+                agent["budget"] = item.get("budget")
+            if "confinement" in item:
+                agent["confinement"] = str(item.get("confinement") or "")
         if mine:
             _save_agents(slug, registry)
         data = _jobs(slug)
@@ -781,7 +932,7 @@ def heartbeat(slug: str, *, worker_id: str, agents: list[dict], running_job_ids:
                 queued.append(summary)
             elif job.get("status") == "cancelled" and job["id"] in (running_job_ids or []):
                 cancelled.append(job["id"])
-    return {"jobs": queued, "cancelled": cancelled}
+    return {"jobs": queued, "cancelled": cancelled, "secure_mode": False}
 
 
 # --------------------------------------------------------------------------- #
@@ -799,15 +950,31 @@ def _status_for(agent: dict, live_worker_ids: set[str] | None, running: set[str]
     return "idle"
 
 
-def overview(slug: str, *, workers: list[dict] | None = None) -> dict:
-    """What the bubble page shows: agents with derived status, and jobs grouped for the marks."""
+def overview(slug: str, *, workers: list[dict] | None = None, viewer: str = "") -> dict:
+    """What the bubble page shows: agents with derived status, and jobs grouped for the marks.
+
+    Agents belong to one person and are invisible to everyone else: unless ``viewer`` is
+    explicitly ``None`` (an internal, cross-owner view used only by the legacy deck-reply
+    resolver), only agents whose ``owner`` equals ``viewer`` — and only jobs belonging to them —
+    are returned. While that owner has secure mode on, every one of their agents is reported
+    ``"stopped"`` and the top level carries ``secure_mode: true``.
+    """
     live: set[str] | None = None
     if workers is not None:
         live = {str(w.get("worker_id")) for w in workers if w.get("state") in ("live", "degraded")}
         reconcile(slug, live_worker_ids=live)
+    filtered = viewer is not None
+    secure = bool(filtered and viewer and auth.secure_mode(viewer))
     with _bubble_lock(slug):
         agents = _agents(slug)["agents"]
         jobs = list(_jobs(slug)["jobs"].values())
+    if filtered:
+        agents = {aid: a for aid, a in agents.items() if _owner_of(a) == viewer}
+        # Filtered on the job's own denormalized ``owner`` — not on whether its agent is still in
+        # the filtered map — so a retired agent's job history stays visible to the owner it
+        # belonged to (see ``_job_summary``'s ``agent_name`` fallback, the same idea applied to
+        # ``owner``).
+        jobs = [j for j in jobs if j.get("owner", "") == viewer]
     running = {j["agent_id"] for j in jobs if j.get("status") == "running"}
     summaries = sorted((_job_summary(j, agents) for j in jobs), key=lambda j: j["created_at"])
     by_mark: dict[str, list[dict]] = {}
@@ -816,32 +983,52 @@ def overview(slug: str, *, workers: list[dict] | None = None) -> dict:
     last_by_agent: dict[str, dict] = {}
     for job in summaries:
         last_by_agent[job["agent_id"]] = job
+    now_ts = datetime.now(timezone.utc).timestamp()
     rows = []
     for agent in sorted(agents.values(), key=lambda a: a.get("created_at", "")):
         row = dict(agent)
-        row["status"] = _status_for(agent, live, running)
+        row["status"] = "stopped" if secure else _status_for(agent, live, running)
         row["last_job"] = last_by_agent.get(agent["id"])
         row["open_jobs"] = sum(1 for j in summaries
                                if j["agent_id"] == agent["id"] and j["status"] in OPEN_STATUSES)
+        row["owner"] = _owner_of(agent)
+        row["key"] = agent.get("key", "")
+        row["budget"] = agent.get("budget")
+        row["confinement"] = agent.get("confinement", "")
+        row["turns_last_hour"] = sum(
+            1 for j in summaries if j["agent_id"] == agent["id"] and j.get("started_at")
+            and now_ts - _parse_ts(j["started_at"]) <= 3600)
+        row["turns_today"] = sum(
+            1 for j in summaries if j["agent_id"] == agent["id"] and j.get("started_at")
+            and now_ts - _parse_ts(j["started_at"]) <= 86400)
         rows.append(row)
     return {"agents": rows,
             "jobs": {"by_mark": by_mark,
                      "open": [j for j in summaries if j["status"] in OPEN_STATUSES],
                      "recent": [j for j in reversed(summaries) if j["status"] not in OPEN_STATUSES][:30]},
-            "jobs_mtime": jobs_mtime(slug)}
+            "jobs_mtime": jobs_mtime(slug),
+            "secure_mode": secure}
 
 
-def indexes(slug: str) -> tuple[dict, dict]:
-    """The two generated files the sync layer publishes into ``.lockedin/indexes/``."""
+def indexes(slug: str, *, owner: str = "") -> tuple[dict, dict]:
+    """The two generated files the sync layer publishes into ``.lockedin/indexes/``.
+
+    ``owner``, when given, restricts both files (and the counts derived from them) to that
+    owner's agents and jobs; the default ``""`` means everything on the bubble, which is what
+    every pre-existing caller relies on.
+    """
     with _bubble_lock(slug):
         agents = _agents(slug)["agents"]
         jobs = list(_jobs(slug)["jobs"].values())
+    if owner:
+        agents = {aid: a for aid, a in agents.items() if _owner_of(a) == owner}
+        jobs = [j for j in jobs if j.get("owner", "") == owner]
     public = {}
     by_worker: dict[str, list[str]] = {}
     for aid, agent in agents.items():
         public[aid] = {k: agent.get(k, "") for k in
                        ("id", "name", "role", "goal", "personality", "vendor", "model",
-                        "conversation", "worker_id", "project_label", "fresh")}
+                        "conversation", "worker_id", "project_label", "fresh", "owner", "key")}
         by_worker.setdefault(str(agent.get("worker_id", "")), []).append(aid)
     job_index = {}
     for job in jobs:

@@ -236,6 +236,37 @@ def delete_user(username: str) -> None:
     save_accounts(users)
 
 
+def secure_mode(username: str) -> bool:
+    """Whether this account has switched every one of its agents off, everywhere.
+
+    One switch: while it is on, no new turn may start and every running one is told to stop —
+    "if I want to go on travel and I don't want to care about what's happening with my lockedin
+    projects, I can just do that." See ``agents.py`` for the enforcement.
+    """
+    rec = load_accounts().get(username.strip().lower())
+    return bool(rec and rec.get("secure_mode"))
+
+
+def set_secure_mode(username: str, enabled: bool) -> int:
+    """Set the account-wide stop flag and revoke all Scientist credentials when enabling it.
+
+    Returns the number of persistent client tokens revoked. Revocation and the flag are written
+    in the same accounts-file update, so there is no interval in which secure mode reads on while
+    an installed client remains authorized.
+    """
+    username = username.strip().lower()
+    users = load_accounts()
+    rec = users.get(username)
+    if rec is None:
+        raise ValueError("No such user.")
+    revoked = len(rec.get("scientist_tokens", [])) if enabled else 0
+    rec["secure_mode"] = bool(enabled)
+    if enabled:
+        rec["scientist_tokens"] = []
+    save_accounts(users)
+    return revoked
+
+
 def is_premium(username: str) -> bool:
     """Whether the account can use server-paid premium features such as local Qwen."""
     rec = load_accounts().get(username.strip().lower())
@@ -351,6 +382,8 @@ def new_scientist_token(username: str, label: str = "") -> str:
     users = load_accounts()
     if username not in users or not users[username].get("approved"):
         raise ValueError("No approved user.")
+    if users[username].get("secure_mode"):
+        raise ValueError("Secure mode is on. Turn it off before authorizing a Scientist client.")
     token = "li_sc_" + secrets.token_urlsafe(32)
     rec = {"hash": _token_hash(token), "created_at": _now_iso(), "label": label[:120]}
     users[username].setdefault("scientist_tokens", []).append(rec)

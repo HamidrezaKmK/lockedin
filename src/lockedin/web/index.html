@@ -639,8 +639,25 @@
     background:color-mix(in srgb,var(--ink) 46%,transparent);transition:background .15s}
   .side-reopen:hover::after,.side-reopen:focus-visible::after{background:var(--accent)}
   body.side-collapsed .side-reopen{display:flex}
+  /* A persistent, always-reachable secure-mode control — the same value the Settings card and
+     the bubble-view banner read, just closer at hand. Pinned just above the footer credit
+     rather than lost among the view buttons above it, since it is a standing state rather
+     than a place to navigate to. */
+  .side-secure{margin-top:auto;display:flex;align-items:center;justify-content:space-between;
+    gap:8px;padding:9px 10px;border-radius:8px;border:1px solid var(--line);
+    font-size:12.5px;font-weight:600;color:var(--muted);transition:color .15s,border-color .15s}
+  .side-secure-label{display:flex;align-items:center;gap:9px;min-width:0}
+  .side-secure-label .li-ic{width:16px;height:16px;flex-shrink:0;opacity:.9}
+  .side-secure.on{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 55%,transparent)}
+  .side-secure-switch{flex-shrink:0;width:30px;height:17px;border-radius:999px;border:1px solid var(--line);
+    background:var(--panel2);padding:1px;cursor:pointer;min-height:0;transition:background .15s,border-color .15s}
+  .side-secure-switch:disabled{opacity:.6;cursor:default}
+  .side-secure-thumb{display:block;width:13px;height:13px;border-radius:50%;background:var(--muted);
+    transition:transform .15s,background .15s}
+  .side-secure-switch[aria-checked="true"]{border-color:var(--warn);background:color-mix(in srgb,var(--warn) 30%,transparent)}
+  .side-secure-switch[aria-checked="true"] .side-secure-thumb{transform:translateX(13px);background:var(--warn)}
   /* minimal authorship credit, pinned to the bottom of the side pane */
-  .side-credit{margin-top:auto;padding:12px 8px 4px;font-family:var(--font-ui);font-size:11px;
+  .side-credit{padding:12px 8px 4px;font-family:var(--font-ui);font-size:11px;
         color:var(--muted);line-height:1.4}
   /* Not a button, so the icon/label gap rule never reached it and the glyphs sat on the words. */
   .side-credit .li-ic,.landing-footer .li-ic{margin:0 2px}
@@ -763,6 +780,15 @@
   .badge{font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid var(--warn);
          color:var(--warn);flex-shrink:0;white-space:nowrap}
   .badge.bib{border-color:var(--accent2);color:var(--accent2)}
+
+  /* Secure mode banner: a slim, unmistakable strip at the top of a bubble view saying every
+     agent of yours is stopped. Warn-coloured throughout, never subtle. */
+  .secure-banner{display:flex;align-items:center;gap:8px;margin:0 0 10px;padding:7px 12px;
+    border:1px solid var(--warn);border-radius:8px;background:color-mix(in srgb,var(--warn) 12%,transparent);
+    color:var(--warn);font-size:12.5px}
+  .secure-banner .li-ic{width:15px;height:15px;flex-shrink:0}
+  .secure-banner span{flex:1}
+  .secure-banner button{flex-shrink:0}
 
   /* View loading states. Skeletons keep an asset-heavy screen feeling responsive while its
      metadata arrives, and respect the user's reduced-motion preference. */
@@ -1443,6 +1469,12 @@
       padding:calc(14px + env(safe-area-inset-top)) 12px calc(14px + env(safe-area-inset-bottom))!important;
       border-right:1px solid var(--line)!important}
     #app.side-open #side .navbtn{min-height:44px;display:flex;align-items:center}
+    /* The drawer is the only way to this control on a phone (the sidebar itself collapses to a
+       width:0 fixed panel above), so it needs the same touch target as the nav buttons beside it. */
+    #app.side-open #side .side-secure{min-height:44px}
+    #app.side-open #side .side-secure-switch{width:38px;height:22px}
+    #app.side-open #side .side-secure-thumb{width:18px;height:18px}
+    #app.side-open #side .side-secure-switch[aria-checked="true"] .side-secure-thumb{transform:translateX(16px)}
     /* The scrim rides just under the drawer and above the top bar, so nothing of the page —
        or of the bar — shows through beside it. */
     #app.side-open::after{content:'';position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1290;
@@ -1705,6 +1737,11 @@
     <button class="navbtn" data-view="todos"><svg class="li-ic" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#li-i-todos"/></svg><span>TODOs</span></button>
     <button class="navbtn" data-view="workspace"><svg class="li-ic" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#li-i-workspace"/></svg><span>Workspace</span></button>
     <button class="navbtn" data-view="settings"><svg class="li-ic" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#li-i-settings"/></svg><span>Settings</span></button>
+    <div class="side-secure" id="sideSecure" title="Stop and remove your agents and sync workers on every bubble">
+      <span class="side-secure-label"><svg class="li-ic" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#li-i-lock"/></svg><span>Stop agents</span></span>
+      <button type="button" class="side-secure-switch" id="sideSecureSwitch" role="switch" aria-checked="false"
+              aria-label="Stop and remove your agents and sync workers on every bubble"><span class="side-secure-thumb"></span></button>
+    </div>
     <div class="side-credit">Made with <span class="heart" aria-label="love"><svg class="li-ic heart" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#li-i-heart"/></svg></span> + <svg class="li-ic" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#li-i-agent"/></svg> by a PhD student</div>
   </div>
 
@@ -1912,8 +1949,10 @@
     e.preventDefault(); e.stopPropagation();
     setPane("right",!S.paneRight);
   },true);
-  // Alt+Enter toggles the focused workspace, same as #bubbleFocusToggle, on either bubble
-  // surface (a document page or an open chalk talk — both live inside the bubble view).
+  // Alt+Enter toggles the focused workspace, but only where #bubbleFocusToggle actually lives:
+  // the document page. The bubble home (the page/chalk-talk listing) and an open chalk talk
+  // both satisfy S.bubble but have no such button, so the chord must fall through there and
+  // let whatever else is listening — or nothing — handle it.
   // Bound in the capture phase alongside the two chords above. No typing bail-out: unlike
   // Ctrl+B, Alt+Enter is not something a person types into prose.
   // The right Alt key is AltGr on most non-US layouts: Linux reports it as key "AltGraph"
@@ -1925,7 +1964,8 @@
     const alt=e.altKey||e.getModifierState("AltGraph");
     if(!alt||e.metaKey)return;
     if(e.code!=="Enter"&&e.code!=="NumpadEnter")return;
-    if(!S.bubble)return;
+    const focusBtn=document.getElementById("bubbleFocusToggle");
+    if(!focusBtn||focusBtn.offsetParent===null)return;
     e.preventDefault(); e.stopPropagation();
     setBubbleFocus(!S.bubbleFocus);
   },true);
@@ -2674,7 +2714,7 @@
   function bindPageMarks(){
     const wrap=$("#previewWrap"), gutter=$("#reviewWrap");
     if(!wrap||!window.LockedInMarks||!S.bubble||!S.page)return;
-    window.LockedInMarks.setUser(S.user,activeWorkspaceOwner());
+    window.LockedInMarks.setUser(S.user,activeWorkspaceOwner(),S.workspaceId);
     // The marks column controls visibility, not whether a reader can start a mark. In reading
     // mode the selection picker must still open; otherwise the most direct feedback gesture
     // appears broken until someone discovers the unrelated right-pane toggle.
@@ -2884,7 +2924,7 @@
     refAc:null,
     healthTimer:null, healthSeq:0, verifiedActive:null,
     shareActive:false, shareToken:"", bubbleFocus:false, showHiddenPages:false, renderVersion:0,
-    availableThemes:["dark","light","pink","techno","pearl"]
+    availableThemes:["dark","light","pink","techno","pearl"], secureMode:false
   };
 
   // Browser navigations (new tabs, PDFs, images, and preview pages) cannot carry the API header.
@@ -3162,6 +3202,7 @@
     if(S.workspaceId)localStorage.setItem(WORKSPACE_STORAGE_KEY,S.workspaceId);
     S.premiumRequestedAt=me.premium_requested_at||""; S.admin=!!me.admin;
     S.availableThemes=Array.isArray(me.themes)?me.themes:THEMES.slice();
+    S.secureMode=!!me.secure_mode; syncSecureModeUI();
     $("#auth").style.display="none"; $("#app").style.display="grid";
     applyTheme(localStorage.getItem("li_theme")||"dark");
     refreshAccountButton();
@@ -3348,8 +3389,43 @@
         el("pre",{id:"settingsHealthDetails",class:"hide"})));
     renderAesthetics(m);
     if(S.admin) renderUserAccess(m);
+    renderSecureModeSection(m);
     renderAccountSection(m);
     if(checkHealth)scheduleLiveHealth(S.model.active);
+  }
+
+  // A clearly separated card, not folded into account or model settings: this one flag stops
+  // every agent you own, everywhere, so it needs to stand on its own and be impossible to miss.
+  async function renderSecureModeSection(main){
+    const old=$("#secureModeSection"); if(old)old.remove();
+    const box=el("div",{id:"secureModeSection",class:"card col stack-card",style:"gap:10px"});
+    box.append(el("b",{},"Stop agents"));
+    const check=el("input",{type:"checkbox",style:"width:auto",checked:!!S.secureMode});
+    box.append(el("label",{class:"row",style:"gap:10px;cursor:pointer;align-items:center"},
+      check,el("span",{},"Stop all agents")));
+    box.append(el("div",{class:"muted",style:"font-size:12px"},
+      "Revokes every Scientist client, removes all of your registered agents, cancels their open "+
+      "jobs, and stops their sync workers. Turning this off restores none of them: authorize each "+
+      "machine again, run lockedin-scientist resync, and register new agents when ready."));
+    main.append(box);
+    check.onchange=async()=>{
+      const enabled=check.checked;
+      check.disabled=true;
+      try{
+        const result=await setSecureModeEnabled(enabled);
+        if(!result){check.checked=S.secureMode;return;}
+        toast(S.secureMode?"Agents stopped and removed":"Stop-agents mode is off");
+      }catch(e){ check.checked=!enabled; toast(e.message); }
+      finally{ check.disabled=false; }
+    };
+    // The checkbox starts from whatever S.secureMode last learned (or false, on a cold load) so
+    // it never flashes empty; this reconciles it — and the sidebar switch and banner alongside
+    // it — against the server the moment settings opens.
+    try{
+      const r=await api("/api/settings/secure-mode");
+      S.secureMode=!!r.enabled; check.checked=S.secureMode;
+      syncSecureModeUI();
+    }catch(e){}
   }
 
   function renderAesthetics(main){
@@ -3610,6 +3686,20 @@
 
   // ================= NAV =================
   document.querySelectorAll(".navbtn").forEach(b=>b.onclick=()=>switchView(b.dataset.view));
+  // The sidebar's own secure-mode switch: the same value the Settings card and the bubble-view
+  // banner read, just closer at hand — one flag stopping every agent you own is worth a control
+  // that does not need a trip to Settings. Present in the DOM on every screen size; on a phone
+  // it rides inside the same collapsed drawer the rest of the nav does, reached the same way.
+  const sideSecureSwitch=document.getElementById("sideSecureSwitch");
+  if(sideSecureSwitch)sideSecureSwitch.onclick=async()=>{
+    sideSecureSwitch.disabled=true;
+    try{
+      const result=await setSecureModeEnabled(!S.secureMode);
+      if(!result)return;
+      toast(S.secureMode?"Agents stopped and removed":"Stop-agents mode is off");
+    }catch(e){ toast(e.message); }
+    finally{ sideSecureSwitch.disabled=false; }
+  };
   function switchView(v,{noRoute=false}={}){
     leaveBubbleWorkspace();
     S.view=v;
@@ -4902,7 +4992,7 @@
       if(agents===null) return;
       if(!agents.length){
         attachAgentsBody.append(el("div",{class:"muted setup-hint"},
-          "No agents on this bubble yet. Step 4 creates the first one."));
+          "None of your agents are on this bubble yet. Step 4 creates the first one."));
         return;
       }
       const c=cli();
@@ -5207,6 +5297,14 @@
     return h+"h "+Math.round((s-h*3600)/60)+"m";
   }
 
+  /** An exhausted budget's `resumes_at` (an ISO timestamp) as a local HH:MM, or "" if unusable. */
+  function formatResumesAt(iso){
+    if(!iso)return "";
+    const d=new Date(iso);
+    if(isNaN(d))return "";
+    return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");
+  }
+
   // The server names a worker "<user>:<directory>" so it reads unambiguously anywhere. In the
   // list, prefixing every row with your own name is just noise — the detail keeps the full name.
   function presenceLabel(display){
@@ -5248,8 +5346,12 @@
     // own — "2 folders syncing" answers a question nobody asked. Health colouring still comes
     // from the folders' worst state: an agent has no health of its own to report.
     const agentWord=agentCount===1?"agent":"agents", folderWord=workers.length===1?"folder":"folders";
-    const agentsTitle=agentCount===0?"No agents on this bubble yet. Connect one."
-      :agentCount+" "+agentWord+", "+workers.length+" "+folderWord+" syncing";
+    const agentsTitle=(S.secureMode?"Secure mode is on: your agents are stopped. ":"")+
+      (agentCount===0?"None of your agents are on this bubble yet. Connect one."
+        :agentCount+" "+agentWord+", "+workers.length+" "+folderWord+" syncing");
+    // Secure mode overrides the pill's colouring outright — every agent is stopped, so the
+    // segment reads dead no matter what the workers' own sync health says.
+    const agentsState=S.secureMode?"dead":(workers.length?worst:"");
     const group=el("div",{class:"presence-group-card"},
       segment("people", viewers.length===1?"1 person is reading this bubble"
                                           :viewers.length+" people are reading this bubble", "",
@@ -5258,7 +5360,7 @@
         el("span",{class:"presence-count"},String(viewers.length)),
         el("span",{class:"presence-word"},viewers.length===1?"reading":"reading")),
       segment("agents", agentsTitle,
-        workers.length?worst:"", agentCount,
+        agentsState, agentCount,
         el("span",{class:"presence-emoji"},ic("agent")),
         el("span",{class:"presence-count"},String(agentCount)),
         el("span",{class:"presence-word"},agentWord)));
@@ -5341,6 +5443,25 @@
           el("b",{},"goal"),el("span",{},a.goal||"—"));
         if(a.personality)detail.append(el("b",{},"personality"),el("span",{},a.personality));
         detail.append(el("b",{},"conversation"),el("span",{},a.vendor+(a.id?" · "+String(a.id).slice(0,12):"")));
+        if(a.owner)detail.append(el("b",{},"owner"),el("span",{},a.owner));
+        detail.append(el("b",{},"turns"),el("span",{},
+          (a.turns_last_hour||0)+" this hour · "+(a.turns_today||0)+" today"));
+        if(a.budget){
+          const bud=a.budget;
+          const budLine=el("span",{},bud.hour_used+"/"+bud.hour_cap+" this hour · "+
+            bud.day_used+"/"+bud.day_cap+" today");
+          if(bud.exhausted){
+            budLine.style.color="var(--warn)";
+            const at=formatResumesAt(bud.resumes_at);
+            if(at)budLine.append(" — resumes at "+at);
+          }
+          detail.append(el("b",{},"budget"),budLine);
+        }
+        if(a.confinement==="landlock"||a.confinement==="seatbelt"){
+          detail.append(el("b",{},"confinement"),el("span",{},"confined to .lockedin"));
+        }else if(a.confinement==="none"){
+          detail.append(el("b",{},"confinement"),el("span",{style:"color:var(--warn)"},"unconfined"));
+        }
         detail.append(el("b",{},"last job"),el("span",{},a.last_job?(a.last_job.id+" "+a.last_job.status+(a.last_job.error?" — "+a.last_job.error:"")):"none yet"));
         detail.append(el("button",{class:"danger small",style:"grid-column:1/-1;justify-self:start",onclick:async()=>{
           if(!confirm("Retire "+a.name+"? Its open jobs are cancelled."))return;
@@ -5450,6 +5571,7 @@
       titleRow.append(cluster);
     }
     m.append(titleRow);
+    renderSecureBanner();
 
     const wrap=el("div",{id:"detail"});
     const left=el("div",{class:"pane editor-pane"});
@@ -6944,9 +7066,86 @@
       const r=await api("/api/bubbles/"+bubble+"/agents");
       if(S.bubble!==bubble)return;
       S.agents=r.agents||[]; S.jobsByMark=(r.jobs&&r.jobs.by_mark)||{}; S.lastJobsMtime=r.jobs_mtime==null?S.lastJobsMtime:r.jobs_mtime;
+      S.secureMode=!!r.secure_mode;
       if(window.LockedInMarks&&window.LockedInMarks.setAgents)window.LockedInMarks.setAgents(bubble,S.agents,S.jobsByMark,r.jobs_mtime);
+      if(window.LockedInMarks&&window.LockedInMarks.setSecureMode)window.LockedInMarks.setSecureMode(S.secureMode);
       if(S.presence){S.presence.agents=S.agents;renderPresence();}
+      syncSecureModeUI();
     }catch(e){}
+  }
+
+  // Secure mode has three readers of the one flag — the sidebar switch, the Settings card's
+  // toggle, and the bubble-view banner — so a single writer keeps them honest. Anything that
+  // changes S.secureMode (a PUT here, or a fresher read from /api/me or the agents overview)
+  // must call syncSecureModeUI() so all three move together without anyone reloading.
+  function confirmStopAgents(){
+    return new Promise(resolve=>{
+      const overlay=el("div",{class:"overlay",role:"dialog","aria-modal":"true",
+        "aria-label":"Stop agents confirmation"});
+      const finish=value=>{document.removeEventListener("keydown",onKey);overlay.remove();resolve(value);};
+      const onKey=e=>{if(e.key==="Escape")finish(false);};
+      const cancel=el("button",{class:"ghost",onclick:()=>finish(false)},"Cancel");
+      const stop=el("button",{class:"danger",onclick:()=>finish(true)},"Yes, stop agents");
+      overlay.onclick=e=>{if(e.target===overlay)finish(false);};
+      overlay.append(el("div",{class:"diffbox create-dialog"},
+        el("div",{class:"create-dialog-header"},el("b",{},ic("warning"),"Stop agents?")),
+        el("div",{class:"create-dialog-body"},
+          el("p",{},"This immediately affects every workspace and bubble you use:"),
+          el("ul",{},
+            el("li",{},"All Scientist client authorizations are revoked."),
+            el("li",{},"All of your registered agents are removed."),
+            el("li",{},"Open agent jobs are cancelled and running turns are killed."),
+            el("li",{},"All of your sync workers stop; file syncing stops too.")),
+          el("p",{class:"muted"},"Turning this setting off does not restore anything. You must "+
+            "authorize and resync each machine locally, then register agents again.")),
+        el("div",{class:"create-dialog-footer"},cancel,stop)));
+      document.body.append(overlay);document.addEventListener("keydown",onKey);cancel.focus();
+    });
+  }
+
+  async function setSecureModeEnabled(enabled){
+    if(enabled&&!(await confirmStopAgents()))return null;
+    let current_password="";
+    if(!enabled){
+      current_password=prompt("Enter your current password to turn secure mode off:")||"";
+      if(!current_password)return null;
+    }
+    const r=await api("/api/settings/secure-mode",{method:"PUT",
+      body:JSON.stringify({enabled,current_password})});
+    S.secureMode=!!r.enabled;
+    syncSecureModeUI();
+    return r;
+  }
+
+  function syncSecureModeUI(){
+    const on=!!S.secureMode;
+    const row=document.getElementById("sideSecure");
+    const sw=document.getElementById("sideSecureSwitch");
+    if(row)row.classList.toggle("on",on);
+    if(sw)sw.setAttribute("aria-checked",on?"true":"false");
+    const check=document.querySelector("#secureModeSection input[type=checkbox]");
+    if(check)check.checked=on;
+    if(S.presence&&S.presenceEl)renderPresence();
+    renderSecureBanner();
+  }
+
+  // A slim, unmistakable notice on any bubble view while secure mode has stopped every agent
+  // of yours. Rebuilt in place from whatever last learned the current value of S.secureMode
+  // (boot's /api/me, or a later loadAgents poll) so it never needs its own network round trip
+  // and never lingers once the flag flips back off — no reload required either way. It has
+  // nothing to say on the settings view itself, where the toggle already explains it, which
+  // this achieves for free by only ever mounting inside a bubble render.
+  function renderSecureBanner(){
+    const existing=document.getElementById("secureModeBanner");
+    const m=document.getElementById("main");
+    const titleRow=m&&m.querySelector(".bubble-title");
+    if(!S.secureMode||!titleRow){ if(existing)existing.remove(); return; }
+    if(existing)return;
+    const banner=el("div",{id:"secureModeBanner",class:"secure-banner"},
+      ic("warning"),
+      el("span",{},"Agents stopped: your clients and agents were removed, and sync workers are off."),
+      el("button",{class:"ghost small",onclick:()=>switchView("settings")},"Settings"));
+    m.insertBefore(banner,m.firstChild);
   }
   function captureReviewEditorState(){
     const selection=currentEditorSelectionOffsets(),scrolls=(reviewEditorScrollElements()||[]).map(node=>({node,top:node.scrollTop,left:node.scrollLeft}));

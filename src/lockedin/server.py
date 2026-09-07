@@ -889,6 +889,10 @@ def build_app():
     class PremiumIn(BaseModel):
         premium: bool
 
+    class SecureModeIn(BaseModel):
+        enabled: bool
+        current_password: str = ""
+
     class ShareIn(BaseModel):
         active: bool
 
@@ -1397,7 +1401,8 @@ def build_app():
                 "themes": service.load_aesthetics_config(home_of(user))["themes"],
                 "workspace_id": active_workspace_id(user),
                 "workspace_owner_user": workspace.get("owner_user", ""),
-                "personal_workspace_id": rec.get("personal_workspace_id", "")}
+                "personal_workspace_id": rec.get("personal_workspace_id", ""),
+                "secure_mode": auth.secure_mode(user)}
 
     # ---- workspaces ----------------------------------------------------------
     @app.get("/api/workspaces")
@@ -1564,6 +1569,35 @@ def build_app():
     def put_math(body: MathConfigIn, user: str = Depends(current_user)):
         return service.save_math_config(home_of(user), {"macros": body.macros})
 
+    # ---- secure mode: one switch that stops every agent of this account, everywhere ----
+    @app.get("/api/settings/secure-mode")
+    def get_secure_mode(user: str = Depends(current_user)):
+        return {"enabled": auth.secure_mode(user)}
+
+    @app.put("/api/settings/secure-mode")
+    def put_secure_mode(body: SecureModeIn, user: str = Depends(current_user)):
+        # A stolen browser cookie must not be enough to reopen remote execution. Enabling is an
+        # emergency one-click action; disabling requires the account secret and still does not
+        # restart or reauthorize any machine.
+        if not body.enabled and auth.secure_mode(user) and not auth.verify_password(user, body.current_password):
+            raise HTTPException(status_code=403, detail="Your current password is required to turn secure mode off.")
+        revoked = auth.set_secure_mode(user, body.enabled)
+        retired = cancelled = removed_workers = 0
+        if body.enabled:
+            # Agent records live inside each workspace bubble, while the stop is account-wide.
+            # Walk every workspace the account belongs to; another member's agents are untouched.
+            for workspace in workspaces.list_for_user(user):
+                home = workspaces.workspace_home(workspace["id"])
+                with paths.use_root(home):
+                    for slug in list(bubbles.load_registry()):
+                        result = agents.remove_owner(slug, user)
+                        retired += result["agents"]
+                        cancelled += result["cancelled_jobs"]
+            removed_workers = presence.drop_workers(user)
+        return {"enabled": auth.secure_mode(user), "revoked_clients": revoked,
+                "retired_agents": retired, "cancelled_jobs": cancelled,
+                "removed_workers": removed_workers}
+
     # ---- aesthetics settings ----
     @app.get("/api/settings/aesthetics")
     def get_aesthetics(user: str = Depends(current_user)):
@@ -1724,7 +1758,10 @@ def build_app():
         with paths.use_root(home):
             if slug not in bubbles.load_registry():
                 raise HTTPException(status_code=404, detail="No such bubble.")
-        token = auth.new_scientist_token(user, "lockedin-scientist setup link")
+        try:
+            token = auth.new_scientist_token(user, "lockedin-scientist setup link")
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
         ticket = setup_tickets.mint(user, token, active_workspace_id(user), slug)
         origin = str(request.base_url).rstrip("/")
         return {"ticket": ticket, "expires_in": int(setup_tickets.TICKET_TTL),
@@ -1803,7 +1840,10 @@ def build_app():
         if not rec or rec["expires"] < time.time():
             raise HTTPException(status_code=404, detail="This device authorization expired.")
         rec["user"] = user
-        rec["token"] = auth.new_scientist_token(user, rec["client_name"])
+        try:
+            rec["token"] = auth.new_scientist_token(user, rec["client_name"])
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
         from fastapi.responses import HTMLResponse
         return HTMLResponse("<p>LockedIn Scientist authorized. You may return to your terminal.</p>")
 
@@ -1821,7 +1861,11 @@ def build_app():
     @app.get("/api/scientist/v2/bubbles/{slug}/manifest")
     def scientist_manifest(slug: str, user: str = Depends(scientist_user)):
         try:
-            return scientist_sync.manifest(home_of(user), slug)
+            result = scientist_sync.manifest(home_of(user), slug, owner=user)
+            # Every sync worker polls this route, including directories with no registered agent.
+            # The client treats this as a terminal stop order, not a pause it may undo remotely.
+            result["secure_mode"] = auth.secure_mode(user)
+            return result
         except KeyError:
             raise HTTPException(status_code=404, detail="No such approved bubble.")
 
@@ -1831,7 +1875,7 @@ def build_app():
         if len(body.paths) > 500:
             raise HTTPException(status_code=400, detail="Request at most 500 files at once.")
         try:
-            return scientist_sync.read_files(home_of(user), slug, body.paths)
+            return scientist_sync.read_files(home_of(user), slug, body.paths, owner=user)
         except KeyError:
             raise HTTPException(status_code=404, detail="No such approved bubble.")
 
@@ -1989,7 +2033,7 @@ def build_app():
     def scientist_list_agents(slug: str, worker: str = "", user: str = Depends(scientist_user)):
         home = _open_bubble(user, slug)
         snap = presence.snapshot(active_workspace_id(user), slug)
-        rows = service.agents_overview(home, slug, workers=snap["workers"])["agents"]
+        rows = service.agents_overview(home, slug, workers=snap["workers"], viewer=user)["agents"]
         if worker:
             rows = [a for a in rows if a.get("worker_id") == worker]
         return {"agents": rows}
@@ -1999,7 +2043,8 @@ def build_app():
         """The worker's per-poll check-in: which agents are attached, which turns still run."""
         home = _open_bubble(user, slug)
         return service.agent_heartbeat(home, slug, worker_id=body.worker_id, agents=body.agents,
-                                       running_job_ids=body.running_job_ids)
+                                       running_job_ids=body.running_job_ids,
+                                       secure=auth.secure_mode(user), owner=user)
 
     @app.post("/api/scientist/v2/bubbles/{slug}/agents/{agent_id}")
     def scientist_update_agent(slug: str, agent_id: str, body: AgentUpdateIn,
@@ -2007,7 +2052,7 @@ def build_app():
         home = _open_bubble(user, slug)
         fields = {k: v for k, v in body.model_dump().items() if v is not None}
         try:
-            return {"agent": service.update_agent(home, slug, agent_id, **fields)}
+            return {"agent": service.update_agent(home, slug, agent_id, owner=user, **fields)}
         except (agents.AgentError, agents.NotFound) as e:
             raise agent_failure(e)
 
@@ -2016,7 +2061,8 @@ def build_app():
                               user: str = Depends(scientist_user)):
         home = _open_bubble(user, slug)
         try:
-            return {"agent": service.reset_agent(home, slug, agent_id, body.conversation or "")}
+            return {"agent": service.reset_agent(home, slug, agent_id, body.conversation or "",
+                                                 owner=user)}
         except (agents.AgentError, agents.NotFound) as e:
             raise agent_failure(e)
 
@@ -2024,7 +2070,7 @@ def build_app():
     def scientist_remove_agent(slug: str, agent_id: str, user: str = Depends(scientist_user)):
         home = _open_bubble(user, slug)
         try:
-            return {"agent": service.remove_agent(home, slug, agent_id)}
+            return {"agent": service.remove_agent(home, slug, agent_id, owner=user)}
         except (agents.AgentError, agents.NotFound) as e:
             raise agent_failure(e)
 
@@ -2032,7 +2078,7 @@ def build_app():
     def scientist_get_job(slug: str, job_id: str, user: str = Depends(scientist_user)):
         home = _open_bubble(user, slug)
         try:
-            return {"job": service.get_job(home, slug, job_id)}
+            return {"job": service.get_job(home, slug, job_id, owner=user)}
         except (agents.AgentError, agents.NotFound) as e:
             raise agent_failure(e)
 
@@ -2040,7 +2086,7 @@ def build_app():
     def scientist_start_job(slug: str, job_id: str, body: JobStartIn, user: str = Depends(scientist_user)):
         home = _open_bubble(user, slug)
         try:
-            return {"job": service.start_job(home, slug, job_id, body.worker_id)}
+            return {"job": service.start_job(home, slug, job_id, body.worker_id, actor=user)}
         except (agents.AgentError, agents.NotFound) as e:
             raise agent_failure(e)
 
@@ -2053,7 +2099,8 @@ def build_app():
         try:
             return {"job": service.finish_job(home, slug, job_id, status=body.status,
                                               exit_code=body.exit_code,
-                                              output_tail=body.output_tail, error=body.error)}
+                                              output_tail=body.output_tail, error=body.error,
+                                              actor=user)}
         except (agents.AgentError, agents.NotFound) as e:
             raise agent_failure(e)
 
@@ -2105,7 +2152,7 @@ def build_app():
         # menu can list them under their worker without a second request.
         try:
             snap["agents"] = service.agents_overview(home_of(user), slug,
-                                                    workers=snap["workers"])["agents"]
+                                                    workers=snap["workers"], viewer=user)["agents"]
         except Exception:
             logger.debug("Could not attach agents to presence.", exc_info=True)
             snap["agents"] = []
@@ -2118,6 +2165,10 @@ def build_app():
 
     # ---- agents: named CLI conversations a mark can be assigned to ----
     def agent_failure(exc: Exception) -> HTTPException:
+        if isinstance(exc, agents.TooMany):
+            return HTTPException(status_code=429, detail=str(exc))
+        if isinstance(exc, agents.Forbidden):
+            return HTTPException(status_code=403, detail=str(exc))
         if isinstance(exc, agents.Conflict):
             return HTTPException(status_code=409, detail=str(exc))
         if isinstance(exc, agents.AgentError):
@@ -2129,12 +2180,12 @@ def build_app():
     @app.get("/api/bubbles/{slug}/agents")
     def bubble_agents(slug: str, user: str = Depends(current_user)):
         snap = presence.snapshot(active_workspace_id(user), slug)
-        return service.agents_overview(home_of(user), slug, workers=snap["workers"])
+        return service.agents_overview(home_of(user), slug, workers=snap["workers"], viewer=user)
 
     @app.delete("/api/bubbles/{slug}/agents/{agent_id}")
     def bubble_remove_agent(slug: str, agent_id: str, user: str = Depends(current_user)):
         try:
-            return {"agent": service.remove_agent(home_of(user), slug, agent_id)}
+            return {"agent": service.remove_agent(home_of(user), slug, agent_id, owner=user)}
         except (agents.AgentError, agents.NotFound) as e:
             raise agent_failure(e)
 
@@ -2150,7 +2201,7 @@ def build_app():
     @app.post("/api/bubbles/{slug}/jobs/{job_id}/cancel")
     def bubble_cancel_job(slug: str, job_id: str, user: str = Depends(current_user)):
         try:
-            return {"job": service.cancel_job(home_of(user), slug, job_id)}
+            return {"job": service.cancel_job(home_of(user), slug, job_id, actor=user)}
         except (agents.AgentError, agents.NotFound) as e:
             raise agent_failure(e)
 
@@ -2158,7 +2209,7 @@ def build_app():
     def bubble_reassign_job(slug: str, job_id: str, body: JobReassignIn,
                             user: str = Depends(current_user)):
         try:
-            return {"job": service.reassign_job(home_of(user), slug, job_id, body.agent_id)}
+            return {"job": service.reassign_job(home_of(user), slug, job_id, body.agent_id, actor=user)}
         except (agents.AgentError, agents.NotFound) as e:
             raise agent_failure(e)
 

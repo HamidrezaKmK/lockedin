@@ -8,7 +8,9 @@ Run: ``LOCKEDIN_HOME=/tmp/li_agents_t2 uv run python -m unittest tests.test_agen
 """
 from __future__ import annotations
 
+import base64
 import fcntl
+import functools
 import json
 import os
 import shutil
@@ -336,9 +338,11 @@ class AgentTurnPromptTests(unittest.TestCase):
 
 class AgentTurnCommandTests(unittest.TestCase):
     def test_agy_turn_command(self):
+        # mode="none" pins this to the conservative flags this test is actually about; see
+        # AgentTurnCommandConfinementModeTests for how the flags change with confinement.
         with patch.object(scientist_cli.shutil, "which", return_value="/bin/agy"):
             agent = {"vendor": "agy", "conversation": "c1", "model": "m1"}
-            cmd = scientist_cli.agent_turn_command(agent, "PROMPT")
+            cmd = scientist_cli.agent_turn_command(agent, "PROMPT", mode="none")
         self.assertEqual(cmd[0], "/bin/agy")
         self.assertIn("--conversation", cmd)
         self.assertEqual(cmd[cmd.index("--conversation") + 1], "c1")
@@ -483,18 +487,19 @@ ACCOUNT = {"server": "http://x", "user": "u", "token": "t", "workspace_id": "ws"
 class FakeAgentServer:
     """Records every call; answers exactly what AgentRunner needs, nothing more."""
 
-    def __init__(self, heartbeat_jobs=None):
+    def __init__(self, heartbeat_jobs=None, *, secure_mode=False):
         self.calls: list[tuple[str, str, dict | None]] = []
         self._heartbeat_calls = 0
         self.heartbeat_jobs = heartbeat_jobs or []
+        self.secure_mode = secure_mode
 
     def request(self, method: str, suffix: str, body: dict | None = None) -> dict:
         self.calls.append((method, suffix, body))
         if suffix == "agents/heartbeat":
             self._heartbeat_calls += 1
             if self._heartbeat_calls == 1:
-                return {"jobs": self.heartbeat_jobs, "cancelled": []}
-            return {"jobs": [], "cancelled": []}
+                return {"jobs": self.heartbeat_jobs, "cancelled": [], "secure_mode": self.secure_mode}
+            return {"jobs": [], "cancelled": [], "secure_mode": self.secure_mode}
         if suffix.endswith("/start"):
             return {"job": {}}
         if suffix.endswith("/result"):
@@ -935,9 +940,407 @@ class AgentRunnerEndToEndTests(unittest.TestCase):
             runner.tick()
             self.assertEqual(fake.calls, [])
 
+    def test_heartbeat_carries_budget_and_confinement(self):
+        project = _build_project({"ag-1": AGENT_AG1}, {"w1": ["ag-1"]})
+        fake = FakeAgentServer()
+        with tempfile.TemporaryDirectory() as data_home, patch.dict(
+                os.environ, {"LOCKEDIN_SCIENTIST_HOME": data_home}), patch.object(
+                scientist_cli, "confinement_mode", return_value="trust"):
+            runner = self._runner(project, fake)
+            runner.tick()
+            heartbeats = fake.calls_for("agents/heartbeat")
+            self.assertEqual(len(heartbeats), 1)
+            body = heartbeats[0][2]
+            self.assertEqual(body["confinement"], "trust")
+            for key in ("hour_used", "hour_cap", "day_used", "day_cap", "exhausted", "resumes_at"):
+                self.assertIn(key, body["budget"])
+            self.assertFalse(body["budget"]["exhausted"])
+
+    def test_secure_mode_terminates_a_running_turn_and_dispatches_nothing(self):
+        project = _build_project({"ag-1": AGENT_AG1}, {"w1": ["ag-1"]})
+        job = {"id": "j-000001", "agent": AGENT_AG1, "mark": PAGE_MARK, "instruction": ""}
+        fake = FakeAgentServer(heartbeat_jobs=[job])
+        script = "import time; time.sleep(30)"
+        with tempfile.TemporaryDirectory() as data_home, patch.dict(
+                os.environ, {"LOCKEDIN_SCIENTIST_HOME": data_home}), patch.object(
+                scientist_cli, "agent_turn_command", lambda agent, prompt, **kw: _fake_vendor_cmd(script)):
+            runner = self._runner(project, fake)
+            runner.tick()
+            self.assertIn("j-000001", runner.procs)
+            fake.secure_mode = True
+            runner.tick()
+            self.assertEqual(runner.error, "secure mode is on: agents stopped")
+            deadline = time.time() + 15
+            while runner.procs and time.time() < deadline:
+                time.sleep(0.2)
+                runner.tick()
+            self.assertEqual(runner.procs, {})
+            starts = fake.calls_for("jobs/j-000001/start")
+            self.assertEqual(len(starts), 1)  # no redispatch while secure mode holds
+
+
+class AgentRunnerBudgetTests(unittest.TestCase):
+    def setUp(self):
+        # Same reasoning as AgentRunnerEndToEndTests.setUp: lift the suite-wide
+        # LOCKEDIN_AGENT_TURNS=off default (some of these tests actually dispatch), and give agy a
+        # home where AGENT_AG1's conversation "c1" already "exists" so dispatch is not blocked on
+        # conversation-existence recovery, which is not what this class is testing.
+        patcher = patch.dict(os.environ, {}, clear=False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        os.environ.pop("LOCKEDIN_AGENT_TURNS", None)
+        agy_home = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, agy_home, ignore_errors=True)
+        (Path(agy_home) / "conversations").mkdir(parents=True)
+        (Path(agy_home) / "conversations" / "c1.db").write_text("")
+        os.environ["ANTIGRAVITY_CLI_HOME"] = agy_home
+
+    def _runner(self, project: Path, fake: FakeAgentServer, *, worker_uid="w1", cli="lockedin-scientist-dev"):
+        sync = scientist_cli.ProjectSync(dict(ACCOUNT), project, "demo")
+        sync._request = fake.request
+        return scientist_cli.AgentRunner(sync, worker_uid, cli)
+
+    def test_exhausted_hourly_budget_blocks_dispatch_and_names_when_it_resumes(self):
+        project = _build_project({"ag-1": AGENT_AG1}, {"w1": ["ag-1"]})
+        job = {"id": "j-000001", "agent": AGENT_AG1, "mark": PAGE_MARK, "instruction": ""}
+        fake = FakeAgentServer(heartbeat_jobs=[job])
+        with tempfile.TemporaryDirectory() as data_home, patch.dict(
+                os.environ, {"LOCKEDIN_SCIENTIST_HOME": data_home}), patch.object(
+                scientist_cli, "AGENT_MAX_TURNS_PER_HOUR", 2):
+            runner = self._runner(project, fake)
+            now = time.time()
+            scientist_cli._atomic_json(runner.turns_path, {"turns": [now - 60, now - 30]})
+            runner.tick()
+            self.assertEqual(runner.procs, {})
+            self.assertEqual(fake.calls_for("jobs/j-000001/start"), [])
+            self.assertIn("budget: 2 turns in the last hour", runner.error)
+            self.assertIn("next turn at", runner.error)
+            body = fake.calls_for("agents/heartbeat")[0][2]
+            self.assertTrue(body["budget"]["exhausted"])
+            self.assertEqual(body["budget"]["hour_cap"], 2)
+            self.assertEqual(body["budget"]["hour_used"], 2)
+            self.assertTrue(body["budget"]["resumes_at"])
+
+    def test_an_old_entry_beyond_the_window_is_ignored(self):
+        project = _build_project({"ag-1": AGENT_AG1}, {"w1": ["ag-1"]})
+        job = {"id": "j-000001", "agent": AGENT_AG1, "mark": PAGE_MARK, "instruction": ""}
+        fake = FakeAgentServer(heartbeat_jobs=[job])
+        script = "import sys; sys.exit(0)"
+        with tempfile.TemporaryDirectory() as data_home, patch.dict(
+                os.environ, {"LOCKEDIN_SCIENTIST_HOME": data_home}), patch.object(
+                scientist_cli, "AGENT_MAX_TURNS_PER_HOUR", 2), patch.object(
+                scientist_cli, "agent_turn_command", lambda agent, prompt, **kw: _fake_vendor_cmd(script)):
+            runner = self._runner(project, fake)
+            now = time.time()
+            scientist_cli._atomic_json(runner.turns_path, {"turns": [now - 7200, now - 7100]})
+            runner.tick()
+            self.assertIn("j-000001", runner.procs)
+            runner.procs["j-000001"]["proc"].wait(timeout=10)
+            runner.shutdown()
+
+    def test_the_turns_file_survives_a_new_runner_so_a_restart_cannot_reset_the_count(self):
+        project = _build_project({"ag-1": AGENT_AG1}, {"w1": ["ag-1"]})
+        fake = FakeAgentServer()
+        with tempfile.TemporaryDirectory() as data_home, patch.dict(
+                os.environ, {"LOCKEDIN_SCIENTIST_HOME": data_home}):
+            runner1 = self._runner(project, fake)
+            now = time.time()
+            runner1._record_turn_start(now)
+            runner2 = self._runner(project, fake)  # a fresh instance, same worker id
+            budget, _ = runner2._budget(now)
+            self.assertEqual(budget["hour_used"], 1)
+
+    def test_cap_zero_or_negative_means_unlimited(self):
+        project = _build_project({"ag-1": AGENT_AG1}, {"w1": ["ag-1"]})
+        fake = FakeAgentServer()
+        with tempfile.TemporaryDirectory() as data_home, patch.dict(
+                os.environ, {"LOCKEDIN_SCIENTIST_HOME": data_home}), patch.object(
+                scientist_cli, "AGENT_MAX_TURNS_PER_HOUR", 0), patch.object(
+                scientist_cli, "AGENT_MAX_TURNS_PER_DAY", -5):
+            runner = self._runner(project, fake)
+            now = time.time()
+            for _ in range(50):
+                runner._record_turn_start(now)
+            budget, error = runner._budget(now)
+            self.assertFalse(budget["exhausted"])
+            self.assertEqual(budget["hour_cap"], 0)
+            self.assertEqual(budget["day_cap"], 0)
+            self.assertEqual(error, "")
+
 
 # ---------------------------------------------------------------------------
-# 9. Argparse smoke tests
+# 9. Confinement
+# ---------------------------------------------------------------------------
+
+
+class ConfinementModeTests(unittest.TestCase):
+    def test_env_override_none_forces_unconfined_even_with_a_reported_landlock_abi(self):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ["LOCKEDIN_AGENT_CONFINEMENT"] = "none"
+            with patch.object(scientist_cli, "landlock_abi", return_value=6):
+                self.assertEqual(scientist_cli.confinement_mode(), "none")
+
+    def test_env_override_trust_wins_over_everything(self):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ["LOCKEDIN_AGENT_CONFINEMENT"] = "trust"
+            with patch.object(sys, "platform", "win32"):
+                self.assertEqual(scientist_cli.confinement_mode(), "trust")
+
+    def test_linux_with_a_landlock_abi_is_landlock(self):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("LOCKEDIN_AGENT_CONFINEMENT", None)
+            with patch.object(sys, "platform", "linux"), patch.object(
+                    scientist_cli, "landlock_abi", return_value=6):
+                self.assertEqual(scientist_cli.confinement_mode(), "landlock")
+
+    def test_linux_without_a_landlock_abi_is_none(self):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("LOCKEDIN_AGENT_CONFINEMENT", None)
+            with patch.object(sys, "platform", "linux"), patch.object(
+                    scientist_cli, "landlock_abi", return_value=-1):
+                self.assertEqual(scientist_cli.confinement_mode(), "none")
+
+    def test_macos_with_sandbox_exec_present_is_seatbelt(self):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("LOCKEDIN_AGENT_CONFINEMENT", None)
+            with patch.object(sys, "platform", "darwin"), patch.object(
+                    os.path, "exists", return_value=True):
+                self.assertEqual(scientist_cli.confinement_mode(), "seatbelt")
+
+    def test_macos_without_sandbox_exec_is_none(self):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("LOCKEDIN_AGENT_CONFINEMENT", None)
+            with patch.object(sys, "platform", "darwin"), patch.object(
+                    os.path, "exists", return_value=False):
+                self.assertEqual(scientist_cli.confinement_mode(), "none")
+
+    def test_an_unrecognised_platform_is_none(self):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("LOCKEDIN_AGENT_CONFINEMENT", None)
+            with patch.object(sys, "platform", "aix"):
+                self.assertEqual(scientist_cli.confinement_mode(), "none")
+
+
+def _landlock_available() -> bool:
+    return scientist_cli.landlock_abi() >= 1
+
+
+class RealLandlockConfinementTests(unittest.TestCase):
+    """The test that matters most: a real Landlock-confined child, not a mock."""
+
+    def _run(self, project: Path, code: str) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            [sys.executable, "-c", code], cwd=str(project),
+            preexec_fn=functools.partial(scientist_cli._landlock_child_confine, project),
+            capture_output=True, text=True, timeout=10)
+
+    @unittest.skipUnless(_landlock_available(), "Landlock is not available on this kernel")
+    def test_confined_child_can_write_inside_lockedin_read_everywhere_keep_network(self):
+        with tempfile.TemporaryDirectory() as project_dir:
+            project = Path(project_dir)
+            (project / ".lockedin").mkdir()
+
+            ok_inside = self._run(project, f"open({str(project / '.lockedin' / 'ok.txt')!r}, 'w').write('hi')")
+            self.assertEqual(ok_inside.returncode, 0, ok_inside.stderr)
+            self.assertTrue((project / ".lockedin" / "ok.txt").exists())
+
+            can_read = self._run(project, "print(open('/etc/hostname').read())")
+            self.assertEqual(can_read.returncode, 0, can_read.stderr)
+
+            net = self._run(project, "import socket; socket.create_connection(('1.1.1.1', 80), "
+                                      "timeout=3); print('net ok')")
+            self.assertEqual(net.returncode, 0, net.stderr)
+            self.assertIn("net ok", net.stdout)
+
+    @unittest.skipUnless(_landlock_available(), "Landlock is not available on this kernel")
+    def test_confined_child_cannot_write_to_the_home_directory_or_a_sibling_outside_tmp(self):
+        with tempfile.TemporaryDirectory() as project_dir:
+            project = Path(project_dir)
+            (project / ".lockedin").mkdir()
+            home_marker = Path.home() / "__lockedin_confinement_test_marker__"
+            self.addCleanup(lambda: home_marker.unlink(missing_ok=True))
+            denied_home = self._run(
+                project, f"open({str(home_marker)!r}, 'w').write('hi')")
+            self.assertNotEqual(denied_home.returncode, 0)
+            self.assertFalse(home_marker.exists())
+
+            outside_tmp = tempfile.mkdtemp(dir=str(Path.home()))
+            self.addCleanup(shutil.rmtree, outside_tmp, ignore_errors=True)
+            denied_sibling = self._run(
+                project, f"open({str(Path(outside_tmp) / 'bad.txt')!r}, 'w').write('hi')")
+            self.assertNotEqual(denied_sibling.returncode, 0)
+            self.assertFalse((Path(outside_tmp) / "bad.txt").exists())
+
+    @unittest.skipUnless(_landlock_available(), "Landlock is not available on this kernel")
+    def test_confinement_fails_closed_with_exit_97_when_a_writable_root_does_not_exist(self):
+        with tempfile.TemporaryDirectory() as project_dir, patch.dict(
+                os.environ, {"LOCKEDIN_AGENT_WRITABLE": "/no/such/lockedin/writable/path"}):
+            project = Path(project_dir)
+            (project / ".lockedin").mkdir()
+            r = self._run(project, "print('should never run')")
+            self.assertEqual(r.returncode, 97)
+            self.assertIn("could not confine the turn", r.stderr)
+            self.assertNotIn("should never run", r.stdout)
+
+
+class ScratchStressTestConfinementTests(unittest.TestCase):
+    """The pattern documented in guides/agents.md: a scratch script imports and calls the
+    project's own code — without write access to the project — to try it out or stress-test it."""
+
+    @unittest.skipUnless(_landlock_available(), "Landlock is not available on this kernel")
+    def test_scratch_script_calls_project_code_and_cannot_write_to_the_project(self):
+        base = tempfile.mkdtemp(dir=str(Path.home()))
+        self.addCleanup(shutil.rmtree, base, ignore_errors=True)
+        project = Path(base)
+        pycache = project / ".lockedin" / "scratch" / ".pycache"
+        pycache.mkdir(parents=True)
+        (project / "trunk").mkdir()
+        (project / "trunk" / "__init__.py").write_text("")
+        original = "def func():\n    return 42\n"
+        (project / "trunk" / "mylib.py").write_text(original)
+        out_path = project / ".lockedin" / "scratch" / "out.txt"
+        mylib_path = project / "trunk" / "mylib.py"
+        script = project / ".lockedin" / "scratch" / "try.py"
+        script.write_text(
+            "import sys\n"
+            f"sys.path.insert(0, {str(project)!r})\n"
+            "from trunk.mylib import func\n"
+            f"open({str(out_path)!r}, 'w').write(str(func()))\n"
+            "try:\n"
+            f"    open({str(mylib_path)!r}, 'a').write('oops')\n"
+            "except OSError:\n"
+            "    open({!r}, 'w').write('denied')\n".format(str(project / ".lockedin" / "scratch" / "write_status.txt"))
+        )
+        env = dict(os.environ)
+        env["PYTHONPYCACHEPREFIX"] = str(pycache)
+        r = subprocess.run(
+            [sys.executable, str(script)], cwd=str(project), env=env,
+            preexec_fn=functools.partial(scientist_cli._landlock_child_confine, project),
+            capture_output=True, text=True, timeout=10)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(out_path.read_text(), "42")
+        self.assertEqual(mylib_path.read_text(), original)
+        self.assertEqual((project / ".lockedin" / "scratch" / "write_status.txt").read_text(), "denied")
+        self.assertFalse((project / "trunk" / "__pycache__").exists())
+        self.assertTrue(any(pycache.rglob("mylib*.pyc")))
+
+
+class AgentTurnCommandConfinementModeTests(unittest.TestCase):
+    """agent_turn_command's vendor flags follow the ``mode`` argument explicitly — see its
+    docstring — so this is tested without touching the environment at all."""
+
+    def setUp(self):
+        patcher = patch.object(scientist_cli.shutil, "which", side_effect=lambda name: f"/bin/{name}")
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _agent(self, vendor: str) -> dict:
+        return {"vendor": vendor, "conversation": "c1", "model": ""}
+
+    def test_claude_confined_and_trust_use_bypass_permissions(self):
+        for mode in ("landlock", "seatbelt", "trust"):
+            cmd = scientist_cli.agent_turn_command(self._agent("claude"), "P", mode=mode)
+            self.assertEqual(cmd[cmd.index("--permission-mode") + 1], "bypassPermissions", mode)
+
+    def test_claude_none_keeps_accept_edits(self):
+        cmd = scientist_cli.agent_turn_command(self._agent("claude"), "P", mode="none")
+        self.assertEqual(cmd[cmd.index("--permission-mode") + 1], "acceptEdits")
+
+    def test_codex_confined_and_trust_bypass_approvals_and_sandbox(self):
+        for mode in ("landlock", "seatbelt", "trust"):
+            cmd = scientist_cli.agent_turn_command(self._agent("codex"), "P", mode=mode)
+            self.assertIn("--dangerously-bypass-approvals-and-sandbox", cmd)
+            self.assertNotIn("-s", cmd)
+
+    def test_codex_none_keeps_workspace_write_with_network_allowed(self):
+        cmd = scientist_cli.agent_turn_command(self._agent("codex"), "P", mode="none")
+        self.assertNotIn("--dangerously-bypass-approvals-and-sandbox", cmd)
+        self.assertEqual(cmd[cmd.index("-s") + 1], "workspace-write")
+        self.assertIn("sandbox_workspace_write.network_access=true", cmd)
+
+    def test_agy_confined_and_trust_skip_permissions(self):
+        for mode in ("landlock", "seatbelt", "trust"):
+            cmd = scientist_cli.agent_turn_command(self._agent("agy"), "P", mode=mode)
+            self.assertIn("--dangerously-skip-permissions", cmd)
+            self.assertNotIn("--mode", cmd)
+
+    def test_agy_none_keeps_accept_edits_mode(self):
+        cmd = scientist_cli.agent_turn_command(self._agent("agy"), "P", mode="none")
+        self.assertEqual(cmd[cmd.index("--mode") + 1], "accept-edits")
+        self.assertNotIn("--dangerously-skip-permissions", cmd)
+
+    def test_mode_defaults_to_the_machines_actual_confinement_when_omitted(self):
+        with patch.object(scientist_cli, "confinement_mode", return_value="none"):
+            cmd = scientist_cli.agent_turn_command(self._agent("claude"), "P")
+        self.assertEqual(cmd[cmd.index("--permission-mode") + 1], "acceptEdits")
+
+
+class AgentTurnPromptConfinementTests(unittest.TestCase):
+    def test_fresh_prompt_states_the_write_boundary(self):
+        prompt = scientist_cli.agent_turn_prompt(PAGE_JOB, cli="lockedin-scientist-dev", fresh=True, mode="landlock")
+        self.assertIn(".lockedin/scratch/", prompt)
+        self.assertIn(".lockedin/reports/", prompt)
+        self.assertNotIn("Nothing on this machine enforces", prompt)
+
+    def test_fresh_prompt_in_none_mode_names_the_gap(self):
+        prompt = scientist_cli.agent_turn_prompt(PAGE_JOB, cli="lockedin-scientist-dev", fresh=True, mode="none")
+        self.assertIn("Nothing on this machine enforces that boundary", prompt)
+
+    def test_resumed_prompt_omits_the_fresh_only_reminder(self):
+        prompt = scientist_cli.agent_turn_prompt(PAGE_JOB, cli="lockedin-scientist-dev", fresh=False, mode="none")
+        self.assertNotIn("Nothing on this machine enforces", prompt)
+
+
+class ScratchSurvivesSyncTests(unittest.TestCase):
+    """``.lockedin/scratch/`` is never scanned by ``_report_paths`` and is not one of the fixed
+    top-level names ``sync_once`` prunes, so a sync cycle must leave it untouched."""
+
+    class _FakeBubbleServer:
+        def __init__(self):
+            self.files: dict[str, bytes] = {}
+
+        def request(self, _server, method, endpoint, body=None, token="", workspace="", *,
+                    extra=None, timeout=90):
+            if endpoint.endswith("/guide"):
+                return {"guide": "## Markdown\n\nUse the canonical guide.\n"}
+            if endpoint.endswith("/manifest"):
+                return {"files": [{"path": p, "revision": scientist_cli.ProjectSync._rev(raw)}
+                                  for p, raw in sorted(self.files.items())]}
+            if endpoint.endswith("/files"):
+                return {"files": [{"path": p, "revision": scientist_cli.ProjectSync._rev(self.files[p]),
+                                   "content_b64": base64.b64encode(self.files[p]).decode()}
+                                  for p in (body or {}).get("paths", []) if p in self.files]}
+            if endpoint.endswith("/push") or endpoint.endswith("/deletes") or endpoint.endswith("/pages"):
+                return {"applied": [], "conflicts": []}
+            raise AssertionError(f"unexpected endpoint in scratch-survival test: {endpoint}")
+
+    def test_validate_or_initialize_creates_scratch(self):
+        fake = self._FakeBubbleServer()
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+                scientist_cli, "request", side_effect=fake.request):
+            project = Path(directory)
+            sync = scientist_cli.ProjectSync(dict(ACCOUNT), project, "work")
+            sync.validate_or_initialize()
+            self.assertTrue((sync.root / "scratch").is_dir())
+            self.assertTrue((sync.root / "scratch" / ".pycache").is_dir())
+
+    def test_a_file_placed_in_scratch_survives_repeated_sync_cycles(self):
+        fake = self._FakeBubbleServer()
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+                scientist_cli, "request", side_effect=fake.request):
+            project = Path(directory)
+            sync = scientist_cli.ProjectSync(dict(ACCOUNT), project, "work")
+            sync.validate_or_initialize()
+            keep = sync.root / "scratch" / "notes.txt"
+            keep.write_text("throwaway work")
+            sync.sync_once()
+            sync.sync_once()
+            self.assertEqual(keep.read_text(), "throwaway work")
+            self.assertNotIn("scratch/notes.txt", fake.files)
+
+
+# ---------------------------------------------------------------------------
+# 10. Argparse smoke tests
 # ---------------------------------------------------------------------------
 
 

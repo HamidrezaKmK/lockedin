@@ -172,6 +172,20 @@ def drop_viewer(workspace_id: str, slug: str, user: str) -> None:
         _VIEWERS.get(_key(workspace_id, slug), {}).pop(user, None)
 
 
+def drop_workers(user: str) -> int:
+    """Remove every in-memory Scientist worker row owned by ``user`` immediately."""
+    removed = 0
+    with _LOCK:
+        for key, workers in list(_WORKERS.items()):
+            for worker_id, rec in list(workers.items()):
+                if rec.get("user") == user:
+                    del workers[worker_id]
+                    removed += 1
+            if not workers:
+                _WORKERS.pop(key, None)
+    return removed
+
+
 def reset() -> None:
     """Clear all presence. For tests."""
     with _LOCK:
