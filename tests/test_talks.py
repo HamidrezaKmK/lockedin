@@ -10,7 +10,7 @@ import unittest
 from unittest.mock import patch
 from pathlib import Path
 
-from lockedin import bubbles, feedback, paths, scientist_sync, talks
+from lockedin import agents, bubbles, feedback, paths, scientist_sync, talks
 
 from tests.test_editing_logic import temp_home
 
@@ -359,6 +359,48 @@ class ProjectHandoffTests(unittest.TestCase):
             ("agent on behalf of talks", "The covariance term is exact; I replaced that approximation on slide 2."),
         ])
         self.assertTrue(thread["messages"][-1]["agent"])
+
+    def test_a_reply_answered_by_a_running_agent_job_is_credited_by_name(self):
+        """The legacy in-deck reply path should name the agent, same as `agents.reply_to_mark`."""
+        with paths.use_root(self.home):
+            note = talks.add_note(self.slug, self.talk, slide=1, kind="bad", author="pi",
+                                  quote="which kills the variance term", text="Not in the tail.")
+            base = self._deck_bytes()
+            rec = next(item for item in talks.list_talks(self.slug) if item["id"] == self.talk)
+            sync_id = rec["sync_id"]
+            agent = agents.register_agent(self.slug, name="Ada", role="reviewer", goal="fix it",
+                                          vendor="claude", conversation="conv-1",
+                                          worker_id="worker-1")
+            agents.create_job(self.slug, agent_id=agent["id"], mark_key=f"{sync_id}:{note['id']}",
+                              instruction="answer the mark")
+        reply = ("\n<!-- lockedin-reply: " + note["id"] + " -->\n"
+                 "The covariance term is exact; I replaced that approximation on slide 2.\n"
+                 "<!-- /lockedin-reply -->\n")
+        write = {"path": self._talk_rel(),
+                 "content_b64": base64.b64encode(base + reply.encode()).decode(),
+                 "base_revision": scientist_sync.revision(base)}
+        result = scientist_sync.apply_writes(self.home, self.slug, [write], actor="talks")
+        self.assertEqual(result["conflicts"], [])
+        with paths.use_root(self.home):
+            thread = talks.load_notes(self.slug, self.talk)["notes"][note["id"]]
+        self.assertEqual(thread["messages"][-1]["author"], "Ada on behalf of talks")
+
+    def test_absorb_push_falls_back_when_author_for_raises(self):
+        """A broken lookup must not sink the push — the anonymous phrasing is the safe fallback."""
+        with paths.use_root(self.home):
+            note = talks.add_note(self.slug, self.talk, slide=1, kind="bad", author="pi",
+                                  quote="which kills the variance term", text="Not in the tail.")
+            base = talks.read_deck(self.slug, self.talk)
+            reply = ("\n<!-- lockedin-reply: " + note["id"] + " -->\n"
+                     "The covariance term is exact.\n"
+                     "<!-- /lockedin-reply -->\n")
+
+            def boom(_note_id):
+                raise RuntimeError("lookup exploded")
+
+            talks.absorb_push(self.slug, self.talk, base + reply, actor="talks", author_for=boom)
+            thread = talks.load_notes(self.slug, self.talk)["notes"][note["id"]]
+        self.assertEqual(thread["messages"][-1]["author"], "agent on behalf of talks")
 
     def test_an_unknown_reply_target_rejects_the_whole_deck_write(self):
         with paths.use_root(self.home):

@@ -10,7 +10,7 @@ from pathlib import Path
 
 import yaml
 
-from . import assets, auth, bubbles, models, paths, sharing, tagger, talks, todos, workspaces
+from . import agents, assets, auth, bubbles, models, paths, sharing, tagger, talks, todos, workspaces
 
 
 def ensure_workspace(home: Path) -> None:
@@ -445,8 +445,10 @@ def page_poll(home: Path, slug: str, page_slug: str) -> dict:
         # arrives — without this signal the broken image would sit there until a manual reload.
         assets_dir = paths.bubble_assets_dir(slug)
         assets_mtime = assets_dir.stat().st_mtime if assets_dir.exists() else 0
+        jobs_mtime = agents.jobs_mtime(slug)
     return {"page_mtime": page_mtime, "comments_mtime": comments_mtime,
-            "manifest_mtime": manifest_mtime, "assets_mtime": assets_mtime, "pages": pages}
+            "manifest_mtime": manifest_mtime, "assets_mtime": assets_mtime, "pages": pages,
+            "jobs_mtime": jobs_mtime}
 
 
 def list_comments(home: Path, slug: str, page_slug: str) -> dict:
@@ -765,7 +767,11 @@ def list_talks(home: Path, slug: str) -> list[dict]:
 
 def talk_detail(home: Path, slug: str, talk_id: str) -> dict:
     with paths.use_root(home):
-        return talks.talk_detail(slug, talk_id)
+        detail = talks.talk_detail(slug, talk_id)
+        # The deck poller compares this the way the page poller compares comments_mtime, so a
+        # job chip on a slide mark refreshes without a second polling loop.
+        detail["jobs_mtime"] = agents.jobs_mtime(slug)
+        return detail
 
 
 def create_talk(home: Path, slug: str, title: str, **kw) -> str:
@@ -798,6 +804,87 @@ def reply_talk_note(home: Path, slug: str, talk_id: str, note_id: str, author: s
                     body: str) -> dict:
     with paths.use_root(home):
         return talks.reply_note(slug, talk_id, note_id, author, body)
+
+
+# ---- agents: named CLI conversations a mark can be assigned to ----
+def agents_overview(home: Path, slug: str, *, workers: list[dict] | None = None) -> dict:
+    with paths.use_root(home):
+        return agents.overview(slug, workers=workers)
+
+
+def list_agents(home: Path, slug: str) -> list[dict]:
+    with paths.use_root(home):
+        return agents.list_agents(slug)
+
+
+def register_agent(home: Path, slug: str, **kw) -> dict:
+    with paths.use_root(home):
+        return agents.register_agent(slug, **kw)
+
+
+def update_agent(home: Path, slug: str, agent_id: str, **fields) -> dict:
+    with paths.use_root(home):
+        return agents.update_agent(slug, agent_id, **fields)
+
+
+def reset_agent(home: Path, slug: str, agent_id: str, conversation: str = "") -> dict:
+    with paths.use_root(home):
+        return agents.reset_agent(slug, agent_id, conversation)
+
+
+def remove_agent(home: Path, slug: str, agent_id: str) -> dict:
+    with paths.use_root(home):
+        return agents.remove_agent(slug, agent_id)
+
+
+def get_agent(home: Path, slug: str, ref: str) -> dict:
+    with paths.use_root(home):
+        return agents.get_agent(slug, ref)
+
+
+def create_job(home: Path, slug: str, **kw) -> dict:
+    with paths.use_root(home):
+        return agents.create_job(slug, **kw)
+
+
+def get_job(home: Path, slug: str, job_id: str) -> dict:
+    with paths.use_root(home):
+        return agents.get_job(slug, job_id)
+
+
+def cancel_job(home: Path, slug: str, job_id: str) -> dict:
+    with paths.use_root(home):
+        return agents.cancel_job(slug, job_id)
+
+
+def reassign_job(home: Path, slug: str, job_id: str, agent_id: str) -> dict:
+    with paths.use_root(home):
+        return agents.reassign_job(slug, job_id, agent_id=agent_id)
+
+
+def agent_heartbeat(home: Path, slug: str, **kw) -> dict:
+    with paths.use_root(home):
+        return agents.heartbeat(slug, **kw)
+
+
+def start_job(home: Path, slug: str, job_id: str, worker_id: str) -> dict:
+    with paths.use_root(home):
+        return agents.start_job(slug, job_id, worker_id=worker_id)
+
+
+def finish_job(home: Path, slug: str, job_id: str, **kw) -> dict:
+    with paths.use_root(home):
+        return agents.finish_job(slug, job_id, **kw)
+
+
+def reply_job(home: Path, slug: str, job_id: str, text: str, actor: str = "") -> dict:
+    with paths.use_root(home):
+        return agents.reply_job(slug, job_id, text=text, actor=actor)
+
+
+def fail_job(home: Path, slug: str, job_id: str, reason: str, actor: str = "") -> dict:
+    with paths.use_root(home):
+        return agents.fail_job(slug, job_id, reason=reason, actor=actor)
 
 
 def delete_talk_note(home: Path, slug: str, talk_id: str, note_id: str) -> bool:

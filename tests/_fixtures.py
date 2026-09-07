@@ -8,7 +8,9 @@ PDFs copied from local data (the ``unittest`` user created by ``setup_unittest_u
 """
 from __future__ import annotations
 
+import os
 import shutil
+import unittest
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -35,6 +37,20 @@ def qwen_reachable(base_url: str = "http://localhost:11434/v1") -> bool:
         return True
     except (urllib.error.URLError, OSError):
         return False
+
+
+# The Ollama gate above is free and local: it only skips a test when nothing is listening, never
+# to protect a budget. This one guards paid usage — it is opt-in by construction, since nothing
+# should start spending model tokens just because it exists. Use it like:
+#
+#     @live_model_test
+#     class SomeLiveModelTests(unittest.TestCase): ...
+#
+# or on a single method. Run with ``pytest --live-model`` or ``LOCKEDIN_LIVE_MODEL=1``.
+live_model_test = unittest.skipUnless(
+    os.environ.get("LOCKEDIN_LIVE_MODEL") == "1",
+    "costs model tokens; run with pytest --live-model or LOCKEDIN_LIVE_MODEL=1",
+)
 
 
 def source_user_with_pdfs() -> str | None:

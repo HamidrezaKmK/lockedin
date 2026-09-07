@@ -1408,13 +1408,17 @@ def _thread(data: dict, thread_id: str) -> dict:
     raise KeyError(thread_id)
 
 
-def reply_comment_state(slug: str, page_slug: str, thread_id: str, author: str, body: str) -> dict:
+def reply_comment_state(slug: str, page_slug: str, thread_id: str, author: str, body: str,
+                        *, agent: bool = False) -> dict:
     body = str(body or "").strip()
     if not body: raise ValueError("Reply text required.")
     with _review_page_lock(slug, page_slug):
         data = _comments(slug, page_slug); item = _thread(data, thread_id); now = _now_iso()
         msg = {"id": secrets.token_urlsafe(12), "author": author, "body": body,
                "created_at": now, "edited_at": ""}
+        # An agent's turn renders differently and is never editable by the user; the flag is
+        # the same one chalk-talk notes carry, so one card component serves both surfaces.
+        if agent: msg["agent"] = True
         item.setdefault("messages", []).append(msg); item["updated_at"] = now
         _save_comments(slug, page_slug, data)
         page = paths.bubble_page_path(slug, page_slug)

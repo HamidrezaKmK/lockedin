@@ -13,7 +13,7 @@ from pathlib import Path
 
 from slugify import slugify
 
-from . import assets, bubbles, feedback, paths, talks
+from . import agents, assets, bubbles, feedback, paths, talks
 
 
 def revision(data: bytes) -> str:
@@ -190,15 +190,23 @@ def _indexed_context(slug: str) -> dict[str, bytes]:
     out["indexes/papers.json"] = _json_bytes({"version": 1, "by_id": paper_index})
     out["indexes/report-assets.json"] = _json_bytes({"version": 1, "by_name": report_assets})
     out["feedback/all.json"] = _json_bytes({"version": 1, "marks": all_feedback})
+    # Agents registered on this bubble and the marks handed to them. The worker reads
+    # ``by_worker`` to learn whether this directory owns any agent at all — when it does not,
+    # the job machinery costs it nothing, not even a request.
+    agent_index, job_index = agents.indexes(slug)
+    out["indexes/agents.json"] = _json_bytes(agent_index)
+    out["indexes/jobs.json"] = _json_bytes(job_index)
     entry = bubbles.load_registry().get(slug, {})
     out["index.json"] = _json_bytes({
         "version": 1, "bubble": {"slug": slug, "name": entry.get("name", slug)},
         "counts": {"chalk_talks": len(talk_index), "pages": len(page_index),
                    "papers": len(paper_index), "report_assets": len(report_assets),
-                   "open_marks": len(all_feedback)},
+                   "open_marks": len(all_feedback), "agents": len(agent_index["by_id"]),
+                   "open_jobs": len(job_index["open"])},
         "indexes": {"chalk_talks": "indexes/chalk-talks.json",
                     "marks": "indexes/marks.json", "pages": "indexes/pages.json",
-                    "papers": "indexes/papers.json", "report_assets": "indexes/report-assets.json"},
+                    "papers": "indexes/papers.json", "report_assets": "indexes/report-assets.json",
+                    "agents": "indexes/agents.json", "jobs": "indexes/jobs.json"},
         "feedback_fallback": "feedback/all.json",
     })
     return out
@@ -296,7 +304,7 @@ def _files(home: Path, slug: str) -> dict[str, Path | bytes]:
                     continue
                 rel = path.relative_to(report)
                 # Private review comments (and legacy chats/ dirs) do not belong in an agent project.
-                if rel.parts and rel.parts[0] in {"chats", "comments", ".uploads"}:
+                if rel.parts and rel.parts[0] in {"chats", "comments", ".uploads", "agents"}:
                     continue
                 # Chalk talks are exported below into stable, title-independent folders. The
                 # server's flat storage names are implementation details, not agent addresses.
@@ -468,6 +476,36 @@ def _server_path(slug: str, rel: str) -> Path:
     return paths.bubble_page_path(slug, Path(parts[2]).stem)
 
 
+def _author_for(slug: str, sync_id: str, decoded: str):
+    """Build the `author_for` callback `talks.absorb_push` uses to credit a reply.
+
+    Looks up, per mark, the agent whose job answered it: running beats queued beats the most
+    recently finished. Kept lazy — `agents.overview` is only called (and only once) when the
+    pushed text actually carries a reply block, so a deck edit with no agents behind it pays
+    nothing extra.
+    """
+    if "lockedin-reply" not in decoded:
+        return None
+    by_mark: dict[str, str] | None = None
+
+    def resolve(note_id: str) -> str:
+        nonlocal by_mark
+        if by_mark is None:
+            by_mark = {}
+            jobs_by_mark = agents.overview(slug).get("jobs", {}).get("by_mark", {})
+            for mark_key, jobs in jobs_by_mark.items():
+                running = next((j for j in jobs if j.get("status") == "running"), None)
+                queued = next((j for j in jobs if j.get("status") == "queued"), None)
+                finished = sorted((j for j in jobs if j.get("status") not in ("running", "queued")),
+                                  key=lambda j: j.get("finished_at") or j.get("created_at") or "")
+                chosen = running or queued or (finished[-1] if finished else None)
+                if chosen:
+                    by_mark[mark_key] = str(chosen.get("agent_name") or "")
+        return by_mark.get(f"{sync_id}:{note_id}", "")
+
+    return resolve
+
+
 def apply_writes(home: Path, slug: str, writes: list[dict], *, actor: str = "") -> dict:
     conflicts, applied = [], []
     with paths.use_root(home):
@@ -498,11 +536,14 @@ def apply_writes(home: Path, slug: str, writes: list[dict], *, actor: str = "") 
                 talk_id = talks.talk_id_from_sync_id(slug, sync_id)
                 talk_id = talk_id or sync_id
                 try:
-                    talks.absorb_push(slug, talk_id, raw.decode("utf-8"),
-                                       actor=actor or "the connected user")
+                    decoded = raw.decode("utf-8")
                 except UnicodeDecodeError:
                     conflicts.append({"path": rel, "reason": "a deck must be UTF-8 text"})
                     continue
+                try:
+                    talks.absorb_push(slug, talk_id, decoded,
+                                       actor=actor or "the connected user",
+                                       author_for=_author_for(slug, sync_id, decoded))
                 except (KeyError, ValueError) as exc:
                     conflicts.append({"path": rel, "reason": str(exc),
                                       "revision": revision(current),

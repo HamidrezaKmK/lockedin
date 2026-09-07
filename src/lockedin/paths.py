@@ -139,6 +139,19 @@ def bubble_page_comments_path(slug: str, page_slug: str) -> Path:
     return bubble_comments_dir(slug) / f"{page_slug}.json"
 
 
+def bubble_agents_dir(slug: str) -> Path:
+    """Agents registered on this bubble and the jobs handed to them. Never exported raw."""
+    return bubble_dir(slug) / "agents"
+
+
+def bubble_agents_path(slug: str) -> Path:
+    return bubble_agents_dir(slug) / "agents.yaml"
+
+
+def bubble_jobs_path(slug: str) -> Path:
+    return bubble_agents_dir(slug) / "jobs.yaml"
+
+
 def ensure_user_dirs(user: str) -> None:
     """Create a user's ASSETS/, REPORTS/, config/ (idempotent)."""
     home = user_home(user)

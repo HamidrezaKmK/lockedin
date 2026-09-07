@@ -887,13 +887,18 @@ def open_notes_for_agent(slug: str) -> list[dict]:
     return out
 
 
-def absorb_push(slug: str, talk_id: str, text: str, *, actor: str) -> None:
+def absorb_push(slug: str, talk_id: str, text: str, *, actor: str, author_for=None) -> None:
     """Take a deck an agent pushed. The slide becomes what was pushed — nothing more.
 
     Deliberately powerless over marks: an agent can edit the text a mark points at (which may
     strand it as a loud orphan) and reply in its thread, but it can never delete one. A
     `resolves=` attribute in a pushed header — the old mechanism, or an agent trying its luck —
     is parsed and discarded without effect.
+
+    `author_for`, if given, is called with a note id for each reply block and may return an
+    agent name to credit — the deck block itself carries no identity, so the caller (which knows
+    which job answered which mark) supplies it. An empty return, no callable, or an exception
+    raised inside it all fall back to the anonymous "agent on behalf of {actor}" phrasing.
     """
     replies = []
     for match in _REPLY.finditer(text):
@@ -921,7 +926,14 @@ def absorb_push(slug: str, talk_id: str, text: str, *, actor: str) -> None:
         fingerprint = hashlib.sha256(
             f"{talk_id}\0{note_id}\0{body}".encode("utf-8")
         ).hexdigest()
-        reply_note(slug, talk_id, note_id, f"agent on behalf of {actor}", body,
+        name = ""
+        if author_for is not None:
+            try:
+                name = str(author_for(note_id) or "")
+            except Exception:
+                name = ""
+        author = f"{name} on behalf of {actor}" if name else f"agent on behalf of {actor}"
+        reply_note(slug, talk_id, note_id, author, body,
                    source_key="scientist:" + fingerprint, agent=True)
 
 

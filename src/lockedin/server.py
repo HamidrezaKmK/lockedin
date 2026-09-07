@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import quote
 
-from . import assets, auth, bubbles, landing, models, paths, presence, service, setup_tickets, tagger, talks, workspaces
+from . import agents, assets, auth, bubbles, landing, models, paths, presence, service, setup_tickets, tagger, talks, workspaces
 from . import scientist_cli, scientist_sync
 
 
@@ -38,7 +38,7 @@ _WORKER_PATH_RE = re.compile(r"^/api/scientist/v2/bubbles/([^/]+)(?:/|$)")
 # Keep this equal to ``scientist_cli.SCIENTIST_CLIENT_VERSION``. Bump both when a Scientist
 # release needs an installed client refresh; the dependency-free installed client cannot import
 # package metadata from this server.
-SCIENTIST_CLIENT_VERSION = "2026.09.05.2"
+SCIENTIST_CLIENT_VERSION = "2026.09.06.1"
 DEMO_ACCESS_MESSAGE = (
     "Lockedin is an experimental project and currently on demo, to be able to login "
     "and play with our project, email kamkarih@mit.edu"
@@ -1066,6 +1066,54 @@ def build_app():
     class ScientistFilesIn(BaseModel):
         paths: list[str] = []
 
+    class AgentRegisterIn(BaseModel):
+        name: str
+        role: str = ""
+        goal: str = ""
+        personality: str = ""
+        vendor: str
+        conversation: str
+        model: str = ""
+        worker_id: str
+        project_label: str = ""
+
+    class AgentUpdateIn(BaseModel):
+        conversation: Optional[str] = None
+        model: Optional[str] = None
+        fresh: Optional[bool] = None
+        role: Optional[str] = None
+        goal: Optional[str] = None
+        personality: Optional[str] = None
+        name: Optional[str] = None
+
+    class AgentHeartbeatIn(BaseModel):
+        worker_id: str
+        agents: list[dict] = []
+        running_job_ids: list[str] = []
+
+    class JobCreateIn(BaseModel):
+        agent_id: str
+        mark_key: str
+        instruction: str = ""
+
+    class JobReassignIn(BaseModel):
+        agent_id: str
+
+    class JobStartIn(BaseModel):
+        worker_id: str
+
+    class JobResultIn(BaseModel):
+        status: str
+        exit_code: Optional[int] = None
+        output_tail: str = ""
+        error: str = ""
+
+    class JobReplyIn(BaseModel):
+        text: str
+
+    class JobFailIn(BaseModel):
+        reason: str = ""
+
     class WorkspaceIn(BaseModel):
         name: str
 
@@ -1685,6 +1733,7 @@ def build_app():
                 # For the dialog's by-hand fallback, so the frontend does not keep its own copy.
                 "install_unix": setup_tickets.INSTALL_UNIX,
                 "install_powershell": setup_tickets.INSTALL_POWERSHELL,
+                "cli_name": setup_tickets.client_name(),
                 "workspace_id": active_workspace_id(user), "bubble": slug}
 
     @app.get("/setup/{ticket}.sh")
@@ -1917,6 +1966,118 @@ def build_app():
         return scientist_sync.register_page(home_of(user), slug, body.page_slug,
                                             body.content_b64, body.base_revision)
 
+    # ---- Scientist-side agents: register from inside a chat, poll for jobs, report back ----
+    def _open_bubble(user: str, slug: str) -> Path:
+        home = home_of(user)
+        if not scientist_sync.bubble_is_open(home, slug):
+            raise HTTPException(status_code=404, detail="No such bubble, or it is not approved.")
+        return home
+
+    @app.post("/api/scientist/v2/bubbles/{slug}/agents")
+    def scientist_register_agent(slug: str, body: AgentRegisterIn, user: str = Depends(scientist_user)):
+        home = _open_bubble(user, slug)
+        try:
+            return {"agent": service.register_agent(
+                home, slug, name=body.name, role=body.role, goal=body.goal,
+                personality=body.personality, vendor=body.vendor, conversation=body.conversation,
+                model=body.model, worker_id=body.worker_id, project_label=body.project_label,
+                registered_by=user)}
+        except (agents.AgentError, agents.NotFound) as e:
+            raise agent_failure(e)
+
+    @app.get("/api/scientist/v2/bubbles/{slug}/agents")
+    def scientist_list_agents(slug: str, worker: str = "", user: str = Depends(scientist_user)):
+        home = _open_bubble(user, slug)
+        snap = presence.snapshot(active_workspace_id(user), slug)
+        rows = service.agents_overview(home, slug, workers=snap["workers"])["agents"]
+        if worker:
+            rows = [a for a in rows if a.get("worker_id") == worker]
+        return {"agents": rows}
+
+    @app.post("/api/scientist/v2/bubbles/{slug}/agents/heartbeat")
+    def scientist_agent_heartbeat(slug: str, body: AgentHeartbeatIn, user: str = Depends(scientist_user)):
+        """The worker's per-poll check-in: which agents are attached, which turns still run."""
+        home = _open_bubble(user, slug)
+        return service.agent_heartbeat(home, slug, worker_id=body.worker_id, agents=body.agents,
+                                       running_job_ids=body.running_job_ids)
+
+    @app.post("/api/scientist/v2/bubbles/{slug}/agents/{agent_id}")
+    def scientist_update_agent(slug: str, agent_id: str, body: AgentUpdateIn,
+                               user: str = Depends(scientist_user)):
+        home = _open_bubble(user, slug)
+        fields = {k: v for k, v in body.model_dump().items() if v is not None}
+        try:
+            return {"agent": service.update_agent(home, slug, agent_id, **fields)}
+        except (agents.AgentError, agents.NotFound) as e:
+            raise agent_failure(e)
+
+    @app.post("/api/scientist/v2/bubbles/{slug}/agents/{agent_id}/reset")
+    def scientist_reset_agent(slug: str, agent_id: str, body: AgentUpdateIn,
+                              user: str = Depends(scientist_user)):
+        home = _open_bubble(user, slug)
+        try:
+            return {"agent": service.reset_agent(home, slug, agent_id, body.conversation or "")}
+        except (agents.AgentError, agents.NotFound) as e:
+            raise agent_failure(e)
+
+    @app.delete("/api/scientist/v2/bubbles/{slug}/agents/{agent_id}")
+    def scientist_remove_agent(slug: str, agent_id: str, user: str = Depends(scientist_user)):
+        home = _open_bubble(user, slug)
+        try:
+            return {"agent": service.remove_agent(home, slug, agent_id)}
+        except (agents.AgentError, agents.NotFound) as e:
+            raise agent_failure(e)
+
+    @app.get("/api/scientist/v2/bubbles/{slug}/jobs/{job_id}")
+    def scientist_get_job(slug: str, job_id: str, user: str = Depends(scientist_user)):
+        home = _open_bubble(user, slug)
+        try:
+            return {"job": service.get_job(home, slug, job_id)}
+        except (agents.AgentError, agents.NotFound) as e:
+            raise agent_failure(e)
+
+    @app.post("/api/scientist/v2/bubbles/{slug}/jobs/{job_id}/start")
+    def scientist_start_job(slug: str, job_id: str, body: JobStartIn, user: str = Depends(scientist_user)):
+        home = _open_bubble(user, slug)
+        try:
+            return {"job": service.start_job(home, slug, job_id, body.worker_id)}
+        except (agents.AgentError, agents.NotFound) as e:
+            raise agent_failure(e)
+
+    @app.post("/api/scientist/v2/bubbles/{slug}/jobs/{job_id}/result")
+    def scientist_job_result(slug: str, job_id: str, body: JobResultIn, user: str = Depends(scientist_user)):
+        # body.status is deliberately an open str, not a Literal: besides "done"/"failed" the
+        # worker may report "requeue" when a turn only failed because the agent's own chat was
+        # open (see agents.BUSY_ERROR / agents.requeue_job). agents.finish_job validates it.
+        home = _open_bubble(user, slug)
+        try:
+            return {"job": service.finish_job(home, slug, job_id, status=body.status,
+                                              exit_code=body.exit_code,
+                                              output_tail=body.output_tail, error=body.error)}
+        except (agents.AgentError, agents.NotFound) as e:
+            raise agent_failure(e)
+
+    @app.post("/api/scientist/v2/bubbles/{slug}/jobs/{job_id}/reply")
+    def scientist_job_reply(slug: str, job_id: str, body: JobReplyIn, user: str = Depends(scientist_user)):
+        """The agent's answer: into the mark's thread, whichever surface it is on, and job done."""
+        home = _open_bubble(user, slug)
+        try:
+            return {"job": service.reply_job(home, slug, job_id, body.text, actor=user)}
+        except (agents.AgentError, agents.NotFound) as e:
+            raise agent_failure(e)
+        except (bubbles.ReviewSidecarError, bubbles.ReviewTargetError) as e:
+            raise review_failure(e)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    @app.post("/api/scientist/v2/bubbles/{slug}/jobs/{job_id}/fail")
+    def scientist_job_fail(slug: str, job_id: str, body: JobFailIn, user: str = Depends(scientist_user)):
+        home = _open_bubble(user, slug)
+        try:
+            return {"job": service.fail_job(home, slug, job_id, body.reason, actor=user)}
+        except (agents.AgentError, agents.NotFound) as e:
+            raise agent_failure(e)
+
     # ---- bubbles ----
     @app.get("/api/bubbles")
     def list_bubbles(archived: bool = False, user: str = Depends(current_user)):
@@ -1939,12 +2100,67 @@ def build_app():
         """Heartbeat: mark this person as viewing the bubble and return everyone who is on it."""
         workspace_id = active_workspace_id(user)
         presence.touch_viewer(workspace_id, slug, user)
-        return presence.snapshot(workspace_id, slug)
+        snap = presence.snapshot(workspace_id, slug)
+        # The agents registered through each synchronized directory ride along, so the presence
+        # menu can list them under their worker without a second request.
+        try:
+            snap["agents"] = service.agents_overview(home_of(user), slug,
+                                                    workers=snap["workers"])["agents"]
+        except Exception:
+            logger.debug("Could not attach agents to presence.", exc_info=True)
+            snap["agents"] = []
+        return snap
 
     @app.delete("/api/bubbles/{slug}/presence")
     def bubble_presence_leave(slug: str, user: str = Depends(current_user)):
         presence.drop_viewer(active_workspace_id(user), slug, user)
         return {"ok": True}
+
+    # ---- agents: named CLI conversations a mark can be assigned to ----
+    def agent_failure(exc: Exception) -> HTTPException:
+        if isinstance(exc, agents.Conflict):
+            return HTTPException(status_code=409, detail=str(exc))
+        if isinstance(exc, agents.AgentError):
+            return HTTPException(status_code=400, detail=str(exc))
+        if isinstance(exc, agents.NotFound):
+            return HTTPException(status_code=404, detail=f"No such agent, job, or mark: {exc.args[0] if exc.args else ''}")
+        return HTTPException(status_code=500, detail=str(exc))
+
+    @app.get("/api/bubbles/{slug}/agents")
+    def bubble_agents(slug: str, user: str = Depends(current_user)):
+        snap = presence.snapshot(active_workspace_id(user), slug)
+        return service.agents_overview(home_of(user), slug, workers=snap["workers"])
+
+    @app.delete("/api/bubbles/{slug}/agents/{agent_id}")
+    def bubble_remove_agent(slug: str, agent_id: str, user: str = Depends(current_user)):
+        try:
+            return {"agent": service.remove_agent(home_of(user), slug, agent_id)}
+        except (agents.AgentError, agents.NotFound) as e:
+            raise agent_failure(e)
+
+    @app.post("/api/bubbles/{slug}/jobs")
+    def bubble_create_job(slug: str, body: JobCreateIn, user: str = Depends(current_user)):
+        try:
+            return {"job": service.create_job(home_of(user), slug, agent_id=body.agent_id,
+                                              mark_key=body.mark_key, instruction=body.instruction,
+                                              created_by=user)}
+        except (agents.AgentError, agents.NotFound) as e:
+            raise agent_failure(e)
+
+    @app.post("/api/bubbles/{slug}/jobs/{job_id}/cancel")
+    def bubble_cancel_job(slug: str, job_id: str, user: str = Depends(current_user)):
+        try:
+            return {"job": service.cancel_job(home_of(user), slug, job_id)}
+        except (agents.AgentError, agents.NotFound) as e:
+            raise agent_failure(e)
+
+    @app.post("/api/bubbles/{slug}/jobs/{job_id}/reassign")
+    def bubble_reassign_job(slug: str, job_id: str, body: JobReassignIn,
+                            user: str = Depends(current_user)):
+        try:
+            return {"job": service.reassign_job(home_of(user), slug, job_id, body.agent_id)}
+        except (agents.AgentError, agents.NotFound) as e:
+            raise agent_failure(e)
 
     @app.patch("/api/bubbles/{slug}")
     def rename_bubble(slug: str, body: BubbleRenameIn, user: str = Depends(current_user)):
