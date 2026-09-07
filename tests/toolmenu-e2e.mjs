@@ -197,6 +197,46 @@ async function main() {
     await shoot(page, "toolmenu-sharing");
     step("toggling the public link rewrites the menu in place");
 
+    // Close via the trigger itself (a toggle), not a coordinate click: the deck and page
+    // views lay out differently, and a fixed (x, y) that is "outside" on one is not
+    // guaranteed to be outside on the other.
+    await trigger.evaluate(node => node.click());
+    await panel.waitFor({ state: "detached", timeout: 2_000 });
+
+    // A chalk talk has no page of its own, so its tools menu must not offer the page's
+    // Sharing group at all — not the heading, not Preview page, not Public link, and not
+    // Open shared page, even though sharing is switched on right now at the bubble level.
+    const { id: deckTalkId } = await api(context.request, baseUrl, "POST", `/api/bubbles/${slug}/talks`,
+      { title: "Deck for the menu", body: "# Slide one\n\nBody text.\n" });
+    await page.goto(`${baseUrl}/#bubble/${slug}/talk/${encodeURIComponent(deckTalkId)}/slide/1`,
+      { waitUntil: "domcontentloaded" });
+    await page.waitForSelector(".tk-slide", { timeout: 10_000 });
+    await trigger.evaluate(node => node.click());
+    await panel.waitFor({ state: "visible", timeout: 2_000 });
+    const deckMenu = (await panel.innerText()).toLowerCase();
+    for (const gone of ["sharing", "preview page", "public link", "open shared page"]) {
+      assert.ok(!deckMenu.includes(gone), `a chalk talk must not show page-scoped sharing rows:\n${deckMenu}`);
+    }
+    await shoot(page, "toolmenu-deck");
+    step("a chalk talk's tools menu carries no sharing rows");
+
+    await trigger.evaluate(node => node.click());
+    await panel.waitFor({ state: "detached", timeout: 2_000 });
+    // Back to the document page, where sharing is still on: the whole group, including
+    // Open shared page, has to be exactly as it was before the deck was ever opened.
+    await page.goto(`${baseUrl}/#bubble/${slug}/${homePage}`, { waitUntil: "domcontentloaded" });
+    await trigger.waitFor({ state: "visible", timeout: 10_000 });
+    await trigger.evaluate(node => node.click());
+    await panel.waitFor({ state: "visible", timeout: 2_000 });
+    // Preview page is deliberately not among these: it hides itself once sharing is on,
+    // regardless of this bug, so it is not a signal for the deck's stranded-row fix.
+    const pageMenuAgain = (await panel.innerText()).toLowerCase();
+    for (const expected of ["sharing", "public link", "open shared page"]) {
+      assert.ok(pageMenuAgain.includes(expected),
+        `the document page's sharing group must be unaffected by visiting a deck:\n${pageMenuAgain}`);
+    }
+    step("the document page's sharing group is untouched by the deck's menu");
+
     await page.mouse.click(220, 700);
     await panel.waitFor({ state: "detached", timeout: 2_000 });
     assert.ok(!(await trigger.evaluate(node => node.classList.contains("on"))),

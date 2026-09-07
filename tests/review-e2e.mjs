@@ -453,6 +453,48 @@ async function main() {
     await page.waitForTimeout(400);
     step("authenticated report editor loaded");
 
+    // Ctrl+Shift+` toggles the marks pane even with the caret inside the report editor —
+    // that is the whole reason it is bound in the capture phase, ahead of the editor's own
+    // keymap. Linux's modifier is Control, matched by Playwright's "Control" name.
+    const editorHost = page.locator("#editorHost");
+    // This viewport is wide enough that the marks pane defaults closed (it only defaults open
+    // on a phone-width bubble). Force it open first so the chord's before/after is unambiguous.
+    if (await editorHost.evaluate(node => node.classList.contains("marks-off"))) {
+      await page.locator("#paneRightToggle").click();
+      await page.waitForFunction(() => !document.querySelector("#editorHost")?.classList.contains("marks-off"));
+    }
+    await page.locator(EDITOR).click();
+    await page.waitForFunction(() =>
+      !!(document.activeElement && document.activeElement.closest(".ProseMirror")));
+    assert.ok(!(await editorHost.evaluate(node => node.classList.contains("marks-off"))),
+      "the marks pane starts open");
+    await page.keyboard.press("Control+Shift+`");
+    await page.waitForFunction(() =>
+      document.querySelector("#editorHost")?.classList.contains("marks-off"));
+    assert.ok(await editorHost.evaluate(node => node.classList.contains("marks-off")),
+      "Ctrl+Shift+` must hide the marks pane, even while the caret is in the editor");
+    await page.keyboard.press("Control+Shift+`");
+    await page.waitForFunction(() =>
+      !document.querySelector("#editorHost")?.classList.contains("marks-off"));
+    assert.ok(!(await editorHost.evaluate(node => node.classList.contains("marks-off"))),
+      "pressing it again must bring the marks pane back");
+    step("Ctrl+Shift+` toggles the marks pane from inside the editor");
+
+    // Alt+Enter toggles the same focused workspace #bubbleFocusToggle does, from anywhere in
+    // the bubble view, including with the caret still in the editor from the check above.
+    const app = page.locator("#app");
+    assert.ok(!(await app.evaluate(node => node.classList.contains("bubble-focus"))),
+      "focused workspace starts closed");
+    await page.keyboard.press("Alt+Enter");
+    await page.waitForFunction(() => document.getElementById("app")?.classList.contains("bubble-focus"));
+    assert.ok(await app.evaluate(node => node.classList.contains("bubble-focus")),
+      "Alt+Enter must enter the focused workspace");
+    await page.keyboard.press("Alt+Enter");
+    await page.waitForFunction(() => !document.getElementById("app")?.classList.contains("bubble-focus"));
+    assert.ok(!(await app.evaluate(node => node.classList.contains("bubble-focus"))),
+      "pressing it again must leave the focused workspace");
+    step("Alt+Enter toggles the focused workspace from inside the editor");
+
     const colorSelection = "Emoji offset guard 😀 precedes this review.";
     // Swatch hexes come from the active theme's --text-color-N variables, so the test reads
     // them from the live palette instead of pinning values that change with the theme.
@@ -551,6 +593,27 @@ async function main() {
 
     await replaceEditorText(page, serverCopyBeforeMalformed);
     await page.waitForFunction(() => !document.querySelector(".review-render-error"));
+
+    // Away from any bubble page or deck, the chord's guard must leave it doing nothing: no
+    // #editorHost to toggle, no LockedInTalks deck open, and no error thrown reaching for either.
+    await page.locator('.navbtn[data-view="home"]').click();
+    await page.waitForFunction(() => !document.querySelector("#editorHost"));
+    await page.keyboard.press("Control+Shift+`");
+    await page.waitForTimeout(200);
+    assert.equal(await page.locator("#editorHost").count(), 0,
+      "the home view must not grow a marks pane out of the chord");
+    assert.ok(await page.locator('.navbtn[data-view="home"]').evaluate(node => node.classList.contains("active")),
+      "the chord must not disturb the home view when no bubble surface is on screen");
+    step("Ctrl+Shift+` is inert on a non-bubble view");
+
+    // Same guard, same view: S.bubble is unset on the home view, so Alt+Enter must not
+    // enter the focused workspace either.
+    await page.keyboard.press("Alt+Enter");
+    await page.waitForTimeout(200);
+    assert.ok(!(await page.locator("#app").evaluate(node => node.classList.contains("bubble-focus"))),
+      "the home view must not enter the focused workspace out of the chord");
+    step("Alt+Enter is inert on a non-bubble view");
+
     await context.close();
     step("all browser review lifecycle checks passed");
   } catch (error) {

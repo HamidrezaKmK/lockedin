@@ -1234,12 +1234,29 @@
   .setup-run-actions>button.setup-refresh:hover{background:var(--panel2)}
   .setup-refresh.spin .li-ic{animation:setup-spin .7s linear infinite}
   @keyframes setup-spin{to{transform:rotate(360deg)}}
+  .setup-persona{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 10px;margin:8px 0}
+  .setup-persona label{display:flex;flex-direction:column;gap:4px;font-size:11.5px;color:var(--muted);
+    font-family:var(--font-ui)}
+  .setup-persona input{width:100%;padding:6px 9px;font-size:12.5px}
+  @media (max-width:560px){.setup-persona{grid-template-columns:minmax(0,1fr)}}
+  .setup-snippet-wrap{white-space:pre-wrap;overflow-wrap:anywhere}
+  .setup-attach{display:flex;flex-direction:column;gap:6px;font-size:12.5px;line-height:1.5}
+  .setup-attach-row b{font-weight:600}
+  .setup-attach-agents{display:flex;flex-direction:column;gap:6px;margin:9px 0 4px;padding:8px 9px;
+    border:1px solid var(--line);border-radius:8px;background:var(--panel2)}
+  .setup-attach-agents > div{display:flex;align-items:center;gap:8px;font-size:12.5px;min-width:0}
+  .setup-attach-agents .muted{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    font-size:11.5px}
+  .setup-copychip{flex:none;font-family:var(--font-mono);font-size:11px;padding:3px 8px;min-height:0;
+    border-radius:6px}
+  .setup-attach + p,.setup-attach + .setup-hint{margin-top:10px}
   .create-dialog-footer button.ok{background:var(--good);border-color:var(--good)}
   .presence{position:relative;flex-shrink:0}
-  /* One pill, three segments: people · workers · connect. Dividers are borders on the segments
-     rather than separate nodes, so the hover highlight fills a segment edge to edge. */
+  /* One pill, two segments: people · agents (which also opens the folders they sync through
+     and the way to connect another). Dividers are borders on the segments rather than separate
+     nodes, so the hover highlight fills a segment edge to edge. */
   /* Presence and the tools menu share one pill; the inner card gives up its own edge so the
-     four segments read as one control. */
+     three segments read as one control. */
   .hdr-cluster{display:inline-flex;align-items:stretch;overflow:visible;border-radius:999px;
     border:1px solid var(--line);background:var(--panel2)}
   .hdr-cluster .presence-group-card{border:0;border-radius:999px 0 0 999px;background:none}
@@ -1250,8 +1267,8 @@
     display:inline-flex;align-items:center}
   .hdr-cluster .toolmenu-btn:hover,.hdr-cluster .toolmenu-btn.on{
     background:color-mix(in srgb,var(--accent) 18%,transparent);color:var(--ink)}
-  /* Phones: the four-segment pill folds into the ⋮ alone — one quiet control instead of a row
-     of chrome under the title. The people / workers / connect rows move inside its menu (see
+  /* Phones: the three-segment pill folds into the ⋮ alone — one quiet control instead of a row
+     of chrome under the title. The people / agents rows move inside its menu (see
      buildBubbleToolsMenu), so nothing is lost, only tucked away. The presence host stays in the
      DOM as the dropdown's mount, but the *cluster* becomes the anchor and the menu opens from
      its left edge — right-aligned to a zero-width host it opened off the screen. */
@@ -1284,7 +1301,6 @@
   /* Nothing attached is not a fault: without this a plain "0" sat at full strength beside a
      live "1" and read like an error state. */
   .presence-seg.is-zero{opacity:.62}
-  .presence-robot{font-size:14px;padding:0 10px}
   .presence-dot{width:7px;height:7px;border-radius:50%;flex:none;background:var(--good)}
   .presence-dot.degraded,.presence-dot.unresponsive{background:var(--warn)}
   .presence-dot.dead{background:var(--bad)}
@@ -1300,6 +1316,12 @@
   .presence-item .presence-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .presence-item .presence-note{flex:none;font-size:11px;color:var(--muted)}
   .presence-item.dead .presence-name{color:var(--muted)}
+  .presence-agent{padding-left:22px}
+  .presence-agent .presence-emoji{color:var(--accent);display:inline-flex}
+  .presence-agent .presence-emoji .li-ic{width:13px;height:13px}
+  .presence-agent.working .presence-dot{animation:presence-pulse 1.4s ease-in-out infinite}
+  @keyframes presence-pulse{0%,100%{opacity:1}50%{opacity:.35}}
+  .presence-detail button.danger{min-height:0;padding:3px 9px;font-size:11px;margin-top:4px}
   .presence-avatar{width:21px;height:21px;border-radius:50%;flex:none;display:grid;place-items:center;
     background:var(--accent);color:var(--panel);font-size:10.5px;font-weight:700;text-transform:uppercase}
   .presence-detail{margin:1px 8px 7px;padding:8px 9px;border-radius:8px;background:var(--panel2);
@@ -1308,6 +1330,9 @@
   .presence-detail .presence-reason{grid-column:1/-1;color:var(--warn);overflow-wrap:anywhere}
   .presence-dupnote{margin:5px 8px 1px;font-size:11px;color:var(--muted)}
   .presence-empty{padding:9px 8px;color:var(--muted);font-size:12px}
+  .presence-summary{padding:7px 8px 5px;font-size:11.5px;color:var(--muted)}
+  .presence-add{margin-top:6px;padding-top:11px;border-top:1px solid var(--line);color:var(--accent)}
+  .presence-add:hover{color:var(--ink)}
   /* The papers popup reuses the assets modal's frame; only the row shapes differ. */
   .papers-modal-body .bubble-pdf-list{display:block}
   .papers-modal-body .score-group{margin-top:4px}
@@ -1860,6 +1885,34 @@
     e.preventDefault(); e.stopPropagation();
     setSideOpen(document.body.classList.contains("side-collapsed"));
   },true);
+  // Ctrl/Cmd+Shift+` toggles whichever right-hand pane is on screen: a chalk talk's notes
+  // pane if one is open, else the document page's marks column. Bound in the capture phase
+  // for the same reason as Ctrl/Cmd+B above. No typing bail-out here — unlike Ctrl+B, this
+  // chord is not something a person types, so it is safe to act on even inside the editor.
+  // event.code so it matches the physical key regardless of layout, with the produced
+  // characters as a fallback for layouts that report an unusual code.
+  document.addEventListener("keydown",e=>{
+    if(!(e.ctrlKey||e.metaKey)||!e.shiftKey||e.altKey)return;
+    if(e.code!=="Backquote"&&e.key!=="`"&&e.key!=="~")return;
+    if(window.LockedInTalks&&window.LockedInTalks.toggleNotes()){
+      e.preventDefault(); e.stopPropagation(); return;
+    }
+    const host=document.getElementById("editorHost");
+    if(!host||host.offsetParent===null)return;
+    e.preventDefault(); e.stopPropagation();
+    setPane("right",!S.paneRight);
+  },true);
+  // Alt+Enter toggles the focused workspace, same as #bubbleFocusToggle, on either bubble
+  // surface (a document page or an open chalk talk — both live inside the bubble view).
+  // Bound in the capture phase alongside the two chords above. No typing bail-out: unlike
+  // Ctrl+B, Alt+Enter is not something a person types into prose.
+  document.addEventListener("keydown",e=>{
+    if(!e.altKey||e.ctrlKey||e.metaKey)return;
+    if(e.code!=="Enter"&&e.code!=="NumpadEnter")return;
+    if(!S.bubble)return;
+    e.preventDefault(); e.stopPropagation();
+    setBubbleFocus(!S.bubbleFocus);
+  },true);
   // Close mobile sidebar when tapping the backdrop
   document.getElementById("app").addEventListener("click",e=>{
     if(e.target===e.currentTarget&&window.innerWidth<=700){
@@ -1902,8 +1955,9 @@
     const focusBtn=document.getElementById("bubbleFocusToggle");
     if(focusBtn){
       focusBtn.replaceChildren(ic(enabled?"collapse":"expand"));
-      focusBtn.title=enabled?"Exit focused workspace":"Enter focused workspace";
-      focusBtn.setAttribute("aria-label",focusBtn.title);
+      const focusLabel=enabled?"Exit focused workspace":"Enter focused workspace";
+      focusBtn.title=focusLabel+" (Alt+Enter)";
+      focusBtn.setAttribute("aria-label",focusLabel);
     }
     window.dispatchEvent(new Event("resize"));
   }
@@ -2612,7 +2666,7 @@
     if(S.paneRight&&gutter&&!S.commentDraftAnchor){
       window.LockedInMarks.gutter(gutter,S.comments||[],
         {onDelete:id=>markDelete(id),onEdit:(id,text)=>markEdit(id,text),
-         onReply:(id,text)=>markReply(id,text)});
+         onReply:(id,text)=>markReply(id,text),page:S.page});
       if(window.LockedInMarks.sheet)window.LockedInMarks.sheet(gutter,gutter);
     }
     if(wrap.dataset.marksBound!=="1"){
@@ -2808,6 +2862,7 @@
     baseMtime:null, autosaveTimer:null, saving:false, syncState:"synced", applyingRemote:false,
     previewEl:null, remoteChangePending:false, toolsMenu:null,
     comments:[], selectedComment:null, lastCommentsMtime:null,
+    agents:[], jobsByMark:{}, lastJobsMtime:null,
     reviewSelection:null, reviewHitTargets:[], reviewMarkupError:null, reviewHighlightFrame:null,reviewMutationObserver:null,
     reviewMutating:false,reviewMutationEpoch:0,reviewCommentsLoaded:false,
     refAc:null,
@@ -2878,6 +2933,7 @@
     // waiting out our heartbeat window; a closed tab still falls off by timeout.
     if(S.bubble&&S.presenceEl)api("/api/bubbles/"+S.bubble+"/presence",{method:"DELETE"}).catch(()=>{});
     stopPresence(); S.presenceEl=null;
+    S.agents=[]; S.jobsByMark={};
     if(S.editor){ try{S.editor.destroy();}catch(e){} }
     S.editor=null; S.bubble=null; S.page=null; S.pages=[]; S.previewEl=null;
     S.toolsMenu=null;
@@ -4736,12 +4792,22 @@
     const agentBody=el("div",{class:"setup-agent"});
     const troubleshootBody=el("div");
     const copy=el("button",{class:"primary",disabled:true},"Copy");
+    const nameInput=el("input",{type:"text",placeholder:"Ada",autocomplete:"off",oninput:renderPersona});
+    const roleInput=el("input",{type:"text",placeholder:"skeptical reviewer",autocomplete:"off",oninput:renderPersona});
+    const goalInput=el("input",{type:"text",placeholder:"keep every derivation honest and readable",
+      autocomplete:"off",oninput:renderPersona});
+    const personalityInput=el("input",{type:"text",placeholder:"terse, prefers concrete counterexamples",
+      autocomplete:"off",oninput:renderPersona});
+    const personaSnippet=el("code",{class:"setup-snippet setup-snippet-wrap"});
+    const copy2=el("button",{class:"primary"},"Copy");
     // A circular arrow rather than the words "New link": the button restores a link that went
     // stale, which is a retry, not a second kind of link.
     const refresh=el("button",{class:"setup-refresh",title:"Get a fresh link",
       "aria-label":"Get a fresh link"},ic("refresh"));
     const close=()=>overlay.remove();
-    let commands=null, os=detectPlatform(), agent="claude";
+    let commands=null, os=detectPlatform(), agent="claude", agents=null;
+    const cli=()=>(commands&&commands.cli_name)||"lockedin-scientist";
+    const cliChip=el("code",{class:"setup-inline"},cli());
     const OSES=[["mac","macOS"],["linux","Linux"],["windows","Windows"]];
     const AGENTS=[
       ["claude","Claude",["claude"],"then type ","/lockedin-scientist","."],
@@ -4754,11 +4820,26 @@
       options.forEach(option=>host.append(el("button",{class:"help-tab"+(option[0]===current?" active":""),
         onclick:()=>pick(option[0])},option[1])));
     }
+    function personaLine(){
+      const v=(input)=>input.value.trim();
+      const name=v(nameInput), useFallback=!name;
+      const val=input=>useFallback?input.placeholder:v(input);
+      const personality=val(personalityInput);
+      let line="Register yourself as a LockedIn agent on this bubble. Name: "+val(nameInput)+". Role: "
+        +val(roleInput)+". Goal: "+val(goalInput)+".";
+      if(personality) line+=" Personality: "+personality+".";
+      return line;
+    }
+    function renderPersona(){ personaSnippet.textContent=personaLine(); }
     function render(){
       tabRow(osTabs,OSES,os,key=>{ os=key; render(); });
       tabRow(agentTabs,AGENTS,agent,key=>{ agent=key; render(); });
       snippet.textContent=commands?commandFor():"Preparing your setup link…";
       copy.disabled=!commands;
+      cliChip.textContent=cli();
+      renderPersona();
+      renderAttachRows();
+      renderAttachAgents();
       troubleshootBody.textContent=""; troubleshootBody.append(troubleshooting());
       const [,,[cmd],lead,invoke,tail]=AGENTS.find(row=>row[0]===agent);
       agentBody.textContent="";
@@ -4778,6 +4859,10 @@
       }catch(e){ snippet.textContent="Could not create a setup link: "+e.message; }
       render();
     }
+    async function loadAgentList(){
+      const r=await api("/api/bubbles/"+encodeURIComponent(slug)+"/agents");
+      agents=r.agents||[]; render();
+    }
     copy.onclick=async()=>{
       try{
         await copyText(commandFor());
@@ -4787,17 +4872,78 @@
       }catch(e){ copy.textContent="Press ⌘/Ctrl+C"; snippet.focus(); }
     };
     refresh.onclick=()=>{ refresh.classList.add("spin"); mint().finally(()=>refresh.classList.remove("spin")); };
+    copy2.onclick=async()=>{
+      try{
+        await copyText(personaLine());
+        copy2.replaceChildren(ic("check"),"Copied"); copy2.classList.add("ok");
+        clearTimeout(copy2._t); copy2._t=setTimeout(()=>{ copy2.textContent="Copy"; copy2.classList.remove("ok"); },2000);
+      }catch(e){ copy2.textContent="Press ⌘/Ctrl+C"; personaSnippet.focus(); }
+    };
     const chip=text=>el("code",{class:"setup-inline"},text);
+    const attachAgentsBody=el("div");
+    function renderAttachAgents(){
+      attachAgentsBody.textContent="";
+      if(agents===null) return;
+      if(!agents.length){
+        attachAgentsBody.append(el("div",{class:"muted setup-hint"},
+          "No agents on this bubble yet. Step 4 creates the first one."));
+        return;
+      }
+      const c=cli();
+      const list=el("div",{class:"setup-attach-agents"});
+      agents.forEach(a=>{
+        const cmdText=c+" agent chat "+a.name;
+        const copyBtn=el("button",{class:"setup-copychip",title:"Copy"},cmdText);
+        copyBtn.onclick=async()=>{
+          try{
+            await copyText(cmdText);
+            copyBtn.textContent="Copied";
+            clearTimeout(copyBtn._t); copyBtn._t=setTimeout(()=>{ copyBtn.textContent=cmdText; },1500);
+          }catch(e){ copyBtn.textContent="Press ⌘/Ctrl+C"; }
+        };
+        list.append(el("div",{},
+          el("span",{class:"presence-dot "+({idle:"live",working:"live",attached:"degraded",offline:"dead"}[a.status]||"dead")}),
+          el("b",{},a.name),
+          el("span",{class:"muted"},a.vendor+(a.model?" · "+a.model:"")+" · "+a.status),
+          copyBtn));
+      });
+      attachAgentsBody.append(list);
+    }
+    const attachRows=el("div",{class:"setup-attach"});
+    function renderAttachRows(){
+      const c=cli();
+      const row=(lead,...body)=>el("div",{class:"setup-attach-row"},
+        el("b",{},lead), el("span",{class:"muted"}," — ",...body));
+      attachRows.textContent="";
+      attachRows.append(
+        row("A chat already open in that folder",
+          "skip steps 1 and 2. In that chat, load the skill the way step 3 shows, then paste "
+          + "the line from step 4."),
+        row("A second agent in the same folder",
+          "open another chat there and paste a step-4 line with a different name. Every chat "
+          + "is its own agent; one folder can host several."),
+        row("This machine is set up, but the folder is new",
+          chip("cd"), " into it, run ", chip(c+" sync "+slug), ", then follow step 3."),
+        row("An agent registered earlier",
+          chip(c+" agent chat <name>"), " reopens its conversation. Marks assigned while it "
+          + "is open wait, and run once you close it."));
+    }
     function troubleshooting(){
+      const c=cli();
       const list=el("ol",{class:"setup-steps"});
       const li=(...kids)=>{ const row=el("li",{},...kids); list.append(row); return row; };
-      li(chip("lockedin-scientist ps"),
+      li(chip(c+" ps"),
          " — every worker on this machine, and the folder each one syncs.");
-      li(chip("lockedin-scientist doctor"),
+      li(chip(c+" doctor"),
          " — run it inside a folder to check that folder's worker and its connection.");
-      li(chip("lockedin-scientist resync"),
+      li(chip(c+" resync"),
          " — restarts a worker that died or got stuck. No arguments; it remembers this bubble.");
-      li(chip("lockedin-scientist assets"),
+      li(chip(c+" agent list"),
+         " — the agents registered from this machine, and what each is doing.");
+      li(chip(c+" agent retire <name>"),
+         " — removes an agent from this bubble and cancels its open jobs; add ", chip("--purge"),
+         " to delete its conversation too.");
+      li(chip(c+" assets"),
          " — large files (datasets, archives) are listed but never synced automatically. "
          + "Add ", chip("pull"), " or ", chip("push"), " with a filename to move one.");
       const last=li("Still stuck? Run a fresh line from step 2 — it repairs the folder in place "
@@ -4807,9 +4953,9 @@
         chip(commands?(os==="windows"?commands.install_powershell:commands.install_unix):"…"),
         el("span",{class:"setup-os"}," (",OSES.find(o=>o[0]===os)[1],")")));
       manual.append(el("li",{},"Point it at this workspace: ",
-        chip("lockedin-scientist workspaces switch "+(commands&&commands.workspace_id||"<workspace-id>"))));
-      manual.append(el("li",{},"Bind the folder: ",chip("lockedin-scientist sync "+slug),
-        " — or ",chip("lockedin-scientist hard-reset "+slug),
+        chip(c+" workspaces switch "+(commands&&commands.workspace_id||"<workspace-id>"))));
+      manual.append(el("li",{},"Bind the folder: ",chip(c+" sync "+slug),
+        " — or ",chip(c+" hard-reset "+slug),
         " to rebuild it from the server, which discards anything local that never synced."));
       last.append(manual);
       return list;
@@ -4838,11 +4984,31 @@
           el("div",{class:"muted setup-hint"},
             "Already have one open in that folder? Paste the line from step 2 into that "
             + "conversation instead — with no terminal to answer from, it just uses the "
-            + "folder the agent is working in.")),
-        step(4,"Troubleshoot if needed",
+            + "folder the agent is working in. Once the skill has loaded, name it in the next step.")),
+        step(4,"Give it a name and a personality",
+          el("div",{class:"setup-persona"},
+            el("label",{},"Name",nameInput),
+            el("label",{},"Role",roleInput),
+            el("label",{},"Goal",goalInput),
+            el("label",{},"Personality (optional)",personalityInput)),
+          el("div",{class:"setup-run"}, personaSnippet,
+            el("div",{class:"setup-run-actions"}, copy2)),
+          el("div",{class:"muted setup-hint"},
+            "Paste that into the chat you just opened. The session registers itself — LockedIn "
+            + "cannot create an agent for you, because the agent is that conversation."),
+          el("div",{class:"muted setup-hint"},
+            "From then on every mark gets an ",chip("assign")," button, and the agent answers "
+            + "assigned marks while the chat is closed. It shows up under this folder in the chip "
+            + "at the top of this page.")),
+        step(5,"Already have one? Attach it instead",
+          attachRows, attachAgentsBody,
+          el("div",{class:"muted setup-hint"},
+            "Assigned marks wait while a chat is open and run once you close it. Detaching is "
+            + "just leaving the chat.")),
+        step(6,"Troubleshoot if needed",
           el("div",{class:"muted setup-hint"},
             "The one-liner above installed a command, ",
-            chip("lockedin-scientist"),
+            cliChip,
             ". Its sole purpose is syncing: it keeps one small background worker per folder, "
             + "carrying this bubble's pages, talks and your marks to the agent and its reports "
             + "back — it never edits your project files. It is an ordinary CLI, safe to run "
@@ -4850,7 +5016,7 @@
             + "every folder syncing this bubble — a green dot means they are all healthy."),
           troubleshootBody)));
     overlay.append(box); overlay.onclick=e=>{if(e.target===overlay)close();}; document.body.append(overlay);
-    render(); mint();
+    render(); mint(); loadAgentList().catch(()=>{});
   }
 
   function openOverleafModal(b){
@@ -4907,16 +5073,15 @@
       if(matchMedia("(max-width:560px)").matches){
         const snap=S.presence||{viewers:[],workers:[]};
         const viewers=(snap.viewers||[]).length, workers=visibleWorkers(snap).length;
+        const agents=(snap.agents||[]).length;
         const worst=workers?worstWorkerState(visibleWorkers(snap)):"";
         menu.append(el("div",{class:"toolmenu-group"},"Attached"));
         menu.append(item(ic("users"),viewers===1?"1 person reading":viewers+" people reading",
           {title:"Who has this bubble open",keepOpen:false,
            run:()=>togglePresence("people")}));
-        menu.append(item(ic("refresh"),workers===1?"1 folder syncing":workers+" folders syncing",
-          {title:"Directories syncing this bubble",note:worst||"",noteOn:worst==="live",
-           run:()=>togglePresence("workers")}));
-        menu.append(item(ic("agent"),"Connect an agent",
-          {title:"Connect an agent to this bubble",run:()=>openScientistSetup(S.bubble)}));
+        menu.append(item(ic("agent"),agents===1?"1 agent":agents+" agents",
+          {title:"Agents and folders syncing this bubble",note:worst||"",noteOn:worst==="live",
+           run:()=>togglePresence("agents")}));
       }
       // View first: it is the control reached for most, and on a phone it is reachable nowhere
       // else — the toolbar select this replaced was hidden on narrow screens.
@@ -4970,7 +5135,7 @@
              toast(S.shareActive?"Sharing on \u2014 anyone with the link can view":"Sharing off");
            }catch(err){ row.disabled=false; toast(err.message); }
          }}));
-      if(S.shareActive)
+      if(onPage&&S.shareActive)
         menu.append(item(ic("external"),"Open shared page",
           {title:"Open the shared page in a new tab",
            run:()=>window.open(shareUrl(),"_blank","noopener")}));
@@ -4998,7 +5163,9 @@
       if(S.bubble!==slug)return;
       try{
         const snap=await api("/api/bubbles/"+slug+"/presence",{method:"POST"});
-        if(S.bubble===slug){ S.presence=snap; renderPresence(); }
+        if(S.bubble===slug){ S.presence=snap; renderPresence();
+          if(Array.isArray(snap.agents)){S.agents=snap.agents; if(window.LockedInMarks&&window.LockedInMarks.setAgents)window.LockedInMarks.setAgents(slug,S.agents,S.jobsByMark||{});}
+        }
       }catch(e){ /* ambient: a missed beat just keeps showing the last snapshot */ }
     };
     beat(); S.presenceTimer=setInterval(beat,PRESENCE_MS);
@@ -5042,10 +5209,11 @@
     return (snap.workers||[]).filter(w=>w.state!=="dead"||w.attention);
   }
 
-  // One card, three jobs: who is reading this bubble, which directories are syncing it, and how to
-  // connect another. They were a chip and a separate round button; together they read as the
-  // bubble's "who and what is attached" cluster. Each half opens only its own half of the menu, so
-  // a click answers the question it was asked.
+  // One card, two jobs: who is reading this bubble, and what agents (and the folders they sync
+  // through) are attached to it — plus how to connect another, one click into that second half.
+  // They were a chip and a separate round button; together they read as the bubble's "who and
+  // what is attached" cluster. Each half opens only its own half of the menu, so a click answers
+  // the question it was asked.
   function renderPresence(){
     const host=S.presenceEl; if(!host)return;
     host.textContent="";
@@ -5055,10 +5223,17 @@
     host.classList.remove("hide");
     const viewers=snap.viewers||[], workers=visibleWorkers(snap);
     const worst=worstWorkerState(workers);
+    const agentCount=(snap.agents||[]).length;
     const segment=(view,title,state,count,...kids)=>el("button",
       {class:"presence-seg"+(S.presenceView===view?" on":"")+(state?" sync-"+state:"")
              +(count?"":" is-zero"),
-       title,onclick:e=>{ e.stopPropagation(); togglePresence(view); }},...kids);
+       title,"aria-label":title,onclick:e=>{ e.stopPropagation(); togglePresence(view); }},...kids);
+    // The agents segment carries both numbers, since the folder count alone said little on its
+    // own — "2 folders syncing" answers a question nobody asked. Health colouring still comes
+    // from the folders' worst state: an agent has no health of its own to report.
+    const agentWord=agentCount===1?"agent":"agents", folderWord=workers.length===1?"folder":"folders";
+    const agentsTitle=agentCount===0?"No agents on this bubble yet. Connect one."
+      :agentCount+" "+agentWord+", "+workers.length+" "+folderWord+" syncing";
     const group=el("div",{class:"presence-group-card"},
       segment("people", viewers.length===1?"1 person is reading this bubble"
                                           :viewers.length+" people are reading this bubble", "",
@@ -5066,19 +5241,11 @@
         el("span",{class:"presence-emoji"},ic("users")),
         el("span",{class:"presence-count"},String(viewers.length)),
         el("span",{class:"presence-word"},viewers.length===1?"reading":"reading")),
-      segment("workers", workers.length===0?"No folders are syncing this bubble"
-                        :workers.length===1?"1 folder is syncing this bubble"
-                                           :workers.length+" folders are syncing this bubble",
-        // The gear and the count carry the health themselves — `⚙` is a text glyph, so it takes
-        // the colour. A separate dot said the same thing twice and made the segment lopsided.
-        // With nothing syncing there is no health to report, so the segment stays neutral.
-        workers.length?worst:"", workers.length,
-        el("span",{class:"presence-emoji"},ic("refresh")),
-        el("span",{class:"presence-count"},String(workers.length)),
-        el("span",{class:"presence-word"},"syncing")),
-      el("button",{class:"presence-seg presence-robot",title:"Connect an agent to this bubble",
-        "aria-label":"Connect an agent to this bubble",
-        onclick:e=>{ e.stopPropagation(); closePresenceMenu(); openScientistSetup(S.bubble); }},ic("agent")));
+      segment("agents", agentsTitle,
+        workers.length?worst:"", agentCount,
+        el("span",{class:"presence-emoji"},ic("agent")),
+        el("span",{class:"presence-count"},String(agentCount)),
+        el("span",{class:"presence-word"},agentWord)));
     host.append(group);
     if(S.presenceView){
       const menu=buildPresenceMenu(snap,S.presenceView);
@@ -5113,7 +5280,15 @@
     // Clicks inside the menu must not reach the document-level close handler.
     const menu=el("div",{class:"presence-menu",onclick:e=>e.stopPropagation()});
     const viewers=snap.viewers||[], workers=visibleWorkers(snap);
-    if(view==="workers"&&(snap.duplicate_workers||[]).length){
+    if(view==="agents"){
+      const agentCount=(snap.agents||[]).length;
+      const folderPart=workers.length===0?"No folders syncing"
+        :workers.length===1?"1 folder syncing":workers.length+" folders syncing";
+      const agentPart=agentCount===0?"no agents"
+        :agentCount===1?"1 agent":agentCount+" agents";
+      menu.append(el("div",{class:"presence-summary"},folderPart+" · "+agentPart));
+    }
+    if(view==="agents"&&(snap.duplicate_workers||[]).length){
       menu.append(el("div",{class:"presence-dupnote",
         title:"Edits from "+snap.duplicate_workers.map(presenceLabel).join(" and ")+" can conflict."},
         snap.duplicate_workers.length+" directories are syncing this bubble"));
@@ -5135,15 +5310,33 @@
       }
     });
     }
-    if(view==="workers"){
-    menu.append(el("div",{class:"presence-group"},"Agent workers"));
+    if(view==="agents"){
+    const allAgents=snap.agents||S.agents||[];
+    const workerAgentRow=(a)=>{
+      const key="a:"+a.id, on=S.presenceSelected===key;
+      menu.append(el("button",{class:"presence-item presence-agent "+a.status+(on?" on":""),onclick:()=>selectPresence(key)},
+        el("span",{class:"presence-dot "+({idle:"live",working:"live",attached:"degraded",offline:"dead"}[a.status]||"dead")}),
+        el("span",{class:"presence-emoji"},ic("agent")),
+        el("span",{class:"presence-name",title:(a.role||"")+(a.goal?" — "+a.goal:"")},a.name),
+        el("span",{class:"presence-note"},a.vendor+(a.model?" · "+a.model:"")+" · "+a.status)));
+      if(on){
+        const detail=el("div",{class:"presence-detail"},
+          el("b",{},"role"),el("span",{},a.role||"—"),
+          el("b",{},"goal"),el("span",{},a.goal||"—"));
+        if(a.personality)detail.append(el("b",{},"personality"),el("span",{},a.personality));
+        detail.append(el("b",{},"conversation"),el("span",{},a.vendor+(a.id?" · "+String(a.id).slice(0,12):"")));
+        detail.append(el("b",{},"last job"),el("span",{},a.last_job?(a.last_job.id+" "+a.last_job.status+(a.last_job.error?" — "+a.last_job.error:"")):"none yet"));
+        detail.append(el("button",{class:"danger small",style:"grid-column:1/-1;justify-self:start",onclick:async()=>{
+          if(!confirm("Retire "+a.name+"? Its open jobs are cancelled."))return;
+          try{await api("/api/bubbles/"+S.bubble+"/agents/"+a.id,{method:"DELETE"});toast("Retired "+a.name);}catch(e){toast(e.message);}
+          loadAgents();
+        }},"retire"));
+        menu.append(detail);
+      }
+    };
+    menu.append(el("div",{class:"presence-group"},"Folders and agents"));
     if(!workers.length){
       menu.append(el("div",{class:"presence-empty"},"No project directory is syncing this bubble."));
-      // The one actionable thing from here, and the reason the robot sits in the same card.
-      menu.append(el("button",{class:"presence-item",
-        onclick:()=>{ closePresenceMenu(); openScientistSetup(S.bubble); }},
-        el("span",{class:"presence-emoji"},ic("agent")),
-        el("span",{class:"presence-name"},"Connect an agent…")));
     }
     workers.forEach(w=>{
       const key="w:"+w.worker_id, on=S.presenceSelected===key;
@@ -5160,7 +5353,19 @@
         if(w.reason)detail.append(el("span",{class:"presence-reason"},w.reason));
         menu.append(detail);
       }
+      allAgents.filter(a=>a.worker_id===w.worker_id).forEach(workerAgentRow);
     });
+    const orphanAgents=allAgents.filter(a=>!workers.some(w=>w.worker_id===a.worker_id));
+    if(orphanAgents.length){
+      menu.append(el("div",{class:"presence-group"},"Agents whose folder is not syncing"));
+      orphanAgents.forEach(workerAgentRow);
+    }
+    // Always the last word in this menu: whatever is or isn't syncing above, adding another
+    // agent is one click away, not a separate round button elsewhere in the header.
+    menu.append(el("button",{class:"presence-item presence-add",
+      onclick:()=>{ closePresenceMenu(); openScientistSetup(S.bubble); }},
+      ic("plus"),
+      el("span",{class:"presence-name"},"Connect an agent")));
     }
     return menu;
   }
@@ -5218,6 +5423,7 @@
     if(b.approved){
       S.presenceEl=el("div",{class:"presence hide"});
       startPresence(slug);
+      loadAgents();
     }
     // The ⋮ is the pill's fourth segment, not a chip beside it: people · workers · connect ·
     // tools are all "this bubble", and four separate rounded shapes read as more chrome than
@@ -6259,11 +6465,14 @@
       "aria-label":"Toggle the Markdown editor","aria-pressed":String(!!S.paneLeft),
       onclick:()=>setPane("left",!S.paneLeft)},ic("panel-left")));
     group.append(el("button",{class:"small",id:"bubbleFocusToggle",
-      title:"Enter focused workspace", "aria-label":"Enter focused workspace",
+      title:(S.bubbleFocus?"Exit focused workspace":"Enter focused workspace")+" (Alt+Enter)",
+      "aria-label":S.bubbleFocus?"Exit focused workspace":"Enter focused workspace",
+      "aria-keyshortcuts":"Alt+Enter",
       onclick:()=>setBubbleFocus(!S.bubbleFocus)},ic("expand")));
     group.append(el("button",{class:"small pane-toggle"+(S.paneRight?" on":""),id:"paneRightToggle",
-      title:S.paneRight?"Hide your marks":"Show your marks",
+      title:(S.paneRight?"Hide your marks":"Show your marks")+" (Ctrl/Cmd+Shift+backtick)",
       "aria-label":"Toggle the marks column","aria-pressed":String(!!S.paneRight),
+      "aria-keyshortcuts":"Control+Shift+`",
       onclick:()=>setPane("right",!S.paneRight)},ic("panel-right")));
     controls.append(group);
     // The tab list scrolls horizontally, and on a phone its window is barely two tabs wide, so
@@ -6588,7 +6797,7 @@
     if(l){l.classList.toggle("on",!!S.paneLeft);l.setAttribute("aria-pressed",String(!!S.paneLeft));
       l.title=S.paneLeft?"Hide the Markdown editor":"Show the Markdown editor";}
     if(r){r.classList.toggle("on",!!S.paneRight);r.setAttribute("aria-pressed",String(!!S.paneRight));
-      r.title=S.paneRight?"Hide your marks":"Show your marks";}
+      r.title=(S.paneRight?"Hide your marks":"Show your marks")+" (Ctrl/Cmd+Shift+backtick)";}
   }
   function setPane(side,on){
     if(side==="left")S.paneLeft=!!on; else S.paneRight=!!on;
@@ -6683,6 +6892,16 @@
       }}
     catch(e){}
   }
+  async function loadAgents(){
+    const bubble=S.bubble; if(!bubble)return;
+    try{
+      const r=await api("/api/bubbles/"+bubble+"/agents");
+      if(S.bubble!==bubble)return;
+      S.agents=r.agents||[]; S.jobsByMark=(r.jobs&&r.jobs.by_mark)||{}; S.lastJobsMtime=r.jobs_mtime==null?S.lastJobsMtime:r.jobs_mtime;
+      if(window.LockedInMarks&&window.LockedInMarks.setAgents)window.LockedInMarks.setAgents(bubble,S.agents,S.jobsByMark,r.jobs_mtime);
+      if(S.presence){S.presence.agents=S.agents;renderPresence();}
+    }catch(e){}
+  }
   function captureReviewEditorState(){
     const selection=currentEditorSelectionOffsets(),scrolls=(reviewEditorScrollElements()||[]).map(node=>({node,top:node.scrollTop,left:node.scrollLeft}));
     return {content:S.editor&&S.editor.getMarkdown?S.editor.getMarkdown():"",
@@ -6769,7 +6988,7 @@
     if(!window.LockedInMarks){wrap.innerHTML="";return;}
     window.LockedInMarks.gutter(wrap,S.comments||[],
       {onDelete:id=>markDelete(id),onEdit:(id,text)=>markEdit(id,text),
-       onReply:(id,text)=>markReply(id,text)});
+       onReply:(id,text)=>markReply(id,text),page:S.page});
     // On phones the pane is a bottom sheet; the header the gutter just rendered is its handle.
     if(window.LockedInMarks.sheet)window.LockedInMarks.sheet(wrap,wrap);
   }
@@ -6839,7 +7058,7 @@
   function stopPolling(){
     if(S.pollTimer){ clearInterval(S.pollTimer); S.pollTimer=null; }
     clearTimeout(S.autosaveTimer); S.autosaveTimer=null;
-    S.lastPageMtime=null; S.lastCommentsMtime=null; S.lastManifestMtime=null; S.lastAssetsMtime=null; S.remoteChangePending=false;
+    S.lastPageMtime=null; S.lastCommentsMtime=null; S.lastManifestMtime=null; S.lastAssetsMtime=null; S.lastJobsMtime=null; S.remoteChangePending=false;
     S.baseMtime=null; S.saving=false; S.syncState="synced";
   }
   async function pollSync(){
@@ -6868,6 +7087,7 @@
         }
       }
       if(S.lastCommentsMtime!==null&&r.comments_mtime!==S.lastCommentsMtime) loadComments();
+      if(S.lastJobsMtime!==null&&r.jobs_mtime!=null&&r.jobs_mtime!==S.lastJobsMtime) loadAgents();
       // A figure arriving, changing, or vanishing alters no page bytes, so it gets its own
       // signal. Re-render with fresh img nodes: a figure that 404'd (referenced before it was
       // uploaded) is retried, and a replaced figure is re-fetched instead of reused.
@@ -6875,6 +7095,7 @@
       S.lastAssetsMtime=r.assets_mtime;
       S.lastCommentsMtime=r.comments_mtime;
       S.lastPageMtime=r.page_mtime;
+      if(r.jobs_mtime!=null)S.lastJobsMtime=r.jobs_mtime;
     }catch(e){}
   }
   function startPolling(){

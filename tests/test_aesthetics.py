@@ -245,7 +245,7 @@ class AestheticsConfigTests(unittest.TestCase):
         # Tags are stripped before Markdown becomes HTML; the shared Range painter then draws
         # them, which also supports crossing comments that HTML <mark> tags cannot represent.
         self.assertIn("s=stripCommentMarkers(s);", source)
-        self.assertIn("window.LockedInMarks.paint(wrap,S.comments||[]);", source)
+        self.assertIn("window.LockedInMarks.paint(wrap,S.comments||[],revealMark);", source)
         self.assertIn("now so the Range painter sees the threads immediately", source)
         self.assertIn('Cannot save: "+error.message', source)
         self.assertNotIn("function addInlineCommentMarker", source)

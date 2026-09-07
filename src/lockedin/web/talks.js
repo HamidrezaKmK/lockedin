@@ -205,6 +205,10 @@
 .tk-tag.open{border-color:color-mix(in srgb,var(--warn) 60%,var(--line));color:var(--warn);
   background:color-mix(in srgb,var(--warn) 12%,transparent)}
 .tk-tag.done{border-color:color-mix(in srgb,var(--good) 50%,var(--line));color:var(--good)}
+/* The open/all-closed pill is a button now (it jumps to the all-slides view), but it still
+   has to read as the same rounded tag, not as a browser button dropped on top of one. */
+button.tk-tag{font:inherit;line-height:inherit;cursor:pointer;-webkit-appearance:none;
+  appearance:none;background:none;color:inherit}
 .tk-empty{border:1px dashed var(--line-strong);border-radius:11px;padding:18px;color:var(--muted);
   font-family:var(--font-reading);font-size:15px;line-height:1.6}
 .tk-empty>*{max-width:68ch}
@@ -497,8 +501,43 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
 .tk-note .tx{font-size:13.5px;line-height:1.45;overflow-wrap:anywhere;word-break:break-word}
 .tk-note .tk-id{margin-left:auto;font:400 10px var(--font-mono);opacity:.55}
 .tk-note .tk-dim{opacity:.5;font-style:italic}
-.tk-note .tk-acts{display:flex;gap:8px;margin-top:18px}
+.tk-note .tk-acts{display:flex;gap:8px;margin-top:18px;flex-wrap:wrap}
 .tk-note .tk-acts button{padding:3px 10px;min-height:0;font-size:11.5px}
+.tk-note .tk-acts button[data-assign]{background:color-mix(in srgb,var(--accent) 18%,transparent);border-color:var(--accent);color:var(--ink)}
+.tk-note .tk-acts button[data-assign]:hover{background:color-mix(in srgb,var(--accent) 28%,transparent)}
+/* Which agent a mark was handed to, and how that went. One chip, the latest job only: a mark's
+   history of attempts belongs in its thread, where the agent's answers already are. */
+.tk-job{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:999px;
+  font:500 10.5px var(--font-mono);letter-spacing:.02em;border:1px solid var(--line-strong);
+  color:var(--muted);cursor:pointer;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tk-job .li-ic{width:12px;height:12px;flex:none}
+.tk-job.queued{border-color:color-mix(in srgb,var(--muted) 60%,var(--line));color:var(--muted)}
+.tk-job.running{border-color:color-mix(in srgb,var(--warn) 60%,var(--line));color:var(--warn)}
+.tk-job.running .li-ic{animation:tk-jobpulse 1.4s ease-in-out infinite}
+.tk-job.done{border-color:color-mix(in srgb,var(--good) 50%,var(--line));color:var(--good)}
+.tk-job.failed{border-color:color-mix(in srgb,var(--bad) 60%,var(--line));color:var(--bad)}
+.tk-job.cancelled{opacity:.6}
+@keyframes tk-jobpulse{0%,100%{opacity:1}50%{opacity:.35}}
+.tk-note .tk-jobrow{display:flex;margin:7px 0 14px}
+/* The agent picker: the same small card as the kind picker, one row per agent. */
+.tk-agentmenu{position:fixed;z-index:961;min-width:230px;max-width:320px;padding:6px;
+  background:var(--panel);border:1px solid var(--accent);border-radius:10px;box-shadow:var(--shadow);
+  font-family:var(--font-ui)}
+.tk-agentmenu .tk-am-title{padding:5px 8px 3px;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.tk-agentmenu button.tk-am{width:100%;display:flex;align-items:center;gap:8px;padding:7px 8px;border:0;
+  border-radius:8px;background:none;color:var(--ink);font-size:12.5px;text-align:left;cursor:pointer;min-height:0}
+.tk-agentmenu button.tk-am:hover{background:var(--panel2)}
+.tk-agentmenu button.tk-am:disabled{opacity:.5;cursor:not-allowed}
+.tk-agentmenu .tk-am-dot{width:7px;height:7px;border-radius:50%;flex:none;background:var(--good)}
+.tk-agentmenu .tk-am-dot.attached{background:var(--warn)}
+.tk-agentmenu .tk-am-dot.working{background:var(--warn);animation:tk-jobpulse 1.4s ease-in-out infinite}
+.tk-agentmenu .tk-am-dot.offline{background:var(--bad)}
+.tk-agentmenu .tk-am-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tk-agentmenu .tk-am-note{flex:none;font:400 10.5px var(--font-mono);color:var(--muted)}
+.tk-agentmenu button.tk-am[data-status=attached] .tk-am-note{color:var(--warn)}
+.tk-agentmenu button.tk-am[data-status=working] .tk-am-note{color:var(--warn)}
+.tk-agentmenu .tk-am-empty{padding:8px;font-size:12px;color:var(--muted)}
+.tk-agentmenu .tk-am-err{padding:4px 8px 8px;font-size:11.5px;color:var(--bad);overflow-wrap:anywhere}
 .tk-editta{width:100%;min-height:64px;background:var(--panel2);border:1px solid var(--accent);
   border-radius:8px;color:var(--ink);font:inherit;font-size:13.5px;padding:8px;resize:vertical;
   outline:none;font-family:var(--font-reading)}
@@ -1166,6 +1205,136 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
   // Deliberately one function for both surfaces. A mark on a slide and a mark on a page are the
   // same object to the person who left it — same author, same id, same five kinds, same right
   // to be reworded or withdrawn — so they must not drift into two lookalike cards.
+  /* ------------------------------------------------------ agents + jobs */
+  // Agents are named CLI conversations the bubble can hand a mark to; a job is one such hand-off.
+  // Both surfaces read them from here: index.html feeds the page view through setAgents, and the
+  // deck fetches them itself. Chips repaint in place so a poll never disturbs a card mid-edit.
+  const JOB_WORD = { queued: "queued", running: "working", done: "done", failed: "failed", cancelled: "cancelled" };
+  function latestJob(key) {
+    const list = (M.jobs && key && M.jobs[key]) || [];
+    return list.length ? list[list.length - 1] : null;
+  }
+  function jobChip(key) {
+    const job = latestJob(key);
+    if (!job) return "";
+    const title = job.status === "failed" && job.error ? job.error
+      : job.status === "queued" ? "waiting for " + job.agent_name + "'s sync worker"
+      : job.status === "running" ? job.agent_name + " is on it"
+      : job.status === "done" ? "answered by " + job.agent_name : job.error || job.status;
+    return `<span class="tk-job ${esc(job.status)}" data-jobmenu="${esc(job.id)}" title="${esc(title)}">${
+      LI_IC("agent")} ${esc(JOB_WORD[job.status] || job.status)} · ${esc(job.agent_name || "agent")}</span>`;
+  }
+  function paintJobChips(host) {
+    (host || document).querySelectorAll(".tk-note[data-jobkey]").forEach(card => {
+      const hd = card.querySelector(".hd"); if (!hd) return;
+      const chip = jobChip(card.dataset.jobkey);
+      let jobrow = hd.nextElementSibling && hd.nextElementSibling.classList.contains("tk-jobrow")
+        ? hd.nextElementSibling : null;
+      if (chip) {
+        if (!jobrow) { hd.insertAdjacentHTML("afterend", `<div class="tk-jobrow"></div>`); jobrow = hd.nextElementSibling; }
+        jobrow.innerHTML = chip;
+      } else if (jobrow) {
+        jobrow.remove();
+      }
+      const acts = card.querySelector(".tk-acts");
+      const turns = card.querySelectorAll(".tk-turn");
+      const lastTurn = turns[turns.length - 1];
+      const lastIsAgent = !!(lastTurn && lastTurn.classList.contains("agent"));
+      const existingAssign = acts && acts.querySelector("[data-assign]");
+      if (acts && lastIsAgent && existingAssign) existingAssign.remove();
+      if (acts && !existingAssign && M.agents.length && !acts.querySelector("textarea") && !lastIsAgent) {
+        acts.insertAdjacentHTML("beforeend", `<button data-assign="${esc(card.dataset.note)}">assign</button>`);
+      }
+    });
+    wireJobs(host || document);
+  }
+  function closeAgentMenu() { document.querySelectorAll(".tk-agentmenu").forEach(m => m.remove()); }
+  /** A small list of agents under `anchor`; `onPick(agent)`. Offline agents are shown but inert. */
+  function agentMenu(anchor, onPick, { title = "Assign to", extra = "" } = {}) {
+    closeAgentMenu();
+    const statusNote = { idle: "", working: " · busy now", attached: " · chat open", offline: " · offline" };
+    const statusTitle = {
+      attached: "Its chat is open. This will be queued and run as soon as you close it.",
+      working: "It is running another mark now. This will be queued.",
+      offline: "Its folder is not syncing, so nothing will run until it is back.",
+    };
+    const rows = M.agents.length ? M.agents.map(a => `<button class="tk-am" data-agent="${esc(a.id)}" data-status="${esc(a.status)}"${
+        a.status === "offline" ? " disabled" : ""} title="${esc(statusTitle[a.status] || (a.role || "") + (a.goal ? " — " + a.goal : ""))}">
+        <span class="tk-am-dot ${esc(a.status)}"></span><span class="tk-am-name">${esc(a.name)}</span>
+        <span class="tk-am-note">${esc(a.vendor)}${a.model ? " · " + esc(a.model) : ""}${
+          statusNote[a.status] != null ? statusNote[a.status] : " · " + esc(a.status)}</span></button>`).join("")
+      : `<div class="tk-am-empty">No agents yet. From a codex/claude/agy chat in the synced project, ask it to register as an agent.</div>`;
+    const menu = h(`<div class="tk-agentmenu"><div class="tk-am-title">${esc(title)}</div>${rows}${extra}</div>`).firstChild;
+    document.body.append(menu);
+    const r = anchor.getBoundingClientRect();
+    const w = menu.offsetWidth || 240, hgt = menu.offsetHeight || 120;
+    menu.style.left = Math.max(8, Math.min(r.left, innerWidth - w - 8)) + "px";
+    menu.style.top = (r.bottom + 6 + hgt > innerHeight ? Math.max(8, r.top - hgt - 6) : r.bottom + 6) + "px";
+    menu.onclick = e => e.stopPropagation();
+    menu.querySelectorAll("[data-agent]").forEach(b => (b.onclick = e => {
+      e.stopPropagation(); closeAgentMenu();
+      const agent = M.agents.find(a => a.id === b.dataset.agent);
+      if (agent) onPick(agent);
+    }));
+    const away = e => { if (!menu.contains(e.target)) { closeAgentMenu(); removeEventListener("click", away, true); } };
+    setTimeout(() => addEventListener("click", away, true), 0);
+    const esc2 = e => { if (e.key === "Escape") { closeAgentMenu(); removeEventListener("keydown", esc2, true); } };
+    addEventListener("keydown", esc2, true);
+    return menu;
+  }
+  async function refreshAgents() {
+    const slug = M.slug || S.slug;
+    if (!slug) return;
+    try {
+      const r = await api(`/api/bubbles/${encodeURIComponent(slug)}/agents`);
+      M.agents = r.agents || []; M.jobs = (r.jobs && r.jobs.by_mark) || {}; M.jobsMtime = r.jobs_mtime || 0;
+    } catch (e) { return; }
+    paintJobChips(document);
+  }
+  async function assignJob(key, agent, instruction) {
+    const slug = M.slug || S.slug;
+    try {
+      await api(`/api/bubbles/${encodeURIComponent(slug)}/jobs`, { method: "POST",
+        body: JSON.stringify({ agent_id: agent.id, mark_key: key, instruction: instruction || "" }) });
+      toast("Assigned to " + agent.name + (agent.status === "attached" ? " — it runs once their chat is closed" : ""));
+    } catch (e) {
+      toast("Could not assign: " + String(e.message || e).replace(/^\{"detail":"|"\}$/g, ""));
+    }
+    await refreshAgents();
+  }
+  async function jobAction(job, action, agent) {
+    const slug = M.slug || S.slug;
+    try {
+      if (action === "cancel") await api(`/api/bubbles/${encodeURIComponent(slug)}/jobs/${job.id}/cancel`, { method: "POST" });
+      else await api(`/api/bubbles/${encodeURIComponent(slug)}/jobs/${job.id}/reassign`,
+                     { method: "POST", body: JSON.stringify({ agent_id: agent.id }) });
+    } catch (e) { toast(String(e.message || e)); }
+    await refreshAgents();
+  }
+  function wireJobs(host) {
+    host.querySelectorAll("[data-jobmenu]").forEach(chip => (chip.onclick = e => {
+      e.stopPropagation();
+      const card = chip.closest(".tk-note");
+      const job = latestJob(card && card.dataset.jobkey);
+      if (!job) return;
+      const open = job.status === "queued" || job.status === "running";
+      const extra = (job.error ? `<div class="tk-am-err">${esc(job.error)}</div>` : "")
+        + (open ? `<button class="tk-am" data-cancel="1"><span class="tk-am-dot offline"></span><span class="tk-am-name">Cancel this job</span></button>` : "");
+      const menu = agentMenu(chip, agent => jobAction(job, "reassign", agent),
+        { title: open ? (job.status === "running" ? job.agent_name + " is working" : "Queued for " + job.agent_name)
+                      : (job.status === "done" ? "Done by " + job.agent_name + " · redo with" : "Retry with"), extra });
+      if (job.status === "running") menu.querySelectorAll("[data-agent]").forEach(b => (b.disabled = true));
+      const cancel = menu.querySelector("[data-cancel]");
+      if (cancel) cancel.onclick = ev => { ev.stopPropagation(); closeAgentMenu(); jobAction(job, "cancel"); };
+    }));
+    host.querySelectorAll("[data-assign]").forEach(b => (b.onclick = e => {
+      e.stopPropagation();
+      const card = b.closest(".tk-note");
+      if (!card || !card.dataset.jobkey) return;
+      agentMenu(b, agent => assignJob(card.dataset.jobkey, agent));
+    }));
+  }
+
   function noteCard(m) {
     const k = KINDS[m.kind] || KINDS.q;
     const msgs = m.messages || [];
@@ -1175,10 +1344,12 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
         msg.edited_at ? ' <span class="tk-dim">· edited</span>' : ""}</div>
       <div class="tk-said"${i === lastIdx && !msg.agent ? ' data-last="1"' : ""}>${esc(msg.body || "")}</div>
     </div>`;
-    return `<div class="tk-note${m.orphan ? " orphan" : ""}" data-note="${esc(m.id)}"
+    return `<div class="tk-note${m.orphan ? " orphan" : ""}" data-note="${esc(m.id)}"${
+        m.jobKey ? ` data-jobkey="${esc(m.jobKey)}"` : ""}
         style="--kc:${k.color}">
       <div class="hd"><span class="tk-badge">${k.glyph} ${k.label}</span>
         <span class="tk-id" title="the id an agent sees">${esc(m.id)}</span></div>
+      ${m.jobKey && jobChip(m.jobKey) ? `<div class="tk-jobrow">${jobChip(m.jobKey)}</div>` : ""}
       <div class="qt">${m.orphanNote || ""}${m.quote
         ? "\u201c" + esc(m.quote) + "\u201d"
         : (m.kind === "ink" ? LI_IC("mark-ink","mark") + " drawn on the slide"
@@ -1191,6 +1362,8 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
         ${(!msgs.length || !(msgs[lastIdx] || {}).agent)
           ? `<button data-edit="${esc(m.id)}">edit</button>` : ""}
         <button data-drop="${esc(m.id)}">remove</button>
+        ${m.jobKey && M.agents.length && (!msgs.length || !(msgs[lastIdx] || {}).agent)
+          ? `<button data-assign="${esc(m.id)}">assign</button>` : ""}
       </div>
     </div>`;
   }
@@ -1238,6 +1411,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
       if (card.querySelector("textarea")) return;
       compose(card, "", v => { if (onReply) onReply(v === null ? null : b.dataset.reply, v); });
     }));
+    wireJobs(host);
   }
 
   /* ------------------------------------------------------------------ views */
@@ -1272,6 +1446,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     S.view = "deck";
     render();
     startTalkSync();
+    refreshAgents();
   }
 
   function syncTitle() {
@@ -1303,6 +1478,9 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
       const remote = await api(`/api/bubbles/${encodeURIComponent(S.slug)}/talks/${encodeURIComponent(id)}`);
       if (!S.talk || S.talk.talk.id !== id || S.view !== "deck") return;
       if (remote.revision && known && remote.revision !== known) setTalkSync("stale");
+      // Job chips follow their own signal, so an agent finishing a mark shows up without the
+      // deck being declared stale.
+      if (remote.jobs_mtime != null && remote.jobs_mtime !== M.jobsMtime) await refreshAgents();
     } catch (e) {
       // A transient polling failure must not pretend the local view is out of date.
     }
@@ -1615,7 +1793,8 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
           <button data-nav="-1" aria-label="Previous slide">${LI_IC("arrow-left")}</button><button class="tk-resync ${S.syncState}" data-resync="1"
             title="${esc(syncTitle())}" aria-label="${esc(syncTitle())}">${LI_IC("refresh")}</button><button data-nav="1" aria-label="Next slide">${LI_IC("arrow-right")}</button>
           <button data-notes="1" class="tk-notestoggle${S.notes ? "" : " off"}"
-            title="${S.notes ? "hide" : "show"} the notes pane and the marks on the slide"
+            title="${S.notes ? "hide" : "show"} the notes pane and the marks on the slide (Ctrl/Cmd+Shift+backtick)"
+            aria-keyshortcuts="Control+Shift+\`"
             aria-pressed="${S.notes ? "true" : "false"}">${LI_IC(S.notes ? "panel-right" : "panel-left")}</button>
           <div class="tk-seg">
             <button data-draw="1" title="mark region — drag a box over the slide">${LI_IC("marquee")}</button>
@@ -1701,14 +1880,16 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
       ? wsUrl(`/api/bubbles/${S.slug}/talks/${S.talk.talk.id}/notes/${n.id}/shot.png`) : "";
     const el = h(`<div style="display:contents">
       <div class="tk-gh">Your notes · slide ${S.slide + 1}<span class="tk-sp"></span>
-        ${openCount() ? `<span class="tk-tag open">${openCount()} open</span>`
-                      : `<span class="tk-tag done">all closed</span>`}</div>
+        ${openCount() ? `<button type="button" class="tk-tag open" data-jump-sheet="1"
+            title="See every slide" aria-label="${openCount()} open — see every slide">${openCount()} open</button>`
+                      : `<button type="button" class="tk-tag done" data-jump-sheet="1"
+            title="See every slide" aria-label="All closed — see every slide">all closed</button>`}</div>
       ${mine.length ? "" : `<div class="tk-empty tk-empty-notes" style="font-size:14px">
         Select any text on the slide — or hit <b>${LI_IC("marquee")} mark region</b> and drag a box —
         then pick one of <b>${ORDER.map(k=>KINDS[k].glyph).join(" ")}</b>. Or <b>${LI_IC("mark-ink","mark")} draw</b> on the slide and let the
         drawing say it.</div>`}
       ${mine.map(n => noteCard({ ...n, orphanNote: n.anchorLost ? LI_IC("warning") + " text moved · " : "",
-                                 image: shot(n),
+                                 image: shot(n), jobKey: talkJobKey(n.id),
                                  messages: (n.messages || []).map(msg => ({ ...msg,
                                    agent: !!msg.agent })) })).join("")}
       <div style="margin-top:auto;padding-top:10px">
@@ -1742,6 +1923,16 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     // Desktop only: on a phone the pointer handlers below own the gesture, and a click after
     // them would toggle the pane straight back.
     gh.onclick = () => { if (innerWidth > 900) root.classList.toggle("notes-open"); };
+    // The open/all-closed pill is its own control, not part of the header's toggle-the-pane
+    // gesture, so it stops the click from bubbling to gh.onclick above (bindSheetDrag's own
+    // pointerdown handler ignores this button for the same reason, see below). The gutter
+    // never renders in "sheet" view, so there is no toggle-back case to handle here.
+    const jump = el.querySelector("[data-jump-sheet]");
+    if (jump) jump.onclick = e => {
+      e.stopPropagation();
+      if (S.edit && !leaveEditOk()) return;
+      S.edit = false; S.view = "sheet"; render();
+    };
     bindSheetDrag(gh, root);
     return el;
   }
@@ -1771,6 +1962,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
 
     gh.addEventListener("pointerdown", e => {
       if (innerWidth > 900) return;          // the gutter is a column here, not a drawer
+      if (e.target.closest("[data-jump-sheet]")) return;   // the pill has its own action
       sheet = gh.closest(".tk-gutter,#reviewWrap");   // the doc page's marks pane is a drawer too
       if (!sheet) return;
       dragging = true; dx = 0; startX = e.clientX;
@@ -2127,6 +2319,8 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     };
     setTimeout(() => p.querySelector("textarea").focus(), 30);
   }
+  /** The key a slide mark has in the job index: the deck's stable sync folder plus the note id. */
+  const talkJobKey = noteId => ((S.talk && S.talk.talk && S.talk.talk.sync_id) || "") + ":" + noteId;
   function closePicker() {
     document.querySelectorAll(".tk-pop").forEach(p => p.remove());
   }
@@ -2616,6 +2810,21 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     if (e.key === "ArrowLeft") go(S.slide - 1);
   }
 
+  /** The deck side of the global Ctrl/Cmd+Shift+` chord in index.html. Returns false when no
+   *  deck is open (or the deck is showing the all-slides contact sheet, which has no notes
+   *  pane at all) so the caller can fall through to the document page's own marks pane.
+   *
+   *  Above 900px wide the pane is a column and S.notes is what shows or hides it — the same
+   *  switch the [data-notes] button flips. Below 900px that column is a drawer, permanently
+   *  present once S.notes is on; the thing to open and close there is the drawer itself,
+   *  "notes-open", the same class the header's tap and drag already toggle. */
+  function toggleNotes() {
+    if (!root || S.view !== "deck") return false;
+    if (innerWidth <= 900) root.classList.toggle("notes-open");
+    else { S.notes = !S.notes; render(); }
+    return true;
+  }
+
   function close() {
     stopTalkSync();
     closePicker();
@@ -2630,7 +2839,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
   // pick a page, so it gets the same real estate a page would.
   async function mount(host, slug, opts) {
     injectStyles();
-    S.slug = slug;
+    S.slug = slug; M.slug = slug;
     S.name = (opts && opts.name) || slug;
     S.user = (opts && opts.user) || "";
     S.owner = (opts && opts.owner) || "";
@@ -2697,7 +2906,8 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
    * This file owns the vocabulary and the look. Offsets, the wrapper and its storage stay in
    * the SPA, which already has all three.
    * ===================================================================================== */
-  const M = { kind: "q", gutter: null, preview: null, handlers: null, user: "", owner: "" };
+  const M = { kind: "q", gutter: null, preview: null, handlers: null, user: "", owner: "",
+              slug: "", agents: [], jobs: {}, jobsMtime: 0 };
 
   function markPicker(x, y, quote, onPick) {
     injectStyles();   // a page view may never have opened a deck
@@ -2767,6 +2977,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     const list = (threads || []).map(t => {
       const loose = t.anchor_state && t.anchor_state !== "attached";
       return { id: t.id, kind: t.kind || "q", author: "",
+               jobKey: M.handlers.page ? "page:" + M.handlers.page + ":" + t.id : "",
                quote: (t.anchor || {}).quote || "",
                messages: (t.messages || []).map(msg => ({ ...msg, agent: !!msg.agent })),
                orphan: loose, orphanNote: loose ? LI_IC("warning") + " its text was deleted · " : "" };
@@ -2784,7 +2995,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     });
   }
 
-  window.LockedInTalks = { mount, close, home: loadHome, editTitles: editTalkTitles };
+  window.LockedInTalks = { mount, close, home: loadHome, editTitles: editTalkTitles, toggleNotes };
   window.LockedInMarks = { picker: markPicker, paint: paintMarks, gutter: markGutter,
                            // The doc page borrows the bottom-sheet gesture: its marks pane is
                            // the same header-plus-cards the chalk-talk gutter is. `open` names
@@ -2795,5 +3006,13 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
                              if (gh && !gh._sheetBound) { gh._sheetBound = true; bindSheetDrag(gh, rootEl); }
                            },
                            setUser: (user, owner) => { M.user = String(user || ""); M.owner = String(owner || ""); },
+                           // The page view owns the agents request (it polls jobs_mtime already);
+                           // it hands the result here so cards on both surfaces read one list.
+                           setAgents: (slug, agents, jobsByMark, jobsMtime) => {
+                             M.slug = slug || M.slug; M.agents = agents || []; M.jobs = jobsByMark || {};
+                             if (jobsMtime != null) M.jobsMtime = jobsMtime;
+                             paintJobChips(document);
+                           },
+                           refreshAgents,
                            pendingRange: paintPendingRange, clearPending };
 })();

@@ -6,6 +6,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs"; import net from "node:net"; import os from "node:os"; import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { chromium } from "playwright-core";
+import assert from "node:assert/strict";
 const REPO=process.env.LOCKEDIN_REPO||process.cwd(), CHROME=process.env.LOCKEDIN_E2E_CHROME||"/usr/bin/google-chrome";
 const OUT=process.env.OUT||"/tmp/talkshots"; fs.mkdirSync(OUT,{recursive:true});
 async function freePort(){const s=net.createServer();await new Promise(r=>s.listen(0,"127.0.0.1",r));const{port}=s.address();await new Promise(r=>s.close(r));return port;}
@@ -199,6 +200,41 @@ async function main(){
               gutter:document.querySelectorAll(".tk-gutter .tk-note").length};
     })));
     await shot("06-sub-mark",".tk-stage");
+
+    // Ctrl+Shift+` toggles this deck's notes pane. At 1440px wide the pane is a column gated
+    // by S.notes ("no-notes" on the overlay), not the mobile drawer ("notes-open").
+    assert.ok(!(await p.evaluate(()=>document.querySelector(".tk-overlay").classList.contains("no-notes"))),
+      "the notes pane starts open");
+    await p.keyboard.press("Control+Shift+`");
+    await p.waitForFunction(()=>document.querySelector(".tk-overlay").classList.contains("no-notes"),{timeout:2000});
+    assert.ok(await p.evaluate(()=>document.querySelector(".tk-overlay").classList.contains("no-notes")),
+      "Ctrl+Shift+` must hide the deck's notes pane");
+    await p.keyboard.press("Control+Shift+`");
+    await p.waitForFunction(()=>!document.querySelector(".tk-overlay").classList.contains("no-notes"),{timeout:2000});
+    assert.ok(!(await p.evaluate(()=>document.querySelector(".tk-overlay").classList.contains("no-notes"))),
+      "pressing it again must bring the notes pane back");
+    console.log("PROBE notes-chord: toggled the deck's pane and back");
+
+    // The open/all-closed pill in the gutter header jumps to the all-slides view (S.view
+    // "sheet"), the same surface the crumb's "all slides" link reaches. It must not also
+    // toggle the pane via the header's own click handler (gh.onclick), which is the
+    // stopPropagation regression: capture the drawer/notes-open state first and recheck it
+    // is unchanged after the click.
+    const pill=await p.$(".tk-gh [data-jump-sheet]");
+    assert.ok(pill,"the open/all-closed pill must be a real element in the gutter header");
+    const pillText=await pill.evaluate(n=>n.textContent);
+    console.log("PROBE pill text:",pillText);
+    const notesOpenBefore=await p.evaluate(()=>document.querySelector(".tk-overlay").classList.contains("notes-open"));
+    await pill.click();
+    await p.waitForSelector(".tk-sheet",{timeout:5000});
+    assert.equal(await p.locator(".tk-slide").count(),0,"the deck slide must be gone once the sheet is showing");
+    const notesOpenAfter=await p.evaluate(()=>document.querySelector(".tk-overlay").classList.contains("notes-open"));
+    assert.equal(notesOpenAfter,notesOpenBefore,
+      "clicking the pill must not also toggle the notes pane via the header's click handler");
+    await shot("pill-all-slides",".tk-stage");
+    console.log("PROBE pill-click: switched to the all-slides view without also toggling the pane");
+    await goSlide(1);   // back to the deck for the rest of this script's existing flow
+
     // The contact sheet shows the same two lines.
     await p.click(".tk-crumb .back"); await delay(700);
     await shot("05-contact-sheet",".tk-sheet");

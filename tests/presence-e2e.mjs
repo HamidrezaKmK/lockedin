@@ -169,19 +169,24 @@ async function main() {
     const card = page.locator(".presence .presence-group-card");
     await card.waitFor({ state: "visible", timeout: 10_000 });
     const seg = i => page.locator(".presence-seg").nth(i);
-    assert.equal(await page.locator(".presence-seg").count(), 3,
-      "one card, three segments: people, workers, connect");
+    assert.equal(await page.locator(".presence-seg").count(), 2,
+      "one card, two segments: people, agents");
     const segIcon = i => seg(i).locator("svg.li-ic use").getAttribute("href");
     assert.equal(await segIcon(0), "#li-i-users", "the left segment wears the people icon");
     assert.match(await seg(0).innerText(), /\b1\b/, "the left segment counts the viewer");
-    assert.equal(await segIcon(1), "#li-i-refresh", "the middle segment wears the sync icon");
-    assert.match(await seg(1).innerText(), /\b3\b/,
-      "the middle segment counts every worker except the cleanly stopped grave");
-    assert.equal(await segIcon(2), "#li-i-agent", "the right segment connects an agent");
-    // Health is the colour of the gear and the count — no separate dot, and scoped to the segment
+    assert.equal(await segIcon(1), "#li-i-agent", "the right segment wears the agent icon");
+    // No agents were registered on this bubble, so the segment reads zero and dims, even
+    // though three folders are syncing it — the folder count alone is no longer the story.
+    assert.match(await seg(1).innerText(), /\b0\b/,
+      "the right segment counts agents, not folders");
+    assert.ok(await seg(1).evaluate(node => node.classList.contains("is-zero")),
+      "with no agents connected the segment dims");
+    assert.match(await seg(1).getAttribute("title"), /No agents on this bubble yet\. Connect one\./,
+      "with zero agents the title invites connecting one, rather than reporting folder count alone");
+    // Health is the colour of the icon and the count — no separate dot, and scoped to the segment
     // it concerns. `worst` here is a rejected client, i.e. dead.
     assert.ok(await seg(1).evaluate(node => node.classList.contains("sync-dead")),
-      "an unhealthy worker must colour the workers segment");
+      "an unhealthy worker must colour the agents segment");
     assert.ok(await seg(0).evaluate(node => !/sync-/.test(node.className)),
       "a worker problem must not bleed into the people segment");
     assert.equal(await page.locator(".presence-group-card .presence-dot").count(), 0,
@@ -192,7 +197,7 @@ async function main() {
     assert.equal(await seg(1).evaluate(node => getComputedStyle(node).color), dead,
       "hovering must not wash the health colour out");
     await shoot(page, "presence-card");
-    step("the card counts people and workers separately and flags trouble on the right half");
+    step("the card counts people and agents separately and flags trouble on the right half");
 
     // The left half answers "who is reading this", and only that.
     await seg(0).click();
@@ -207,21 +212,24 @@ async function main() {
     await shoot(page, "presence-people");
     step("the left segment shows only the people reading the bubble");
 
-    // The middle half answers "what is syncing this", and only that.
+    // The right half answers "what agents and folders are attached", and only that.
     await seg(1).click();
     await menu.waitFor({ state: "visible", timeout: 2_000 });
     const menuText = await menu.innerText();
     for (const expected of ["thesis-repo", "side-notes", "old-clone",
-                            "2 directories are syncing this bubble"]) {
+                            "3 folders syncing", "no agents",
+                            "2 directories are syncing this bubble", "Connect an agent"]) {
       assert.ok(menuText.includes(expected), `dropdown is missing ${expected}:\n${menuText}`);
     }
-    assert.ok(!menuText.includes(username), `the workers menu must not list people:\n${menuText}`);
+    assert.ok(!menuText.includes(username), `the agents menu must not list people:\n${menuText}`);
     assert.ok(!menuText.includes("finished-run"),
       `a cleanly stopped worker must not be listed:\n${menuText}`);
     assert.equal(await menu.locator(".presence-dupnote").count(), 1,
       "the duplicate note must be the small one-liner, not a warning box");
+    assert.equal(await menu.locator(".presence-add").count(), 1,
+      "exactly one connect-an-agent row, at the bottom of the menu");
     await shoot(page, "presence-menu");
-    step("the middle segment shows the workers that matter and the small duplicate note");
+    step("the agents segment shows the workers that matter, the small duplicate note, and one connect row");
 
     // A failing worker's reason is one click away, not buried in a log.
     await page.locator(".presence-item", { hasText: "side-notes" }).click();
@@ -238,7 +246,17 @@ async function main() {
       "a rejected client must read as dead rather than disappear");
     assert.match(await stale.innerText(), /dead/);
 
+    // The bottom row is the one action left once the robot button is gone: it opens the same
+    // connect-an-agent dialog the robot used to.
+    await menu.locator(".presence-add").click();
+    const setupDialog = page.locator('[role="dialog"][aria-label="Connect an agent"]');
+    await setupDialog.waitFor({ state: "visible", timeout: 2_000 });
+    await setupDialog.evaluate(node => node.remove());
+    step("the bottom connect-an-agent row opens the setup dialog");
+
     // Clicking away closes the dropdown; the chip alone remains.
+    await seg(1).click();
+    await menu.waitFor({ state: "visible", timeout: 2_000 });
     await page.mouse.click(700, 500);
     await menu.waitFor({ state: "hidden", timeout: 2_000 });
     step("clicking outside closes the dropdown");
