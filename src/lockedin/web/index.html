@@ -1817,6 +1817,11 @@
   // The hamburger is gone — the sidebar's own edges are the control now, on every screen.
   // A phone shows the pane as an overlay, so "open" is a class there and a column width here.
   function setSideOpen(open){
+    // Focus mode hands the whole frame to one grid track and hides the sidebar outright.
+    // Toggling from there would write an inline two-column template over that rule and
+    // squeeze the document into the vanished sidebar's 220px, so the control goes quiet.
+    const app=document.getElementById("app");
+    if(app&&app.classList.contains("bubble-focus"))return;
     if(window.innerWidth<=700){
       document.getElementById("app").classList.toggle("side-open",open);
       document.body.classList.toggle("side-collapsed",!open);
@@ -1867,18 +1872,12 @@
           !document.getElementById("app").classList.contains("side-open"));
     },{passive:true});
   })();
-  // Ctrl/Cmd+B toggles the sidebar, the way it does in an editor. Bound in the capture phase so
-  // it beats the report editor's own Mod-b, and skipped whenever the keystroke belongs to
-  // something you are typing in, where Ctrl+B still has to mean bold.
+  // Ctrl/Cmd+B toggles the sidebar, the way it does in an editor, and it does so from anywhere
+  // in the app including inside a report. Bound in the capture phase so it lands before the
+  // editor sees the keystroke; the editor no longer binds Mod-b to bold, so nothing competes.
   document.addEventListener("keydown",e=>{
     if(!(e.ctrlKey||e.metaKey)||e.shiftKey||e.altKey)return;
     if(e.key!=="b"&&e.key!=="B")return;
-    // Both the event target and the focused node, because a rich-text editor can hand the
-    // keystroke to a wrapper while the caret lives somewhere else entirely.
-    const typing=n=>!!(n&&n.closest&&n.closest("input,textarea,select,"+
-      "[contenteditable]:not([contenteditable=false]),"+
-      ".toastui-editor-defaultUI,.ProseMirror,.cm-editor"));
-    if(typing(e.target)||typing(document.activeElement))return;
     // Nothing to toggle until you are signed in and the app shell is on screen.
     const app=document.getElementById("app");
     if(!app||app.offsetParent===null)return;
@@ -5680,6 +5679,7 @@
         customHTMLRenderer:editorImageRenderer(bubbleOf),
       });
       S.slideEd=ed;
+      blockEditorShortcuts(host);
       const save=()=>{ if(opts.onSave) opts.onSave(); };
       const handle={ editor:ed, save,
         setSync(state){ if(syncBtn){ syncBtn.replaceChildren(ic(SYNC_ICON[state]||SYNC_ICON.synced));
@@ -5692,6 +5692,31 @@
       return handle;
     }
   };
+
+  // Toast UI ships a wide default keymap (Mod-b bold, Mod-i italic, Mod-s strike, Mod-1..6
+  // headings, Mod-u/o lists, Mod-l rule, Mod-Shift-c code, Mod-Alt-t task list, ...). Those
+  // fire wherever the caret happens to sit and read as random edits, so every editor swallows
+  // them in the capture phase before the editor's keymap runs. Only insert-link, undo and redo
+  // survive, alongside the keys typing depends on (clipboard, select-all, browser chrome).
+  // Matching on the *produced* character keeps AltGr layouts typing {, @ and friends normally.
+  const EDITOR_KEEP_KEYS=new Set([
+    "k",                              // insert link
+    "z","y",                          // undo / redo
+    "s",                              // save (the app's own document handler owns it)
+    "a","c","v","x",                  // select-all and clipboard
+    "f","p","r","t","w","n","0"]);    // browser chrome and zoom
+  function blockEditorShortcuts(host){
+    if(!host)return;
+    host.addEventListener("keydown",e=>{
+      if(!(e.ctrlKey||e.metaKey))return;
+      const k=(e.key||"").toLowerCase();
+      if(!/^[a-z0-9]$/.test(k))return;   // Tab, arrows, Enter, Backspace, symbols stay usable
+      if(e.shiftKey){
+        if(k==="z"||k==="v")return;      // redo, and paste-as-plain-text
+      }else if(!e.altKey&&EDITOR_KEEP_KEYS.has(k)) return;
+      e.preventDefault(); e.stopPropagation();
+    },true);
+  }
 
   function initEditor(host, initialValue){
     // Toast UI's built-in toolbar accepts custom DOM controls alongside standard items. Keeping
@@ -5715,6 +5740,7 @@
       hooks:{ addImageBlobHook:(blob,cb)=>uploadImage(S.bubble,blob,cb) },
       customHTMLRenderer:editorImageRenderer(()=>S.bubble),
     });
+    blockEditorShortcuts(host);
     installReferenceAutocomplete(host);
     installEditorCommentHighlights(host);
     // Ctrl/Cmd+S should save the page. The editor maps Mod-s to strikethrough, so we
@@ -7045,7 +7071,7 @@
   function setSync(state){
     S.syncState=state;
     const s=$("#syncToolbarButton");
-    if(s){ s.textContent=SYNC_ICON[state]; s.className="sync-toolbar "+state;
+    if(s){ s.replaceChildren(ic(SYNC_ICON[state]||SYNC_ICON.synced)); s.className="sync-toolbar "+state;
       s.title=state==="conflict"?"Changed on disk — click to resolve":"Saved automatically; click to save now";
       s.setAttribute("aria-label",s.title); }
   }
