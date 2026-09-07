@@ -10,6 +10,7 @@ from __future__ import annotations
 import base64
 import json
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -744,6 +745,53 @@ class Ownership(AgentFixture):
                                              json={"status": "done", "exit_code": 0}).status_code, 403)
                 self.assertEqual(client.post(f"/api/scientist/v2/bubbles/diffusion/jobs/{job_id}/fail",
                                              headers=hdr2, json={"reason": "nope"}).status_code, 403)
+
+                # Give hamid2 an ordinary queued job too, then hammer both directions at once.
+                # Every request carries a valid collaborator token and exact real ids; only
+                # ownership should stand between it and the other person's Agy conversation.
+                own2 = client.post("/api/bubbles/diffusion/jobs", headers=ws,
+                                   json={"agent_id": bob_id, "mark_key": key})
+                self.assertEqual(own2.status_code, 200, own2.text)
+                job2 = own2.json()["job"]["id"]
+
+                def cross_probe(attacker_headers, foreign_agent, foreign_job):
+                    return (
+                        client.post(f"/api/scientist/v2/bubbles/diffusion/agents/{foreign_agent}",
+                                    headers=attacker_headers, json={"role": "hacked"}).status_code,
+                        client.delete(f"/api/scientist/v2/bubbles/diffusion/agents/{foreign_agent}",
+                                      headers=attacker_headers).status_code,
+                        client.get(f"/api/scientist/v2/bubbles/diffusion/jobs/{foreign_job}",
+                                   headers=attacker_headers).status_code,
+                        client.post(f"/api/scientist/v2/bubbles/diffusion/jobs/{foreign_job}/start",
+                                    headers=attacker_headers, json={"worker_id": "hostile"}).status_code,
+                        client.post(f"/api/scientist/v2/bubbles/diffusion/jobs/{foreign_job}/reply",
+                                    headers=attacker_headers, json={"text": "hostile"}).status_code,
+                        client.post(f"/api/scientist/v2/bubbles/diffusion/jobs/{foreign_job}/result",
+                                    headers=attacker_headers,
+                                    json={"status": "done", "exit_code": 0}).status_code,
+                        client.post(f"/api/scientist/v2/bubbles/diffusion/jobs/{foreign_job}/fail",
+                                    headers=attacker_headers, json={"reason": "hostile"}).status_code,
+                    )
+
+                attacks = [(hdr2, agent_id, job_id), (hdr1, bob_id, job2)] * 40
+                with ThreadPoolExecutor(max_workers=16) as pool:
+                    results = list(pool.map(lambda args: cross_probe(*args), attacks))
+                self.assertTrue(all(statuses == (404, 404, 404, 403, 403, 403, 403)
+                                    for statuses in results), results)
+
+                # The 560 denied requests must have changed nothing on either side.
+                own_job1 = client.get(f"/api/scientist/v2/bubbles/diffusion/jobs/{job_id}",
+                                      headers=hdr1)
+                own_job2 = client.get(f"/api/scientist/v2/bubbles/diffusion/jobs/{job2}",
+                                      headers=hdr2)
+                self.assertEqual(own_job1.json()["job"]["status"], "queued")
+                self.assertEqual(own_job2.json()["job"]["status"], "queued")
+                own_agents1 = client.get("/api/scientist/v2/bubbles/diffusion/agents",
+                                         headers=hdr1).json()["agents"]
+                own_agents2 = client.get("/api/scientist/v2/bubbles/diffusion/agents",
+                                         headers=hdr2).json()["agents"]
+                self.assertEqual([(a["name"], a["role"]) for a in own_agents1], [("Ada", "r")])
+                self.assertEqual([(a["name"], a["role"]) for a in own_agents2], [("Ada", "r")])
 
 
 class Caps(AgentFixture):
