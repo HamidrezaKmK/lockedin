@@ -527,6 +527,7 @@ def _job_summary(job: dict, agents: dict) -> dict:
             "started_at": job.get("started_at", ""), "finished_at": job.get("finished_at", ""),
             "attempts": int(job.get("attempts", 1) or 1), "error": job.get("error", ""),
             "late": bool(job.get("late")), "late_from": job.get("late_from", ""),
+            "late_error": job.get("late_error", ""),
             "result": {"exit_code": result.get("exit_code"),
                        "output_tail": str(result.get("output_tail") or "")[-1200:],
                        "confirmed": bool(result.get("confirmed"))}}
@@ -753,6 +754,7 @@ def reply_job(slug: str, job_id: str, *, text: str, actor: str = "") -> dict:
             raise Conflict(f"{job_id} was already answered.")
         was_open = job.get("status") in OPEN_STATUSES
         prev_status = job.get("status")
+        prev_error = job.get("error", "")
         agent = agents.get(job.get("agent_id", ""), {})
         posted = reply_to_mark(slug, job["mark_key"], author=credit(agent, job, actor), body=text,
                                source_key=f"agent:{job_id}")
@@ -762,6 +764,7 @@ def reply_job(slug: str, job_id: str, *, text: str, actor: str = "") -> dict:
         if not was_open:
             job["late"] = True
             job["late_from"] = prev_status
+            job["late_error"] = prev_error
         result = job.setdefault("result", {})
         result["confirmed"] = True
         result["reply_message_id"] = posted.get("message_id", "")

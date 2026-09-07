@@ -288,6 +288,18 @@ class Jobs(AgentFixture):
         self.assertEqual(len(agent_turns), 1)
         self.assertEqual(agent_turns[0]["body"], "Finished it anyway.")
 
+    def test_a_late_reply_preserves_the_worker_failure_that_preceded_it(self):
+        agent = self.register(name="Ada")
+        with paths.use_root(self.home):
+            job = agents.create_job(self.slug, agent_id=agent["id"], mark_key=self.page_key)
+            agents.start_job(self.slug, job["id"], worker_id="w1")
+            agents.finish_job(self.slug, job["id"], status="failed", exit_code=-15,
+                              error="the agent could not reach its model service")
+            done = agents.reply_job(self.slug, job["id"], text="Finished interactively.")
+        self.assertEqual(done["status"], "done")
+        self.assertEqual(done["late_from"], "failed")
+        self.assertEqual(done["late_error"], "the agent could not reach its model service")
+
     def test_a_cancelled_talk_job_can_still_be_replied_to_and_reports_late(self):
         agent = self.register(name="Ada")
         with paths.use_root(self.home):

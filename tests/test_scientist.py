@@ -698,6 +698,19 @@ class ScientistProfileAndWorkersTest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "No worker is assigned"):
                 scientist_cli.doctor_command(project)
 
+    def test_doctor_uses_the_exact_binding_not_a_newer_stale_generation(self):
+        with temp_data_home(), tempfile.TemporaryDirectory() as directory, patch.object(
+                scientist_cli, "_alive", return_value=True), patch.object(
+                scientist_cli, "account_request", return_value={"files": []}):
+            project = self._bound_project(directory)
+            exact = self._worker_record(project, id="exact", started_at=1)
+            stale = self._worker_record(project, id="stale", workspace_id="old", started_at=2)
+            scientist_cli.save_workers({"workers": {"exact": exact, "stale": stale}})
+            output = io.StringIO()
+            with redirect_stdout(output):
+                scientist_cli.doctor_command(project)
+            self.assertIn("is healthy", output.getvalue())
+
     # ---- resync: resume the bubble this project is already bound to ----
     # A worker dies for ordinary reasons, and resuming it used to mean `workspaces switch` +
     # `sync <slug>` — the switch being mandatory, not cosmetic, because validate_or_initialize
@@ -799,17 +812,19 @@ class ScientistProfileAndWorkersTest(unittest.TestCase):
             with redirect_stdout(io.StringIO()): scientist_cli.resync_command(project)
             stop.assert_not_called(); start.assert_called_once()
 
-    def test_resync_refuses_when_a_live_worker_holds_another_bubble(self):
+    def test_resync_replaces_a_live_worker_from_an_older_binding(self):
         with temp_data_home(), tempfile.TemporaryDirectory() as directory, patch.object(
                 scientist_cli, "_alive", return_value=True), patch.object(
+                scientist_cli, "_stop_and_wait") as stop, patch.object(
                 scientist_cli, "start_sync") as start:
             project = self._bound_project(directory)
             scientist_cli.save_workers({"workers": {"worker": self._worker_record(
                 project, bubble="another")}})
-            with redirect_stdout(io.StringIO()):
-                with self.assertRaisesRegex(RuntimeError, "hard-reset"):
-                    scientist_cli.resync_command(project)
-            start.assert_not_called()
+            output = io.StringIO()
+            with redirect_stdout(output): scientist_cli.resync_command(project)
+            self.assertIn("older project binding", output.getvalue())
+            stop.assert_called_once_with("worker")
+            start.assert_called_once()
 
     # ---- connect: the whole setup, from one pasted line ----
 

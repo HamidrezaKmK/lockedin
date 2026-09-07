@@ -37,7 +37,7 @@ except ImportError:  # Standalone client installed beside agent_vendors.py.
     import agent_vendors  # type: ignore[no-redef]
 
 APP = "lockedin-scientist"
-SCIENTIST_CLIENT_VERSION = "2026.09.07.1"
+SCIENTIST_CLIENT_VERSION = "2026.09.07.3"
 POLL_SECONDS = 5
 # A worker that has not completed a cycle in three polls is wedged rather than merely busy.
 # `doctor` reports that verdict and `resync` repairs exactly what `doctor` complains about, so
@@ -62,7 +62,10 @@ AGENT_BUSY_SIGNATURES = agent_vendors.COMMON_BUSY_SIGNATURES
 AGENT_LOST_CONVERSATION_ERROR = "the agent's saved conversation no longer exists there; a new one is starting"
 AGENT_LOST_CONVERSATION_SIGNATURES = agent_vendors.COMMON_LOST_SIGNATURES
 AGENT_COOLDOWN_SECONDS = 60
-AGENT_TURN_SECONDS = int(os.environ.get("LOCKEDIN_AGENT_TURN_SECONDS") or 20 * 60)
+# Keep this below the server's 45-minute job lease. Twenty minutes proved too short for legitimate
+# research/code turns; permission prompts cannot consume this allowance because headless launches
+# close stdin and use each vendor's non-interactive approval flags below.
+AGENT_TURN_SECONDS = int(os.environ.get("LOCKEDIN_AGENT_TURN_SECONDS") or 40 * 60)
 # A vendor CLI that explicitly says it is reconnecting several times is not doing useful work.
 # Give transient outages a minute and a half, then fail visibly instead of burning the whole turn.
 AGENT_NETWORK_GRACE_SECONDS = int(os.environ.get("LOCKEDIN_AGENT_NETWORK_GRACE_SECONDS") or 90)
@@ -2321,7 +2324,14 @@ class AgentRunner:
         cmd, popen_kwargs = apply_confinement(cmd, mode, self.sync.project)
         env = {**os.environ, "LOCKEDIN_JOB_ID": job["id"], "LOCKEDIN_BUBBLE": self.sync.bubble,
                "LOCKEDIN_PROJECT": str(self.sync.project), "LOCKEDIN_AGENT": str(agent.get("name") or ""),
-               "LOCKEDIN_SCIENTIST_CLI": str(Path(__file__).resolve()), "NO_COLOR": "1"}
+               "LOCKEDIN_SCIENTIST_CLI": str(Path(__file__).resolve()), "NO_COLOR": "1",
+               # A vendor may run ordinary developer tools. These close the common secondary
+               # prompt paths too; stdin is DEVNULL below, so a missed prompt fails instead of
+               # leaving a seemingly-running job waiting for a terminal that does not exist.
+               "GIT_TERMINAL_PROMPT": "0", "PIP_NO_INPUT": "1", "SSH_ASKPASS_REQUIRE": "never"}
+        # Keep vendor-specific transport/auth compatibility behind the adapter boundary. These
+        # additions affect this child only and never rewrite the user's shell environment.
+        env.update(agent_vendors.get(str(agent.get("vendor") or "")).turn_environment())
         # A scratch script that imports project code (the intended pattern — see guides/agents.md)
         # compiles it on the fly; without this, Python tries to write the .pyc beside the read-only
         # module, fails silently, and just recompiles every run. Point the cache inside the one tree
@@ -2413,7 +2423,9 @@ class AgentRunner:
                                          code=code, output=output)
             else:
                 status = "failed" if reason or code != 0 else "done"
-                error = reason or (f"{agent.get('vendor')} exited with status {code}" if code else "")
+                vendor = str(agent.get("vendor") or "")
+                detail = agent_vendors.get(vendor).failure_detail(output) if code else ""
+                error = reason or detail or (f"{vendor} exited with status {code}" if code else "")
                 if status == "done":
                     self.cooldowns.pop(aid, None)
                 self._result(job_id, status, code, output, error)
@@ -2527,6 +2539,8 @@ def agent_reply_command(start: Path, job_id: str, *, text: str, file: str) -> No
     if job.get("late"):
         print(orange("•") + f" Job {job_id} had already been {job.get('late_from') or 'closed'} "
               "when this landed; the reply was posted to the mark anyway.")
+        if job.get("late_error"):
+            print(dim(f"  Earlier worker result: {job['late_error']}"))
 
 
 def agent_fail_command(start: Path, job_id: str, *, reason: str) -> None:
@@ -2839,11 +2853,13 @@ def account_for_binding(binding: dict) -> dict:
     return account
 
 
-def _project_worker(project: Path) -> dict | None:
-    """The most recently started worker record for this project directory, if any."""
+def _project_worker(project: Path, *, binding: dict | None = None) -> dict | None:
+    """The newest worker for this project, optionally restricted to its exact binding."""
     project = project.resolve()
     records = [rec for rec in load_workers().get("workers", {}).values()
                if Path(rec.get("project", "")).resolve() == project]
+    if binding is not None:
+        records = [rec for rec in records if all(rec.get(key) == binding.get(key) for key in BINDING_KEYS)]
     return max(records, key=lambda rec: rec.get("started_at", 0)) if records else None
 
 
@@ -2858,14 +2874,17 @@ def doctor_command(project: Path) -> None:
     root = project.resolve() / ".lockedin"
     binding = read_binding(project)
     project = project.resolve()
-    matches = [rec for rec in load_workers().get("workers", {}).values()
-               if Path(rec.get("project", "")).resolve() == project and rec.get("bubble") == binding["bubble"]]
+    project_matches = [rec for rec in load_workers().get("workers", {}).values()
+                       if Path(rec.get("project", "")).resolve() == project]
+    matches = [rec for rec in project_matches
+               if all(rec.get(key) == binding.get(key) for key in BINDING_KEYS)]
     heading("Scientist doctor", str(root))
+    if not matches and project_matches:
+        raise RuntimeError("The assigned worker does not match this .lockedin binding. Run "
+                           "`lockedin-scientist resync` to replace it safely.")
     if not matches:
         raise RuntimeError(f"No worker is assigned to this project. Run `lockedin-scientist resync` from {project}.")
     rec = max(matches, key=lambda item: item.get("started_at", 0))
-    if any(rec.get(key) != binding[key] for key in BINDING_KEYS):
-        raise RuntimeError("The assigned worker does not match this .lockedin binding. Stop it, then run `lockedin-scientist resync`.")
     status, pid = rec.get("status", "?"), int(rec.get("pid", 0))
     if status != "running" or not _alive(pid):
         detail = rec.get("last_error") or rec.get("error") or status
@@ -3291,7 +3310,14 @@ def resync_command(project: Path) -> None:
     account = account_for_binding(binding)
     bubble = binding["bubble"]
     heading("Resuming this project’s bubble", f"{bubble} → {project / '.lockedin'}")
-    rec = _project_worker(project)
+    records = [rec for rec in load_workers().get("workers", {}).values()
+               if Path(rec.get("project", "")).resolve() == project]
+    for stale in records:
+        if (_alive(int(stale.get("pid", 0)))
+                and any(stale.get(key) != binding.get(key) for key in BINDING_KEYS)):
+            print(orange("•") + f" Worker {bold(stale['id'])} belongs to an older project binding; replacing it.")
+            _stop_and_wait(stale["id"])
+    rec = _project_worker(project, binding=binding)
     if rec and _alive(int(rec.get("pid", 0))):
         if rec.get("bubble") != bubble:
             raise RuntimeError("Another bubble worker already manages this project. Use hard-reset first.")

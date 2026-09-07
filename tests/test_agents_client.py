@@ -26,7 +26,7 @@ from unittest.mock import patch
 
 import types
 
-from lockedin import scientist_cli
+from lockedin import agent_vendors, scientist_cli
 
 
 def _write_json(path: Path, value: dict) -> None:
@@ -675,6 +675,27 @@ class AgentRunnerEndToEndTests(unittest.TestCase):
             self.assertEqual(runner.procs, {})
             self.assertFalse((Path(data_home) / "runtime" / "workers" / "w1" / "jobs" / "j-000001.pid").exists())
 
+    def test_every_turn_has_closed_stdin_and_noninteractive_child_tool_environment(self):
+        project = _build_project({"ag-1": AGENT_AG1}, {"w1": ["ag-1"]})
+        job = {"id": "j-000001", "agent": AGENT_AG1, "mark": PAGE_MARK, "instruction": ""}
+        fake = FakeAgentServer(heartbeat_jobs=[job])
+        script = (
+            "import os,sys; "
+            "print('STDIN=' + repr(sys.stdin.read(1))); "
+            "print('PROMPTS=' + ','.join(os.environ[k] for k in "
+            "('GIT_TERMINAL_PROMPT','PIP_NO_INPUT','SSH_ASKPASS_REQUIRE')))"
+        )
+        with tempfile.TemporaryDirectory() as data_home, patch.dict(
+                os.environ, {"LOCKEDIN_SCIENTIST_HOME": data_home}), patch.object(
+                scientist_cli, "agent_turn_command", lambda agent, prompt, **kw: _fake_vendor_cmd(script)):
+            runner = self._runner(project, fake)
+            runner.tick()
+            runner.procs["j-000001"]["proc"].wait(timeout=10)
+            runner.tick()
+        output = fake.calls_for("jobs/j-000001/result")[0][2]["output_tail"]
+        self.assertIn("STDIN=''", output)
+        self.assertIn("PROMPTS=0,1,never", output)
+
     def test_a_failing_turn_reports_the_exit_status(self):
         project = _build_project({"ag-1": AGENT_AG1}, {"w1": ["ag-1"]})
         job = {"id": "j-000001", "agent": AGENT_AG1, "mark": PAGE_MARK, "instruction": ""}
@@ -692,6 +713,22 @@ class AgentRunnerEndToEndTests(unittest.TestCase):
             self.assertEqual(len(results), 1)
             self.assertEqual(results[0][2]["status"], "failed")
             self.assertIn("exited with status 3", results[0][2]["error"])
+
+    def test_a_structured_provider_failure_reports_its_real_reason(self):
+        project = _build_project({"ag-1": AGENT_AG1}, {"w1": ["ag-1"]})
+        job = {"id": "j-000001", "agent": AGENT_AG1, "mark": PAGE_MARK, "instruction": ""}
+        fake = FakeAgentServer(heartbeat_jobs=[job])
+        payload = json.dumps({"status": "ERROR", "error": "provider account access is disabled"})
+        script = f"import sys; print({payload!r}); sys.exit(1)"
+        with tempfile.TemporaryDirectory() as data_home, patch.dict(
+                os.environ, {"LOCKEDIN_SCIENTIST_HOME": data_home}), patch.object(
+                scientist_cli, "agent_turn_command", lambda agent, prompt, **kw: _fake_vendor_cmd(script)):
+            runner = self._runner(project, fake)
+            runner.tick()
+            runner.procs["j-000001"]["proc"].wait(timeout=10)
+            runner.tick()
+        result = fake.calls_for("jobs/j-000001/result")[0][2]
+        self.assertEqual(result["error"], "provider account access is disabled")
 
     def test_an_attached_agent_is_never_dispatched(self):
         project = _build_project({"ag-1": AGENT_AG1}, {"w1": ["ag-1"]})
@@ -1393,6 +1430,37 @@ class AgentTurnCommandConfinementModeTests(unittest.TestCase):
         with patch.object(scientist_cli, "confinement_mode", return_value="none"):
             cmd = scientist_cli.agent_turn_command(self._agent("claude"), "P")
         self.assertEqual(cmd[cmd.index("--permission-mode") + 1], "acceptEdits")
+
+    def test_supported_vendor_versions_get_every_available_noninteractive_flag(self):
+        def help_text(_executable, subcommand=""):
+            return "--permission-prompts --dangerously-bypass-hook-trust"
+        with patch.object(agent_vendors, "_help_text", side_effect=help_text):
+            claude = scientist_cli.agent_turn_command(self._agent("claude"), "P", mode="seatbelt")
+            codex = scientist_cli.agent_turn_command(self._agent("codex"), "P", mode="seatbelt")
+        self.assertEqual(claude[claude.index("--permission-prompts") + 1], "none")
+        self.assertIn("--dangerously-bypass-hook-trust", codex)
+
+    def test_older_vendor_versions_keep_working_when_optional_flags_are_absent(self):
+        with patch.object(agent_vendors, "_help_text", return_value=""):
+            claude = scientist_cli.agent_turn_command(self._agent("claude"), "P", mode="seatbelt")
+            codex = scientist_cli.agent_turn_command(self._agent("codex"), "P", mode="seatbelt")
+        self.assertNotIn("--permission-prompts", claude)
+        self.assertNotIn("--dangerously-bypass-hook-trust", codex)
+
+    def test_all_three_confined_commands_are_explicitly_headless(self):
+        with patch.object(agent_vendors, "_help_text",
+                          return_value="--permission-prompts --dangerously-bypass-hook-trust"):
+            claude = scientist_cli.agent_turn_command(self._agent("claude"), "P", mode="seatbelt")
+            codex = scientist_cli.agent_turn_command(self._agent("codex"), "P", mode="seatbelt")
+            agy = scientist_cli.agent_turn_command(self._agent("agy"), "P", mode="seatbelt")
+        self.assertIn("-p", claude)
+        self.assertIn("bypassPermissions", claude)
+        self.assertIn("--dangerously-bypass-approvals-and-sandbox", codex)
+        self.assertIn("--dangerously-bypass-hook-trust", codex)
+        self.assertIn("-p", agy)
+        self.assertIn("--dangerously-skip-permissions", agy)
+        self.assertIn("--disable-slash-commands", agy)
+        self.assertIn("--print-timeout", agy)
 
 
 class AgentTurnPromptConfinementTests(unittest.TestCase):

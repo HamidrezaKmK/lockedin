@@ -14,14 +14,46 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
 from typing import Callable
 
 
 BinaryResolver = Callable[[str], str]
 ManagedWriter = Callable[[Path, str], None]
+
+
+@lru_cache(maxsize=32)
+def _cached_help_text(executable: str, subcommand: str, fingerprint: tuple[int, int]) -> str:
+    """Probe one installed binary generation, not merely one path forever."""
+    try:
+        argv = [executable] + ([subcommand] if subcommand else []) + ["--help"]
+        result = subprocess.run(argv, stdin=subprocess.DEVNULL,
+                                capture_output=True, text=True, timeout=10)
+        return (result.stdout or "") + "\n" + (result.stderr or "")
+    except (OSError, subprocess.SubprocessError):
+        return ""
+
+
+def _help_text(executable: str, subcommand: str = "") -> str:
+    """Best-effort feature detection keeps optional hardening flags version-tolerant.
+
+    Vendor installers commonly replace a binary in place. Including its mtime and size in the
+    cache key means a long-running Scientist notices that upgrade on its next turn.
+    """
+    try:
+        stat = Path(executable).stat()
+        fingerprint = (stat.st_mtime_ns, stat.st_size)
+    except OSError:
+        fingerprint = (0, 0)
+    return _cached_help_text(executable, subcommand, fingerprint)
+
+
+def _supports(executable: str, option: str, *, subcommand: str = "") -> bool:
+    return option in _help_text(executable, subcommand)
 
 
 def _worktree_paths(project: Path) -> set[str]:
@@ -75,6 +107,29 @@ class VendorAdapter:
     def turn_command(self, agent: dict, prompt: str, *, new_id: str, permissive: bool,
                      turn_minutes: int, binary: BinaryResolver) -> list[str]:
         raise NotImplementedError
+
+    def turn_environment(self) -> dict[str, str]:
+        """Vendor-only environment additions for a headless turn."""
+        return {}
+
+    def failure_detail(self, output: str) -> str:
+        """Extract a provider error from structured print-mode output, when unambiguous."""
+        for line in reversed((output or "").splitlines()):
+            try:
+                item = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(item, dict):
+                continue
+            is_error = (item.get("is_error") is True
+                        or str(item.get("status") or "").upper() in {"ERROR", "FAILED"})
+            if not is_error:
+                continue
+            for key in ("result", "error", "message"):
+                detail = item.get(key)
+                if isinstance(detail, str) and detail.strip():
+                    return detail.strip()[:600]
+        return ""
 
     def chat_command(self, agent: dict, *, new_id: str, binary: BinaryResolver) -> list[str]:
         raise NotImplementedError
@@ -245,8 +300,11 @@ class ClaudeAdapter(VendorAdapter):
 
     def turn_command(self, agent: dict, prompt: str, *, new_id: str, permissive: bool,
                      turn_minutes: int, binary: BinaryResolver) -> list[str]:
-        cmd = [binary(self.name), "-p", "--output-format", "json", "--permission-mode",
+        executable = binary(self.name)
+        cmd = [executable, "-p", "--output-format", "json", "--permission-mode",
                "bypassPermissions" if permissive else "acceptEdits"]
+        if _supports(executable, "--permission-prompts"):
+            cmd += ["--permission-prompts", "none"]
         cmd += ["--resume", str(agent["conversation"])] if agent.get("conversation") else ["--session-id", new_id]
         if agent.get("model"): cmd += ["--model", str(agent["model"])]
         return cmd + [prompt]
@@ -281,11 +339,51 @@ class CodexAdapter(VendorAdapter):
     def setup_hint(self, app: str) -> str:
         return f"Start Codex in a synchronized project, then invoke ${app}."
 
+    def turn_environment(self) -> dict[str, str]:
+        """Make macOS keychain roots available to Codex's Rust TLS clients.
+
+        Interactive macOS programs can consult the system trust service, while a Seatbelt child
+        may only see the smaller file-based root set and report ``UnknownIssuer``. Current Codex
+        supports a PEM bundle through ``CODEX_CA_CERTIFICATE``. Respect an operator's explicit
+        CA choice; otherwise export the current user's keychain search list to one managed file.
+        This changes only the background Codex child's environment, never shell profiles or the
+        machine trust store.
+        """
+        if sys.platform != "darwin" or os.environ.get("CODEX_CA_CERTIFICATE") or os.environ.get("SSL_CERT_FILE"):
+            return {}
+        security = Path("/usr/bin/security")
+        if not security.exists():
+            return {}
+        target = self.home() / "lockedin-macos-ca.pem"
+        try:
+            keychains = [Path("/Library/Keychains/System.keychain"),
+                         Path("/System/Library/Keychains/SystemRootCertificates.keychain")]
+            login = Path.home() / "Library" / "Keychains" / "login.keychain-db"
+            if login.exists():
+                keychains.append(login)
+            result = subprocess.run([str(security), "find-certificate", "-a", "-p",
+                                     *(str(path) for path in keychains)],
+                                    stdin=subprocess.DEVNULL, capture_output=True, timeout=20)
+            pem = result.stdout or b""
+            if result.returncode or b"-----BEGIN CERTIFICATE-----" not in pem:
+                return {}
+            target.parent.mkdir(parents=True, exist_ok=True)
+            temporary = target.with_name(target.name + ".tmp")
+            temporary.write_bytes(pem)
+            os.chmod(temporary, 0o600)
+            os.replace(temporary, target)
+        except (OSError, subprocess.SubprocessError):
+            return {}
+        return {"CODEX_CA_CERTIFICATE": str(target)}
+
     def turn_command(self, agent: dict, prompt: str, *, new_id: str, permissive: bool,
                      turn_minutes: int, binary: BinaryResolver) -> list[str]:
-        cmd = [binary(self.name), "exec"]
+        executable = binary(self.name)
+        cmd = [executable, "exec"]
         cmd += ["--dangerously-bypass-approvals-and-sandbox"] if permissive else [
             "-s", "workspace-write", "-c", "sandbox_workspace_write.network_access=true"]
+        if permissive and _supports(executable, "--dangerously-bypass-hook-trust", subcommand="exec"):
+            cmd += ["--dangerously-bypass-hook-trust"]
         cmd += ["--skip-git-repo-check", "--json"]
         if agent.get("model"): cmd += ["-m", str(agent["model"])]
         if agent.get("conversation"): cmd += ["resume", str(agent["conversation"])]

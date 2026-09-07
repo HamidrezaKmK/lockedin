@@ -63,6 +63,35 @@ class VendorRegistryContractTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn(scientist_cli.SCIENTIST_CLIENT_VERSION, result.stdout)
 
+    def test_codex_macos_turn_exports_keychain_roots_without_changing_the_shell(self):
+        pem = b"-----BEGIN CERTIFICATE-----\nMADEUP\n-----END CERTIFICATE-----\n"
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+                os.environ, {"CODEX_HOME": directory}, clear=False), patch.object(
+                agent_vendors.sys, "platform", "darwin"), patch.object(
+                agent_vendors.Path, "exists", return_value=True), patch.object(
+                agent_vendors.subprocess, "run",
+                return_value=subprocess.CompletedProcess([], 0, stdout=pem, stderr=b"")):
+            os.environ.pop("CODEX_CA_CERTIFICATE", None)
+            os.environ.pop("SSL_CERT_FILE", None)
+            additions = agent_vendors.get("codex").turn_environment()
+            target = Path(additions["CODEX_CA_CERTIFICATE"])
+            self.assertEqual(target.read_bytes(), pem)
+            self.assertNotIn("CODEX_CA_CERTIFICATE", os.environ)
+
+    def test_codex_macos_respects_an_operator_supplied_ca_bundle(self):
+        with patch.dict(os.environ, {"CODEX_CA_CERTIFICATE": "/operator/ca.pem"}), patch.object(
+                agent_vendors.sys, "platform", "darwin"), patch.object(
+                agent_vendors.subprocess, "run") as run:
+            self.assertEqual(agent_vendors.get("codex").turn_environment(), {})
+        run.assert_not_called()
+
+    def test_structured_vendor_failure_is_reported_instead_of_only_the_exit_code(self):
+        output = ('noise\n{"type":"result","is_error":true,"api_error_status":403,'
+                  '"result":"Your organization disabled this model service"}\n')
+        for name in agent_vendors.names():
+            self.assertEqual(agent_vendors.get(name).failure_detail(output),
+                             "Your organization disabled this model service")
+
 
 class SeamlessUpgradeTests(unittest.TestCase):
     def test_unix_installer_finishes_with_worker_repair(self):
