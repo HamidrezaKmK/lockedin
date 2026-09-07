@@ -12,18 +12,20 @@ import json
 import os
 import re
 import secrets
+import shlex
 import shutil
 import signal
 import subprocess
 import sys
 import time
+import uuid
 import urllib.error
 import urllib.request
 import webbrowser
 from pathlib import Path
 
 APP = "lockedin-scientist"
-SCIENTIST_CLIENT_VERSION = "2026.09.05.2"
+SCIENTIST_CLIENT_VERSION = "2026.09.06.1"
 POLL_SECONDS = 5
 # A worker that has not completed a cycle in three polls is wedged rather than merely busy.
 # `doctor` reports that verdict and `resync` repairs exactly what `doctor` complains about, so
@@ -35,6 +37,47 @@ TERMINAL_WORKER_STATUSES = {"stopped"}
 ATTENTION_WORKER_STATUSES = {"degraded", "failed"}
 VENDORS = ("codex", "claude", "agy")
 MANAGED_VENDOR_SKILL_MARKER = "<!-- Managed by lockedin-scientist -->"
+# One headless agent turn per assigned mark. The worker ends a turn that runs longer than this and
+# reports it failed; the vendor's own print-mode timeout is set to match.
+# Substrings (matched case-insensitively) seen in real vendor CLI output when a turn failed only
+# because the agent's own interactive chat held the session open, not because the work was bad.
+# Mirrors agents.BUSY_ERROR server-side; this client has no import of that module.
+AGENT_BUSY_ERROR = "the agent's chat was open, so the turn was postponed"
+AGENT_BUSY_SIGNATURES = (
+    "already has an active writer",
+    "thread-store conflict",
+    "session is already in use",
+    "another instance is running",
+    "resource temporarily unavailable",
+)
+# Substrings (matched case-insensitively) seen in real vendor CLI output when the conversation id
+# on file was deleted or otherwise not honoured, distinct from a turn that failed for its own
+# reasons. Kept specific — no bare "does not exist" — so an ordinary error is not swallowed here.
+AGENT_LOST_CONVERSATION_ERROR = "the agent's saved conversation no longer exists there; a new one is starting"
+AGENT_LOST_CONVERSATION_SIGNATURES = (
+    "conversation not found",
+    "no such conversation",
+    "unknown conversation",
+    "session not found",
+    "no such session",
+    "thread not found",
+    "could not find thread",
+    "no conversation with id",
+)
+AGENT_COOLDOWN_SECONDS = 60
+AGENT_TURN_SECONDS = int(os.environ.get("LOCKEDIN_AGENT_TURN_SECONDS") or 20 * 60)
+# Different agents may work at once. One agent never runs two turns — the server refuses that too.
+AGENT_MAX_PARALLEL = int(os.environ.get("LOCKEDIN_AGENT_MAX_PARALLEL") or 2)
+AGENT_OUTPUT_TAIL = 4000
+
+
+def agent_turns_disabled() -> bool:
+    """Whether ``LOCKEDIN_AGENT_TURNS`` currently asks ``AgentRunner`` to pause all dispatch.
+
+    Read at call time (not into a module-level constant at import time) so a test — or an
+    operator — can flip the environment variable and have the very next ``tick()`` honour it.
+    """
+    return os.environ.get("LOCKEDIN_AGENT_TURNS", "").strip().lower() in {"off", "0", "false"}
 
 # This is deliberately a short bootstrap, not a copy of the report-editing guide.  The guide is
 # bubble- and workspace-specific, so it belongs in the generated project-local skill that the
@@ -49,22 +92,24 @@ description: Work safely with a project-local LockedIn Scientist bubble. Read it
 # LockedIn Scientist
 
 Read `<project-root>/.lockedin/SKILL.md` in full before making any change, where
-`<project-root>` is the directory containing the repository's shared `.git`:
+`<project-root>` is the nearest directory, starting at the agent session's working directory and
+walking up through its parents, that contains `.lockedin/config/binding.json`.
+
+Run that search from the **active workspace directory shown by the current agent session**. Some
+CLI agents start command tools in their own scratch folder; that scratch folder is not the
+project. Do not search from there, reuse a previous project, or guess a project from the user's
+home directory. Git is not required for this: the project does not have to be a repository.
+
+If the search finds nothing and the session is inside a **git worktree**, the root is the main
+checkout, because `.lockedin/` is untracked and does not travel to a worktree:
 
 ```
 git rev-parse --path-format=absolute --git-common-dir   # -> <project-root>/.git
 ```
 
-Run that command with the tool's working directory set to the **active workspace directory shown
-by the current agent session**. Some CLI agents start command tools in their own scratch folder;
-that scratch folder is not the project. Do not run the locator there, reuse a previous project,
-or guess a project from the user's home directory.
-
-Use that command rather than assuming the current directory. In an ordinary checkout it names that
-checkout; in a **git worktree** it names the main checkout, which is where `.lockedin/` lives —
-the directory is untracked, so it never appears in a worktree. This is a normal setup, not a
-problem to report. Read exactly the one path resolved by the command. Never use `find`, a glob,
-`grep`, or a home-directory search to locate other `.lockedin` directories or guides.
+names that checkout's `.git`, so its parent is the root. This is a normal setup, not a problem to
+report. Read exactly the one path resolved this way. Never use `find`, a glob, `grep`, or a
+home-directory search to locate other `.lockedin` directories or guides.
 It contains the current bubble's editing guide, paper context, math conventions, permitted write
 paths, conflict recovery rules, and—when present—rules for the local Overleaf checkout. Follow it
 as the source of truth.
@@ -131,6 +176,12 @@ def welcome() -> None:
     print(f"  {cyan('\u2022')} {dim('Bring one down, or send one up (both take --all)')}\n     {cyan('lockedin-scientist assets pull <filename>')}\n     {cyan('lockedin-scientist assets push <filename>')}")
     print(f"  {cyan('\u2022')} {dim('Delete one from the bubble \u2014 deleting it locally does not')}\n     {cyan('lockedin-scientist assets rm <filename>')}")
     print()
+    print(bold("Agents: answer marks without opening the chat"))
+    print(f"  {cyan('•')} {dim('From inside a codex/claude/agy chat in this project, give it a name and a role')}\n     {cyan('lockedin-scientist agent register --name <name> --role <role> --goal <goal>')}")
+    print(f"  {cyan('•')} {dim('See the agents on this bubble, and what is queued for them')}\n     {cyan('lockedin-scientist agent list')}\n     {cyan('lockedin-scientist agent jobs')}")
+    print(f"  {cyan('•')} {dim('Reopen an agent’s conversation; reset it; or retire it (--purge deletes the conversation)')}\n     {cyan('lockedin-scientist agent chat <name>')}\n     {cyan('lockedin-scientist agent reset <name>')}\n     {cyan('lockedin-scientist agent retire <name>')}")
+    print(f"  {cyan('•')} {dim('What a headless turn runs when it is done with a job')}\n     {cyan('lockedin-scientist agent reply <job-id> --text <answer>')}\n     {cyan('lockedin-scientist agent fail <job-id> --reason <why>')}")
+    print()
     print(bold("Native agent skills"))
     print(f"  {cyan('•')} {dim('Install the LockedIn Scientist skill once for your agent')}\n     {cyan('lockedin-scientist <codex|claude|agy> setup')}")
     print()
@@ -143,6 +194,11 @@ def welcome() -> None:
 
 
 def data_root() -> Path:
+    # A second client profile beside the default one (a dev server, a test): its own accounts,
+    # workers, and logs, so nothing it does can touch the profile that talks to production.
+    override = os.environ.get("LOCKEDIN_SCIENTIST_HOME")
+    if override:
+        return Path(override).expanduser()
     if os.name == "nt":
         return Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData/Local")) / APP
     return Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share")) / APP
@@ -155,7 +211,7 @@ def workers_path() -> Path: return data_root() / "runtime" / "workers.json"
 def _atomic_json(path: Path, value: dict, *, private: bool = False) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
+    tmp.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     tmp.replace(path)
     if private:
         try: os.chmod(path, 0o600)
@@ -188,7 +244,7 @@ def _remove_tree(path: Path) -> None:
 def load_config() -> dict:
     path = config_path()
     if not path.exists(): return {"accounts": []}
-    try: return json.loads(path.read_text())
+    try: return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError): return {"accounts": []}
 
 
@@ -198,7 +254,7 @@ def save_config(cfg: dict) -> None: _atomic_json(config_path(), cfg, private=Tru
 def load_workers() -> dict:
     path = workers_path()
     if not path.exists(): return {"workers": {}}
-    try: return json.loads(path.read_text())
+    try: return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError): return {"workers": {}}
 
 
@@ -414,7 +470,7 @@ def bubbles_command(account: dict) -> list[dict]:
 
 # Bump when the guide text changes: a project only regenerates SKILL.md when this marker in its
 # copy stops matching, so an edit to the guide reaches no existing agent until this moves.
-SKILL_VERSION = 40
+SKILL_VERSION = 46
 
 # The marker is derived, never typed. It is what the staleness check compares against, so a
 # hand-written copy that drifted from SKILL_VERSION would either pin every project to a stale
@@ -435,6 +491,7 @@ turn out not to need costs the user real money and crowds out what you are reaso
 | `guides/reports.md` | before creating, deleting or submitting a report page | small |
 | `guides/macros.md` | before using a `\\\\`-macro in maths | tiny |
 | `guides/overleaf.md` | before touching a local Overleaf checkout | small |
+| `guides/agents.md` | when asked to register as an agent, or when a prompt names a LockedIn job id | small |
 | `guides/editing.md` | **reference, not prerequisite** | large |
 
 `guides/editing.md` is a syntax reference for figures, citations, theorem environments and the
@@ -444,16 +501,19 @@ contents list.
 
 ## Where `.lockedin/` is
 
-Every path in this guide is relative to the **project root**: the directory holding the shared
-`.git`, which `git rev-parse --path-format=absolute --git-common-dir` names (its parent). Resolve
-it once at the start of a session and use it as the prefix.
+Every path in this guide is relative to the **project root**: the nearest directory, starting at
+your working directory and walking up through its parents, that contains
+`.lockedin/config/binding.json`. Resolve it once at the start of a session and use it as the
+prefix. Git is not required for this: the project does not have to be a repository.
 
-If you are working in a **git worktree**, that root is the main checkout, not the worktree.
-`.lockedin/` is untracked, so it does not come along — and the sync worker only watches the main
-checkout's copy. Read and edit that copy. This is the ordinary arrangement: do not describe it to
-the user, do not treat it as a problem, and do not run `lockedin-scientist sync` inside the
-worktree to obtain a local one — the worker registry keys on directory, so that would start a
-second worker on the same bubble and the bubble page would flag the pair as conflicting.
+If that search finds nothing and you are working in a **git worktree**, the root is the main
+checkout, not the worktree: `git rev-parse --path-format=absolute --git-common-dir` names that
+checkout's `.git` (its parent is the root). `.lockedin/` is untracked, so it does not come along —
+and the sync worker only watches the main checkout's copy. Read and edit that copy. This is the
+ordinary arrangement: do not describe it to the user, do not treat it as a problem, and do not run
+`lockedin-scientist sync` inside the worktree to obtain a local one — the worker registry keys on
+directory, so that would start a second worker on the same bubble and the bubble page would flag
+the pair as conflicting.
 
 ## Project work and LockedIn boundaries
 
@@ -492,6 +552,13 @@ it at the start of a session — it is short, and everything else assumes it.
 It is generated and read-only. If it is wrong, stale, or narrower than the work actually being
 done, say so and propose better wording rather than working around it; the user applies it in
 the app.
+
+## Agents
+
+The user can give this chat a name and a role and then assign marks to it from the bubble page
+without opening the chat: the sync worker runs one turn of *this conversation* per assigned mark
+while the chat is closed. If the user asks you to register, become, or act as an agent — or a
+prompt names a LockedIn job id like `j-000012` — read `guides/agents.md` and follow it.
 
 ## Indexed retrieval — do not scan first
 
@@ -573,7 +640,7 @@ worktree they fail with "No valid `.lockedin/config/binding.json` in this projec
 2. `lockedin-scientist resync` — the usual repair. It resumes whatever bubble this project is
    already bound to, needs no arguments, and leaves `.lockedin` intact.
 3. If the command itself is missing (a fresh cloud sandbox, for instance), ask the user for a
-   setup link: the bubble page's 🤖 button produces one line that installs the client, signs this
+   setup link: the bubble page's robot button produces one line that installs the client, signs this
    machine in, and connects the folder you are working in. Pasting it here works — with no
    terminal to answer from it uses the current directory instead of prompting.
 4. `lockedin-scientist hard-reset <bubble>` only when the directory itself is broken; it replaces
@@ -673,12 +740,80 @@ outside a code fence in the same deck, using the mark's id from its `marks.json`
     <!-- /lockedin-reply -->
 
 On sync, LockedIn adds the text to mark `n7`'s thread and removes the block from the deck. The
-same exact reply is safe to retry. That is the whole of your power over a mark: **you cannot
+same exact reply is safe to retry.
+
+**Only when you are not working a job.** If your prompt named a LockedIn job id, answer with
+`agent reply <job-id>` instead and do not add a reply block: each posts a turn, so doing both
+posts your answer twice. See `guides/agents.md`. That is the whole of your power over a mark: **you cannot
 resolve, remove, or delete one — anywhere** — and a `resolves=` attribute in a slide header is
 ignored. The user removes a mark in the app once your answer satisfies them. If your edit removes
 the text a mark points at, the mark goes orphan and stays visible; that is normal, not a problem
 to fix.
 """,
+
+    'agents.md': """\
+# Agents: this chat, with a name, answering marks on its own
+
+## What an agent is
+
+An *agent* is this very conversation, registered on the bubble under a name, a role, a goal and
+optionally a personality. Once registered, the user can **assign a mark to you from the bubble
+page** instead of coming here to ask. While this chat is closed, the sync worker runs one
+headless turn of this same conversation per assigned mark: you keep your memory, your name, and
+everything already discussed. Nothing runs while no mark is assigned.
+
+## Registering (once per conversation)
+
+Only when the user asks you to register, become, or act as an agent. Then:
+
+1. Ask the user, in one short message, for a **name**, a **role** (a few words), a **goal** (one
+   sentence), and optionally a **personality**. Suggest defaults if they want you to.
+2. Run, from the project root:
+
+       lockedin-scientist agent register --name "Ada" --role "skeptical reviewer" \\
+           --goal "keep every derivation honest and readable" --personality "terse, likes counterexamples"
+
+   The command works out which CLI conversation it is running inside; you never copy an id. Add
+   `--model <id>` if the user names the model you run as; the worker passes it to headless turns.
+   If it cannot tell which conversation this is, it says which flags to pass — ask the user.
+3. Tell the user you now appear on the bubble page under this directory's sync, and that marks
+   they assign there will be answered while this chat is closed. Do not poll or wait for jobs.
+
+`lockedin-scientist agent list` shows the agents on this bubble; `lockedin-scientist agent jobs`
+shows open jobs from the local index (`--all` includes finished ones) — use it only when the user
+asks what is queued. An operator can pause all dispatch without stopping synchronization by
+setting `LOCKEDIN_AGENT_TURNS=off` on the worker.
+
+## When a prompt is a job
+
+A headless turn starts with `LockedIn job j-000012.` and names one mark: its kind, where it sits,
+the quote or drawing, the user's words, and the exact `jq` command and file to edit. Everything in
+`guides/feedback.md` applies — the kind is the instruction, make the smallest change that answers
+it, keep `<comment-begin>`/`<comment-end>` tags in place, never edit `indexes/`, `feedback/`, or a
+deck's `marks.json`. Do the work directly; there is nobody to ask.
+
+Then end the turn with **exactly one** of:
+
+    lockedin-scientist agent reply j-000012 --text "What you changed and why, in a few sentences."
+    lockedin-scientist agent fail  j-000012 --reason "Why this cannot or should not be done."
+
+`reply` posts your text into the mark's thread (page marks and slide marks alike) and closes the
+job; `fail` posts the reason and closes it as failed. That command *is* your reply, so do not also
+add a `<!-- lockedin-reply -->` block to the deck: both post a turn, and the user would read your
+answer twice. A long reply can come from a file:
+`--file notes.md`. A turn that ends without one of these is recorded as failed even if you edited
+the right thing — the user sees nothing otherwise. Never resolve or delete a mark; only the user
+does that in the app.
+
+## The conversation itself
+
+- `lockedin-scientist agent chat <name>` reopens an agent's conversation interactively. While
+  it is open the worker will not drive it — assigned jobs wait and the page shows the agent as
+  *attached* — and they run once the chat is closed.
+- `lockedin-scientist agent reset <name>` forgets the conversation but keeps the persona: the
+  next job (or `agent chat`) starts a new one and re-introduces you.
+- `lockedin-scientist agent retire <name>` removes the agent from the bubble and cancels its
+  open jobs; `--purge` also deletes the conversation from the vendor's store.""",
 
     'overleaf.md': """\
 # Overleaf
@@ -732,10 +867,15 @@ def macros_guide(math_macros: dict | None = None) -> str:
 
 def write_skill_bundle(root: Path, editing_guide: str, math_macros: dict | None = None) -> None:
     """Write SKILL.md plus the guides it points at, and drop guides that no longer exist."""
-    (root / "SKILL.md").write_text(skill_document())
+    (root / "SKILL.md").write_text(skill_document(), encoding="utf-8")
     guides = root / "guides"
     guides.mkdir(parents=True, exist_ok=True)
     written = dict(GUIDES)
+    # The agents guide tells the model which command to run; on a machine that invokes this
+    # client through a differently named shim (a dev profile), that name must be the real one.
+    cli = cli_name()
+    if cli != APP:
+        written["agents.md"] = written["agents.md"].replace(APP + " agent", cli + " agent")
     written["macros.md"] = macros_guide(math_macros)
     headings = [line.lstrip("# ").strip() for line in editing_guide.splitlines()
                 if line.startswith("## ")]
@@ -747,7 +887,7 @@ def write_skill_bundle(root: Path, editing_guide: str, math_macros: dict | None 
                              "## What is in here\n\n" + contents + "\n\n"
                              + editing_guide.rstrip() + "\n")
     for name, body in written.items():
-        (guides / name).write_text(body)
+        (guides / name).write_text(body, encoding="utf-8")
     for stale in guides.glob("*.md"):
         if stale.name not in written:
             stale.unlink()
@@ -783,7 +923,7 @@ def _write_managed_vendor_file(path: Path, content: str) -> None:
     """Update only a file that this command created previously."""
     if path.exists():
         try:
-            existing = path.read_text()
+            existing = path.read_text(encoding="utf-8")
         except OSError as exc:
             raise RuntimeError(f"Could not inspect existing skill at {path}: {exc}") from exc
         if MANAGED_VENDOR_SKILL_MARKER not in existing:
@@ -792,7 +932,7 @@ def _write_managed_vendor_file(path: Path, content: str) -> None:
                 "Move or remove that user-owned skill, then run setup again."
             )
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content)
+    path.write_text(content, encoding="utf-8")
 
 
 def _vendor_skill_paths(vendor: str, home: Path) -> tuple[Path, ...]:
@@ -816,7 +956,7 @@ def setup_vendor_skill(vendor: str, *, home: Path | None = None) -> tuple[Path, 
         plugin_json, skill_path = targets
         if plugin_json.exists():
             try:
-                plugin = json.loads(plugin_json.read_text())
+                plugin = json.loads(plugin_json.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError) as exc:
                 raise RuntimeError(f"Could not inspect existing agy plugin at {plugin_json}: {exc}") from exc
             if plugin.get("managed_by") != AGY_PLUGIN_MANAGED_BY:
@@ -825,12 +965,13 @@ def setup_vendor_skill(vendor: str, *, home: Path | None = None) -> tuple[Path, 
                     "Move or remove that user-owned plugin, then run setup again."
                 )
         plugin_json.parent.mkdir(parents=True, exist_ok=True)
-        plugin_json.write_text(json.dumps({
+        plugin_manifest = json.dumps({
             "name": APP,
             "version": "1.0.0",
             "description": "Project-local LockedIn Scientist bootstrap skill.",
             "managed_by": AGY_PLUGIN_MANAGED_BY,
-        }, indent=2) + "\n")
+        }, indent=2) + "\n"
+        plugin_json.write_text(plugin_manifest, encoding="utf-8")
         _write_managed_vendor_file(skill_path, VENDOR_SKILL_BOOTSTRAP)
         agy = shutil.which("agy")
         if not agy:
@@ -960,7 +1101,7 @@ def _configure_overleaf_credential_store(project: Path, checkout: Path) -> Path 
 def _overleaf_config(project: Path) -> dict:
     path = project / ".lockedin" / "config" / "overleaf.yaml"
     try:
-        value = json.loads(path.read_text())
+        value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return {}
     return value if isinstance(value, dict) else {}
@@ -980,7 +1121,7 @@ def overleaf_connect(project: Path) -> None:
     if root.exists() and any(root.iterdir()):
         entries = list(root.iterdir())
         legacy = root / "README.md"
-        if len(entries) == 1 and entries[0] == legacy and legacy.read_text(errors="replace").startswith(LEGACY_OVERLEAF_README_PREFIX):
+        if len(entries) == 1 and entries[0] == legacy and legacy.read_text(encoding="utf-8", errors="replace").startswith(LEGACY_OVERLEAF_README_PREFIX):
             legacy.unlink(); root.rmdir()
         else:
             raise RuntimeError(".lockedin/overleaf already exists. Use `lockedin-scientist overleaf status` or disconnect it first.")
@@ -1071,11 +1212,11 @@ class ProjectSync:
         return hashlib.sha256(data).hexdigest()
 
     def _binding(self) -> dict | None:
-        try: return json.loads(self.binding_path.read_text())
+        try: return json.loads(self.binding_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError): return None
 
     def _state(self) -> dict:
-        try: return json.loads(self.state_path.read_text())
+        try: return json.loads(self.state_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError): return {"files": {}}
 
     def _write_state(self, state: dict) -> None: _atomic_json(self.state_path, state, private=True)
@@ -1110,16 +1251,16 @@ class ProjectSync:
             self._write_state({"files": {}})
             self._exclude_from_git()
         skill = self.root / "SKILL.md"
-        if created or f"lockedin-scientist-skill: {SKILL_VERSION}" not in (skill.read_text() if skill.exists() else ""):
+        if created or f"lockedin-scientist-skill: {SKILL_VERSION}" not in (skill.read_text(encoding="utf-8") if skill.exists() else ""):
             self._refresh_skill()
 
     def _exclude_from_git(self) -> None:
         git = self.project / ".git"
         if not git.is_dir(): return
         exclude = git / "info" / "exclude"; exclude.parent.mkdir(parents=True, exist_ok=True)
-        text = exclude.read_text() if exclude.exists() else ""
+        text = exclude.read_text(encoding="utf-8") if exclude.exists() else ""
         if ".lockedin/" not in text.splitlines():
-            exclude.write_text(text.rstrip("\n") + "\n.lockedin/\n")
+            exclude.write_text(text.rstrip("\n") + "\n.lockedin/\n", encoding="utf-8")
 
     def worker_uid(self) -> str:
         """A stable id for *this project directory*, minted once and kept across worker restarts.
@@ -1128,7 +1269,7 @@ class ProjectSync:
         restarted worker look like a second directory, which is precisely the distinction the
         monitor exists to make.
         """
-        try: return str(json.loads(self.identity_path.read_text())["worker_uid"])
+        try: return str(json.loads(self.identity_path.read_text(encoding="utf-8"))["worker_uid"])
         except (OSError, json.JSONDecodeError, KeyError, TypeError): pass
         uid = secrets.token_hex(8)
         try:
@@ -1194,7 +1335,7 @@ class ProjectSync:
         (folder / (stem + ".local")).write_bytes(local)
         (folder / (stem + ".remote")).write_bytes(remote)
         patch = "".join(difflib.unified_diff(base.decode(errors="replace").splitlines(True), local.decode(errors="replace").splitlines(True), fromfile="base", tofile="local"))
-        (folder / (stem + ".patch")).write_text(patch)
+        (folder / (stem + ".patch")).write_text(patch, encoding="utf-8")
 
     def _report_paths(self) -> list[str]:
         """Local report content this sync may carry: pages, flat figures, and chalk-talk decks.
@@ -1402,7 +1543,7 @@ class ProjectSync:
         # projects that are working fine and never get restarted.
         skill = self.root / "SKILL.md"
         stale = f"lockedin-scientist-skill: {SKILL_VERSION}" not in (
-            skill.read_text() if skill.exists() else "")
+            skill.read_text(encoding="utf-8") if skill.exists() else "")
         if prior_math_revision != math_revision or stale:
             self._refresh_skill()
             state["skill_math_revision"] = math_revision
@@ -1425,8 +1566,912 @@ class ProjectSync:
         self._write_state(state)
 
 
+# --------------------------------------------------------------------------- #
+# Agents: a persistent CLI conversation the bubble can hand a mark to
+# --------------------------------------------------------------------------- #
+def cli_name() -> str:
+    """How this client is invoked here, so prompts and hints name the right command (a dev shim, say).
+
+    A shim that execs this file leaves ``sys.argv[0]`` as the script path, so it announces its
+    own name through ``LOCKEDIN_SCIENTIST_CLI_NAME`` instead.
+    """
+    announced = os.environ.get("LOCKEDIN_SCIENTIST_CLI_NAME", "").strip()
+    if announced: return announced
+    name = Path(sys.argv[0] or "").name
+    return name if name.startswith(APP) else APP
+
+
+def _project_root(start: Path) -> Path:
+    """The directory holding ``.lockedin``: the cwd, or a worktree's main checkout."""
+    start = start.resolve()
+    if (start / ".lockedin" / "config" / "binding.json").exists(): return start
+    try:
+        out = subprocess.run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+                             cwd=start, capture_output=True, text=True, timeout=10)
+        if out.returncode == 0 and out.stdout.strip():
+            root = Path(out.stdout.strip()).parent
+            if (root / ".lockedin" / "config" / "binding.json").exists(): return root
+    except (OSError, subprocess.SubprocessError): pass
+    return start
+
+
+def _worktree_paths(project: Path) -> set[str]:
+    """Every checkout of this repository: agy records the directory it was launched in."""
+    found = {str(project.resolve())}
+    try:
+        out = subprocess.run(["git", "worktree", "list", "--porcelain"], cwd=project,
+                             capture_output=True, text=True, timeout=10)
+        for line in out.stdout.splitlines():
+            if line.startswith("worktree "): found.add(str(Path(line[9:].strip()).resolve()))
+    except (OSError, subprocess.SubprocessError): pass
+    return found
+
+
+def _agy_home() -> Path: return Path(os.environ.get("ANTIGRAVITY_CLI_HOME") or Path.home() / ".gemini" / "antigravity-cli")
+def _codex_home() -> Path: return Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex")
+def _claude_home() -> Path: return Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
+
+
+def _agy_live_conversations() -> set[str]:
+    """Conversations agy has open in a terminal right now.
+
+    agy keeps ``presence/<conversation>.lock`` for every conversation it ever opened — the files
+    outlive the session — but holds an advisory ``flock`` on the one it is running. Existence
+    means nothing; a lock that cannot be taken means live.
+    """
+    presence = _agy_home() / "presence"
+    if not presence.is_dir(): return set()
+    live: set[str] = set()
+    try:
+        import fcntl
+    except ImportError:  # pragma: no cover - not Linux/macOS; assume nothing is open
+        return live
+    for path in presence.glob("*.lock"):
+        try:
+            fd = os.open(path, os.O_RDONLY)
+        except OSError:
+            continue
+        try:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                fcntl.flock(fd, fcntl.LOCK_UN)
+            except OSError:
+                live.add(path.stem)
+        finally:
+            os.close(fd)
+    return live
+
+
+def _agy_time(value: object) -> float:
+    from datetime import datetime, timezone
+    text = str(value or "").strip()
+    if not text: return 0.0
+    try:
+        stamp = datetime.fromisoformat(text.replace("Z", "+00:00").split(" m=")[0][:32].strip())
+        if stamp.tzinfo is None: stamp = stamp.replace(tzinfo=timezone.utc)
+        return stamp.timestamp()
+    except ValueError:
+        return 0.0
+
+
+def _agy_conversations_for(project: Path) -> list[tuple[str, float]]:
+    """(conversation id, recency) for agy conversations opened in this project, newest first."""
+    wanted = _worktree_paths(project)
+    scores: dict[str, float] = {}
+    db = _agy_home() / "conversation_summaries.db"
+    if db.exists():
+        try:
+            import sqlite3
+            con = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=2)
+            try:
+                rows = con.execute("select conversation_id, workspace_uris, last_modified_time "
+                                   "from conversation_summaries").fetchall()
+            finally: con.close()
+            for cid, uris, modified in rows:
+                text = str(uris or "")
+                if any(path in text for path in wanted):
+                    scores[str(cid)] = max(scores.get(str(cid), 0.0), _agy_time(modified))
+        except Exception: pass
+    history = _agy_home() / "history.jsonl"
+    if history.exists():
+        try:
+            for line in history.read_text(encoding="utf-8", errors="replace").splitlines()[-3000:]:
+                try: row = json.loads(line)
+                except json.JSONDecodeError: continue
+                cid = str(row.get("conversationId") or "")
+                if cid and str(row.get("workspace", "")) in wanted:
+                    stamp = float(row.get("timestamp", 0) or 0) / 1000.0
+                    scores[cid] = max(scores.get(cid, 0.0), stamp)
+        except OSError: pass
+    return sorted(scores.items(), key=lambda item: item[1], reverse=True)
+
+
+def _codex_conversations_for(project: Path) -> list[tuple[str, float]]:
+    """(session id, mtime) for codex sessions whose recorded cwd is this project, newest first."""
+    wanted = _worktree_paths(project)
+    sessions = _codex_home() / "sessions"
+    if not sessions.is_dir(): return []
+    found = []
+    try:
+        files = sorted(sessions.rglob("*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)[:400]
+    except OSError:
+        return []
+    for path in files:
+        try:
+            with path.open(encoding="utf-8", errors="replace") as fh: meta = json.loads(fh.readline())
+        except (OSError, json.JSONDecodeError): continue
+        payload = meta.get("payload") or {}
+        cwd, sid = str(payload.get("cwd") or ""), str(payload.get("id") or payload.get("session_id") or "")
+        if sid and cwd and str(Path(cwd).resolve()) in wanted:
+            found.append((sid, path.stat().st_mtime))
+    return found
+
+
+def conversation_exists(agent: dict) -> bool:
+    """Whether the vendor still has this agent's conversation where it stores them.
+
+    Checked before spawning into an old conversation, so a deleted chat id is caught cheaply
+    rather than by launching the vendor and parsing its refusal. Returns True whenever the check
+    cannot be made confidently — an unrecognised vendor, or an agent with no conversation yet,
+    which is new rather than missing and belongs to the fresh-turn path — so an unknown layout
+    never blocks real work.
+    """
+    vendor = str(agent.get("vendor") or "").strip()
+    conversation = str(agent.get("conversation") or "").strip()
+    if not conversation:
+        return True
+    if vendor == "agy":
+        return (_agy_home() / "conversations" / f"{conversation}.db").exists()
+    if vendor == "claude":
+        return any((_claude_home() / "projects").glob(f"*/{conversation}.jsonl"))
+    if vendor == "codex":
+        sessions = _codex_home() / "sessions"
+        if sessions.is_dir():
+            try:
+                if any(sessions.rglob(f"{conversation}*.jsonl")):
+                    return True
+            except OSError:
+                return True
+        index = _codex_home() / "session_index.jsonl"
+        if index.is_file():
+            try:
+                return conversation in index.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                return True
+        return False
+    return True
+
+
+def detect_conversation(project: Path, *, vendor: str = "", conversation: str = "") -> tuple[str, str]:
+    """Which CLI conversation this command runs inside, so an agent never copies an id by hand."""
+    vendor = (vendor or "").strip().lower()
+    if vendor and vendor not in VENDORS:
+        raise RuntimeError(f"--vendor must be one of {', '.join(VENDORS)}")
+    if conversation:
+        if not vendor:
+            raise RuntimeError("--conversation needs --vendor <codex|claude|agy> as well.")
+        return vendor, conversation.strip()
+    env = os.environ
+    candidates: list[tuple[str, str]] = []
+    if env.get("CLAUDE_CODE_SESSION_ID"): candidates.append(("claude", env["CLAUDE_CODE_SESSION_ID"]))
+    for key, value in env.items():
+        upper = key.upper()
+        if not value or not any(word in upper for word in ("CONVERSATION", "THREAD", "SESSION")): continue
+        if upper.startswith(("ANTIGRAVITY", "AGY")): candidates.append(("agy", value))
+        elif upper.startswith("CODEX") and "ID" in upper: candidates.append(("codex", value))
+    if vendor: candidates = [c for c in candidates if c[0] == vendor]
+    if candidates: return candidates[0]
+    if vendor in ("", "agy"):
+        live = _agy_live_conversations()
+        here = [cid for cid, _ in _agy_conversations_for(project) if cid in live]
+        if len(here) == 1: return "agy", here[0]
+        if len(here) > 1:
+            raise RuntimeError("Several agy conversations are open in this project ("
+                               + ", ".join(here[:4]) + "). Pass --vendor agy --conversation <id>.")
+    if vendor in ("", "codex"):
+        here = _codex_conversations_for(project)
+        if here: return "codex", here[0][0]
+    raise RuntimeError("Could not tell which conversation this is. From inside your agent's chat, run it "
+                       "again; or pass --vendor <codex|claude|agy> --conversation <id> explicitly.")
+
+
+def _chat_pids_path(root: Path) -> Path: return root / "config" / "agent-chats.json"
+
+
+def _read_chat_pids(root: Path) -> dict:
+    try: return json.loads(_chat_pids_path(root).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError): return {}
+
+
+def _write_chat_pids(root: Path, data: dict) -> None:
+    try: _atomic_json(_chat_pids_path(root), data, private=True)
+    except OSError: pass
+
+
+def _chat_pid_for(vendor: str) -> int:
+    """The vendor process this command is running inside, if it is.
+
+    ``agent register`` is executed by the model from within its own chat, so that chat is one of
+    this process's ancestors. Recording it is what lets the worker see a first session as
+    attached; the conversation id it would otherwise look for is in that process's environment,
+    not its arguments.
+    """
+    if not Path("/proc").is_dir():
+        if os.name == "nt":
+            return _chat_pid_for_windows(vendor)
+        return 0
+    pid = os.getppid()
+    for _ in range(12):
+        if pid <= 1:
+            break
+        try:
+            cmdline = (Path("/proc") / str(pid) / "cmdline").read_bytes().split(b"\0")
+            stat = (Path("/proc") / str(pid) / "stat").read_text(encoding="utf-8")
+        except OSError:
+            break
+        argv0 = Path((cmdline[0] or b"").decode(errors="replace")).name
+        # `claude` is a node script; its argv0 may be the interpreter, so check the whole line.
+        joined = b" ".join(cmdline).decode(errors="replace")
+        if argv0 == vendor or f"/{vendor}" in joined or joined.startswith(vendor + " "):
+            return pid
+        try:
+            pid = int(stat.rsplit(")", 1)[1].split()[1])
+        except (IndexError, ValueError):
+            break
+    return 0
+
+
+def _chat_pid_for_windows(vendor: str) -> int:
+    """Windows equivalent of the /proc ancestry walk above.
+
+    There is no /proc, so resolve the whole process table with a single PowerShell call (one
+    ``Get-CimInstance`` round trip) and walk parent links in memory. This runs once per
+    ``agent register`` — never inside the poll loop — so the subprocess cost is acceptable.
+    """
+    try:
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command",
+             "Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,Name | ConvertTo-Json -Compress"],
+            capture_output=True, text=True, timeout=15,
+        )
+        if result.returncode != 0 or not result.stdout.strip():
+            return 0
+        rows = json.loads(result.stdout)
+        if isinstance(rows, dict):
+            rows = [rows]
+        by_pid = {}
+        for row in rows:
+            try:
+                by_pid[int(row["ProcessId"])] = (int(row["ParentProcessId"]), str(row.get("Name") or ""))
+            except (KeyError, TypeError, ValueError):
+                continue
+    except (OSError, subprocess.SubprocessError, json.JSONDecodeError, ValueError):
+        return 0
+
+    # node.exe/python.exe are generic hosts: the stem/prefix check below only accepts them when
+    # the name itself matches the vendor (e.g. vendor "node"), never as a catch-all — otherwise
+    # every Python or Node ancestor in the tree would false-match.
+    vendor_lower = vendor.lower()
+    pid = os.getppid()
+    for _ in range(12):
+        entry = by_pid.get(pid)
+        if not entry:
+            break
+        parent_pid, name = entry
+        stem = Path(name).stem.lower()
+        name_lower = name.lower()
+        if stem == vendor_lower or name_lower.startswith(vendor_lower):
+            return pid
+        if parent_pid == pid or parent_pid <= 0:
+            break
+        pid = parent_pid
+    return 0
+
+
+def agent_attached(agent: dict, root: Path, *, ignore: set[int] | None = None) -> bool:
+    """Whether the agent's conversation is open in a terminal, so the worker must not drive it."""
+    conversation = str(agent.get("conversation") or "")
+    if not conversation: return False
+    if agent.get("vendor") == "agy":
+        return conversation in _agy_live_conversations()
+    pid = int(_read_chat_pids(root).get(str(agent.get("id", "")), 0) or 0)
+    if pid and pid not in (ignore or set()) and _alive(pid): return True
+    proc = Path("/proc")
+    if proc.is_dir() and len(conversation) >= 8:
+        needle = conversation.encode()
+        for entry in proc.iterdir():
+            if not entry.name.isdigit() or int(entry.name) in (ignore or set()): continue
+            try: cmdline = (entry / "cmdline").read_bytes()
+            except OSError: continue
+            if needle in cmdline and b"scientist_cli" not in cmdline:
+                return True
+    return False
+
+
+def agent_turn_prompt(job: dict, *, cli: str, fresh: bool) -> str:
+    """One job, briefly. A resumed conversation already knows who it is and how this project works."""
+    agent, mark = job.get("agent") or {}, job.get("mark") or {}
+    lines: list[str] = []
+    if fresh:
+        persona = f"You are {agent.get('name') or 'an agent'}"
+        if agent.get("role"): persona += f", {agent['role']}"
+        persona += "."
+        if agent.get("goal"): persona += f" Goal: {agent['goal']}."
+        if agent.get("personality"): persona += f" Personality: {agent['personality']}."
+        lines += [persona,
+                  "This is a new conversation. Read `.lockedin/SKILL.md` and `.lockedin/guides/agents.md` "
+                  "first; they describe this project and how you answer a mark.", ""]
+    lines += [f"LockedIn job {job['id']}. Do it now, without asking questions.", ""]
+    kind = f"{mark.get('glyph')} ({mark.get('means')})" if mark.get("glyph") else str(mark.get("means") or "mark")
+    if mark.get("surface") == "page":
+        where = f"report page \"{mark.get('page_title') or mark.get('page')}\" ({mark.get('page')}), mark {mark.get('id')}"
+    else:
+        where = (f"chalk talk \"{mark.get('talk_title')}\" ({mark.get('talk_id')}), slide {int(mark.get('slide', 0) or 0) + 1}"
+                 + (f" \"{mark['slide_title']}\"" if mark.get("slide_title") else "") + f", mark {mark.get('id')}")
+    lines.append(f"Mark:   {kind} on {where}")
+    touches = f"; the ink touches: {', '.join(mark['touches'][:8])}" if mark.get("touches") else ""
+    if mark.get("quote"): lines.append(f"Quote:  \"{mark['quote']}\"")
+    elif mark.get("anchor_type") == "drawing": lines.append("Drawn:  freehand ink on the slide" + touches)
+    elif mark.get("anchor_type") == "region": lines.append("Region: a box drawn on the slide" + touches)
+    for message in mark.get("messages", []):
+        if message.get("agent") or not message.get("said"): continue
+        lines.append(f"{message.get('by') or 'user'}: \"{message['said']}\"")
+    if job.get("instruction"): lines.append(f"Note:   \"{job['instruction']}\"")
+    if mark.get("shot_path"): lines.append(f"Picture: .lockedin/{mark['shot_path']}  (open it — the strokes are the feedback)")
+    lines.append(f"Record: jq --arg id '{mark.get('id')}' '.by_id[$id]' .lockedin/{mark.get('detail_path')}")
+    if mark.get("surface") == "page":
+        lines.append(f"Edit:   .lockedin/{mark.get('source_path')}, between <comment-begin={mark.get('id')}> … "
+                     f"<comment-end={mark.get('id')}> (keep both tags)")
+    else:
+        lines.append(f"Edit:   .lockedin/{mark.get('source_path')} (slide {int(mark.get('slide', 0) or 0) + 1}); never marks.json")
+    lines += ["", "When done, run exactly one of:",
+              f"  {cli} agent reply {job['id']} --text \"<what you changed and why>\"",
+              f"  {cli} agent fail  {job['id']} --reason \"<why not>\"",
+              "Do not end the turn without running one of them."]
+    return "\n".join(lines)
+
+
+def _vendor_binary(vendor: str) -> str:
+    found = shutil.which(vendor)
+    if not found:
+        raise RuntimeError(f"`{vendor}` is not installed on this machine (not on PATH).")
+    return found
+
+
+def agent_turn_command(agent: dict, prompt: str, *, new_id: str = "") -> list[str]:
+    """One headless turn of the agent's conversation. Flags first: agy reads `-p` as the prompt's flag."""
+    vendor = str(agent.get("vendor") or "")
+    conversation, model = str(agent.get("conversation") or ""), str(agent.get("model") or "")
+    minutes = max(1, AGENT_TURN_SECONDS // 60)
+    if vendor == "agy":
+        cmd = [_vendor_binary("agy"), "--output-format", "json", "--disable-slash-commands",
+               "--mode", "accept-edits", "--print-timeout", f"{minutes}m0s"]
+        if conversation: cmd += ["--conversation", conversation]
+        if model: cmd += ["--model", model]
+        return cmd + ["-p", prompt]
+    if vendor == "claude":
+        cmd = [_vendor_binary("claude"), "-p", "--output-format", "json", "--permission-mode", "acceptEdits"]
+        cmd += ["--resume", conversation] if conversation else ["--session-id", new_id]
+        if model: cmd += ["--model", model]
+        return cmd + [prompt]
+    if vendor == "codex":
+        cmd = [_vendor_binary("codex"), "exec", "-s", "workspace-write", "--skip-git-repo-check", "--json"]
+        if model: cmd += ["-m", model]
+        if conversation: cmd += ["resume", conversation]
+        return cmd + [prompt]
+    raise RuntimeError(f"unknown vendor {vendor!r}")
+
+
+def agent_chat_argv(agent: dict, *, new_id: str = "") -> list[str]:
+    vendor = str(agent.get("vendor") or "")
+    conversation, model = str(agent.get("conversation") or ""), str(agent.get("model") or "")
+    if vendor == "agy":
+        cmd = [_vendor_binary("agy")]
+        if conversation: cmd += ["--conversation", conversation]
+        if model: cmd += ["--model", model]
+        return cmd
+    if vendor == "claude":
+        cmd = [_vendor_binary("claude")] + (["--resume", conversation] if conversation else ["--session-id", new_id])
+        if model: cmd += ["--model", model]
+        return cmd
+    if vendor == "codex":
+        cmd = [_vendor_binary("codex")]
+        if model: cmd += ["-m", model]
+        if conversation: cmd += ["resume", conversation]
+        return cmd
+    raise RuntimeError(f"unknown vendor {vendor!r}")
+
+
+def _discover_conversation(vendor: str, output: str, *, started: float, project: Path) -> str:
+    """The id of a conversation a fresh turn just created, from its output or the vendor's store."""
+    match = re.search(r'"(?:conversation_id|conversationId|session_id|thread_id)"\s*:\s*"([^"]+)"', output)
+    if match: return match.group(1)
+    if vendor == "agy":
+        here = [cid for cid, stamp in _agy_conversations_for(project) if stamp >= started - 2]
+        if here: return here[0]
+        conv_dir = _agy_home() / "conversations"
+        if conv_dir.is_dir():
+            fresh = [p for p in conv_dir.glob("*.db") if p.stat().st_mtime >= started - 2]
+            if len(fresh) == 1: return fresh[0].stem
+    if vendor == "codex":
+        here = [sid for sid, stamp in _codex_conversations_for(project) if stamp >= started - 2]
+        if here: return here[0]
+    return ""
+
+
+def _looks_vendor_busy(output: str) -> bool:
+    """Whether captured turn output matches a known vendor-busy signature (case-insensitive)."""
+    lowered = (output or "").lower()
+    return any(signature in lowered for signature in AGENT_BUSY_SIGNATURES)
+
+
+def _looks_conversation_lost(output: str) -> bool:
+    """Whether captured turn output matches a known lost-conversation signature (case-insensitive).
+
+    A conversation can vanish between the pre-dispatch ``conversation_exists`` check and the
+    vendor actually running (or some vendors keep the file but refuse the id anyway), so this is
+    the fallback: read the vendor's own refusal instead of trusting the check alone.
+    """
+    lowered = (output or "").lower()
+    return any(signature in lowered for signature in AGENT_LOST_CONVERSATION_SIGNATURES)
+
+
+def _tail(path: Path, limit: int) -> str:
+    try:
+        with path.open("rb") as fh:
+            fh.seek(0, os.SEEK_END); size = fh.tell()
+            fh.seek(max(0, size - limit)); return fh.read().decode(errors="replace")
+    except OSError:
+        return ""
+
+
+class AgentRunner:
+    """Runs one headless turn per assigned job, inside the sync worker's five-second cycle.
+
+    The worker learns about jobs on a heartbeat it only sends when this directory owns an agent
+    (``indexes/agents.json`` says so, and it is already on disk). Between jobs no model process
+    exists: an agent that is never assigned anything costs nothing at all.
+
+    Setting ``LOCKEDIN_AGENT_TURNS=off`` (also accepts ``0``/``false``) makes every ``tick()``
+    return immediately, before any heartbeat, job start, or process spawn — this pauses dispatch
+    without stopping the rest of synchronization, which is useful on its own for debugging a
+    worker or for running it under CI where nothing should ever launch a real coding agent.
+    """
+
+    def __init__(self, sync: ProjectSync, worker_id: str, cli: str):
+        self.sync, self.worker_id, self.cli = sync, worker_id, cli
+        self.jobs_dir = data_root() / "runtime" / "workers" / worker_id / "jobs"
+        self.procs: dict[str, dict] = {}
+        self.error = ""
+        # Per-agent backstop: agent id -> a monotonic deadline after a busy-chat requeue, so we
+        # do not immediately respawn a turn into a chat that just said it was in use. Cleared on
+        # that agent's next successful turn.
+        self.cooldowns: dict[str, float] = {}
+        # Agent ids requeued during the _reap() call this tick: treated as attached for the rest
+        # of the same tick so the dispatch loop below does not race to redispatch immediately.
+        self._requeued_this_tick: set[str] = set()
+        self._kill_strays()
+
+    def _kill_strays(self) -> None:
+        """A previous worker process may have left a turn running; it reports to nobody now."""
+        for pid_file in self.jobs_dir.glob("*.pid") if self.jobs_dir.is_dir() else []:
+            try: pid = int(pid_file.read_text(encoding="utf-8").strip() or 0)
+            except (OSError, ValueError): pid = 0
+            if pid and _alive(pid):
+                try: os.killpg(pid, signal.SIGTERM) if os.name != "nt" else os.kill(pid, signal.SIGTERM)
+                except OSError: pass
+            pid_file.unlink(missing_ok=True)
+
+    def my_agents(self) -> list[dict]:
+        try: index = json.loads((self.sync.root / "indexes" / "agents.json").read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError): return []
+        by_id = index.get("by_id", {})
+        return [by_id[aid] for aid in index.get("by_worker", {}).get(self.sync.worker_uid(), []) if aid in by_id]
+
+    def running_job_ids(self) -> list[str]: return sorted(self.procs)
+
+    def _pids(self) -> set[int]: return {entry["proc"].pid for entry in self.procs.values()}
+
+    @property
+    def turns_disabled(self) -> bool:
+        """Whether ``LOCKEDIN_AGENT_TURNS`` currently asks dispatch to pause; see the class docstring."""
+        return agent_turns_disabled()
+
+    def tick(self) -> None:
+        if self.turns_disabled:
+            self.error = "agent turns are disabled by LOCKEDIN_AGENT_TURNS=off"
+            return
+        self._requeued_this_tick = set()
+        self._reap()
+        agents = self.my_agents()
+        if not agents and not self.procs: return
+        beat = self.sync._request("POST", "agents/heartbeat", {
+            "worker_id": self.sync.worker_uid(),
+            "agents": [{"id": a["id"], "attached": agent_attached(a, self.sync.root, ignore=self._pids())}
+                       for a in agents],
+            "running_job_ids": self.running_job_ids()})
+        for job_id in beat.get("cancelled", []):
+            self._terminate(job_id, "cancelled by the user")
+        busy = {entry["agent"].get("id") for entry in self.procs.values()}
+        now = time.monotonic()
+        for job in beat.get("jobs", []):
+            if len(self.procs) >= AGENT_MAX_PARALLEL: break
+            agent = job.get("agent") or {}
+            aid = agent.get("id")
+            if aid in busy: continue
+            if aid in self._requeued_this_tick: continue  # just postponed; treat as attached
+            if agent_attached(agent, self.sync.root, ignore=self._pids()): continue
+            if self.cooldowns.get(aid, 0.0) > now: continue  # backstop cooldown still running
+            self._dispatch(job); busy.add(aid)
+
+    def _clear_conversation(self, agent: dict, job_id: str, *, reason: str,
+                            code: int | None = None, output: str = "") -> None:
+        """Forget a conversation the vendor can no longer find, exactly as `agent reset` does,
+        then requeue the job so the next tick starts a brand-new conversation (persona preamble
+        and all) instead of failing the mark outright.
+
+        Deliberately never sets a cooldown for this agent: unlike a busy chat, which is expected
+        to close on its own, a deleted conversation will not fix itself by waiting, so starting
+        fresh should happen on the very next tick rather than after ``AGENT_COOLDOWN_SECONDS``.
+        """
+        try:
+            self.sync._request("POST", f"agents/{agent['id']}", {"conversation": "", "fresh": True})
+        except RuntimeError as exc:
+            self.error = str(exc)
+        self.cooldowns.pop(agent.get("id"), None)
+        self._requeued_this_tick.add(agent.get("id"))
+        self._result(job_id, "requeue", code, output, reason)
+
+    def _dispatch(self, job: dict) -> None:
+        agent = job["agent"]
+        try:
+            self.sync._request("POST", f"jobs/{job['id']}/start", {"worker_id": self.sync.worker_uid()})
+        except RuntimeError as exc:
+            if "server returned 409" in str(exc): return   # another cycle, or another worker, got it
+            raise
+        if agent.get("conversation") and not conversation_exists(agent):
+            # Cheaper than spawning a vendor doomed to refuse it, and it means the agent recovers
+            # on its own instead of failing every future mark until someone runs `agent reset`.
+            self._clear_conversation(
+                agent, job["id"],
+                reason=f"{agent.get('vendor')} conversation {agent.get('conversation')!r} no longer exists; "
+                       f"{AGENT_LOST_CONVERSATION_ERROR}")
+            return
+        fresh = bool(agent.get("fresh")) or not agent.get("conversation")
+        new_id = str(uuid.uuid4())
+        prompt = agent_turn_prompt(job, cli=self.cli, fresh=fresh)
+        self.jobs_dir.mkdir(parents=True, exist_ok=True)
+        log = self.jobs_dir / f"{job['id']}.log"
+        try:
+            cmd = agent_turn_command(agent, prompt, new_id=new_id)
+        except RuntimeError as exc:
+            log.write_text(str(exc) + "\n", encoding="utf-8")
+            self._result(job["id"], "failed", None, "", str(exc)); return
+        env = {**os.environ, "LOCKEDIN_JOB_ID": job["id"], "LOCKEDIN_BUBBLE": self.sync.bubble,
+               "LOCKEDIN_PROJECT": str(self.sync.project), "LOCKEDIN_AGENT": str(agent.get("name") or ""),
+               "LOCKEDIN_SCIENTIST_CLI": str(Path(__file__).resolve()), "NO_COLOR": "1"}
+        with log.open("w", encoding="utf-8") as fh:
+            fh.write(f"# {time.strftime('%Y-%m-%d %H:%M:%S')} job {job['id']} → {agent.get('name')} "
+                     f"({agent.get('vendor')}{' ' + agent['model'] if agent.get('model') else ''})\n")
+            fh.write("# " + " ".join(shlex.quote(part) for part in cmd[:-1]) + " <prompt>\n\n" + prompt + "\n\n---- output ----\n")
+        stream = log.open("ab")
+        try:
+            proc = subprocess.Popen(cmd, cwd=str(self.sync.project), env=env, stdin=subprocess.DEVNULL,
+                                    stdout=stream, stderr=subprocess.STDOUT, start_new_session=os.name != "nt")
+        except OSError as exc:
+            stream.close()
+            self._result(job["id"], "failed", None, "", f"could not start {agent.get('vendor')}: {exc}"); return
+        (self.jobs_dir / f"{job['id']}.pid").write_text(str(proc.pid), encoding="utf-8")
+        self.procs[job["id"]] = {"proc": proc, "agent": agent, "job": job, "started": time.time(),
+                                 "log": log, "stream": stream, "fresh": fresh,
+                                 "new_id": new_id if agent.get("vendor") == "claude" and fresh else ""}
+
+    def _terminate(self, job_id: str, reason: str) -> None:
+        entry = self.procs.get(job_id)
+        if not entry: return
+        proc = entry["proc"]
+        if proc.poll() is None:
+            try: os.killpg(proc.pid, signal.SIGTERM) if os.name != "nt" else proc.terminate()
+            except OSError: pass
+        entry.setdefault("reason", reason)
+        entry.setdefault("deadline", time.time() + 10)
+
+    def _reap(self) -> None:
+        now = time.time()
+        for job_id, entry in list(self.procs.items()):
+            proc = entry["proc"]
+            if proc.poll() is None:
+                if "reason" not in entry and now - entry["started"] > AGENT_TURN_SECONDS:
+                    self._terminate(job_id, f"timed out after {AGENT_TURN_SECONDS // 60} minutes")
+                elif "deadline" in entry and now > entry["deadline"]:
+                    try: os.killpg(proc.pid, signal.SIGKILL) if os.name != "nt" else proc.kill()
+                    except OSError: pass
+                continue
+            entry["stream"].close()
+            (self.jobs_dir / f"{job_id}.pid").unlink(missing_ok=True)
+            output = _tail(entry["log"], AGENT_OUTPUT_TAIL)
+            agent = entry["agent"]
+            if entry["fresh"]:
+                conversation = entry["new_id"] or _discover_conversation(
+                    str(agent.get("vendor") or ""), output, started=entry["started"], project=self.sync.project)
+                if conversation:
+                    try: self.sync._request("POST", f"agents/{agent['id']}", {"conversation": conversation, "fresh": False})
+                    except RuntimeError as exc: self.error = str(exc)
+                else:
+                    self.error = (f"{agent.get('name')}: could not learn the new conversation id; "
+                                  f"run `{self.cli} agent chat {agent.get('name')}` once to create it")
+            reason, code = entry.get("reason", ""), proc.returncode
+            aid = agent.get("id")
+            # Backstop: a turn that failed only because the agent's own chat was open (a real
+            # captured case: `codex exec resume` exited 1 with a thread-store conflict because an
+            # interactive session held the writer) must not burn the job. Attach detection should
+            # normally have caught this before dispatch, but it cannot be perfect on every vendor
+            # or every OS, so fall back to sniffing the output for a known busy signature.
+            if not reason and code != 0 and _looks_vendor_busy(output):
+                self.cooldowns[aid] = time.monotonic() + AGENT_COOLDOWN_SECONDS
+                self._requeued_this_tick.add(aid)
+                self._result(job_id, "requeue", code, output, AGENT_BUSY_ERROR)
+            elif not reason and code != 0 and _looks_conversation_lost(output):
+                # The conversation existed at dispatch time (or the layout could not be checked)
+                # but the vendor refused the id anyway; recognise its own words and recover the
+                # same way the pre-dispatch check does, instead of failing the job.
+                self._clear_conversation(agent, job_id, reason=AGENT_LOST_CONVERSATION_ERROR,
+                                         code=code, output=output)
+            else:
+                status = "failed" if reason or code != 0 else "done"
+                error = reason or (f"{agent.get('vendor')} exited with status {code}" if code else "")
+                if status == "done":
+                    self.cooldowns.pop(aid, None)
+                self._result(job_id, status, code, output, error)
+            del self.procs[job_id]
+
+    def _result(self, job_id: str, status: str, code: int | None, output: str, error: str) -> None:
+        try:
+            self.sync._request("POST", f"jobs/{job_id}/result",
+                               {"status": status, "exit_code": code, "output_tail": output, "error": error})
+        except RuntimeError as exc:
+            self.error = str(exc)
+
+    def shutdown(self) -> None:
+        for job_id in list(self.procs): self._terminate(job_id, "the sync worker stopped")
+        deadline = time.time() + 5
+        while time.time() < deadline and any(e["proc"].poll() is None for e in self.procs.values()):
+            time.sleep(0.1)
+        self._reap()
+
+
+def _agent_context(start: Path) -> tuple[Path, dict, ProjectSync]:
+    project = _project_root(start)
+    binding = read_binding(project)
+    account = account_for_binding(binding)
+    return project, binding, ProjectSync(account, project, binding["bubble"])
+
+
+def _find_agent(sync: ProjectSync, ref: str) -> dict:
+    rows = sync._request("GET", "agents").get("agents", [])
+    wanted = ref.strip().lower()
+    for agent in rows:
+        if agent.get("id") == ref or str(agent.get("name", "")).lower() == wanted:
+            return agent
+    raise RuntimeError(f"No agent called {ref!r} on this bubble. `{cli_name()} agent list` shows them.")
+
+
+def agent_register_command(start: Path, *, name: str, role: str, goal: str, personality: str,
+                           model: str, vendor: str, conversation: str) -> None:
+    project, binding, sync = _agent_context(start)
+    vendor, conversation = detect_conversation(project, vendor=vendor, conversation=conversation)
+    agent = sync._request("POST", "agents", {
+        "name": name, "role": role, "goal": goal, "personality": personality, "vendor": vendor,
+        "conversation": conversation, "model": model, "worker_id": sync.worker_uid(),
+        "project_label": project.name})["agent"]
+    pid = _chat_pid_for(vendor)
+    if pid:
+        pids = {aid: p for aid, p in _read_chat_pids(project / ".lockedin").items() if _alive(int(p or 0))}
+        pids[agent["id"]] = pid
+        _write_chat_pids(project / ".lockedin", pids)
+    heading("Registered an agent", f"{agent['name']} · {vendor}{' · ' + model if model else ''}")
+    print(green("✓") + f" {bold(agent['name'])} is registered on bubble {bold(binding['bubble'])} "
+          f"as {vendor} conversation {dim(conversation)}.")
+    print(dim("  It appears under this directory's sync on the bubble page within a few seconds."))
+    print(dim("  Marks assigned to it there run as headless turns of this conversation while the chat is closed."))
+    print(dim(f"  Reopen it any time: {cli_name()} agent chat {shlex.quote(agent['name'])}"))
+
+
+def agent_list_command(start: Path) -> None:
+    project, binding, sync = _agent_context(start)
+    rows = sync._request("GET", "agents").get("agents", [])
+    heading("Agents on this bubble", f"{binding['bubble']} · {project}")
+    if not rows:
+        print(dim("  None yet. From inside a codex/claude/agy chat here, run:"))
+        print(cyan(f"     {cli_name()} agent register --name <name> --role <role> --goal <goal>"))
+        return
+    mine = sync.worker_uid()
+    for agent in rows:
+        marker = {"working": green("●"), "idle": green("○"), "attached": orange("●"), "offline": dim("●")}.get(agent.get("status"), dim("●"))
+        here = "" if agent.get("worker_id") == mine else dim(f"  (via {agent.get('project_label') or 'another directory'})")
+        model = f" {dim(agent['model'])}" if agent.get("model") else ""
+        print(f"  {marker} {bold(agent['name'])}  {agent.get('status', '?')}  {dim(agent.get('vendor', ''))}{model}{here}")
+        if agent.get("fresh") and not agent.get("conversation"):
+            print(f"    {dim('note: new conversation starts on the next job')}")
+        if agent.get("role") or agent.get("goal"):
+            print(f"    {dim(agent.get('role', ''))}{dim(' — ') if agent.get('role') and agent.get('goal') else ''}{dim(agent.get('goal', ''))}")
+        last = agent.get("last_job")
+        if last:
+            print(f"    {dim('last job:')} {last['id']} {last['status']} {dim(last.get('mark_key', ''))}"
+                  + (f" {red(last['error'])}" if last.get("error") else ""))
+
+
+def agent_jobs_command(start: Path, *, show_all: bool) -> None:
+    project = _project_root(start)
+    path = project / ".lockedin" / "indexes" / "jobs.json"
+    try: index = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        raise RuntimeError("No job index in this project yet; is the sync worker running? Try `doctor`.")
+    jobs = sorted(index.get("by_id", {}).values(), key=lambda j: j.get("created_at", ""))
+    if not show_all:
+        jobs = [j for j in jobs if j.get("status") in {"queued", "running"}]
+    heading("Agent jobs", "open" if not show_all else "all recorded")
+    if not jobs:
+        print(dim("  Nothing queued. Assign a mark to an agent on the bubble page."))
+        return
+    for job in jobs:
+        colour = {"queued": dim, "running": orange, "done": green, "failed": red, "cancelled": dim}.get(job.get("status"), dim)
+        print(f"  {colour('●')} {bold(job['id'])}  {job.get('status')}  {dim('→')} {job.get('agent_name', '')}  {dim(job.get('mark_key', ''))}")
+        if job.get("instruction"): print(f"    {dim('note:')} {job['instruction']}")
+        if job.get("error"): print(f"    {red(job['error'])}")
+
+
+def agent_reply_command(start: Path, job_id: str, *, text: str, file: str) -> None:
+    if file:
+        try: text = Path(file).read_text(encoding="utf-8")
+        except OSError as exc: raise RuntimeError(f"Could not read {file}: {exc}") from exc
+    if not text.strip():
+        raise RuntimeError("Say what you did: --text \"...\" or --file <path>.")
+    _, _, sync = _agent_context(start)
+    job = sync._request("POST", f"jobs/{job_id}/reply", {"text": text})["job"]
+    print(green("✓") + f" Replied to {bold(job.get('mark_key', ''))} as {bold(job.get('agent_name', ''))}; job {job_id} is done.")
+    if job.get("late"):
+        print(orange("•") + f" Job {job_id} had already been {job.get('late_from') or 'closed'} "
+              "when this landed; the reply was posted to the mark anyway.")
+
+
+def agent_fail_command(start: Path, job_id: str, *, reason: str) -> None:
+    _, _, sync = _agent_context(start)
+    job = sync._request("POST", f"jobs/{job_id}/fail", {"reason": reason})["job"]
+    print(orange("•") + f" Job {job_id} marked failed; the reason was posted to {bold(job.get('mark_key', ''))}.")
+    if job.get("late"):
+        print(orange("•") + f" Job {job_id} had already been {job.get('late_from') or 'closed'} "
+              "when this landed; the reason was posted to the mark anyway.")
+
+
+def agent_chat_command(start: Path, ref: str) -> None:
+    project, _, sync = _agent_context(start)
+    agent = _find_agent(sync, ref)
+    new_id = str(uuid.uuid4())
+    cmd = agent_chat_command_for(agent, new_id)
+    fresh = not agent.get("conversation")
+    heading("Opening " + agent["name"], " ".join(shlex.quote(part) for part in cmd))
+    print(dim("  While this chat is open, jobs assigned to this agent wait; they run once you leave."))
+    pids = _read_chat_pids(project / ".lockedin"); started = time.time()
+    proc = subprocess.Popen(cmd, cwd=str(project))
+    pids[agent["id"]] = proc.pid; _write_chat_pids(project / ".lockedin", pids)
+    try: proc.wait()
+    finally:
+        pids = _read_chat_pids(project / ".lockedin"); pids.pop(agent["id"], None)
+        _write_chat_pids(project / ".lockedin", pids)
+    if fresh:
+        conversation = new_id if agent.get("vendor") == "claude" else _discover_conversation(
+            str(agent.get("vendor") or ""), "", started=started, project=project)
+        if conversation:
+            sync._request("POST", f"agents/{agent['id']}", {"conversation": conversation, "fresh": False})
+            print(green("✓") + f" {bold(agent['name'])} now lives in conversation {dim(conversation)}.")
+        else:
+            print(orange("•") + " Could not tell which conversation that was; the agent still has none. "
+                  "Register it from inside the chat instead: `agent register`.")
+
+
+def agent_chat_command_for(agent: dict, new_id: str) -> list[str]:
+    return agent_chat_argv(agent, new_id=new_id)
+
+
+def agent_reset_command(start: Path, ref: str) -> None:
+    _, _, sync = _agent_context(start)
+    agent = _find_agent(sync, ref)
+    sync._request("POST", f"agents/{agent['id']}/reset", {"conversation": ""})
+    print(green("✓") + f" {bold(agent['name'])} forgot its conversation. The next job — or `{cli_name()} agent chat "
+          f"{shlex.quote(agent['name'])}` — starts a new one and re-introduces its role and goal.")
+    if agent.get("conversation"):
+        print(dim(f"  The old conversation {agent['conversation']} is still in {agent.get('vendor')}'s store; "
+                  f"`agent retire --purge` would have deleted it."))
+
+
+def _purge_conversation(vendor: str, conversation: str) -> list[str]:
+    removed: list[str] = []
+    if not conversation: return removed
+    if vendor == "agy":
+        for path in (_agy_home() / "conversations").glob(f"{conversation}.db*"):
+            try: path.unlink(); removed.append(str(path))
+            except OSError: pass
+    elif vendor == "claude":
+        for path in (_claude_home() / "projects").glob(f"*/{conversation}.jsonl"):
+            try: path.unlink(); removed.append(str(path))
+            except OSError: pass
+        folder = next(iter((_claude_home() / "projects").glob(f"*/{conversation}")), None)
+        if folder and folder.is_dir():
+            shutil.rmtree(folder, ignore_errors=True); removed.append(str(folder))
+    elif vendor == "codex":
+        try:
+            out = subprocess.run([_vendor_binary("codex"), "delete", conversation], capture_output=True, text=True, timeout=60)
+            if out.returncode == 0: removed.append(f"codex session {conversation}")
+        except (RuntimeError, OSError, subprocess.SubprocessError): pass
+    return removed
+
+
+def agent_retire_command(start: Path, ref: str, *, purge: bool) -> None:
+    _, _, sync = _agent_context(start)
+    agent = _find_agent(sync, ref)
+    sync._request("DELETE", f"agents/{agent['id']}")
+    print(green("✓") + f" Retired {bold(agent['name'])}; its open jobs were cancelled.")
+    if purge:
+        removed = _purge_conversation(str(agent.get("vendor") or ""), str(agent.get("conversation") or ""))
+        if removed:
+            print(green("✓") + " Deleted the conversation from " + agent.get("vendor", "") + "'s store:")
+            for item in removed: print(dim("    " + item))
+        else:
+            print(dim("  No stored conversation was found to delete."))
+    elif agent.get("conversation"):
+        print(dim(f"  The conversation itself is kept; `agent retire --purge` deletes it too."))
+
+
+def agent_command(args) -> None:
+    start = Path.cwd()
+    if args.agent_command == "register":
+        agent_register_command(start, name=args.name, role=args.role, goal=args.goal,
+                               personality=args.personality, model=args.model, vendor=args.vendor,
+                               conversation=args.conversation)
+    elif args.agent_command == "list": agent_list_command(start)
+    elif args.agent_command == "jobs": agent_jobs_command(start, show_all=args.show_all)
+    elif args.agent_command == "reply": agent_reply_command(start, args.job, text=args.text, file=args.file)
+    elif args.agent_command == "fail": agent_fail_command(start, args.job, reason=args.reason)
+    elif args.agent_command == "chat": agent_chat_command(start, args.agent)
+    elif args.agent_command == "reset": agent_reset_command(start, args.agent)
+    elif args.agent_command == "retire": agent_retire_command(start, args.agent, purge=args.purge)
+
+
 def _alive(pid: int) -> bool:
     if pid <= 0: return False
+    if os.name == "nt":
+        # Windows trap: os.kill(pid, 0) does NOT probe the process there. Per the stdlib docs,
+        # any signal other than CTRL_C_EVENT/CTRL_BREAK_EVENT maps to TerminateProcess, so a
+        # naive os.kill(pid, 0) call actually *kills* the process it meant only to check —
+        # which killed the very worker/chat these callers were inspecting. Use the Win32 API
+        # instead: OpenProcess + GetExitCodeProcess (STILL_ACTIVE), backed up by
+        # WaitForSingleObject in case a real exit code happens to equal STILL_ACTIVE (259).
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+            STILL_ACTIVE = 259
+            WAIT_TIMEOUT = 0x102
+
+            kernel32 = ctypes.windll.kernel32
+            handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+            if not handle:
+                return False
+            try:
+                exit_code = wintypes.DWORD()
+                if not kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+                    return True  # Can't tell; assume alive rather than risk a false "dead".
+                if exit_code.value != STILL_ACTIVE:
+                    return False
+                # Exit code happened to equal STILL_ACTIVE; confirm via a zero-timeout wait.
+                wait_result = kernel32.WaitForSingleObject(handle, 0)
+                return wait_result == WAIT_TIMEOUT
+            finally:
+                kernel32.CloseHandle(handle)
+        except Exception:
+            return True  # Any ctypes failure: be conservative, don't report a live process dead.
     try: os.kill(pid, 0); return True
     except OSError: return False
 
@@ -1452,6 +2497,7 @@ def _run_worker(worker_id: str, project: str) -> None:
         return
     account = dict(account); account["workspace_id"] = binding["workspace_id"]
     sync = ProjectSync(account, Path(project), binding["bubble"])
+    runner = AgentRunner(sync, worker_id, rec.get("cli") or APP)
     stop = False
     def end(*_):
         nonlocal stop; stop = True
@@ -1471,9 +2517,18 @@ def _run_worker(worker_id: str, project: str) -> None:
         except Exception as exc:
             _update_worker(worker_id, status="degraded", last_error=str(exc))
             sync.report = {"status": "degraded", "error": str(exc)}
+        # Agents ride on the same cycle: one heartbeat when this directory owns any, nothing when
+        # it owns none. A failure here is reported beside the sync status, never in place of it.
+        try:
+            runner.tick()
+            agent_error = runner.error
+        except Exception as exc:
+            agent_error = str(exc)
+        _update_worker(worker_id, jobs=runner.running_job_ids(), agent_error=agent_error)
         for _ in range(POLL_SECONDS * 10):
             if stop: break
             time.sleep(.1)
+    runner.shutdown()
     # The parting synchronization doubles as a shutdown notice, so the server's monitor shows the
     # worker as stopped straight away instead of waiting for it to time out.
     sync.report = {"status": "stopped", "error": ""}
@@ -1496,7 +2551,9 @@ def start_sync(account: dict, bubble: str, project: Path, *, announce: bool = Tr
             raise RuntimeError("Another bubble worker already manages this project. Use hard-reset first.")
     wid = secrets.token_hex(6); log = data_root() / "runtime" / "workers" / f"{wid}.log"; log.parent.mkdir(parents=True, exist_ok=True)
     rec = {"id": wid, "pid": 0, "project": str(project.resolve()), "server": account["server"], "user": account["user"], "workspace_id": account.get("workspace_id", ""),
-           "bubble": bubble, "started_at": time.time(), "last_sync": time.time(), "last_error": "", "status": "starting"}
+           "bubble": bubble, "started_at": time.time(), "last_sync": time.time(), "last_error": "", "status": "starting",
+           # How this client is invoked here, so a headless agent turn is told the right command.
+           "cli": cli_name()}
     data.setdefault("workers", {})[wid] = rec; save_workers(data)
     with log.open("ab") as stream:
         proc = subprocess.Popen([sys.executable, str(Path(__file__).resolve()), "_worker", wid, str(project.resolve())],
@@ -1526,6 +2583,8 @@ def ps_command() -> None:
         print(f"  {marker} {bold(rec['id'])}  {status}  {dim('bubble:')} {rec.get('bubble', '')}")
         print(f"    {dim(rec.get('project', ''))}")
         if rec.get("last_error"): print("    " + red("error: ") + rec["last_error"])
+        if rec.get("jobs"): print("    " + cyan("agent turns running: ") + ", ".join(rec["jobs"]))
+        if rec.get("agent_error"): print("    " + orange("agents: ") + rec["agent_error"])
         for warning in rec.get("warnings", []) or []:
             if warning != rec.get("last_error"):
                 print("    " + orange("warning: ") + warning)
@@ -1559,7 +2618,7 @@ def read_binding(project: Path) -> dict:
     """
     path = project.resolve() / ".lockedin" / "config" / "binding.json"
     try:
-        binding = json.loads(path.read_text())
+        binding = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise RuntimeError("No valid .lockedin/config/binding.json in this project. Run `lockedin-scientist sync <bubble>` first.") from exc
     if any(not binding.get(key) for key in BINDING_KEYS):
@@ -2108,6 +3167,32 @@ def _main() -> None:
     ol_sync = overleaf.add_parser("sync"); ol_sync.add_argument("--message")
     overleaf.add_parser("abort")
     ol_disconnect = overleaf.add_parser("disconnect"); ol_disconnect.add_argument("--discard-local", action="store_true")
+    agent_p = sub.add_parser("agent", help="Named agents: register this chat, see its jobs, answer them.")
+    agent_sub = agent_p.add_subparsers(dest="agent_command", required=True)
+    reg = agent_sub.add_parser("register", help="Register the chat you are in as a named agent on this project's bubble.")
+    reg.add_argument("--name", required=True, help="Short unique name, e.g. Ada.")
+    reg.add_argument("--role", default="", help="A few words: what this agent is for.")
+    reg.add_argument("--goal", default="", help="One sentence the agent keeps in mind.")
+    reg.add_argument("--personality", default="", help="Optional tone or habits.")
+    reg.add_argument("--model", default="", help="Model id the worker passes to headless turns (vendor default if omitted).")
+    reg.add_argument("--vendor", default="", choices=list(VENDORS) + [""], help="Detected from the running chat if omitted.")
+    reg.add_argument("--conversation", default="", help="Conversation/session id; detected if omitted.")
+    agent_sub.add_parser("list", help="Agents on this project's bubble and what each is doing.")
+    jobs_p = agent_sub.add_parser("jobs", help="Open jobs from the local index.")
+    jobs_p.add_argument("--all", action="store_true", dest="show_all", help="Include finished jobs.")
+    chat_p = agent_sub.add_parser("chat", help="Reopen an agent's conversation interactively.")
+    chat_p.add_argument("agent", help="Agent name or id.")
+    reply_p = agent_sub.add_parser("reply", help="Answer a job: post text into its mark's thread and close it.")
+    reply_p.add_argument("job", help="Job id, e.g. j-000012.")
+    reply_p.add_argument("--text", default="", help="What changed and why.")
+    reply_p.add_argument("--file", default="", help="Read the reply from a file instead.")
+    fail_p = agent_sub.add_parser("fail", help="Decline a job with a reason the user will see.")
+    fail_p.add_argument("job"); fail_p.add_argument("--reason", required=True)
+    reset_p = agent_sub.add_parser("reset", help="Forget the conversation; keep the persona.")
+    reset_p.add_argument("agent")
+    retire_p = agent_sub.add_parser("retire", help="Remove an agent from the bubble and cancel its jobs.")
+    retire_p.add_argument("agent")
+    retire_p.add_argument("--purge", action="store_true", help="Also delete the conversation from the vendor's store.")
     worker_p = sub.add_parser("_worker"); worker_p.add_argument("worker_id"); worker_p.add_argument("project")
     if len(sys.argv) == 1:
         warn_if_outdated()
@@ -2120,6 +3205,8 @@ def _main() -> None:
     if args.command == "ps": ps_command(); return
     if args.command == "stop": stop_command(args.worker_id); return
     if args.command == "doctor": doctor_command(Path.cwd()); return
+    # Also from the project's own binding: an agent registers from wherever its chat was opened.
+    if args.command == "agent": agent_command(args); return
     # Deliberately dispatched before choose_account(): resync resolves its account from the
     # project's own binding, so it must not depend on which account was authorized last.
     if args.command == "resync": resync_command(Path.cwd()); return
@@ -2163,6 +3250,14 @@ def _main() -> None:
 
 
 def main() -> None:
+    # An agent often captures this CLI's output through a pipe rather than a real console; when
+    # it does, Python falls back to the process locale encoding (e.g. cp1252 on Windows) instead
+    # of the console's UTF-16 path, and printing a glyph like heading()'s "◆" raises
+    # UnicodeEncodeError after the command has already done its work server-side. Force utf-8 on
+    # both streams defensively, tolerating any object that doesn't support reconfigure().
+    for stream in (sys.stdout, sys.stderr):
+        try: stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError, OSError): pass
     try: _main()
     except RuntimeError as exc:
         print(red("✗") + " " + bold("Scientist could not complete that command"), file=sys.stderr)

@@ -12,10 +12,26 @@ generated skill actually carries the guidance it is supposed to carry.
 """
 from __future__ import annotations
 
+import os
+import re
+import subprocess
+import sys
+import tempfile
 import unittest
+from pathlib import Path
+from unittest import mock
 
 from lockedin import reports
-from lockedin.scientist_cli import SKILL_VERSION, skill_document
+from lockedin.scientist_cli import (
+    GUIDES,
+    SKILL_VERSION,
+    VENDOR_SKILL_BOOTSTRAP,
+    MANAGED_VENDOR_SKILL_MARKER,
+    skill_document,
+    write_skill_bundle,
+)
+
+SCIENTIST_CLI_SOURCE = Path(__file__).resolve().parents[1] / "src" / "lockedin" / "scientist_cli.py"
 
 
 class SkillFreshnessTests(unittest.TestCase):
@@ -43,6 +59,143 @@ class SkillFreshnessTests(unittest.TestCase):
             self.assertIn(expected, guide,
                           "the agent's guide must say how to move a large file; "
                           "if you changed this text, bump SKILL_VERSION so projects pick it up")
+
+    def test_the_router_points_an_agent_at_the_agents_guide(self):
+        self.assertIn("guides/agents.md", skill_document())
+
+    def test_the_agents_guide_covers_every_agent_subcommand(self):
+        guide = GUIDES["agents.md"]
+        for expected in ("agent register", "agent reply", "agent fail", "agent chat",
+                         "agent reset", "agent retire"):
+            self.assertIn(expected, guide)
+
+    def test_skill_version_has_reached_the_agents_feature(self):
+        self.assertGreaterEqual(SKILL_VERSION, 42)
+
+    def test_agents_guide_uses_actual_cli_name(self):
+        # With the env var set, the guide should use the dev shim name
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdir_path = Path(tmpdir)
+            with mock.patch.dict(os.environ, {"LOCKEDIN_SCIENTIST_CLI_NAME": "lockedin-scientist-dev"}):
+                write_skill_bundle(tmpdir_path, "## Editing Guide\n\ntext", {})
+                agents_guide = (tmpdir_path / "guides" / "agents.md").read_text()
+                self.assertIn("lockedin-scientist-dev agent register", agents_guide)
+                # Verify the exact substring does NOT appear (dev name contains the base name as a prefix)
+                self.assertNotIn("lockedin-scientist agent register", agents_guide)
+
+    def test_bootstrap_and_router_resolve_the_project_root_without_requiring_git(self):
+        # A real Windows run: a user connected a plain folder that was not a git repository, and
+        # the agent refused with "not a Git repository, so the required project root cannot be
+        # resolved" because both documents named `.git` as the primary way to find the root. The
+        # root must be findable by walking up for `.lockedin/config/binding.json`, with git kept
+        # only as the worktree fallback.
+        for document, label in ((VENDOR_SKILL_BOOTSTRAP, "bootstrap"), (skill_document(), "router")):
+            self.assertIn(".lockedin/config/binding.json", document, f"{label} must name the root marker file")
+            self.assertIn("git is not required", document.lower(),
+                          f"{label} must say git is not required to find the project root")
+
+    def test_neither_document_defines_the_root_as_the_git_directory_first(self):
+        # These are the exact old phrasings that made `.git` the *primary* rule, one per document.
+        # Their absence proves the fix landed, not just that new wording was added alongside it.
+        self.assertNotIn("the directory containing the repository's shared", VENDOR_SKILL_BOOTSTRAP,
+                         "the bootstrap must not define the root as the directory containing the shared .git")
+        self.assertNotIn("the directory holding the shared", skill_document(),
+                         "the router must not define the root as the directory holding the shared .git")
+
+    def test_the_worktree_fallback_still_names_the_git_command(self):
+        # Git remains the fallback for the worktree case, where `.lockedin/` genuinely cannot be
+        # found by walking up from the working directory (it lives in the main checkout instead).
+        git_common_dir_command = "git rev-parse --path-format=absolute --git-common-dir"
+        self.assertIn(git_common_dir_command, VENDOR_SKILL_BOOTSTRAP)
+        self.assertIn(git_common_dir_command, skill_document())
+
+    def test_bootstrap_still_carries_its_vendor_marker_and_front_matter(self):
+        self.assertIn(MANAGED_VENDOR_SKILL_MARKER, VENDOR_SKILL_BOOTSTRAP)
+        self.assertIn("name: lockedin-scientist", VENDOR_SKILL_BOOTSTRAP)
+
+    def test_skill_version_has_reached_the_git_optional_root_fix(self):
+        self.assertGreaterEqual(SKILL_VERSION, 44)
+
+    def test_agents_guide_uses_default_cli_name_without_env(self):
+        # Without the env var, the guide should use the default app name
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdir_path = Path(tmpdir)
+            with mock.patch.dict(os.environ, {}, clear=False):
+                # Ensure the env var is not set
+                os.environ.pop("LOCKEDIN_SCIENTIST_CLI_NAME", None)
+                write_skill_bundle(tmpdir_path, "## Editing Guide\n\ntext", {})
+                agents_guide = (tmpdir_path / "guides" / "agents.md").read_text()
+                self.assertIn("lockedin-scientist agent register", agents_guide)
+
+
+class SkillTextEncodingTests(unittest.TestCase):
+    """Pins the Windows cp1252 crash: a real Windows 11 / Python 3.14 ``connect`` run died in
+    ``write_skill_bundle`` with ``UnicodeEncodeError: 'charmap' codec can't encode character
+    '\\U0001f916'`` because ``Path.write_text``/``read_text``/``open`` without an explicit
+    ``encoding=`` fall back to the *locale* encoding (cp1252 on a typical Windows box), while
+    every string this client writes is UTF-8. That crash aborted `connect` after the binding was
+    written but before the skill was, leaving a project half set up. Every text file operation in
+    this module has the same latent failure, not just the one that happened to be hit first.
+    """
+
+    # A call that must never specify an encoding (there should be none). Kept so a future,
+    # genuinely-exempt call site has somewhere to go instead of weakening the regex below.
+    ALLOWED_WITHOUT_ENCODING: set[str] = set()
+
+    def test_every_write_text_and_read_text_call_is_explicitly_utf8(self):
+        source = SCIENTIST_CLI_SOURCE.read_text(encoding="utf-8")
+        # One call may span multiple lines (e.g. a multi-line write_text(json.dumps(...))), so
+        # match from the method name up to its balanced closing paren rather than to end-of-line.
+        offenders = []
+        for method in ("write_text", "read_text"):
+            for match in re.finditer(rf"\.{method}\(", source):
+                start = match.end()
+                depth = 1
+                end = start
+                while depth and end < len(source):
+                    if source[end] == "(":
+                        depth += 1
+                    elif source[end] == ")":
+                        depth -= 1
+                    end += 1
+                call_args = source[start:end]
+                if "encoding=" not in call_args:
+                    line_no = source.count("\n", 0, match.start()) + 1
+                    site = f"{method} at line {line_no}"
+                    if site not in self.ALLOWED_WITHOUT_ENCODING:
+                        offenders.append(site)
+        self.assertEqual(offenders, [],
+                          "every Path.write_text/read_text call must pass encoding=\"utf-8\" "
+                          "explicitly, or it silently uses the locale encoding (cp1252 on "
+                          "Windows) and can crash on any non-ASCII character we write: " +
+                          ", ".join(offenders))
+
+    def test_write_skill_bundle_survives_an_ascii_locale(self):
+        # Force the *locale* encoding away from UTF-8 the way it actually happens on a real
+        # Windows box: Path.write_text()/read_text() with no encoding= fall back to
+        # locale.getpreferredencoding(False). On Linux that is driven by LC_ALL/LANG, and
+        # PYTHONUTF8=0 / PYTHONCOERCECLOCALE=0 stop Python's own UTF-8 mode and locale coercion
+        # from silently upgrading it back to UTF-8.
+        env = {**os.environ, "LC_ALL": "C", "LANG": "C", "PYTHONUTF8": "0", "PYTHONCOERCECLOCALE": "0"}
+        with tempfile.TemporaryDirectory() as tmpdir:
+            code = (
+                "import sys; sys.path.insert(0, " + repr(str(SCIENTIST_CLI_SOURCE.parent.parent)) + ")\n"
+                "from pathlib import Path\n"
+                "from lockedin.scientist_cli import write_skill_bundle\n"
+                "write_skill_bundle(Path(" + repr(tmpdir) + "), '## Editing Guide\\n\\nbody', {})\n"
+            )
+            result = subprocess.run([sys.executable, "-c", code], env=env,
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0,
+                             f"write_skill_bundle crashed under an ASCII locale "
+                             f"(this is the Windows cp1252 crash, reproduced with ASCII):\n"
+                             f"{result.stderr}")
+            guides_dir = Path(tmpdir) / "guides"
+            for name in GUIDES:
+                body = (guides_dir / name).read_text(encoding="utf-8")
+                self.assertTrue(body, f"guides/{name} should not be empty")
+            skill = (Path(tmpdir) / "SKILL.md").read_text(encoding="utf-8")
+            self.assertIn(f"lockedin-scientist-skill: {SKILL_VERSION}", skill)
 
 
 if __name__ == "__main__":
