@@ -23,17 +23,12 @@
   // caller caring. A plain string means "stroked path"; {d,fill:1} means "solid".
   var P = {
     /* ---------- brand & navigation ---------- */
-    // The brand mark: a padlock held between two angle brackets. The brackets stay outside the
-    // lock — inside the body they had to share eight pixels of height with the keyhole at UI
-    // sizes and turned to mush. Both sit on the same centre line: the lock's full span, shackle
-    // top to body bottom, is 5.6..18.4, which centres on 12 like the brackets' apexes. The
-    // shackle is a squared arch over a deep body, because a shallow arc on a wide shallow box
-    // reads as a shopping bag. Keep this drawing and the two favicons in step.
-    lock: ["M4.6 5.6 1.8 12l2.8 6.4",
-           "M19.4 5.6 22.2 12l-2.8 6.4",
-           "M9.9 9.9V6.9a1.3 1.3 0 0 1 1.3-1.3h1.6a1.3 1.3 0 0 1 1.3 1.3v3",
-           "M9.6 9.9h4.8a1.7 1.7 0 0 1 1.7 1.7v5.1a1.7 1.7 0 0 1-1.7 1.7H9.6a1.7 1.7 0 0 1-1.7-1.7v-5.1a1.7 1.7 0 0 1 1.7-1.7Z",
-           {d: "M12 12.75a1.25 1.25 0 0 1 .75 2.25v1.55a.75.75 0 0 1-1.5 0v-1.55a1.25 1.25 0 0 1 .75-2.25Z", fill: 1}],
+    // A plain lock for ordinary icon-sized uses. The animated brand mark below owns the richer
+    // lock-to-developer transition; keeping brackets out of this fallback avoids reviving the
+    // cramped old logo when landing copy asks for a lock icon.
+    lock: ["M7.3 9.8V7.4a4.7 4.7 0 0 1 9.4 0v2.4",
+           "M5.2 9.8h13.6a1.8 1.8 0 0 1 1.8 1.8v7.1a1.8 1.8 0 0 1-1.8 1.8H5.2a1.8 1.8 0 0 1-1.8-1.8v-7.1a1.8 1.8 0 0 1 1.8-1.8Z",
+           {d: "M12 13a1.35 1.35 0 0 1 .72 2.5v1.45a.72.72 0 0 1-1.44 0V15.5A1.35 1.35 0 0 1 12 13Z", fill: 1}],
     home: ["M3.6 10.4 12 3.5l8.4 6.9v8.4a1.6 1.6 0 0 1-1.6 1.6H5.2a1.6 1.6 0 0 1-1.6-1.6Z",
            "M9.4 20.4v-5.6h5.2v5.6"],
     // Three overlapping circles — the bubble cluster, kept from 🫧 but drawn to the grid.
@@ -219,6 +214,27 @@
     svg.appendChild(use);
     return svg;
   }
+
+  /**
+   * The product mark has semantic state, unlike the small pictograms above. Its body stays put
+   * while the shackle opens and the keyhole turns into a right-facing developer chevron. CSS
+   * owns the motion so hover, worker state and reduced-motion all share the exact same drawing.
+   */
+  LIIcon.brand = function (opts) {
+    opts = opts || {};
+    var svg = document.createElementNS(NS, "svg");
+    svg.setAttribute("class", "li-brand-mark" + (opts.className ? " " + opts.className : ""));
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("aria-hidden", "true");
+    svg.setAttribute("focusable", "false");
+    svg.dataset.mode = opts.mode === "developer" ? "developer" : "locked";
+    svg.innerHTML =
+      '<path class="li-brand-shackle" d="M7.3 10V7.4a4.7 4.7 0 0 1 9.4 0V10"/>' +
+      '<path class="li-brand-body" d="M5.2 9.8h13.6a1.8 1.8 0 0 1 1.8 1.8v7.1a1.8 1.8 0 0 1-1.8 1.8H5.2a1.8 1.8 0 0 1-1.8-1.8v-7.1a1.8 1.8 0 0 1 1.8-1.8Z"/>' +
+      '<path class="li-brand-keyhole" d="M12 12.7a1.45 1.45 0 0 1 .78 2.67v1.72a.78.78 0 0 1-1.56 0v-1.72A1.45 1.45 0 0 1 12 12.7Z"/>' +
+      '<path class="li-brand-chevron" d="M9.3 12.1 12 14.35 9.3 16.6"/>';
+    return svg;
+  };
 
   /** Markup string, for the places that build HTML rather than nodes. */
   LIIcon.html = function (name, cls, size) {

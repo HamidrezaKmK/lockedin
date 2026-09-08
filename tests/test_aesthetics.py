@@ -10,6 +10,28 @@ from lockedin import server, service
 
 
 class AestheticsConfigTests(unittest.TestCase):
+    def test_brand_mark_is_one_stateful_lock_without_the_old_brackets(self):
+        icons = (Path(server.WEB_DIR) / "icons.js").read_text()
+        page = (Path(server.WEB_DIR) / "index.html").read_text()
+        self.assertIn("LIIcon.brand = function", icons)
+        self.assertIn('class="li-brand-chevron"', icons)
+        self.assertIn('M9.3 12.1 12 14.35 9.3 16.6', icons)  # apex points right
+        self.assertNotIn('M4.6 5.6 1.8 12l2.8 6.4', icons)
+        self.assertEqual(page.count("data-brand-mark></span>"), 2)
+        self.assertIn('setHeaderBrandMode((snap.workers||[]).some', page)
+        self.assertIn('w.state==="live"||w.state==="degraded"||w.state==="unresponsive"', page)
+        self.assertIn("@media (prefers-reduced-motion:reduce)", page)
+
+    def test_every_favicon_uses_the_clean_closed_lock(self):
+        page = (Path(server.WEB_DIR) / "index.html").read_text()
+        backend = Path(server.__file__).read_text()
+        favicon = (Path(server.WEB_DIR) / "brand" / "lockedin-lock.svg").read_text()
+        for source in (page, backend):
+            self.assertIn('<link rel="icon" type="image/svg+xml" href="/brand/lockedin-lock.svg">', source)
+            self.assertNotIn("M4.6 5.6 1.8 12l2.8 6.4", source)
+        self.assertIn("M7.3 9.8V7.4a4.7 4.7", favicon)
+        self.assertNotIn("M4.6 5.6 1.8 12l2.8 6.4", favicon)
+
     def test_landing_endpoint_reads_current_yaml_instead_of_startup_snapshot(self):
         app = server.build_app()
         endpoint = next(route.endpoint for route in app.routes if route.path == "/api/landing")
