@@ -135,6 +135,26 @@ async function main() {
       executablePath: CHROME, headless: true,
       args: ["--no-sandbox", "--disable-dev-shm-usage"],
     });
+    // The public mark rests as a lock, demonstrates the developer state on hover, and removes
+    // the tween for people who request reduced motion.
+    const landingContext = await browser.newContext({ viewport: { width: 1500, height: 950 } });
+    const landing = await landingContext.newPage();
+    await landing.goto(baseUrl, { waitUntil: "domcontentloaded" });
+    const landingMark = landing.locator(".landing .li-brand-mark");
+    await landingMark.waitFor({ state: "visible" });
+    assert.equal(await landingMark.getAttribute("data-mode"), "locked");
+    assert.equal(await landingMark.locator(".li-brand-chevron").evaluate(n => getComputedStyle(n).opacity), "0");
+    await landingMark.hover();
+    await landing.waitForTimeout(350);
+    assert.ok(Number(await landingMark.locator(".li-brand-chevron").evaluate(n => getComputedStyle(n).opacity)) > .5,
+      "hovering the landing lock must reveal the developer chevron");
+    await landing.emulateMedia({ reducedMotion: "reduce" });
+    assert.equal(await landingMark.locator(".li-brand-shackle").evaluate(n => getComputedStyle(n).transitionDuration), "0s",
+      "reduced motion must remove the logo tween");
+    await shoot(landing, "brand-landing-hover");
+    await landingContext.close();
+    step("the landing lock previews a right-facing developer mark and respects reduced motion");
+
     const context = await browser.newContext({ viewport: { width: 1500, height: 950 } });
     const username = `presence-e2e-${Date.now()}`;
     await api(context.request, baseUrl, "POST", "/api/signup", { username, password: "temporary-presence-password" });
@@ -168,6 +188,25 @@ async function main() {
 
     const card = page.locator(".presence .presence-group-card");
     await card.waitFor({ state: "visible", timeout: 10_000 });
+    const headerMark = page.locator("#topbar .li-brand-mark");
+    assert.equal(await headerMark.getAttribute("data-mode"), "developer",
+      "a live or degraded worker must open the brand into developer mode");
+    await page.mouse.move(700, 0);
+    await page.waitForTimeout(350);
+    await shoot(page, "brand-worker-active");
+    await page.locator("#topbar").evaluate(node => node.classList.remove("reveal"));
+    const touchContext = await browser.newContext({ viewport: { width: 390, height: 844 },
+      isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+    await touchContext.addCookies(await context.cookies());
+    const touchPage = await touchContext.newPage();
+    await touchPage.goto(`${baseUrl}/#bubble/${slug}`, { waitUntil: "domcontentloaded" });
+    await touchPage.waitForFunction(() =>
+      document.querySelector("#topbar .li-brand-mark")?.dataset.mode === "developer", null,
+      { timeout: 10_000 });
+    assert.equal(await touchPage.locator("#topbar .li-brand-mark").getAttribute("data-mode"), "developer",
+      "touch devices must receive worker state without relying on hover");
+    await shoot(touchPage, "brand-worker-active-touch");
+    await touchContext.close();
     const seg = i => page.locator(".presence-seg").nth(i);
     assert.equal(await page.locator(".presence-seg").count(), 3,
       "one card, three segments: people, workers, connect");
@@ -237,6 +276,19 @@ async function main() {
     assert.ok(await stale.evaluate(node => node.classList.contains("dead")),
       "a rejected client must read as dead rather than disappear");
     assert.match(await stale.innerText(), /dead/);
+
+    // Degraded still means an agent is running. Once every active worker explicitly stops, only
+    // the rejected dead record remains and the logo closes again.
+    assert.equal(await workerPoll(context.request, baseUrl, token, slug,
+      { id: "uid-healthy", label: "thesis-repo", status: "stopped" }), 200);
+    assert.equal(await workerPoll(context.request, baseUrl, token, slug,
+      { id: "uid-failing", label: "side-notes", status: "stopped" }), 200);
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.locator(".presence .presence-group-card").waitFor({ state: "visible", timeout: 10_000 });
+    assert.equal(await page.locator("#topbar .li-brand-mark").getAttribute("data-mode"), "locked",
+      "the brand must close when every active worker has stopped");
+    await shoot(page, "brand-workers-stopped");
+    step("the header mark follows active and explicitly stopped worker state");
 
     // Clicking away closes the dropdown; the chip alone remains.
     await page.mouse.click(700, 500);

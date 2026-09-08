@@ -10,6 +10,18 @@ from lockedin import server, service
 
 
 class AestheticsConfigTests(unittest.TestCase):
+    def test_brand_mark_is_one_stateful_lock_without_the_old_brackets(self):
+        icons = (Path(server.WEB_DIR) / "icons.js").read_text()
+        page = (Path(server.WEB_DIR) / "index.html").read_text()
+        self.assertIn("LIIcon.brand = function", icons)
+        self.assertIn('class="li-brand-chevron"', icons)
+        self.assertIn('M9.3 12.1 12 14.35 9.3 16.6', icons)  # apex points right
+        self.assertNotIn('M4.6 5.6 1.8 12l2.8 6.4', icons)
+        self.assertEqual(page.count("data-brand-mark></span>"), 2)
+        self.assertIn('setHeaderBrandMode((snap.workers||[]).some', page)
+        self.assertIn('w.state==="live"||w.state==="degraded"||w.state==="unresponsive"', page)
+        self.assertIn("@media (prefers-reduced-motion:reduce)", page)
+
     def test_landing_endpoint_reads_current_yaml_instead_of_startup_snapshot(self):
         app = server.build_app()
         endpoint = next(route.endpoint for route in app.routes if route.path == "/api/landing")
@@ -245,7 +257,7 @@ class AestheticsConfigTests(unittest.TestCase):
         # Tags are stripped before Markdown becomes HTML; the shared Range painter then draws
         # them, which also supports crossing comments that HTML <mark> tags cannot represent.
         self.assertIn("s=stripCommentMarkers(s);", source)
-        self.assertIn("window.LockedInMarks.paint(wrap,S.comments||[]);", source)
+        self.assertIn("window.LockedInMarks.paint(wrap,S.comments||[],revealMark);", source)
         self.assertIn("now so the Range painter sees the threads immediately", source)
         self.assertIn('Cannot save: "+error.message', source)
         self.assertNotIn("function addInlineCommentMarker", source)
