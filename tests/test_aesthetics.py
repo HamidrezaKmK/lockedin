@@ -22,6 +22,16 @@ class AestheticsConfigTests(unittest.TestCase):
         self.assertIn('w.state==="live"||w.state==="degraded"||w.state==="unresponsive"', page)
         self.assertIn("@media (prefers-reduced-motion:reduce)", page)
 
+    def test_every_favicon_uses_the_clean_closed_lock(self):
+        page = (Path(server.WEB_DIR) / "index.html").read_text()
+        backend = Path(server.__file__).read_text()
+        favicon = (Path(server.WEB_DIR) / "brand" / "lockedin-lock.svg").read_text()
+        for source in (page, backend):
+            self.assertIn('<link rel="icon" type="image/svg+xml" href="/brand/lockedin-lock.svg">', source)
+            self.assertNotIn("M4.6 5.6 1.8 12l2.8 6.4", source)
+        self.assertIn("M7.3 9.8V7.4a4.7 4.7", favicon)
+        self.assertNotIn("M4.6 5.6 1.8 12l2.8 6.4", favicon)
+
     def test_landing_endpoint_reads_current_yaml_instead_of_startup_snapshot(self):
         app = server.build_app()
         endpoint = next(route.endpoint for route in app.routes if route.path == "/api/landing")
