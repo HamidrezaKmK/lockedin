@@ -10,6 +10,12 @@ from lockedin import server, service
 
 
 class AestheticsConfigTests(unittest.TestCase):
+    def test_open_lock_uses_the_logo_chevron_instead_of_a_keyhole(self):
+        source = (Path(__file__).parents[1] / "src" / "lockedin" / "web" / "icons.js").read_text()
+        open_lock = source.split('"lock-open":', 1)[1].split("],", 1)[0]
+        self.assertIn("M9.3 12.1 12 14.35 9.3 16.6", open_lock)
+        self.assertNotIn("1.35", open_lock)
+
     def test_brand_mark_is_one_stateful_lock_without_the_old_brackets(self):
         icons = (Path(server.WEB_DIR) / "icons.js").read_text()
         page = (Path(server.WEB_DIR) / "index.html").read_text()
