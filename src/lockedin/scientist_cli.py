@@ -37,7 +37,7 @@ except ImportError:  # Standalone client installed beside agent_vendors.py.
     import agent_vendors  # type: ignore[no-redef]
 
 APP = "lockedin-scientist"
-SCIENTIST_CLIENT_VERSION = "2026.09.07.3"
+SCIENTIST_CLIENT_VERSION = "2026.09.09.1"
 POLL_SECONDS = 5
 # A worker that has not completed a cycle in three polls is wedged rather than merely busy.
 # `doctor` reports that verdict and `resync` repairs exactly what `doctor` complains about, so
@@ -1749,7 +1749,7 @@ def agent_turn_prompt(job: dict, *, cli: str, fresh: bool, mode: str | None = No
         if agent.get("personality"): persona += f" Personality: {agent['personality']}."
         lines += [persona,
                   "This is a new conversation. Read `.lockedin/SKILL.md` and `.lockedin/guides/agents.md` "
-                  "first; they describe this project and how you answer a mark.",
+                  "first; they describe this project and how you answer an assigned turn.",
                   "You may read anything on this machine, but write only under `.lockedin/`: "
                   "throwaway code, environments, and outputs go in `.lockedin/scratch/`; anything "
                   "meant to reach the bubble goes in `.lockedin/reports/`."]
@@ -1757,6 +1757,15 @@ def agent_turn_prompt(job: dict, *, cli: str, fresh: bool, mode: str | None = No
             lines.append("Nothing on this machine enforces that boundary right now — keep to it yourself.")
         lines.append("")
     lines += [f"LockedIn job {job['id']}. Do it now, without asking questions.", ""]
+    if job.get("kind") == "direct" or mark.get("surface") == "direct":
+        sender = str(job.get("created_by") or "the user")
+        lines += [f"Direct message from {sender}:", str(job.get("instruction") or ""), "",
+                  "Reply to the message when you are done. It is not attached to a report mark.", "",
+                  "When done, run exactly one of:",
+                  f"  {cli} agent reply {job['id']} --text \"<your response>\"",
+                  f"  {cli} agent fail  {job['id']} --reason \"<why not>\"",
+                  "Do not end the turn without running one of them."]
+        return "\n".join(lines)
     kind = f"{mark.get('glyph')} ({mark.get('means')})" if mark.get("glyph") else str(mark.get("means") or "mark")
     if mark.get("surface") == "page":
         where = f"report page \"{mark.get('page_title') or mark.get('page')}\" ({mark.get('page')}), mark {mark.get('id')}"

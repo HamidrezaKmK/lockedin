@@ -306,8 +306,22 @@ TALK_JOB = {
     },
 }
 
+DIRECT_JOB = {
+    "id": "j-000012", "kind": "direct", "created_by": "hamid",
+    "instruction": "Summarize where we landed.\nUse two sentences.",
+    "agent": PAGE_JOB["agent"], "mark": {"surface": "direct"},
+}
+
 
 class AgentTurnPromptTests(unittest.TestCase):
+    def test_direct_message_prompt_is_a_turn_without_a_mark_edit(self):
+        prompt = scientist_cli.agent_turn_prompt(DIRECT_JOB, cli="lockedin-scientist-dev", fresh=False)
+        self.assertIn("Direct message from hamid", prompt)
+        self.assertIn("Summarize where we landed.\nUse two sentences.", prompt)
+        self.assertIn("agent reply j-000012", prompt)
+        self.assertNotIn("Record:", prompt)
+        self.assertNotIn("Edit:", prompt)
+
     def test_page_job_prompt_for_a_resumed_conversation(self):
         prompt = scientist_cli.agent_turn_prompt(PAGE_JOB, cli="lockedin-scientist-dev", fresh=False)
         self.assertIn("LockedIn job j-000011", prompt)

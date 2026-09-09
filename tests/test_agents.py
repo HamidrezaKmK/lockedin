@@ -130,6 +130,31 @@ class Registry(AgentFixture):
 
 
 class Jobs(AgentFixture):
+    def test_a_direct_message_is_a_real_turn_and_keeps_its_reply_with_the_agent(self):
+        agent = self.register(name="Ada", registered_by="hamid")
+        with paths.use_root(self.home):
+            job = agents.create_message(self.slug, agent_id=agent["id"],
+                                        text="Compare the two arguments.\nKeep the answer brief.",
+                                        created_by="hamid")
+            beat = agents.heartbeat(self.slug, worker_id="w1",
+                                    agents=[{"id": agent["id"], "attached": False}],
+                                    running_job_ids=[])
+            agents.start_job(self.slug, job["id"], worker_id="w1")
+            done = agents.reply_job(self.slug, job["id"], text="The second is tighter.")
+            view = agents.overview(self.slug, viewer="hamid")
+        self.assertEqual(job["kind"], "direct")
+        self.assertIn("\n", job["instruction"])
+        self.assertEqual(beat["jobs"][0]["mark"], {"surface": "direct"})
+        self.assertEqual(done["result"]["reply_text"], "The second is tighter.")
+        self.assertEqual(view["agents"][0]["turns_today"], 1)
+        self.assertEqual(view["agents"][0]["messages"][0]["id"], job["id"])
+        self.assertNotIn("", view["jobs"]["by_mark"])
+
+    def test_an_empty_direct_message_is_refused(self):
+        agent = self.register()
+        with paths.use_root(self.home), self.assertRaises(agents.AgentError):
+            agents.create_message(self.slug, agent_id=agent["id"], text="  ")
+
     def test_a_job_needs_a_real_mark_on_either_surface(self):
         agent = self.register()
         with paths.use_root(self.home):
@@ -645,6 +670,40 @@ class HttpFlow(unittest.TestCase):
                 gone = client.delete(f"/api/bubbles/diffusion/agents/{agent_id}")
                 self.assertEqual(gone.status_code, 200)
                 self.assertEqual(client.get("/api/bubbles/diffusion/agents").json()["agents"], [])
+
+    def test_web_user_can_queue_a_direct_agent_message(self):
+        from lockedin import server
+        from lockedin.scientist_cli import SCIENTIST_CLIENT_VERSION
+        with temp_base():
+            token, workspace_id, home, key = self._setup()
+            scientist = {"Authorization": "Bearer " + token,
+                         "X-LockedIn-Workspace": workspace_id,
+                         "X-LockedIn-Scientist-Version": SCIENTIST_CLIENT_VERSION,
+                         "X-LockedIn-Worker": "w1", "X-LockedIn-Worker-Label": "demo"}
+            with TestClient(server.build_app(), base_url="https://testserver") as client:
+                client.post("/api/login", json={"username": "alice", "password": "pw12"})
+                registered = client.post("/api/scientist/v2/bubbles/diffusion/agents", headers=scientist,
+                                         json={"name": "Ada", "role": "reviewer", "goal": "g",
+                                               "vendor": "agy", "conversation": "c1", "worker_id": "w1"})
+                agent_id = registered.json()["agent"]["id"]
+                created = client.post(f"/api/bubbles/diffusion/agents/{agent_id}/messages",
+                                      json={"text": "Give me a one-line status."})
+                self.assertEqual(created.status_code, 200, created.text)
+                job = created.json()["job"]
+                self.assertEqual((job["kind"], job["status"]), ("direct", "queued"))
+                beat = client.post("/api/scientist/v2/bubbles/diffusion/agents/heartbeat",
+                                   headers=scientist,
+                                   json={"worker_id": "w1", "agents": [{"id": agent_id}],
+                                         "running_job_ids": []}).json()
+                self.assertEqual(beat["jobs"][0]["mark"], {"surface": "direct"})
+                client.post(f"/api/scientist/v2/bubbles/diffusion/jobs/{job['id']}/start",
+                            headers=scientist, json={"worker_id": "w1"})
+                replied = client.post(f"/api/scientist/v2/bubbles/diffusion/jobs/{job['id']}/reply",
+                                      headers=scientist, json={"text": "Everything is current."})
+                self.assertEqual(replied.json()["job"]["result"]["reply_text"],
+                                 "Everything is current.")
+                messages = client.get("/api/bubbles/diffusion/agents").json()["agents"][0]["messages"]
+                self.assertEqual(messages[0]["instruction"], "Give me a one-line status.")
 
     def test_a_requeue_result_posts_the_job_back_to_queued_over_http(self):
         from lockedin import server

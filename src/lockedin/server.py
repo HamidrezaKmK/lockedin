@@ -44,7 +44,7 @@ _WORKER_PATH_RE = re.compile(r"^/api/scientist/v2/bubbles/([^/]+)(?:/|$)")
 # Keep this equal to ``scientist_cli.SCIENTIST_CLIENT_VERSION``. Bump both when a Scientist
 # release needs an installed client refresh; the dependency-free installed client cannot import
 # package metadata from this server.
-SCIENTIST_CLIENT_VERSION = "2026.09.07.3"
+SCIENTIST_CLIENT_VERSION = "2026.09.09.1"
 DEMO_ACCESS_MESSAGE = (
     "Lockedin is an experimental project and currently on demo, to be able to login "
     "and play with our project, email kamkarih@mit.edu"
@@ -1109,6 +1109,9 @@ def build_app():
         agent_id: str
         mark_key: str
         instruction: str = ""
+
+    class AgentMessageIn(BaseModel):
+        text: str
 
     class JobReassignIn(BaseModel):
         agent_id: str
@@ -2209,6 +2212,15 @@ def build_app():
     def bubble_remove_agent(slug: str, agent_id: str, user: str = Depends(current_user)):
         try:
             return {"agent": service.remove_agent(home_of(user), slug, agent_id, owner=user)}
+        except (agents.AgentError, agents.NotFound) as e:
+            raise agent_failure(e)
+
+    @app.post("/api/bubbles/{slug}/agents/{agent_id}/messages")
+    def bubble_message_agent(slug: str, agent_id: str, body: AgentMessageIn,
+                             user: str = Depends(current_user)):
+        try:
+            return {"job": service.create_agent_message(
+                home_of(user), slug, agent_id=agent_id, text=body.text, created_by=user)}
         except (agents.AgentError, agents.NotFound) as e:
             raise agent_failure(e)
 

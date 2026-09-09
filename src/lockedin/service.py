@@ -849,6 +849,11 @@ def create_job(home: Path, slug: str, **kw) -> dict:
         return agents.create_job(slug, **kw)
 
 
+def create_agent_message(home: Path, slug: str, **kw) -> dict:
+    with paths.use_root(home):
+        return agents.create_message(slug, **kw)
+
+
 def get_job(home: Path, slug: str, job_id: str, *, owner: str | None = None) -> dict:
     with paths.use_root(home):
         return agents.get_job(slug, job_id, owner=owner)

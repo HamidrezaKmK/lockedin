@@ -267,6 +267,34 @@ async function main() {
     await shoot(page, "presence-agents");
     step("the presence menu lists Ada under her worker");
 
+    // A selected agent is also a direct messaging surface. Queuing from here creates an ordinary
+    // worker turn, and its answer stays in the same expanded agent entry.
+    await adaRow.click();
+    const directBox = page.getByLabel("Message Ada");
+    await directBox.fill("Give me a one-line status.");
+    const [messageResponse] = await Promise.all([
+      page.waitForResponse(response => response.request().method() === "POST"
+        && new URL(response.url()).pathname === `/api/bubbles/${slug}/agents/${agent.id}/messages`),
+      page.getByRole("button", { name: "Queue", exact: true }).click(),
+    ]);
+    assert.ok(messageResponse.ok(), `direct message failed: ${await messageResponse.text()}`);
+    const directJob = (await messageResponse.json()).job;
+    const directBeat = await scientistApi(context.request, baseUrl, token, "POST",
+      `/api/scientist/v2/bubbles/${slug}/agents/heartbeat`,
+      { worker_id: WORKER_ID, agents: [{ id: agent.id, attached: false }], running_job_ids: [] }, workspaceId);
+    assert.equal(directBeat.jobs[0].id, directJob.id);
+    assert.equal(directBeat.jobs[0].mark.surface, "direct");
+    await scientistApi(context.request, baseUrl, token, "POST",
+      `/api/scientist/v2/bubbles/${slug}/jobs/${directJob.id}/start`, { worker_id: WORKER_ID }, workspaceId);
+    await scientistApi(context.request, baseUrl, token, "POST",
+      `/api/scientist/v2/bubbles/${slug}/jobs/${directJob.id}/reply`,
+      { text: "The variance review is ready." }, workspaceId);
+    await page.waitForFunction(() => {
+      const history = document.querySelector(".agent-message-history");
+      return history && history.textContent.includes("The variance review is ready.");
+    }, { timeout: 9_000 });
+    step("queued and displayed a direct agent turn from the agent list");
+
     await page.keyboard.press("Escape");
     await page.mouse.click(700, 500);
     await presenceMenu.waitFor({ state: "hidden", timeout: 2_000 }).catch(() => {});

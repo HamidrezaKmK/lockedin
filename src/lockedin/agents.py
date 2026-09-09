@@ -330,6 +330,11 @@ def _clean(value: object, limit: int) -> str:
     return " ".join(str(value or "").split())[:limit]
 
 
+def _message(value: object, limit: int = 4000) -> str:
+    """Trim a free-form message without flattening the author's paragraphs."""
+    return str(value or "").strip()[:limit]
+
+
 def _owner_of(agent: dict) -> str:
     return str(agent.get("owner") or agent.get("registered_by") or "")
 
@@ -521,6 +526,7 @@ def _job_summary(job: dict, agents: dict) -> dict:
     agent_name = agent.get("name") or job.get("agent_name", "")
     return {"id": job["id"], "agent_id": job.get("agent_id", ""),
             "agent_name": agent_name, "owner": job.get("owner", ""),
+            "kind": job.get("kind", "mark"),
             "mark_key": job.get("mark_key", ""),
             "instruction": job.get("instruction", ""), "status": job.get("status", ""),
             "created_by": job.get("created_by", ""), "created_at": job.get("created_at", ""),
@@ -530,6 +536,7 @@ def _job_summary(job: dict, agents: dict) -> dict:
             "late_error": job.get("late_error", ""),
             "result": {"exit_code": result.get("exit_code"),
                        "output_tail": str(result.get("output_tail") or "")[-1200:],
+                       "reply_text": str(result.get("reply_text") or "")[:4000],
                        "confirmed": bool(result.get("confirmed"))}}
 
 
@@ -551,11 +558,20 @@ def _created_last_hour(jobs: dict, owner: str) -> int:
                if j.get("owner", "") == owner and _parse_ts(j.get("created_at")) >= cutoff)
 
 
-def create_job(slug: str, *, agent_id: str, mark_key: str, instruction: str = "",
-               created_by: str = "") -> dict:
-    parse_mark_key(mark_key)
-    if not mark_exists(slug, mark_key):
-        raise NotFound(mark_key)
+def create_job(slug: str, *, agent_id: str, mark_key: str = "", instruction: str = "",
+               created_by: str = "", kind: str = "mark") -> dict:
+    """Queue either a mark assignment or one direct web-message turn."""
+    if kind not in {"mark", "direct"}:
+        raise AgentError("job kind must be mark or direct")
+    if kind == "mark":
+        parse_mark_key(mark_key)
+        if not mark_exists(slug, mark_key):
+            raise NotFound(mark_key)
+    else:
+        mark_key = ""
+        instruction = _message(instruction)
+        if not instruction:
+            raise AgentError("Message text required.")
     with _bubble_lock(slug):
         agents = _agents(slug)["agents"]
         agent = _find_agent({"agents": agents}, agent_id)
@@ -569,7 +585,8 @@ def create_job(slug: str, *, agent_id: str, mark_key: str, instruction: str = ""
             raise Conflict("Secure mode is on for this account: turn it off before assigning new work.")
         data = _jobs(slug)
         for job in data["jobs"].values():
-            if (job.get("agent_id") == agent["id"] and job.get("mark_key") == mark_key
+            if (kind == "mark" and job.get("agent_id") == agent["id"]
+                    and job.get("mark_key") == mark_key
                     and job.get("status") in OPEN_STATUSES):
                 raise Conflict(f"{agent['name']} already has this mark in progress ({job['id']}).")
         if _open_count(data["jobs"], agent_id=agent["id"]) >= MAX_OPEN_JOBS_PER_AGENT:
@@ -583,8 +600,9 @@ def create_job(slug: str, *, agent_id: str, mark_key: str, instruction: str = ""
         job_id = f"j-{seq:06d}"
         data["next_seq"] = seq + 1
         job = {"id": job_id, "agent_id": agent["id"], "agent_name": agent["name"], "owner": owner,
-               "mark_key": mark_key,
-               "instruction": _clean(instruction, 2000), "status": "queued",
+               "kind": kind, "mark_key": mark_key,
+               "instruction": instruction if kind == "direct" else _clean(instruction, 2000),
+               "status": "queued",
                "created_by": created_by, "created_at": _now_iso(),
                "started_at": "", "finished_at": "", "worker_id": "", "attempts": 1,
                "result": {"exit_code": None, "output_tail": "", "reply_message_id": "",
@@ -592,6 +610,12 @@ def create_job(slug: str, *, agent_id: str, mark_key: str, instruction: str = ""
         data["jobs"][job_id] = job
         _save_jobs(slug, data)
         return _job_summary(job, agents)
+
+
+def create_message(slug: str, *, agent_id: str, text: str, created_by: str = "") -> dict:
+    """Queue a free-form message as a real agent turn, independent of any mark."""
+    return create_job(slug, agent_id=agent_id, instruction=text, created_by=created_by,
+                      kind="direct")
 
 
 def _get_job(data: dict, job_id: str) -> dict:
@@ -699,10 +723,12 @@ def finish_job(slug: str, job_id: str, *, status: str, exit_code: int | None = N
             if status == "done" and not result.get("confirmed"):
                 # The turn exited cleanly without calling `agent reply`: check whether it used the
                 # legacy in-deck reply block instead before deciding it silently did nothing.
-                if _agent_replied_after(slug, job.get("mark_key", ""), job.get("started_at", "")):
+                if (job.get("kind", "mark") == "mark"
+                        and _agent_replied_after(slug, job.get("mark_key", ""), job.get("started_at", ""))):
                     result["confirmed"] = True
                 else:
-                    status, error = "failed", error or "the turn ended without replying to the mark"
+                    target = "message" if job.get("kind") == "direct" else "mark"
+                    status, error = "failed", error or f"the turn ended without replying to the {target}"
             job["status"] = status
             job["finished_at"] = _now_iso()
             job["error"] = _clean(error, 600) if status == "failed" else ""
@@ -756,8 +782,12 @@ def reply_job(slug: str, job_id: str, *, text: str, actor: str = "") -> dict:
         prev_status = job.get("status")
         prev_error = job.get("error", "")
         agent = agents.get(job.get("agent_id", ""), {})
-        posted = reply_to_mark(slug, job["mark_key"], author=credit(agent, job, actor), body=text,
-                               source_key=f"agent:{job_id}")
+        reply_text = (_message(text) if job.get("kind") == "direct" else str(text or "").strip())
+        if not reply_text:
+            raise AgentError("Reply text required.")
+        posted = ({"message_id": ""} if job.get("kind") == "direct" else
+                  reply_to_mark(slug, job["mark_key"], author=credit(agent, job, actor),
+                                body=reply_text, source_key=f"agent:{job_id}"))
         job["status"] = "done"
         job["finished_at"] = _now_iso()
         job["error"] = ""
@@ -768,6 +798,8 @@ def reply_job(slug: str, job_id: str, *, text: str, actor: str = "") -> dict:
         result = job.setdefault("result", {})
         result["confirmed"] = True
         result["reply_message_id"] = posted.get("message_id", "")
+        if job.get("kind") == "direct":
+            result["reply_text"] = reply_text
         _save_jobs(slug, data)
         return _job_summary(job, agents)
 
@@ -790,11 +822,12 @@ def fail_job(slug: str, job_id: str, *, reason: str, actor: str = "") -> dict:
         was_open = job.get("status") in OPEN_STATUSES
         prev_status = job.get("status")
         agent = agents.get(job.get("agent_id", ""), {})
-        try:
-            reply_to_mark(slug, job["mark_key"], author=credit(agent, job, actor),
-                          body=f"I could not do this: {reason}", source_key=f"agent-fail:{job_id}")
-        except NotFound:
-            pass
+        if job.get("kind") != "direct":
+            try:
+                reply_to_mark(slug, job["mark_key"], author=credit(agent, job, actor),
+                              body=f"I could not do this: {reason}", source_key=f"agent-fail:{job_id}")
+            except NotFound:
+                pass
         job["status"] = "failed"
         job["finished_at"] = _now_iso()
         job["error"] = reason
@@ -834,8 +867,11 @@ def reassign_job(slug: str, job_id: str, *, agent_id: str, actor: str = "") -> d
         _require_owner(target_owner, actor, f"{agent['name']} belongs to another owner.")
         if job.get("status") == "running":
             raise Conflict(f"{job_id} is running; cancel it first.")
-        if any(j is not job and j.get("agent_id") == agent["id"] and j.get("mark_key") == job.get("mark_key")
-               and j.get("status") in OPEN_STATUSES for j in data["jobs"].values()):
+        if (job.get("kind", "mark") == "mark"
+                and any(j is not job and j.get("agent_id") == agent["id"]
+                        and j.get("kind", "mark") == "mark"
+                        and j.get("mark_key") == job.get("mark_key")
+                        and j.get("status") in OPEN_STATUSES for j in data["jobs"].values())):
             raise Conflict(f"{agent['name']} already has this mark in progress.")
         if _open_count(data["jobs"], agent_id=agent["id"]) >= MAX_OPEN_JOBS_PER_AGENT:
             raise TooMany(f"{agent['name']} already has {MAX_OPEN_JOBS_PER_AGENT} open jobs.")
@@ -868,7 +904,8 @@ def reconcile(slug: str, *, worker_id: str = "", running_job_ids: list[str] | No
         for job in data["jobs"].values():
             if job.get("status") != "running":
                 continue
-            if _agent_replied_after(slug, job.get("mark_key", ""), job.get("started_at", "")):
+            if (job.get("kind", "mark") == "mark"
+                    and _agent_replied_after(slug, job.get("mark_key", ""), job.get("started_at", ""))):
                 job["status"] = "done"; job["finished_at"] = _now_iso(); job["error"] = ""
                 job.setdefault("result", {})["confirmed"] = True
                 changed = True
@@ -933,15 +970,18 @@ def heartbeat(slug: str, *, worker_id: str, agents: list[dict], running_job_ids:
             if job.get("agent_id") not in mine:
                 continue
             if job.get("status") == "queued":
-                pointer = mark_pointer(slug, job.get("mark_key", ""))
-                if pointer is None:
-                    job["status"] = "cancelled"; job["finished_at"] = now
-                    job["error"] = "the mark was removed before the agent got to it"
-                    _save_jobs(slug, data)
-                    continue
                 summary = _job_summary(job, registry["agents"])
                 summary["agent"] = dict(mine[job["agent_id"]])
-                summary["mark"] = pointer
+                if job.get("kind") == "direct":
+                    summary["mark"] = {"surface": "direct"}
+                else:
+                    pointer = mark_pointer(slug, job.get("mark_key", ""))
+                    if pointer is None:
+                        job["status"] = "cancelled"; job["finished_at"] = now
+                        job["error"] = "the mark was removed before the agent got to it"
+                        _save_jobs(slug, data)
+                        continue
+                    summary["mark"] = pointer
                 queued.append(summary)
             elif job.get("status") == "cancelled" and job["id"] in (running_job_ids or []):
                 cancelled.append(job["id"])
@@ -1000,7 +1040,8 @@ def overview(slug: str, *, workers: list[dict] | None = None, viewer: str = "") 
             job["activity"] = activity_by_job[job["id"]]
     by_mark: dict[str, list[dict]] = {}
     for job in summaries:
-        by_mark.setdefault(job["mark_key"], []).append(job)
+        if job["kind"] == "mark":
+            by_mark.setdefault(job["mark_key"], []).append(job)
     last_by_agent: dict[str, dict] = {}
     for job in summaries:
         last_by_agent[job["agent_id"]] = job
@@ -1022,6 +1063,8 @@ def overview(slug: str, *, workers: list[dict] | None = None, viewer: str = "") 
         row["turns_today"] = sum(
             1 for j in summaries if j["agent_id"] == agent["id"] and j.get("started_at")
             and now_ts - _parse_ts(j["started_at"]) <= 86400)
+        row["messages"] = [j for j in summaries
+                           if j["agent_id"] == agent["id"] and j["kind"] == "direct"][-20:]
         rows.append(row)
     return {"agents": rows,
             "jobs": {"by_mark": by_mark,
@@ -1056,7 +1099,8 @@ def indexes(slug: str, *, owner: str = "") -> tuple[dict, dict]:
         entry = _job_summary(job, agents)
         entry.pop("result", None)
         if job.get("status") in OPEN_STATUSES:
-            entry["pointer"] = mark_pointer(slug, job.get("mark_key", ""))
+            entry["pointer"] = ({"surface": "direct"} if job.get("kind") == "direct" else
+                                mark_pointer(slug, job.get("mark_key", "")))
         job_index[job["id"]] = entry
     return ({"version": 1, "by_id": public, "by_worker": by_worker},
             {"version": 1, "by_id": job_index,
