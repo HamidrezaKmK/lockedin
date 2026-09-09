@@ -436,6 +436,8 @@ async function main() {
     // ---- step 8: Stop agents is destructive, so the sidebar switch explains and confirms it
     // before revoking clients, removing owned agents, cancelling work, and stopping sync. ----
     const sideSwitch = page.locator("#sideSecureSwitch");
+    assert.equal(await page.locator("#sideSecureIcon").getAttribute("href"), "#li-i-lock-open",
+      "enabled agents must show the open lock");
     await sideSwitch.waitFor({ state: "visible", timeout: 5_000 });
     assert.equal(await sideSwitch.getAttribute("aria-checked"), "false", "secure mode starts off");
     await sideSwitch.click();
@@ -456,6 +458,10 @@ async function main() {
 
     await page.waitForSelector("#secureModeBanner", { timeout: 5_000 });
     assert.match(await page.locator("#secureModeBanner").innerText(), /agents stopped/i);
+    assert.equal(await page.locator("#sideSecureIcon").getAttribute("href"), "#li-i-lock",
+      "stopped agents must show the closed lock");
+    assert.equal(await page.locator("#secureModeBanner button").count(), 0,
+      "the stopped-agents banner must not keep a top-right Settings button");
     step("the banner appeared on the bubble view without a reload");
 
     await page.locator('.navbtn[data-view="settings"]').click();
@@ -496,6 +502,8 @@ async function main() {
     await sideSwitch.click();
     await page.waitForFunction(() => document.getElementById("sideSecureSwitch")?.getAttribute("aria-checked") === "false",
       { timeout: 5_000 });
+    assert.equal(await page.locator("#sideSecureIcon").getAttribute("href"), "#li-i-lock-open",
+      "turning stop-agents off must restore the open lock");
     await page.waitForFunction(() => !document.getElementById("secureModeBanner"), { timeout: 5_000 });
     await page.waitForFunction(() => {
       const seg = document.querySelectorAll(".presence-seg")[1];

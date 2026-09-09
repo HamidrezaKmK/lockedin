@@ -1769,7 +1769,7 @@
     <button class="navbtn" data-view="workspace"><svg class="li-ic" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#li-i-workspace"/></svg><span>Workspace</span></button>
     <button class="navbtn" data-view="settings"><svg class="li-ic" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#li-i-settings"/></svg><span>Settings</span></button>
     <div class="side-secure" id="sideSecure" title="Stop and remove your agents and sync workers on every bubble">
-      <span class="side-secure-label"><svg class="li-ic" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#li-i-lock"/></svg><span>Stop agents</span></span>
+      <span class="side-secure-label"><svg class="li-ic" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use id="sideSecureIcon" href="#li-i-lock-open"/></svg><span>Stop agents</span></span>
       <button type="button" class="side-secure-switch" id="sideSecureSwitch" role="switch" aria-checked="false"
               aria-label="Stop and remove your agents and sync workers on every bubble"><span class="side-secure-thumb"></span></button>
     </div>
@@ -7211,6 +7211,8 @@
     const sw=document.getElementById("sideSecureSwitch");
     if(row)row.classList.toggle("on",on);
     if(sw)sw.setAttribute("aria-checked",on?"true":"false");
+    const icon=document.getElementById("sideSecureIcon");
+    if(icon)icon.setAttribute("href",on?"#li-i-lock":"#li-i-lock-open");
     const check=document.querySelector("#secureModeSection input[type=checkbox]");
     if(check)check.checked=on;
     if(S.presence&&S.presenceEl)renderPresence();
@@ -7231,8 +7233,7 @@
     if(existing)return;
     const banner=el("div",{id:"secureModeBanner",class:"secure-banner"},
       ic("warning"),
-      el("span",{},"Agents stopped: your clients and agents were removed, and sync workers are off."),
-      el("button",{class:"ghost small",onclick:()=>switchView("settings")},"Settings"));
+      el("span",{},"Agents stopped: your clients and agents were removed, and sync workers are off."));
     m.insertBefore(banner,m.firstChild);
   }
   function captureReviewEditorState(){
