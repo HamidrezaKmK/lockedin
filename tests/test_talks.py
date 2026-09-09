@@ -464,6 +464,26 @@ class SlideCitationTests(unittest.TestCase):
         self.assertEqual(refs["citeMap"], {"ho2020denoising": 1})
         self.assertEqual(refs["bibliography"]["ho2020denoising"]["pdf_id"], "abc123")
 
+    def test_talk_theorems_do_not_leak_into_bubble_wide_references(self):
+        """A talk has its own theorem namespace while citations remain shared."""
+        from lockedin import server
+        with paths.use_root(self.home):
+            talks.create_talk(self.slug, "Local results", date="2026-09-09", body=(
+                "<!-- slide: kind=result, date=2026-09-09, v=1 -->\n"
+                "# Result\n\n*Deck-local.*\n\n"
+                "\\begin{lemma}\\label{lem:local}\nSee \\cite{paper}.\n\\end{lemma}\n\n"
+                "$$x=1\\label{eq:local}$$\n\n"
+                "![Plot \\label{fig:local}](assets/plot.png)\n"))
+            pages = bubbles.list_pages(self.slug)
+        with patch.object(server, "_bubble_bibliography", return_value={
+                "paper": {"key": "paper", "text": "A paper", "type": "article",
+                          "fields": {}, "pdf_id": ""}}):
+            refs = server._bubble_refs(self.home, self.slug, pages)
+        self.assertNotIn("lem:local", refs["thm"])
+        self.assertNotIn("eq:local", refs["eq"])
+        self.assertNotIn("fig:local", refs["fig"])
+        self.assertEqual(refs["citeMap"], {"paper": 1})
+
 
 class SlideCaptionTests(unittest.TestCase):
     def test_maths_in_a_figure_caption_cannot_break_out_of_the_tag(self):
@@ -476,7 +496,7 @@ class SlideCaptionTests(unittest.TestCase):
         self.assertIn("@@LICAP", js)
         self.assertIn("captions.push(cap)", js)
         # The guard has to run before the math pass, or it is pointless.
-        self.assertLess(js.index("@@LICAP"), js.index("stashMath(guarded)"))
+        self.assertLess(js.index("@@LICAP"), js.index("stashMath(theorems.text)"))
 
 
 class ClientScanTests(unittest.TestCase):
@@ -575,6 +595,24 @@ class SlideRenderingTests(unittest.TestCase):
         index = (Path(__file__).resolve().parents[1] / "src/lockedin/web/index.html").read_text()
         self.assertIn("macros:()=>S.mathMacros,", index)
 
+    def test_theorem_environments_are_numbered_and_referenced_inside_the_deck(self):
+        for env in ("theorem", "lemma", "corollary", "proposition", "definition",
+                    "assumption", "remark", "proof"):
+            self.assertIn(env, self.js)
+        self.assertIn("function talkTheoremRegistry()", self.js)
+        self.assertIn("registry.locations", self.js)
+        self.assertIn(r"/\\thmref\{([^}]+)\}/g", self.js)
+        self.assertIn('box.className = "tk-theorem " + item.env;', self.js)
+        self.assertIn(r'item.body.replace(/\\label\{[^}]+\}/g, "")', self.js)
+        # Rendered references remain source-addressable for chalk-talk marks.
+        self.assertIn('el.classList.contains("tk-thm-ref")', self.js)
+        self.assertIn('frag.querySelectorAll(".tk-thm-ref")', self.js)
+
+    def test_display_environments_from_the_editing_guide_are_stashed_before_markdown(self):
+        self.assertIn(r"align\*?|alignat\*?|equation\*?|gather\*?|multline\*?", self.js)
+        self.assertLess(self.js.index("function stashMath(md)"),
+                        self.js.index("function renderMarkdown(md, into"))
+
     def test_a_slide_table_is_ruled_and_scrolls_inside_the_card(self):
         # marked emits the <table>; without any CSS for it a comparison table arrived as
         # unruled columns of text, which is the one block a slide is most likely to hold.
@@ -603,9 +641,9 @@ class SlideRenderingTests(unittest.TestCase):
     def test_a_slide_title_and_subtitle_render_their_own_markdown(self):
         # They were printed with esc(), so a subtitle naming a figure's axes showed raw
         # $2\times10^{-3}$ and [[vamp only]] beside a body that rendered both.
-        self.assertIn("function renderInline(md, into)", self.js)
-        self.assertIn('renderInline(sl.title, wrap.querySelector(\'[data-line="title"]\'));', self.js)
-        self.assertIn("if (subEl) renderInline(sl.sub, subEl);", self.js)
+        self.assertIn("function renderInline(md, into, context = {})", self.js)
+        self.assertIn('renderInline(sl.title, wrap.querySelector(\'[data-line="title"]\'),', self.js)
+        self.assertIn("if (subEl) renderInline(sl.sub, subEl,", self.js)
         self.assertNotIn("<h2>${esc(sl.title)}</h2>", self.js)
         self.assertNotIn('<div class="sub">${esc(sl.sub)}</div>', self.js)
         # The contact sheet shows the same two lines and must not disagree with the slide.

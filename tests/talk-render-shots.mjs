@@ -35,6 +35,16 @@ evaluates, and $\Var[\psi]$ is what the estimator's variance is written in.
 
 $$\E\!\left[\psi(X_T)\,\middle|\,X_s\right] = \int \psi(x)\, p_{T|s}(x \mid X_s)\, dx$$
 
+\begin{theorem}[Bridge readout]\label{thm:bridge}
+The conditional expectation is sufficient for the endpoint observable.
+\end{theorem}
+
+\begin{lemma}\label{lem:clock}
+The clock is measurable. This uses \thmref{thm:bridge}.
+\end{lemma}
+
+Thus \thmref{lem:clock} applies within this talk.
+
 | clock | what it needs | what it resolves | on which process |
 |---|---|---|---|
 | Biroli speciation time | data covariance, Gaussian-mixture theory | class | ideal score, in theory |
@@ -118,9 +128,15 @@ async function main(){
         tableBorder:(()=>{const td=md.querySelector("td");return td?getComputedStyle(td).borderTopWidth:null;})(),
         wikiLinks:[...md.querySelectorAll("a.tk-wikilink")].map(a=>a.textContent),
         rawWiki:(md.textContent.match(/\[\[[^\]]+\]\]/g)||[]),
+        theoremTitles:[...md.querySelectorAll(".tk-theorem-title")].map(x=>x.textContent),
+        theoremRefs:[...md.querySelectorAll(".tk-thm-ref")].map(x=>x.textContent),
+        rawTheorem:/\\begin\{(?:theorem|lemma)\}/.test(md.textContent),
         macros:JSON.stringify((window.S&&window.S.mathMacros)||null),
       };
     });
+    assert.deepEqual(probe.theoremTitles,["Theorem 1 (Bridge readout)","Lemma 1"]);
+    assert.deepEqual(probe.theoremRefs,["Theorem 1","Lemma 1"]);
+    assert.equal(probe.rawTheorem,false,"theorem source syntax must not leak onto the slide");
     console.log("PROBE slide1:",JSON.stringify(probe,null,1));
     // Clicking a resolved wikilink has to leave the deck and open that page.
     await p.click(".tk-slide a.tk-wikilink[data-page]");

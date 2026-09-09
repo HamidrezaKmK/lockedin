@@ -268,14 +268,26 @@ async function main() {
     step("the presence menu lists Ada under her worker");
 
     // A selected agent is also a direct messaging surface. Queuing from here creates an ordinary
-    // worker turn, and its answer stays in the same expanded agent entry.
+    // worker turn, and its answer stays in the same direct-message thread.
     await adaRow.click();
+    const agentChat = page.getByRole("dialog", { name: "Direct messages with Ada" });
+    await agentChat.waitFor({ state: "visible", timeout: 2_000 });
     const directBox = page.getByLabel("Message Ada");
     await directBox.fill("Give me a one-line status.");
+    // A presence/jobs poll used to rebuild this whole menu, throwing away focus, caret and scroll
+    // even though the draft value happened to be copied into a new textarea.
+    await directBox.evaluate(node => { node.dataset.composerIdentity = "original"; });
+    await directBox.focus();
+    await page.waitForTimeout(5_500);
+    assert.equal(await directBox.evaluate(node => node === document.activeElement), true,
+      "polling must not interrupt typing in the direct-message composer");
+    assert.equal(await directBox.getAttribute("data-composer-identity"), "original",
+      "polling must preserve the composer node rather than rebuilding it");
+    assert.equal(await directBox.inputValue(), "Give me a one-line status.");
     const [messageResponse] = await Promise.all([
       page.waitForResponse(response => response.request().method() === "POST"
         && new URL(response.url()).pathname === `/api/bubbles/${slug}/agents/${agent.id}/messages`),
-      page.getByRole("button", { name: "Queue", exact: true }).click(),
+      agentChat.getByRole("button", { name: "Queue turn", exact: true }).click(),
     ]);
     assert.ok(messageResponse.ok(), `direct message failed: ${await messageResponse.text()}`);
     const directJob = (await messageResponse.json()).job;
@@ -293,7 +305,33 @@ async function main() {
       const history = document.querySelector(".agent-message-history");
       return history && history.textContent.includes("The variance review is ready.");
     }, { timeout: 9_000 });
-    step("queued and displayed a direct agent turn from the agent list");
+    assert.equal(await directBox.evaluate(node => document.activeElement === node), true,
+      "the stable composer must regain focus after the queued turn");
+
+    // Continue the same direct thread with another ordinary turn; the first exchange stays put.
+    await directBox.fill("What should I do next?");
+    const [followupResponse] = await Promise.all([
+      page.waitForResponse(response => response.request().method() === "POST"
+        && new URL(response.url()).pathname === `/api/bubbles/${slug}/agents/${agent.id}/messages`),
+      agentChat.getByRole("button", { name: "Queue turn", exact: true }).click(),
+    ]);
+    const followupJob = (await followupResponse.json()).job;
+    const followupBeat = await scientistApi(context.request, baseUrl, token, "POST",
+      `/api/scientist/v2/bubbles/${slug}/agents/heartbeat`,
+      { worker_id: WORKER_ID, agents: [{ id: agent.id, attached: false }], running_job_ids: [] }, workspaceId);
+    assert.equal(followupBeat.jobs[0].id, followupJob.id);
+    await scientistApi(context.request, baseUrl, token, "POST",
+      `/api/scientist/v2/bubbles/${slug}/jobs/${followupJob.id}/start`, { worker_id: WORKER_ID }, workspaceId);
+    await scientistApi(context.request, baseUrl, token, "POST",
+      `/api/scientist/v2/bubbles/${slug}/jobs/${followupJob.id}/reply`,
+      { text: "Review the updated bound." }, workspaceId);
+    await page.waitForFunction(() => {
+      const history = document.querySelector(".agent-message-history");
+      return history && history.textContent.includes("The variance review is ready.")
+        && history.textContent.includes("What should I do next?")
+        && history.textContent.includes("Review the updated bound.");
+    }, { timeout: 9_000 });
+    step("queued and displayed a multi-turn direct thread from the agent list");
 
     await page.keyboard.press("Escape");
     await page.mouse.click(700, 500);

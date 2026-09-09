@@ -1,6 +1,6 @@
 [project]
 name = "lockedin"
-version = "0.1.8"
+version = "0.1.9"
 description = "The ultimate research assistant for grad students"
 requires-python = ">=3.11"
 dependencies = [

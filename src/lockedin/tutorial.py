@@ -38,7 +38,7 @@ and they already carry the marks, drawings and threads the real workflow produce
 Where to look:
 
 - [[The five marks]] — the whole feedback vocabulary, and why it beats prose.
-- [[Chalk talks]] — how a deck works: versions, resolving, drawing on slides.
+- [[Chalk talks]] — how a deck works: slides, theorem boxes, marks, and drawing.
 - [[Connecting your repo]] — the one line that puts an agent inside this bubble.
 
 When it has nothing left to teach you, delete the whole bubble from the Bubbles list — it will
@@ -84,6 +84,8 @@ What to try on the decks in this bubble:
 3. Hit **✎ edit** on any slide — the document's editor opens on it, with every open mark shown
    as a comment wrapper in the text, moving with your edit.
 4. Use **＋** to add a slide of your own, or **✂** to remove one.
+5. In the editor, theorem and lemma environments work like the Editing Guide. Their labels and
+   `\\thmref{…}` references stay local to that chalk talk, even across slides.
 
 Removing a mark is yours alone — agents can edit the slide and reply in the thread, never
 delete. When an answer satisfies you, hit remove; the current text is the whole record.
@@ -101,6 +103,8 @@ The point of all this is an agent that works in your repository and reports here
 3. Run your agent as usual — `claude`, `codex`, `agy`. A `.lockedin/` folder now carries this
    bubble to it: the premise, these pages, the papers, and a `feedback/OPEN.md` with every mark
    you leave.
+4. Ask that conversation to register as an agent. It then appears in the bubble's agent menu;
+   select it there to queue a direct turn and read the reply in the same message screen.
 
 From then on the loop is: it writes decks and pages here, you mark them up, it answers — and
 the marks you leave on the Tutorial decks are what that feedback file looks like to a real

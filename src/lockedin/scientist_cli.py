@@ -37,7 +37,7 @@ except ImportError:  # Standalone client installed beside agent_vendors.py.
     import agent_vendors  # type: ignore[no-redef]
 
 APP = "lockedin-scientist"
-SCIENTIST_CLIENT_VERSION = "2026.09.09.1"
+SCIENTIST_CLIENT_VERSION = "2026.09.09.2"
 POLL_SECONDS = 5
 # A worker that has not completed a cycle in three polls is wedged rather than merely busy.
 # `doctor` reports that verdict and `resync` repairs exactly what `doctor` complains about, so
@@ -484,7 +484,7 @@ def bubbles_command(account: dict) -> list[dict]:
 
 # Bump when the guide text changes: a project only regenerates SKILL.md when this marker in its
 # copy stops matching, so an edit to the guide reaches no existing agent until this moves.
-SKILL_VERSION = 47
+SKILL_VERSION = 48
 
 # The marker is derived, never typed. It is what the staleness check compares against, so a
 # hand-written copy that drifted from SKILL_VERSION would either pin every project to a stale
@@ -569,9 +569,9 @@ the app.
 
 ## Agents
 
-The user can give this chat a name and a role and then assign marks to it from the bubble page
-without opening the chat: the sync worker runs one turn of *this conversation* per assigned mark
-while the chat is closed. If the user asks you to register, become, or act as an agent — or a
+The user can give this chat a name and a role, then assign marks or send it a direct message from
+the bubble page without opening the chat: the sync worker runs one turn of *this conversation*
+per assignment or message while the chat is closed. If the user asks you to register, become, or act as an agent — or a
 prompt names a LockedIn job id like `j-000012` — read `guides/agents.md` and follow it.
 
 ## Indexed retrieval — do not scan first
@@ -727,6 +727,14 @@ needs the user's judgement. Slides are separated by `---`; each has a
 subtitle*, then Markdown with `$…$` maths and `\\cite{key}` citations. `kind` is one of
 `setup, derivation, evidence, comparison, implementation, ask` — nothing else renders.
 
+The report editing vocabulary also renders in a deck: tables, figures, workspace macros, display
+math environments, coloured text, citations, and `theorem`, `lemma`, `corollary`, `proposition`,
+`definition`, `assumption`, `remark`, and `proof` boxes. A theorem-style box may carry an optional
+title and a `\\label{thm:key}`; `\\thmref{thm:key}` resolves anywhere in the same talk, including
+another slide or a math block. Those counters and labels are **talk-local**: never rely on a
+report-page theorem label from a deck, or on a deck label from a report. Citations remain
+bubble-wide.
+
 **Reading them without drowning.** Start with `IDEA.md`, then query the JSON indexes. Open a
 deck only when an index hit points into it, the user names it, or you are about to write on the
 same idea. When a mark names a slide, read that slide and its neighbours, not every talk.
@@ -772,15 +780,15 @@ to fix.
 """,
 
     'agents.md': """\
-# Agents: this chat, with a name, answering marks on its own
+# Agents: this chat, with a name, answering turns on its own
 
 ## What an agent is
 
 An *agent* is this very conversation, registered on the bubble under a name, a role, a goal and
-optionally a personality. Once registered, the user can **assign a mark to you from the bubble
-page** instead of coming here to ask. While this chat is closed, the sync worker runs one
-headless turn of this same conversation per assigned mark: you keep your memory, your name, and
-everything already discussed. Nothing runs while no mark is assigned.
+optionally a personality. Once registered, the user can **assign a mark or send you a direct
+message from the bubble page** instead of coming here to ask. While this chat is closed, the sync
+worker runs one headless turn of this same conversation per assignment: you keep your memory,
+your name, and everything already discussed. Nothing runs while no turn is queued.
 
 ## Where a turn may write
 
@@ -809,7 +817,8 @@ Only when the user asks you to register, become, or act as an agent. Then:
    `--model <id>` if the user names the model you run as; the worker passes it to headless turns.
    If it cannot tell which conversation this is, it says which flags to pass — ask the user.
 3. Tell the user you now appear on the bubble page under this directory's sync, and that marks
-   they assign there will be answered while this chat is closed. Do not poll or wait for jobs.
+   and direct messages they queue there will be answered while this chat is closed. Do not poll
+   or wait for jobs.
 
 `lockedin-scientist agent list` shows the agents on this bubble; `lockedin-scientist agent jobs`
 shows open jobs from the local index (`--all` includes finished ones) — use it only when the user
@@ -818,8 +827,11 @@ setting `LOCKEDIN_AGENT_TURNS=off` on the worker.
 
 ## When a prompt is a job
 
-A headless turn starts with `LockedIn job j-000012.` and names one mark: its kind, where it sits,
-the quote or drawing, the user's words, and the exact `jq` command and file to edit. Everything in
+A headless turn starts with `LockedIn job j-000012.` It either names one mark or says **Direct
+message from …** and includes the user's free-form request. A direct message is not attached to a
+mark: do the requested work within the same write boundary, then post the answer with `agent
+reply`. For a mark, the prompt names its kind, where it sits, the quote or drawing, the user's
+words, and the exact `jq` command and file to edit. Everything in
 `guides/feedback.md` applies — the kind is the instruction, make the smallest change that answers
 it, keep `<comment-begin>`/`<comment-end>` tags in place, never edit `indexes/`, `feedback/`, or a
 deck's `marks.json`. Do the work directly; there is nobody to ask.
@@ -829,10 +841,10 @@ Then end the turn with **exactly one** of:
     lockedin-scientist agent reply j-000012 --text "What you changed and why, in a few sentences."
     lockedin-scientist agent fail  j-000012 --reason "Why this cannot or should not be done."
 
-`reply` posts your text into the mark's thread (page marks and slide marks alike) and closes the
-job; `fail` posts the reason and closes it as failed. That command *is* your reply, so do not also
-add a `<!-- lockedin-reply -->` block to the deck: both post a turn, and the user would read your
-answer twice. A long reply can come from a file:
+`reply` posts your text into the mark's thread (page marks and slide marks alike) or the direct
+message screen, then closes the job; `fail` records the reason and closes it as failed. That
+command *is* your reply, so do not also add a `<!-- lockedin-reply -->` block to the deck: both
+post a turn, and the user would read your answer twice. A long reply can come from a file:
 `--file notes.md`. A turn that ends without one of these is recorded as failed even if you edited
 the right thing — the user sees nothing otherwise. Never resolve or delete a mark; only the user
 does that in the app.

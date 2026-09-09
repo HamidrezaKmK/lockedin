@@ -44,7 +44,7 @@ _WORKER_PATH_RE = re.compile(r"^/api/scientist/v2/bubbles/([^/]+)(?:/|$)")
 # Keep this equal to ``scientist_cli.SCIENTIST_CLIENT_VERSION``. Bump both when a Scientist
 # release needs an installed client refresh; the dependency-free installed client cannot import
 # package metadata from this server.
-SCIENTIST_CLIENT_VERSION = "2026.09.09.1"
+SCIENTIST_CLIENT_VERSION = "2026.09.09.2"
 DEMO_ACCESS_MESSAGE = (
     "Lockedin is an experimental project and currently on demo, to be able to login "
     "and play with our project, email kamkarih@mit.edu"
@@ -148,10 +148,10 @@ def _bubble_bibliography(home, slug: str) -> dict:
 def _bubble_refs(home, slug: str, all_pages: list) -> dict:
     """Read every page's stored content (manifest order) and build the reference registry.
 
-    Chalk-talk decks are scanned after the pages. A citation is meant to mean the same thing
-    wherever it appears — a slide that numbered its sources independently of the document would
-    be actively misleading — and a key cited only on a slide would otherwise have no number at
-    all. Pages come first so existing page numbering does not shift when a talk is written.
+    Chalk-talk decks are scanned after the pages for citations. A citation is meant to mean the
+    same thing wherever it appears, but theorem declarations in a deck belong to that deck: they
+    must not enter the report's bubble-wide theorem registry. Pages come first so existing page
+    numbering does not shift when a talk is written.
     """
     docs = [{"page_slug": p["page_slug"],
              "content": service.get_page(home, slug, p["page_slug"])}
@@ -159,8 +159,20 @@ def _bubble_refs(home, slug: str, all_pages: list) -> dict:
     with paths.use_root(home):
         for rec in sorted(talks.load_index(slug).get("talks", []),
                           key=lambda r: (r.get("date", ""), r.get("id", ""))):
+            content = talks.read_deck(slug, rec["id"])
+            # Keep the inner prose so citations inside theorem boxes are still registered, but
+            # erase the declaration itself (and its structural label) before building report
+            # references. The browser builds a separate, deck-local theorem registry.
+            theorem_re = re.compile(
+                r'\\begin\{(' + _THEO_ENVS + r')\}(?:\[([^\]]*)\])?([\s\S]*?)'
+                r'\\end\{(?:' + _THEO_ENVS + r')\}', re.IGNORECASE)
+            content = theorem_re.sub(
+                lambda match: _LABEL_RE.sub('', match.group(3)), content)
+            # Equation and figure labels on slides are likewise not report-page declarations.
+            # Citations still survive this transform and keep their shared bubble numbering.
+            content = _LABEL_RE.sub('', content)
             docs.append({"page_slug": f"talk:{rec['id']}",
-                         "content": talks.read_deck(slug, rec["id"])})
+                         "content": content})
     return _build_refs(docs, bibliography=_bubble_bibliography(home, slug))
 
 

@@ -1373,18 +1373,33 @@
     font-size:11.5px;color:var(--muted);display:grid;grid-template-columns:auto minmax(0,1fr);gap:3px 10px}
   .presence-detail b{color:var(--ink);font-weight:600}
   .presence-detail .presence-reason{grid-column:1/-1;color:var(--warn);overflow-wrap:anywhere}
-  .agent-message-history{grid-column:1/-1;display:flex;flex-direction:column;gap:6px;margin-top:5px;
-    padding-top:7px;border-top:1px solid var(--line)}
-  .agent-message{padding:6px 8px;border-radius:7px;background:var(--panel);white-space:pre-wrap;
-    overflow-wrap:anywhere;line-height:1.4}
-  .agent-message.agent{border-left:2px solid var(--accent);color:var(--ink)}
+  .agent-chat{width:min(760px,calc(100vw - 32px));height:min(82vh,720px);min-height:420px}
+  .agent-chat-header{padding:12px 14px;border-bottom:1px solid var(--line);display:flex;
+    align-items:center;gap:9px;flex:none}
+  .agent-chat-header .li-ic{color:var(--accent)}
+  .agent-chat-title{flex:1;min-width:0}
+  .agent-chat-title b,.agent-chat-title span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .agent-chat-title span{font-size:11px;color:var(--muted);margin-top:2px}
+  .agent-message-history{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;
+    gap:8px;padding:16px;background:color-mix(in srgb,var(--panel2) 55%,var(--panel))}
+  .agent-message-empty{margin:auto;color:var(--muted);text-align:center;max-width:320px;line-height:1.5}
+  .agent-message{align-self:flex-end;max-width:min(82%,580px);padding:8px 10px;
+    border-radius:10px 10px 3px 10px;background:color-mix(in srgb,var(--accent) 16%,var(--panel));
+    white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.45;color:var(--ink)}
+  .agent-message.agent{align-self:flex-start;border-left:2px solid var(--accent);
+    border-radius:10px 10px 10px 3px;background:var(--panel);color:var(--ink)}
   .agent-message-meta{display:block;margin-top:3px;color:var(--muted);font-size:10px}
   .agent-message-error{color:var(--bad)}
-  .agent-message-compose{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1fr) auto;
-    gap:6px;align-items:end;margin-top:4px}
+  .agent-message-compose{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;
+    align-items:end;padding:12px 14px;border-top:1px solid var(--line);flex:none}
   .agent-message-compose textarea{width:100%;min-height:58px;max-height:150px;resize:vertical;
     padding:7px 8px;font:12px/1.4 var(--font-ui)}
   .agent-message-compose button{min-height:34px;padding:6px 10px}
+  @media (max-width:560px){
+    .agent-chat-overlay{padding:0}
+    .agent-chat{width:100vw;height:100dvh;max-height:none;min-height:0;border:0;border-radius:0}
+    .agent-message{max-width:90%}
+  }
   .presence-dupnote{margin:5px 8px 1px;font-size:11px;color:var(--muted)}
   .presence-empty{padding:9px 8px;color:var(--muted);font-size:12px}
   .presence-summary{padding:7px 8px 5px;font-size:11.5px;color:var(--muted)}
@@ -2961,7 +2976,7 @@
     baseMtime:null, autosaveTimer:null, saving:false, syncState:"synced", applyingRemote:false,
     previewEl:null, remoteChangePending:false, toolsMenu:null,
     comments:[], selectedComment:null, lastCommentsMtime:null,
-    agents:[], jobsByMark:{}, agentMessageDrafts:{}, lastJobsMtime:null,
+    agents:[], jobsByMark:{}, agentMessageDrafts:{}, agentChatEl:null, agentChatAgentId:"", lastJobsMtime:null,
     reviewSelection:null, reviewHitTargets:[], reviewMarkupError:null, reviewHighlightFrame:null,reviewMutationObserver:null,
     reviewMutating:false,reviewMutationEpoch:0,reviewCommentsLoaded:false,
     refAc:null,
@@ -3025,6 +3040,7 @@
   }
 
   function leaveBubbleWorkspace({preserveFocus=false}={}){
+    closeAgentChat();
     setBubbleFocus(false,{persist:!preserveFocus});
     S.openToken=(S.openToken||0)+1;
     stopPolling();
@@ -5313,7 +5329,7 @@
       try{
         const snap=await api("/api/bubbles/"+slug+"/presence",{method:"POST"});
         if(S.bubble===slug){ S.presence=snap; renderPresence();
-          if(Array.isArray(snap.agents)){S.agents=snap.agents; if(window.LockedInMarks&&window.LockedInMarks.setAgents)window.LockedInMarks.setAgents(slug,S.agents,S.jobsByMark||{});}
+          if(Array.isArray(snap.agents)){S.agents=snap.agents; if(window.LockedInMarks&&window.LockedInMarks.setAgents)window.LockedInMarks.setAgents(slug,S.agents,S.jobsByMark||{});renderAgentChat();}
         }
       }catch(e){ /* ambient: a missed beat just keeps showing the last snapshot */ }
     };
@@ -5443,6 +5459,65 @@
     renderPresence();
   }
 
+  function closeAgentChat(){
+    const overlay=S.agentChatEl;
+    if(!overlay)return;
+    if(overlay._onKey)document.removeEventListener("keydown",overlay._onKey);
+    overlay.remove();S.agentChatEl=null;S.agentChatAgentId="";
+  }
+
+  function renderAgentChat(){
+    const overlay=S.agentChatEl;
+    if(!overlay)return;
+    const agent=(S.agents||[]).find(a=>a.id===S.agentChatAgentId);
+    if(!agent){closeAgentChat();return;}
+    const status=overlay.querySelector(".agent-chat-status");
+    if(status)status.textContent=(agent.role||agent.vendor)+(agent.model?" · "+agent.model:"")+" · "+agent.status+
+      " · "+(agent.turns_last_hour||0)+" turns this hour";
+    const history=overlay.querySelector(".agent-message-history");
+    if(!history)return;
+    const wasAtBottom=history.scrollHeight-history.scrollTop-history.clientHeight<36;
+    const previousTop=history.scrollTop;
+    history.replaceChildren();
+    const direct=agent.messages||[];
+    if(!direct.length)history.append(el("div",{class:"agent-message-empty"},
+      "Send a message to start a direct thread with "+agent.name+". Each message runs as one agent turn."));
+    direct.forEach(job=>{
+      history.append(el("div",{class:"agent-message"},job.instruction||"",
+        el("span",{class:"agent-message-meta"},"you · "+job.status)));
+      const reply=job.result&&job.result.reply_text;
+      if(reply)history.append(el("div",{class:"agent-message agent"},reply,
+        el("span",{class:"agent-message-meta"},agent.name)));
+      else if(job.status==="failed")history.append(el("div",{class:"agent-message agent agent-message-error"},
+        job.error||"This turn failed.",el("span",{class:"agent-message-meta"},agent.name+" · failed")));
+    });
+    requestAnimationFrame(()=>{history.scrollTop=wasAtBottom?history.scrollHeight:previousTop;});
+  }
+
+  function openAgentChat(agent){
+    closePresenceMenu();closeAgentChat();
+    const overlay=el("div",{class:"overlay agent-chat-overlay",role:"dialog","aria-modal":"true",
+      "aria-label":"Direct messages with "+agent.name});
+    const close=el("button",{class:"ghost small icon-btn","aria-label":"Close direct messages"},ic("close"));
+    const status=el("span",{class:"agent-chat-status"});
+    const history=el("div",{class:"agent-message-history"});
+    const textarea=el("textarea",{placeholder:"Message "+agent.name+"…","aria-label":"Message "+agent.name,
+      disabled:S.secureMode,oninput:e=>{S.agentMessageDrafts[agent.id]=e.target.value;}},
+      S.agentMessageDrafts[agent.id]||"");
+    const send=el("button",{class:"primary",disabled:S.secureMode},"Queue turn");
+    send.onclick=()=>sendAgentMessage(agent,textarea,send);
+    textarea.onkeydown=e=>{if(e.key==="Enter"&&(e.metaKey||e.ctrlKey)){e.preventDefault();send.click();}};
+    const card=el("div",{class:"diffbox agent-chat",onclick:e=>e.stopPropagation()},
+      el("div",{class:"agent-chat-header"},ic("agent"),
+        el("div",{class:"agent-chat-title"},el("b",{},agent.name),status),close),
+      history,el("div",{class:"agent-message-compose"},textarea,send));
+    overlay.append(card);overlay.onclick=closeAgentChat;close.onclick=closeAgentChat;
+    overlay._onKey=e=>{if(e.key==="Escape")closeAgentChat();};
+    document.addEventListener("keydown",overlay._onKey);
+    document.body.append(overlay);S.agentChatEl=overlay;S.agentChatAgentId=agent.id;
+    renderAgentChat();textarea.focus();
+  }
+
   async function sendAgentMessage(agent,textarea,button){
     const text=(textarea.value||"").trim();
     if(!text)return;
@@ -5453,6 +5528,7 @@
       delete S.agentMessageDrafts[agent.id];
       toast("Message queued for "+agent.name+" — this counts as one turn");
       await loadAgents();
+      textarea.value="";textarea.disabled=false;button.disabled=false;textarea.focus();
     }catch(e){
       toast(e.message||"Could not queue the message");
       textarea.disabled=false;button.disabled=false;textarea.focus();
@@ -5496,68 +5572,11 @@
     if(view==="agents"){
     const allAgents=snap.agents||S.agents||[];
     const workerAgentRow=(a)=>{
-      const key="a:"+a.id, on=S.presenceSelected===key;
-      menu.append(el("button",{class:"presence-item presence-agent "+a.status+(on?" on":""),onclick:()=>selectPresence(key)},
+      menu.append(el("button",{class:"presence-item presence-agent "+a.status,onclick:()=>openAgentChat(a)},
         el("span",{class:"presence-dot "+({idle:"live",working:"live",attached:"degraded",offline:"dead"}[a.status]||"dead")}),
         el("span",{class:"presence-emoji"},ic("agent")),
         el("span",{class:"presence-name",title:(a.role||"")+(a.goal?" — "+a.goal:"")},a.name),
         el("span",{class:"presence-note"},a.vendor+(a.model?" · "+a.model:"")+" · "+a.status)));
-      if(on){
-        const detail=el("div",{class:"presence-detail"},
-          el("b",{},"role"),el("span",{},a.role||"—"),
-          el("b",{},"goal"),el("span",{},a.goal||"—"));
-        if(a.personality)detail.append(el("b",{},"personality"),el("span",{},a.personality));
-        detail.append(el("b",{},"conversation"),el("span",{},a.vendor+(a.id?" · "+String(a.id).slice(0,12):"")));
-        if(a.owner)detail.append(el("b",{},"owner"),el("span",{},a.owner));
-        detail.append(el("b",{},"turns"),el("span",{},
-          (a.turns_last_hour||0)+" this hour · "+(a.turns_today||0)+" today"));
-        if(a.budget){
-          const bud=a.budget;
-          const hourLeft=bud.hour_cap>0?Math.max(0,bud.hour_cap-bud.hour_used):"unlimited";
-          const dayLeft=bud.day_cap>0?Math.max(0,bud.day_cap-bud.day_used):"unlimited";
-          const budLine=el("span",{},hourLeft+" turns left this hour · "+dayLeft+" left today");
-          if(bud.exhausted){
-            budLine.style.color="var(--warn)";
-            const at=formatResumesAt(bud.resumes_at);
-            if(at)budLine.append(" — resumes at "+at);
-          }
-          detail.append(el("b",{},"budget"),budLine);
-        }
-        if(a.confinement==="landlock"||a.confinement==="seatbelt"){
-          detail.append(el("b",{},"confinement"),el("span",{},"confined to .lockedin"));
-        }else if(a.confinement==="none"){
-          detail.append(el("b",{},"confinement"),el("span",{style:"color:var(--warn)"},"unconfined"));
-        }
-        detail.append(el("b",{},"last job"),el("span",{},a.last_job?(a.last_job.id+" "+a.last_job.status+(a.last_job.error?" — "+a.last_job.error:"")):"none yet"));
-        const direct=a.messages||[];
-        const history=el("div",{class:"agent-message-history"},el("b",{},"Direct messages"));
-        if(!direct.length)history.append(el("span",{class:"muted"},"No direct messages yet."));
-        direct.slice(-6).forEach(job=>{
-          history.append(el("div",{class:"agent-message"},job.instruction||"",
-            el("span",{class:"agent-message-meta"},"you · "+job.status)));
-          const reply=job.result&&job.result.reply_text;
-          if(reply)history.append(el("div",{class:"agent-message agent"},reply,
-            el("span",{class:"agent-message-meta"},a.name)));
-          else if(job.status==="failed")history.append(el("div",{class:"agent-message agent agent-message-error"},
-            job.error||"This turn failed.",el("span",{class:"agent-message-meta"},a.name+" · failed")));
-        });
-        detail.append(history);
-        const textarea=el("textarea",{placeholder:"Message "+a.name+"…","aria-label":"Message "+a.name,
-          disabled:S.secureMode,oninput:e=>{S.agentMessageDrafts[a.id]=e.target.value;}},
-          S.agentMessageDrafts[a.id]||"");
-        const send=el("button",{class:"primary",disabled:S.secureMode},"Queue");
-        send.onclick=()=>sendAgentMessage(a,textarea,send);
-        textarea.onkeydown=e=>{if(e.key==="Enter"&&(e.metaKey||e.ctrlKey)){e.preventDefault();send.click();}};
-        detail.append(el("div",{class:"agent-message-compose"},textarea,send));
-        if(S.secureMode)detail.append(el("span",{class:"presence-reason"},
-          "Secure mode is on. Start agents before queuing a message."));
-        detail.append(el("button",{class:"danger small",style:"grid-column:1/-1;justify-self:start",onclick:async()=>{
-          if(!confirm("Retire "+a.name+"? Its open jobs are cancelled."))return;
-          try{await api("/api/bubbles/"+S.bubble+"/agents/"+a.id,{method:"DELETE"});toast("Retired "+a.name);}catch(e){toast(e.message);}
-          loadAgents();
-        }},"retire"));
-        menu.append(detail);
-      }
     };
     menu.append(el("div",{class:"presence-group"},"Folders and agents"));
     if(!workers.length){
@@ -7158,6 +7177,7 @@
       if(window.LockedInMarks&&window.LockedInMarks.setAgents)window.LockedInMarks.setAgents(bubble,S.agents,S.jobsByMark,r.jobs_mtime);
       if(window.LockedInMarks&&window.LockedInMarks.setSecureMode)window.LockedInMarks.setSecureMode(S.secureMode);
       if(S.presence){S.presence.agents=S.agents;renderPresence();}
+      renderAgentChat();
       syncSecureModeUI();
     }catch(e){}
   }
@@ -7215,6 +7235,11 @@
     if(icon)icon.setAttribute("href",on?"#li-i-lock":"#li-i-lock-open");
     const check=document.querySelector("#secureModeSection input[type=checkbox]");
     if(check)check.checked=on;
+    if(S.agentChatEl){
+      const textarea=S.agentChatEl.querySelector("textarea"),send=S.agentChatEl.querySelector(".agent-message-compose button");
+      if(textarea)textarea.disabled=on;if(send)send.disabled=on;
+      renderAgentChat();
+    }
     if(S.presence&&S.presenceEl)renderPresence();
     renderSecureBanner();
   }

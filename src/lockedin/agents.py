@@ -1064,7 +1064,7 @@ def overview(slug: str, *, workers: list[dict] | None = None, viewer: str = "") 
             1 for j in summaries if j["agent_id"] == agent["id"] and j.get("started_at")
             and now_ts - _parse_ts(j["started_at"]) <= 86400)
         row["messages"] = [j for j in summaries
-                           if j["agent_id"] == agent["id"] and j["kind"] == "direct"][-20:]
+                           if j["agent_id"] == agent["id"] and j["kind"] == "direct"]
         rows.append(row)
     return {"agents": rows,
             "jobs": {"by_mark": by_mark,

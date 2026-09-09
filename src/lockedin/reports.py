@@ -1,8 +1,8 @@
 """The in-app usage guide.
 
-There is no AI chat in the product any more — the model layer exists solely to summarize
-uploaded PDFs (see ``tagger``). This module is the single source of truth for the user-facing
-usage guide: ``APP_USAGE_GUIDE_SECTIONS`` renders in the web app's help modal, and
+The background model layer exists solely to summarize uploaded PDFs (see ``tagger``); named
+agents run through a user's connected Scientist client. This module is the single source of
+truth for the user-facing usage guide: ``APP_USAGE_GUIDE_SECTIONS`` renders in the web app's help modal, and
 ``guide_section`` feeds the Scientist skill and the ``lockedin editguide`` CLI.
 """
 from __future__ import annotations
@@ -49,9 +49,9 @@ You cannot delete your own account.
 
 ## Background model for paper summaries
 
-Separate from the agent you actually work with, a background model can summarize papers for
-you: when you upload a PDF it extracts metadata, suggests tags, and writes the one-time summary
-shown on the asset page. That is its whole job — there is no AI chat in the app.
+Separate from the named agents you work with, a background model can summarize papers for you:
+when you upload a PDF it extracts metadata, suggests tags, and writes the one-time summary shown
+on the asset page. It does not participate in agent messages or turns.
 
 Set it up in **Settings**: pick a provider card (Qwen on the server for premium accounts, or
 OpenAI / Claude / Gemini with your own API key) and click **Configure** to add the key or
@@ -201,6 +201,39 @@ Shared pages have a theme-cycle button, restricted to the themes you enabled in 
 """,
     },
     {
+        "title": "Agents",
+        "content": """\
+## Named agents
+
+After a Scientist client registers a conversation as an agent, it appears under its connected
+folder in the agent menu on a bubble. The row shows its current state: idle, working, attached to
+an interactive chat, or offline. **Manage agents** carries the full role, goal, budget, reset and
+retire controls.
+
+## Direct messages
+
+Open the agent menu and select an agent to open its direct-message screen. Write any free-form
+request and choose **Queue turn** (or press **Ctrl/⌘+Enter**). Each post is one real agent turn and
+counts against that agent's hourly and daily turn budget. The queued/running state appears in the
+thread, and the agent's response posts immediately underneath it. You can continue with another
+message in the same thread.
+
+Ambient presence and job refreshes do not replace the composer: its focus, caret, draft and the
+thread's scroll position stay put while you write.
+
+## Stopping agents
+
+The **Stop agents** switch is an emergency boundary for your account. An open lock means agent
+turns are allowed; a closed lock means they are stopped. Turning it on cancels running turns and
+prevents assigned marks and direct messages from dispatching until you authenticate and turn it
+off. While agents are stopped, the ordinary top-right Settings shortcut is hidden; use the
+visible stop-agents notice or sidebar switch to restore them.
+
+Stopping agents does not stop report synchronization. Other workspace members have their own
+agents and their own stop switch.
+""",
+    },
+    {
         "title": "Chalk talks",
         "content": """\
 ## What a chalk talk is
@@ -278,6 +311,18 @@ the tags leaves the mark to orphan loudly rather than silently vanishing.
 The toolbar is the document editor's — same image upload, tables, text colour, centering and
 undo — and the same coloured chip on its left shows the save state: a tick when saved, a pencil
 while unsaved; click it to save in place, or **Save slide** to save and return to the deck.
+
+The editing guide's content syntax works on slides too: Markdown tables and figures, workspace
+math macros, display environments, citations, coloured text, and theorem-style boxes. Supported
+boxes are `theorem`, `lemma`, `corollary`, `proposition`, `definition`, `assumption`, `remark`,
+and the unnumbered `proof` box. Optional titles use
+`\\begin{theorem}[Title] ... \\end{theorem}`.
+
+Put `\\label{thm:key}` inside a box and use `\\thmref{thm:key}` anywhere else in that same
+chalk talk—even on another slide or inside math. Each environment has its own talk-wide counter.
+This namespace is deliberately local: a chalk talk cannot reference a report theorem, and its
+labels and counters never change report-page references. Citations remain bubble-wide, so a
+paper keeps the same citation number on slides and pages.
 
 A hand edit lands in place — the slide simply becomes what you saved. **+** inserts a blank
 slide after the current one; the **delete** button removes the slide with its marks; the delete
@@ -835,9 +880,12 @@ f(x) &= x^2 + 2x + 1 \\\\
 
 ### Numbered equations
 
+Equation numbering and `\\eqref`/`\\ref` are report-page features. Chalk talks render the same
+display environments, but do not add their equation labels to the report registry.
+
 Add `\\label{eq:name}` on any line inside a display block to give it a number.
 Lines without a label show no number. Numbers are sequential **across the whole
-bubble** — every page's equations share one counter, in page order.
+bubble's report pages** — every page's equations share one counter, in page order.
 
 | What you type | What you get |
 |---------------|--------------|
@@ -884,24 +932,32 @@ The optional `[title]` appears after the number. For example,
 ### Cross-referencing environments
 
 Put `\\label{thm:key}` inside any environment (it is hidden in the display).
-Then write `\\thmref{thm:key}` anywhere — on this or any other page of the
-bubble, and even inside a math block — to get an inline reference. Theorem
-counters are bubble-wide too. For example, `\\thmref{thm:key}` → **Theorem 2**.
+On report pages, write `\\thmref{thm:key}` anywhere — on this or any other report page of the
+bubble, and even inside a math block — to get an inline reference. Report theorem counters are
+bubble-wide. For example, `\\thmref{thm:key}` → **Theorem 2**.
 
-While editing, type `\\thmref{` to open an autocomplete menu for theorem, definition, lemma,
-proposition, assumption, corollary, and remark labels.
+Chalk talks support the same environments and reference syntax, but their theorem namespace is
+local to one talk: numbering continues across that talk's slides and does not enter or read the
+report-page registry.
+
+In the report-page editor, type `\\thmref{` to open an autocomplete menu for theorem,
+definition, lemma, proposition, assumption, corollary, and remark labels.
 
 ---
 
 ## Figures
 
-Every Markdown image in a bubble is numbered in page order and receives a caption beneath it.
+On report pages, every Markdown image in a bubble is numbered in page order and receives a
+caption beneath it.
 To add a captioned figure, insert an image with descriptive alt text; that text becomes the
 caption in the rendered page. Add a `\\label{fig:your-key}` inside the same alt text when you
 want to refer to the figure elsewhere with `\\figref{fig:your-key}`.
 
 Figure numbers and references are bubble-wide, so they remain correct across pages. Type
 `\\figref{` in the editor to choose an existing figure label.
+
+The same Markdown image syntax displays a figure on a chalk-talk slide and opens it in the
+lightbox, but slide figures do not enter the report's figure-number registry.
 
 ## Large files
 
@@ -991,4 +1047,3 @@ def guide_section(title: str) -> str:
     title, not index), or "" if there is none. Single source of truth for the website and the
     project-local Scientist skill."""
     return next((s["content"] for s in APP_USAGE_GUIDE_SECTIONS if s["title"] == title), "")
-

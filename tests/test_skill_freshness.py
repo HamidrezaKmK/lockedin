@@ -116,6 +116,27 @@ class SkillFreshnessTests(unittest.TestCase):
     def test_skill_version_has_reached_the_git_optional_root_fix(self):
         self.assertGreaterEqual(SKILL_VERSION, 44)
 
+    def test_skill_version_carries_direct_turns_and_talk_local_theorems(self):
+        self.assertGreaterEqual(SKILL_VERSION, 48)
+        self.assertIn("send you a direct\nmessage", GUIDES["agents.md"])
+        feedback = GUIDES["feedback.md"]
+        self.assertIn("Those counters and labels are **talk-local**", feedback)
+        self.assertIn(r"\thmref{thm:key}", feedback)
+
+    def test_editing_reference_guide_distinguishes_page_and_talk_theorem_scope(self):
+        guide = reports.guide_section("Editing Guide")
+        self.assertIn("numbering continues across that talk's slides", guide)
+        self.assertIn("does not enter or read the\nreport-page registry", guide)
+
+    def test_web_help_covers_direct_agent_turns_and_chalk_talk_theorems(self):
+        agents_help = reports.guide_section("Agents")
+        for expected in ("Queue turn", "one real agent turn", "open lock", "closed lock"):
+            self.assertIn(expected, agents_help)
+        chalk_help = reports.guide_section("Chalk talks")
+        self.assertIn(r"\begin{theorem}[Title]", chalk_help)
+        self.assertIn("another slide or inside math", chalk_help)
+        self.assertIn("This namespace is deliberately local", chalk_help)
+
     def test_agents_guide_uses_default_cli_name_without_env(self):
         # Without the env var, the guide should use the default app name
         with tempfile.TemporaryDirectory() as tmpdir:

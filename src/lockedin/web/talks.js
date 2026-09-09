@@ -265,6 +265,16 @@ button.tk-tag{font:inherit;line-height:inherit;cursor:pointer;-webkit-appearance
 .tk-md .katex-display{margin:10px 0;overflow-x:auto;overflow-y:hidden}
 .tk-md blockquote{border-left:3px solid var(--accent2);margin:0 0 15px;padding:10px 16px;
   background:color-mix(in srgb,var(--accent2) 8%,transparent);border-radius:0 9px 9px 0}
+.tk-theorem{margin:0 0 15px;padding:13px 16px;border:1px solid var(--line-strong);
+  border-left:3px solid var(--accent);border-radius:0 9px 9px 0;background:var(--panel2)}
+.tk-theorem.definition,.tk-theorem.assumption{border-left-color:var(--accent2)}
+.tk-theorem.remark,.tk-theorem.proof{border-left-color:var(--muted);background:transparent}
+.tk-theorem-title{font-family:var(--font-ui);font-weight:700;font-style:normal;margin:0 0 6px}
+.tk-theorem-title em{font-family:var(--font-reading);font-weight:400}
+.tk-theorem-body>:last-child{margin-bottom:0}
+.tk-theorem.proof .tk-theorem-body::after{content:"\\220e";float:right;margin-left:12px}
+.tk-thm-ref{color:var(--accent2);white-space:nowrap}
+.tk-thm-ref.unresolved{color:var(--warn);text-decoration:underline dotted;cursor:help}
 /* A slide carries the same markdown a report page does, so it needs the same vocabulary of
    blocks. Without these a heading came out at the browser's default 2em, a fenced block had no
    box, and a table arrived as four unruled columns of text — which is how a comparison table,
@@ -940,10 +950,86 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
 
   function stashMath(md) {
     const found = [];
-    const take = (src, display) => { found.push({ src, display }); return MATH_TOKEN(found.length - 1); };
-    let out = md.replace(/\$\$([\s\S]+?)\$\$/g, (m, body) => take(m, true));
-    out = out.replace(/(^|[^\\$])\$([^$\n]+?)\$/g, (m, pre, body) => pre + take("$" + body + "$", false));
+    const take = (src, display, body = src) => {
+      found.push({ src, display, body }); return MATH_TOKEN(found.length - 1);
+    };
+    // The report editing guide permits the standard display environments as well as $$…$$.
+    // Stash them before marked sees their backslashes and line breaks.
+    let out = md.replace(/\\begin\{(align\*?|alignat\*?|equation\*?|gather\*?|multline\*?)\}[\s\S]*?\\end\{\1\}/g,
+      m => take(m, true));
+    out = out.replace(/\$\$([\s\S]+?)\$\$/g, (m, body) => take(m, true, body));
+    out = out.replace(/\\\[([\s\S]+?)\\\]/g, (m, body) => take(m, true, body));
+    out = out.replace(/\\\(([\s\S]+?)\\\)/g, (m, body) => take(m, false, body));
+    out = out.replace(/(^|[^\\$])\$([^$\n]+?)\$/g,
+      (m, pre, body) => pre + take("$" + body + "$", false, body));
     return { text: out, found };
+  }
+
+  const THEOREM_ENVS = "theorem|lemma|corollary|proposition|definition|assumption|remark|proof";
+  function theoremPattern() {
+    return new RegExp("\\\\begin\\{(" + THEOREM_ENVS + ")\\}(?:\\[([^\\]\\n]*)\\])?([\\s\\S]*?)\\\\end\\{\\1\\}", "g");
+  }
+  function theoremName(env) { return env.charAt(0).toUpperCase() + env.slice(1); }
+
+  /** Number and resolve theorem-like blocks using this talk alone. Nothing is written into the
+   *  bubble reference index, so a label can neither escape this deck nor collide with a page. */
+  function talkTheoremRegistry() {
+    const counters = {}, labels = new Map(), entries = [], locations = new Map();
+    (S.talk && S.talk.slides || []).forEach((slide, slideIndex) => {
+      [["title", slide.title], ["sub", slide.sub], ["body", slide.body]].forEach(([field, source]) => {
+        const here = [], re = theoremPattern();
+        let match;
+        while ((match = re.exec(String(source || "")))) {
+          const env = match[1], numbered = env !== "proof";
+          const number = numbered ? (counters[env] = (counters[env] || 0) + 1) : null;
+          const labelMatch = /\\label\{([^}]+)\}/.exec(match[3]);
+          const entry = {
+            raw: match[0], env, title: match[2] || "", body: match[3], number,
+            label: labelMatch ? labelMatch[1].trim() : "",
+          };
+          entries.push(entry); here.push(entry);
+          if (entry.label && !labels.has(entry.label)) labels.set(entry.label, entry);
+        }
+        locations.set(slideIndex + ":" + field, here);
+      });
+    });
+    return { entries, labels, locations };
+  }
+
+  function theoremRefsToHtml(text, registry) {
+    return String(text).replace(/\\thmref\{([^}]+)\}/g, (raw, value) => {
+      const label = value.trim(), entry = registry.labels.get(label);
+      if (!entry) return `<span class="tk-thm-ref unresolved" data-md="${esc(raw)}" title="No theorem labelled ${esc(label)} in this chalk talk">${esc(label)}?</span>`;
+      const display = theoremName(entry.env) + " " + entry.number;
+      return `<span class="tk-thm-ref" data-md="${esc(raw)}">${esc(display)}</span>`;
+    });
+  }
+
+  function theoremRefsInMath(text, registry) {
+    return String(text).replace(/\\thmref\{([^}]+)\}/g, (raw, value) => {
+      const entry = registry.labels.get(value.trim());
+      return entry ? `\\text{${theoremName(entry.env)} ${entry.number}}` : raw;
+    });
+  }
+
+  function stashTheorems(md, context, registry) {
+    const found = [], usedByRaw = new Map();
+    const located = registry.locations.get((context.slide ?? "") + ":" + (context.field || "")) || [];
+    let localIndex = 0;
+    const text = String(md).replace(theoremPattern(), (raw, env, title, body) => {
+      // A location is exact for the live slide. The raw fallback keeps editor previews and
+      // other one-off renderers useful without inventing a second numbering system.
+      let entry = located[localIndex++];
+      if (!entry || entry.raw !== raw) {
+        const used = usedByRaw.get(raw) || 0;
+        const matches = registry.entries.filter(candidate => candidate.raw === raw);
+        entry = matches[Math.min(used, Math.max(matches.length - 1, 0))];
+        usedByRaw.set(raw, used + 1);
+      }
+      found.push(entry || { raw, env, title: title || "", body, number: null, label: "" });
+      return `@@LITHM${found.length - 1}@@`;
+    });
+    return { text, found };
   }
 
   // `assets/<file>` is the portable report syntax, and a slide is stored in the same bubble as
@@ -974,7 +1060,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     catch (e) { /* the viewer is optional */ }
   }
 
-  function renderMarkdown(md, into) {
+  function renderMarkdown(md, into, context = {}) {
     // Image alt text becomes an HTML attribute, so a `$…$` inside it must not be stashed and
     // re-rendered as KaTeX — doing so injects markup into the attribute and breaks out of the
     // tag. The SPA guards report pages the same way; a slide caption with maths in it leaked
@@ -986,8 +1072,10 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     });
     // The shared editor's colour tool writes the same \textcolor wrapper pages use; render it
     // the same way. After the math stash, so a coloured formula keeps its placeholder intact.
-    const { text: stashed, found } = stashMath(guarded);
-    const text = stashed.replace(/\\textcolor\{(#[0-9a-fA-F]{3,8})\}\{([^{}]*)\}/g,
+    const registry = talkTheoremRegistry();
+    const theorems = stashTheorems(guarded, context, registry);
+    const { text: stashed, found } = stashMath(theorems.text);
+    const text = theoremRefsToHtml(stashed, registry).replace(/\\textcolor\{(#[0-9a-fA-F]{3,8})\}\{([^{}]*)\}/g,
       (_, c, t) => `<span style="color:${c}">${t}</span>`);
     let html;
     try { html = window.marked ? window.marked.parse(text, { breaks: false }) : esc(text); }
@@ -995,11 +1083,38 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     found.forEach((_, i) => {
       html = html.split(MATH_TOKEN(i)).join(`<span class="tk-math" data-i="${i}"></span>`);
     });
+    theorems.found.forEach((_, i) => {
+      const token = `@@LITHM${i}@@`, block = `<div class="tk-theorem-slot" data-i="${i}"></div>`;
+      html = html.replace(new RegExp(`<p>\\s*${token}\\s*</p>`, "g"), block).split(token).join(block);
+    });
     html = citationsToHtml(html);
     captions.forEach((cap, i) => {
       html = html.split(`@@LICAP${i}@@`).join(esc(cap));
     });
     into.innerHTML = html;
+    into.querySelectorAll(".tk-theorem-slot").forEach(node => {
+      const item = theorems.found[Number(node.dataset.i)];
+      if (!item) return;
+      const box = document.createElement("section");
+      box.className = "tk-theorem " + item.env;
+      if (item.label) box.dataset.label = item.label;
+      const heading = document.createElement("div");
+      heading.className = "tk-theorem-title";
+      const name = item.env === "proof" ? "Proof" : theoremName(item.env) + (item.number ? " " + item.number : "");
+      heading.append(document.createTextNode(name));
+      if (item.title) {
+        const suffix = document.createElement("em");
+        suffix.textContent = " (" + item.title + ")";
+        heading.append(suffix);
+      }
+      const body = document.createElement("div");
+      body.className = "tk-theorem-body";
+      // Labels are structural metadata. Render the rest through the complete slide pipeline,
+      // so theorem bodies keep math, colour, citations, tables, links, and figures.
+      renderMarkdown(item.body.replace(/\\label\{[^}]+\}/g, ""), body);
+      box.append(heading, body);
+      node.replaceWith(box);
+    });
     // A slide is a fixed-width card, so give every table its own scroll box instead of letting
     // a wide one push the card past the frame.
     into.querySelectorAll("table").forEach(t => {
@@ -1016,7 +1131,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
       if (!m) return;
       // The span carries its own source, so anchoring can recover it from a selection.
       node.dataset.md = m.src;
-      const body = m.display ? m.src.slice(2, -2) : m.src.slice(1, -1);
+      const body = theoremRefsInMath(m.body, registry);
       if (!window.katex) { node.textContent = m.src; return; }
       try {
         node.innerHTML = window.katex.renderToString(body, {
@@ -1031,8 +1146,8 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
    *  and `[[vamp only]]` sat there as literal text beside a body that rendered both. They are
    *  slide content, not chrome, and go through the same pipeline; the lone wrapping <p> is
    *  unwrapped so the line keeps the type of the element it was written into. */
-  function renderInline(md, into) {
-    renderMarkdown(String(md || ""), into);
+  function renderInline(md, into, context = {}) {
+    renderMarkdown(String(md || ""), into, context);
     into.classList.add("tk-line");
     if (into.childNodes.length === 1 && into.firstChild.tagName === "P")
       into.firstChild.replaceWith(...into.firstChild.childNodes);
@@ -1849,10 +1964,10 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
 
     const md = wrap.querySelector(".tk-md");
     const annotationSurface = wrap.querySelector(".tk-slide");
-    renderInline(sl.title, wrap.querySelector('[data-line="title"]'));
+    renderInline(sl.title, wrap.querySelector('[data-line="title"]'), { slide: S.slide, field: "title" });
     const subEl = wrap.querySelector('[data-line="sub"]');
-    if (subEl) renderInline(sl.sub, subEl);
-    renderMarkdown(sl.body, md);
+    if (subEl) renderInline(sl.sub, subEl, { slide: S.slide, field: "sub" });
+    renderMarkdown(sl.body, md, { slide: S.slide, field: "body" });
     // A slide's title and subtitle are source text too, not decorative chrome. Paint and
     // select across this whole surface so they can carry the same review marks as its body.
     paintAnchors(annotationSurface, sl, mine);
@@ -2092,7 +2207,9 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
           <div class="tk-edithost"></div>
           <div class="tk-editnote">Type any section label above. The first line is the slide title:
             <code># title</code>, then an optional <code>*subtitle*</code> line. Marks appear as
-            <code>&lt;comment-begin=id&gt;…&lt;comment-end=id&gt;</code> — edit inside them and the mark follows it.</div>
+            <code>&lt;comment-begin=id&gt;…&lt;comment-end=id&gt;</code> — edit inside them and the mark follows it.
+            The editing-guide syntax works here too; theorem labels and <code>\\thmref{…}</code>
+            references are numbered within this chalk talk only.</div>
         </div>
         <div class="tk-foot">
           <div class="tk-dots">${S.talk.slides.map((s, i) =>
@@ -2176,8 +2293,9 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     </div></div>`).firstChild;
     el.querySelectorAll(".tk-mini").forEach(m => {
       const s = S.talk.slides[Number(m.dataset.i)] || {};
-      renderInline(s.title, m.querySelector('[data-line="title"]'));
-      renderInline(s.sub, m.querySelector('[data-line="sub"]'));
+      const slideIndex = Number(m.dataset.i);
+      renderInline(s.title, m.querySelector('[data-line="title"]'), { slide: slideIndex, field: "title" });
+      renderInline(s.sub, m.querySelector('[data-line="sub"]'), { slide: slideIndex, field: "sub" });
       m.onclick = () => { S.slide = Number(m.dataset.i); S.view = "deck"; render(); };
     });
     return el;
@@ -2237,8 +2355,8 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     const climb = node => {
       let el = node && node.nodeType === 3 ? node.parentNode : node;
       while (el && el !== md) {
-        if (el.classList &&
-            (el.classList.contains("tk-math") || el.classList.contains("tk-wikilink"))) return el;
+        if (el.classList && (el.classList.contains("tk-math") ||
+            el.classList.contains("tk-wikilink") || el.classList.contains("tk-thm-ref"))) return el;
         el = el.parentNode;
       }
       return null;
@@ -2260,6 +2378,8 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     // [[pretrained-vamp]].
     frag.querySelectorAll("a.tk-wikilink").forEach(n =>
       n.replaceWith(document.createTextNode(n.dataset.md || n.textContent)));
+    frag.querySelectorAll(".tk-thm-ref").forEach(n =>
+      n.replaceWith(document.createTextNode(" " + (n.dataset.md || n.textContent) + " ")));
     return frag.textContent.replace(/\s+/g, " ").trim();
   }
 
