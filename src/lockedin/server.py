@@ -44,7 +44,7 @@ _WORKER_PATH_RE = re.compile(r"^/api/scientist/v2/bubbles/([^/]+)(?:/|$)")
 # Keep this equal to ``scientist_cli.SCIENTIST_CLIENT_VERSION``. Bump both when a Scientist
 # release needs an installed client refresh; the dependency-free installed client cannot import
 # package metadata from this server.
-SCIENTIST_CLIENT_VERSION = "2026.09.09.2"
+SCIENTIST_CLIENT_VERSION = "2026.09.09.3"
 DEMO_ACCESS_MESSAGE = (
     "Lockedin is an experimental project and currently on demo, to be able to login "
     "and play with our project, email kamkarih@mit.edu"
@@ -1607,7 +1607,7 @@ def build_app():
         if not body.enabled and auth.secure_mode(user) and not auth.verify_password(user, body.current_password):
             raise HTTPException(status_code=403, detail="Your current password is required to turn secure mode off.")
         revoked = auth.set_secure_mode(user, body.enabled)
-        retired = cancelled = removed_workers = 0
+        stopped = cancelled = removed_workers = 0
         if body.enabled:
             # Agent records live inside each workspace bubble, while the stop is account-wide.
             # Walk every workspace the account belongs to; another member's agents are untouched.
@@ -1615,12 +1615,12 @@ def build_app():
                 home = workspaces.workspace_home(workspace["id"])
                 with paths.use_root(home):
                     for slug in list(bubbles.load_registry()):
-                        result = agents.remove_owner(slug, user)
-                        retired += result["agents"]
+                        result = agents.stop_owner(slug, user)
+                        stopped += result["agents"]
                         cancelled += result["cancelled_jobs"]
             removed_workers = presence.drop_workers(user)
         return {"enabled": auth.secure_mode(user), "revoked_clients": revoked,
-                "retired_agents": retired, "cancelled_jobs": cancelled,
+                "stopped_agents": stopped, "cancelled_jobs": cancelled,
                 "removed_workers": removed_workers}
 
     # ---- aesthetics settings ----

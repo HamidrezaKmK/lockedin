@@ -1383,8 +1383,8 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
       const lastTurn = turns[turns.length - 1];
       const lastIsAgent = !!(lastTurn && lastTurn.classList.contains("agent"));
       const existingAssign = acts && acts.querySelector("[data-assign]");
-      if (acts && lastIsAgent && existingAssign) existingAssign.remove();
-      if (acts && !existingAssign && M.agents.length && !acts.querySelector("textarea") && !lastIsAgent) {
+      if (acts && (lastIsAgent || M.secureMode) && existingAssign) existingAssign.remove();
+      if (acts && !existingAssign && M.agents.length && !M.secureMode && !acts.querySelector("textarea") && !lastIsAgent) {
         acts.insertAdjacentHTML("beforeend", `<button data-assign="${esc(card.dataset.note)}">assign</button>`);
       }
     });
@@ -3173,7 +3173,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
                              if (jobsMtime != null) M.jobsMtime = jobsMtime;
                              paintJobChips(document);
                            },
-                           setSecureMode: (enabled) => { M.secureMode = !!enabled; },
+                           setSecureMode: (enabled) => { M.secureMode = !!enabled; paintJobChips(document); },
                            refreshAgents,
                            pendingRange: paintPendingRange, clearPending };
 })();

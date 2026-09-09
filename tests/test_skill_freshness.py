@@ -66,7 +66,7 @@ class SkillFreshnessTests(unittest.TestCase):
     def test_the_agents_guide_covers_every_agent_subcommand(self):
         guide = GUIDES["agents.md"]
         for expected in ("agent register", "agent reply", "agent fail", "agent chat",
-                         "agent reset", "agent retire"):
+                         "agent revive", "agent reset", "agent retire"):
             self.assertIn(expected, guide)
 
     def test_skill_version_has_reached_the_agents_feature(self):
@@ -122,6 +122,10 @@ class SkillFreshnessTests(unittest.TestCase):
         feedback = GUIDES["feedback.md"]
         self.assertIn("Those counters and labels are **talk-local**", feedback)
         self.assertIn(r"\thmref{thm:key}", feedback)
+
+    def test_skill_version_carries_agent_revival(self):
+        self.assertGreaterEqual(SKILL_VERSION, 49)
+        self.assertIn("one-use recovery command", GUIDES["agents.md"])
 
     def test_editing_reference_guide_distinguishes_page_and_talk_theorem_scope(self):
         guide = reports.guide_section("Editing Guide")

@@ -515,6 +515,41 @@ def remove_owner(slug: str, owner: str) -> dict:
     return {"agents": len(removed), "cancelled_jobs": cancelled}
 
 
+def stop_owner(slug: str, owner: str) -> dict:
+    """Stop one account's agents without erasing their identity or conversation.
+
+    Secure mode revokes every machine credential, so these records cannot execute again until an
+    authorized worker checks in.  Keeping them is what makes the stop reversible: the browser can
+    still show each named agent and offer a recovery command that reconnects its original folder.
+    """
+    owner = str(owner or "").strip().lower()
+    now = _now_iso()
+    with _bubble_lock(slug):
+        registry = _agents(slug)
+        stopped = 0
+        for agent in registry["agents"].values():
+            if _owner_of(agent) != owner:
+                continue
+            agent["revive_required"] = True
+            agent["stopped_at"] = now
+            agent["heartbeat"] = {"at": "", "attached": False}
+            agent["updated_at"] = now
+            stopped += 1
+        if stopped:
+            _save_agents(slug, registry)
+        data = _jobs(slug)
+        cancelled = 0
+        for job in data["jobs"].values():
+            if job.get("owner", "") == owner and job.get("status") in OPEN_STATUSES:
+                job["status"] = "cancelled"
+                job["finished_at"] = now
+                job["error"] = "the owner turned on Stop agents"
+                cancelled += 1
+        if cancelled:
+            _save_jobs(slug, data)
+    return {"agents": stopped, "cancelled_jobs": cancelled}
+
+
 # --------------------------------------------------------------------------- #
 # Jobs
 # --------------------------------------------------------------------------- #
@@ -955,6 +990,10 @@ def heartbeat(slug: str, *, worker_id: str, agents: list[dict], running_job_ids:
                     ("job_id", "started_at", "last_output_at", "output_bytes", "deadline_at")
                 }
             agent["heartbeat"] = heartbeat
+            # Reaching this point proves a newly authorized worker owns the retained record.
+            # Clear the secure-stop marker without touching its persona or conversation.
+            agent.pop("revive_required", None)
+            agent.pop("stopped_at", None)
             if "budget" in item:
                 agent["budget"] = item.get("budget")
             if "confinement" in item:

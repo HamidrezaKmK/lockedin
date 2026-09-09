@@ -1380,6 +1380,13 @@
   .agent-chat-title{flex:1;min-width:0}
   .agent-chat-title b,.agent-chat-title span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .agent-chat-title span{font-size:11px;color:var(--muted);margin-top:2px}
+  .agent-revive{display:none;padding:10px 14px;border-bottom:1px solid var(--line);
+    background:color-mix(in srgb,var(--warn) 8%,var(--panel));flex:none}
+  .agent-revive.show{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 9px;align-items:center}
+  .agent-revive-copy{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    font:11px/1.35 var(--font-mono);color:var(--ink);background:var(--panel2);border:1px solid var(--line);
+    border-radius:7px;padding:7px 9px;user-select:all}
+  .agent-revive-note{grid-column:1/-1;color:var(--muted);font-size:11px;line-height:1.35}
   .agent-message-history{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;
     gap:8px;padding:16px;background:color-mix(in srgb,var(--panel2) 55%,var(--panel))}
   .agent-message-empty{margin:auto;color:var(--muted);text-align:center;max-width:320px;line-height:1.5}
@@ -3463,9 +3470,9 @@
     box.append(el("label",{class:"row",style:"gap:10px;cursor:pointer;align-items:center"},
       check,el("span",{},"Stop all agents")));
     box.append(el("div",{class:"muted",style:"font-size:12px"},
-      "Revokes every Scientist client, removes all of your registered agents, cancels their open "+
-      "jobs, and stops their sync workers. Turning this off restores none of them: authorize each "+
-      "machine again, run lockedin-scientist resync, and register new agents when ready."));
+      "Revokes every Scientist client, cancels open jobs, and stops sync workers. Your registered "+
+      "agents, personalities, conversations, and message history are retained. After turning this "+
+      "off, open an offline agent and copy its one-use recovery command on each machine."));
     main.append(box);
     check.onchange=async()=>{
       const enabled=check.checked;
@@ -3473,7 +3480,7 @@
       try{
         const result=await setSecureModeEnabled(enabled);
         if(!result){check.checked=S.secureMode;return;}
-        toast(S.secureMode?"Agents stopped and removed":"Stop-agents mode is off");
+        toast(S.secureMode?"Agents safely stopped":"Stop-agents mode is off");
       }catch(e){ check.checked=!enabled; toast(e.message); }
       finally{ check.disabled=false; }
     };
@@ -3755,7 +3762,7 @@
     try{
       const result=await setSecureModeEnabled(!S.secureMode);
       if(!result)return;
-      toast(S.secureMode?"Agents stopped and removed":"Stop-agents mode is off");
+      toast(S.secureMode?"Agents safely stopped":"Stop-agents mode is off");
     }catch(e){ toast(e.message); }
     finally{ sideSecureSwitch.disabled=false; }
   };
@@ -5474,6 +5481,7 @@
     const status=overlay.querySelector(".agent-chat-status");
     if(status)status.textContent=(agent.role||agent.vendor)+(agent.model?" · "+agent.model:"")+" · "+agent.status+
       " · "+(agent.turns_last_hour||0)+" turns this hour";
+    renderAgentRevive(agent,overlay);
     const history=overlay.querySelector(".agent-message-history");
     if(!history)return;
     const wasAtBottom=history.scrollHeight-history.scrollTop-history.clientHeight<36;
@@ -5494,12 +5502,55 @@
     requestAnimationFrame(()=>{history.scrollTop=wasAtBottom?history.scrollHeight:previousTop;});
   }
 
+  function renderAgentRevive(agent,overlay){
+    const panel=overlay.querySelector(".agent-revive");
+    if(!panel)return;
+    const dead=agent.status==="offline"||agent.status==="stopped";
+    panel.classList.toggle("show",dead);
+    if(!dead)return;
+    if(agent.status==="stopped"){
+      panel.replaceChildren(el("div",{class:"agent-revive-note"},
+        "Turn Stop agents off first. This agent, its personality, and its conversation are retained."));
+      panel._key="stopped";return;
+    }
+    const key=agent.id+":"+String(!!agent.revive_required);
+    if(panel._key===key)return;
+    panel._key=key;
+    if(!agent.revive_required){
+      showAgentReviveCommand(panel,"lockedin-scientist agent revive \""+agent.name+"\"",
+        "Run this from the agent’s project folder. It resumes the worker and reloads the retained personality.");
+      return;
+    }
+    panel.replaceChildren(el("div",{class:"agent-revive-note"},"Preparing a one-use recovery command…"));
+    api("/api/bubbles/"+encodeURIComponent(S.bubble)+"/setup-link",{method:"POST"}).then(commands=>{
+      if(!S.agentChatEl||S.agentChatEl!==overlay||panel._key!==key)return;
+      const command=detectPlatform()==="windows"?commands.powershell:commands.unix;
+      showAgentReviveCommand(panel,command,
+        "Paste this in the agent’s project folder. It upgrades Scientist, reauthorizes this laptop, and resumes every retained agent in that folder. The link expires in "+
+        Math.round((commands.expires_in||600)/60)+" minutes.");
+    }).catch(e=>{
+      if(panel._key===key)panel.replaceChildren(el("div",{class:"agent-revive-note"},
+        "Could not prepare the recovery command: "+e.message));
+    });
+  }
+
+  function showAgentReviveCommand(panel,command,note){
+    const code=el("code",{class:"agent-revive-copy",title:command,tabindex:"0"},command);
+    const copy=el("button",{class:"primary small"},"Copy");
+    copy.onclick=async()=>{
+      try{await copyText(command);copy.replaceChildren(ic("check"),"Copied");}
+      catch(e){copy.textContent="Select command";code.focus();}
+    };
+    panel.replaceChildren(code,copy,el("div",{class:"agent-revive-note"},note));
+  }
+
   function openAgentChat(agent){
     closePresenceMenu();closeAgentChat();
     const overlay=el("div",{class:"overlay agent-chat-overlay",role:"dialog","aria-modal":"true",
       "aria-label":"Direct messages with "+agent.name});
     const close=el("button",{class:"ghost small icon-btn","aria-label":"Close direct messages"},ic("close"));
     const status=el("span",{class:"agent-chat-status"});
+    const revive=el("div",{class:"agent-revive"});
     const history=el("div",{class:"agent-message-history"});
     const textarea=el("textarea",{placeholder:"Message "+agent.name+"…","aria-label":"Message "+agent.name,
       disabled:S.secureMode,oninput:e=>{S.agentMessageDrafts[agent.id]=e.target.value;}},
@@ -5510,7 +5561,7 @@
     const card=el("div",{class:"diffbox agent-chat",onclick:e=>e.stopPropagation()},
       el("div",{class:"agent-chat-header"},ic("agent"),
         el("div",{class:"agent-chat-title"},el("b",{},agent.name),status),close),
-      history,el("div",{class:"agent-message-compose"},textarea,send));
+      revive,history,el("div",{class:"agent-message-compose"},textarea,send));
     overlay.append(card);overlay.onclick=closeAgentChat;close.onclick=closeAgentChat;
     overlay._onKey=e=>{if(e.key==="Escape")closeAgentChat();};
     document.addEventListener("keydown",overlay._onKey);
@@ -7201,11 +7252,12 @@
           el("p",{},"This immediately affects every workspace and bubble you use:"),
           el("ul",{},
             el("li",{},"All Scientist client authorizations are revoked."),
-            el("li",{},"All of your registered agents are removed."),
+            el("li",{},"Registered agents and their personalities are retained but stopped."),
             el("li",{},"Open agent jobs are cancelled and running turns are killed."),
             el("li",{},"All of your sync workers stop; file syncing stops too.")),
-          el("p",{class:"muted"},"Turning this setting off does not restore anything. You must "+
-            "authorize and resync each machine locally, then register agents again.")),
+          el("p",{class:"muted"},"After turning this setting off, open any offline agent and paste "+
+            "its recovery command in that agent’s project folder. One command upgrades Scientist, "+
+            "reauthorizes the machine, and resumes every retained agent in the folder.")),
         el("div",{class:"create-dialog-footer"},cancel,stop)));
       document.body.append(overlay);document.addEventListener("keydown",onKey);cancel.focus();
     });
@@ -7222,6 +7274,9 @@
       body:JSON.stringify({enabled,current_password})});
     S.secureMode=!!r.enabled;
     syncSecureModeUI();
+    // Agent rows carry a derived stopped/offline state. Refresh immediately so turning the
+    // switch off exposes the recovery command without waiting for the next ambient poll.
+    if(S.bubble)await loadAgents();
     return r;
   }
 
@@ -7258,7 +7313,7 @@
     if(existing)return;
     const banner=el("div",{id:"secureModeBanner",class:"secure-banner"},
       ic("warning"),
-      el("span",{},"Agents stopped: your clients and agents were removed, and sync workers are off."));
+      el("span",{},"Agents stopped: machine access is revoked and sync workers are off; personalities are retained."));
     m.insertBefore(banner,m.firstChild);
   }
   function captureReviewEditorState(){

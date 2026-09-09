@@ -37,7 +37,7 @@ except ImportError:  # Standalone client installed beside agent_vendors.py.
     import agent_vendors  # type: ignore[no-redef]
 
 APP = "lockedin-scientist"
-SCIENTIST_CLIENT_VERSION = "2026.09.09.2"
+SCIENTIST_CLIENT_VERSION = "2026.09.09.3"
 POLL_SECONDS = 5
 # A worker that has not completed a cycle in three polls is wedged rather than merely busy.
 # `doctor` reports that verdict and `resync` repairs exactly what `doctor` complains about, so
@@ -76,8 +76,8 @@ AGENT_OUTPUT_TAIL = 4000
 # A worker-local budget the server cannot override by offering more jobs: zero or negative means
 # unlimited. Persisted turn start times (see AgentRunner._record_turn_start) survive a worker
 # restart, so this is a real cap, not merely a per-process counter.
-AGENT_MAX_TURNS_PER_HOUR = int(os.environ.get("LOCKEDIN_AGENT_MAX_TURNS_PER_HOUR") or 20)
-AGENT_MAX_TURNS_PER_DAY = int(os.environ.get("LOCKEDIN_AGENT_MAX_TURNS_PER_DAY") or 100)
+AGENT_MAX_TURNS_PER_HOUR = int(os.environ.get("LOCKEDIN_AGENT_MAX_TURNS_PER_HOUR") or 100)
+AGENT_MAX_TURNS_PER_DAY = int(os.environ.get("LOCKEDIN_AGENT_MAX_TURNS_PER_DAY") or 500)
 AGENT_BUDGET_HOUR_SECONDS = 3600
 AGENT_BUDGET_DAY_SECONDS = 24 * 3600
 
@@ -193,7 +193,7 @@ def welcome() -> None:
     print(bold("Agents: answer marks without opening the chat"))
     print(f"  {cyan('•')} {dim('From inside a codex/claude/agy chat in this project, give it a name and a role')}\n     {cyan('lockedin-scientist agent register --name <name> --role <role> --goal <goal>')}")
     print(f"  {cyan('•')} {dim('See the agents on this bubble, and what is queued for them')}\n     {cyan('lockedin-scientist agent list')}\n     {cyan('lockedin-scientist agent jobs')}")
-    print(f"  {cyan('•')} {dim('Reopen an agent’s conversation; reset it; or retire it (--purge deletes the conversation)')}\n     {cyan('lockedin-scientist agent chat <name>')}\n     {cyan('lockedin-scientist agent reset <name>')}\n     {cyan('lockedin-scientist agent retire <name>')}")
+    print(f"  {cyan('•')} {dim('Revive or reopen an agent; reset it; or retire it (--purge deletes the conversation)')}\n     {cyan('lockedin-scientist agent revive <name>')}\n     {cyan('lockedin-scientist agent chat <name>')}\n     {cyan('lockedin-scientist agent reset <name>')}\n     {cyan('lockedin-scientist agent retire <name>')}")
     print(f"  {cyan('•')} {dim('What a headless turn runs when it is done with a job')}\n     {cyan('lockedin-scientist agent reply <job-id> --text <answer>')}\n     {cyan('lockedin-scientist agent fail <job-id> --reason <why>')}")
     print()
     print(bold("Native agent skills"))
@@ -484,7 +484,7 @@ def bubbles_command(account: dict) -> list[dict]:
 
 # Bump when the guide text changes: a project only regenerates SKILL.md when this marker in its
 # copy stops matching, so an edit to the guide reaches no existing agent until this moves.
-SKILL_VERSION = 48
+SKILL_VERSION = 49
 
 # The marker is derived, never typed. It is what the staleness check compares against, so a
 # hand-written copy that drifted from SKILL_VERSION would either pin every project to a stale
@@ -851,6 +851,10 @@ does that in the app.
 
 ## The conversation itself
 
+- `lockedin-scientist agent revive <name>` resumes a dead worker from that agent's project folder
+  without resetting the registered personality or conversation. If **Stop agents** revoked the
+  machine, first turn it off in the web app and use the one-use recovery command shown at the top
+  of the offline agent's direct-message screen; that command upgrades and reauthorizes Scientist.
 - `lockedin-scientist agent chat <name>` reopens an agent's conversation interactively. While
   it is open the worker will not drive it — assigned jobs wait and the page shows the agent as
   *attached* — and they run once the chat is closed.
@@ -2615,6 +2619,19 @@ def agent_reset_command(start: Path, ref: str) -> None:
                   f"`agent retire --purge` would have deleted it."))
 
 
+def agent_revive_command(start: Path, ref: str) -> None:
+    """Resume this folder's worker and confirm the selected retained agent is still registered."""
+    project, binding, sync = _agent_context(start)
+    agent = _find_agent(sync, ref)
+    if agent.get("worker_id") != sync.worker_uid():
+        raise RuntimeError(
+            f"{agent['name']} belongs to {agent.get('project_label') or 'another project folder'}. "
+            "Run this command from that folder instead.")
+    resync_command(project)
+    print(green("✓") + f" {bold(agent['name'])} is ready on bubble {bold(binding['bubble'])}; "
+          "its personality and conversation were preserved.")
+
+
 def _purge_conversation(vendor: str, conversation: str) -> list[str]:
     if not conversation: return []
     try: return agent_vendors.get(vendor).purge_conversation(conversation, binary=_vendor_binary)
@@ -2648,6 +2665,7 @@ def agent_command(args) -> None:
     elif args.agent_command == "reply": agent_reply_command(start, args.job, text=args.text, file=args.file)
     elif args.agent_command == "fail": agent_fail_command(start, args.job, reason=args.reason)
     elif args.agent_command == "chat": agent_chat_command(start, args.agent)
+    elif args.agent_command == "revive": agent_revive_command(start, args.agent)
     elif args.agent_command == "reset": agent_reset_command(start, args.agent)
     elif args.agent_command == "retire": agent_retire_command(start, args.agent, purge=args.purge)
 
@@ -3547,6 +3565,8 @@ def _main() -> None:
     jobs_p.add_argument("--all", action="store_true", dest="show_all", help="Include finished jobs.")
     chat_p = agent_sub.add_parser("chat", help="Reopen an agent's conversation interactively.")
     chat_p.add_argument("agent", help="Agent name or id.")
+    revive_p = agent_sub.add_parser("revive", help="Resume this folder's worker and retain the agent's persona.")
+    revive_p.add_argument("agent", help="Agent name or id.")
     reply_p = agent_sub.add_parser("reply", help="Answer a job: post text into its mark's thread and close it.")
     reply_p.add_argument("job", help="Job id, e.g. j-000012.")
     reply_p.add_argument("--text", default="", help="What changed and why.")

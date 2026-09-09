@@ -1586,6 +1586,10 @@ class MainStreamReconfigureTests(unittest.TestCase):
 
 
 class ArgparseSmokeTests(unittest.TestCase):
+    def test_default_turn_budget_is_shared_100_per_hour_and_500_per_day(self):
+        self.assertEqual(scientist_cli.AGENT_MAX_TURNS_PER_HOUR, 100)
+        self.assertEqual(scientist_cli.AGENT_MAX_TURNS_PER_DAY, 500)
+
     def test_agent_help_lists_every_subcommand(self):
         import io
         argv = sys.argv
@@ -1598,7 +1602,7 @@ class ArgparseSmokeTests(unittest.TestCase):
             sys.argv = argv
         self.assertEqual(ctx.exception.code, 0)
         text = out.getvalue()
-        for name in ("register", "list", "jobs", "chat", "reply", "fail", "reset", "retire"):
+        for name in ("register", "list", "jobs", "chat", "revive", "reply", "fail", "reset", "retire"):
             self.assertIn(name, text)
 
     def test_welcome_mentions_agent_register(self):
@@ -1607,6 +1611,20 @@ class ArgparseSmokeTests(unittest.TestCase):
         with redirect_stdout(out):
             scientist_cli.welcome()
         self.assertIn("agent register", out.getvalue())
+
+    def test_agent_revive_resumes_its_original_worker_without_resetting_persona(self):
+        import io
+        sync = types.SimpleNamespace(worker_uid=lambda: "w1")
+        agent = {"id": "ag-1", "name": "Ada", "worker_id": "w1",
+                 "role": "reviewer", "personality": "terse", "conversation": "conv-1"}
+        out = io.StringIO()
+        with patch.object(scientist_cli, "_agent_context",
+                          return_value=(Path("/tmp/project"), {"bubble": "demo"}, sync)), \
+                patch.object(scientist_cli, "_find_agent", return_value=agent), \
+                patch.object(scientist_cli, "resync_command") as resync, redirect_stdout(out):
+            scientist_cli.agent_revive_command(Path("/tmp/project"), "Ada")
+        resync.assert_called_once_with(Path("/tmp/project"))
+        self.assertIn("personality and conversation were preserved", out.getvalue())
 
 
 if __name__ == "__main__":

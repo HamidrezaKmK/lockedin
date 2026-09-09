@@ -214,7 +214,8 @@ retire controls.
 
 Open the agent menu and select an agent to open its direct-message screen. Write any free-form
 request and choose **Queue turn** (or press **Ctrl/⌘+Enter**). Each post is one real agent turn and
-counts against that agent's hourly and daily turn budget. The queued/running state appears in the
+counts against the folder worker's shared budget across all its agents: 100 turns per rolling hour
+and 500 per rolling 24 hours by default. The queued/running state appears in the
 thread, and the agent's response posts immediately underneath it. You can continue with another
 message in the same thread.
 
@@ -229,8 +230,12 @@ prevents assigned marks and direct messages from dispatching until you authentic
 off. While agents are stopped, the ordinary top-right Settings shortcut is hidden; use the
 visible stop-agents notice or sidebar switch to restore them.
 
-Stopping agents does not stop report synchronization. Other workspace members have their own
-agents and their own stop switch.
+Your agent names, personalities, conversations and direct-message history are retained. Once Stop
+agents is off, select an offline agent and copy the recovery command at the top of its message
+screen. Run it in that agent's project folder to update Scientist, reauthorize the machine, resume
+file synchronization and bring every retained agent in that folder back. For an ordinary worker
+crash that did not revoke authorization, run `lockedin-scientist agent revive <name>` instead.
+Other workspace members have their own agents and their own stop switch.
 """,
     },
     {

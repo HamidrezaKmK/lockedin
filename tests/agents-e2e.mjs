@@ -471,8 +471,8 @@ async function main() {
     await secureMark.locator("[data-assign]").waitFor({ state: "visible", timeout: 10_000 });
     step("pinned a second, unanswered mark for the secure-mode assignment check");
 
-    // ---- step 8: Stop agents is destructive, so the sidebar switch explains and confirms it
-    // before revoking clients, removing owned agents, cancelling work, and stopping sync. ----
+    // ---- step 8: Stop agents is reversible, but still confirms before revoking clients,
+    // cancelling work, and stopping sync. Agent identities and conversations must survive. ----
     const sideSwitch = page.locator("#sideSecureSwitch");
     assert.equal(await page.locator("#sideSecureIcon").getAttribute("href"), "#li-i-lock-open",
       "enabled agents must show the open lock");
@@ -482,7 +482,7 @@ async function main() {
     const stopDialog = page.getByRole("dialog", { name: "Stop agents confirmation" });
     await stopDialog.waitFor({ state: "visible", timeout: 2_000 });
     const consequences = (await stopDialog.innerText()).toLowerCase();
-    for (const word of ["revoked", "removed", "cancelled", "sync workers", "does not restore"]) {
+    for (const word of ["revoked", "retained", "cancelled", "sync workers", "recovery command"]) {
       assert.ok(consequences.includes(word), `the confirmation is missing ${word}:\n${consequences}`);
     }
     await stopDialog.getByRole("button", { name: "Cancel" }).click();
@@ -510,8 +510,8 @@ async function main() {
       "the sidebar switch must still read on while looking at Settings");
     step("the Settings card's own toggle reflects the sidebar switch, with no reload between them");
 
-    // Back to the bubble (SPA history, not a reload): Ada and her worker must be absent, not just
-    // painted as paused, and the unanswered mark can no longer offer an assignment.
+    // Back to the bubble (SPA history, not a reload): Ada remains as a stopped identity, her
+    // worker is absent, and the unanswered mark cannot dispatch while secure mode is on.
     await page.goBack({ waitUntil: "domcontentloaded" });
     await page.waitForFunction(expected => {
       const node = document.querySelector("#previewWrap");
@@ -523,20 +523,33 @@ async function main() {
     }, { timeout: 10_000 });
     step("back on the bubble, the pill's agents segment turned dead-coloured");
 
-    assert.equal((await page.locator(".presence-seg").nth(1).locator(".presence-count").innerText()).trim(), "0");
-    assert.equal(await page.locator(".presence-item.presence-agent", { hasText: "Ada" }).count(), 0);
-    assert.equal(await secureMark.locator("[data-assign]").count(), 0);
+    assert.equal((await page.locator(".presence-seg").nth(1).locator(".presence-count").innerText()).trim(), "1");
+    const stoppedAssign = secureMark.locator("[data-assign]");
+    if (await stoppedAssign.count()) {
+      await stoppedAssign.click();
+      const stoppedMenu = page.locator(".tk-agentmenu");
+      await stoppedMenu.waitFor({ state: "visible", timeout: 2_000 });
+      assert.match(await stoppedMenu.innerText(), /secure mode is on/i);
+      assert.equal(await stoppedMenu.locator("[data-agent]").isDisabled(), true);
+      await page.keyboard.press("Escape");
+    }
     const stoppedOverview = await api(context.request, baseUrl, "GET",
       `/api/bubbles/${slug}/agents`, undefined, wsHeaders);
-    assert.deepEqual(stoppedOverview.agents || [], []);
+    assert.equal(stoppedOverview.agents.length, 1);
+    assert.equal(stoppedOverview.agents[0].name, "Ada");
+    assert.equal(stoppedOverview.agents[0].status, "stopped");
+    assert.equal(stoppedOverview.agents[0].personality, "terse");
+    assert.equal(stoppedOverview.agents[0].conversation, "conv-1");
+    assert.equal(stoppedOverview.agents[0].revive_required, true);
     const revokedPoll = await context.request.fetch(
       `${baseUrl}/api/scientist/v2/bubbles/${slug}/manifest`, {
         headers: { Authorization: `Bearer ${token}`, "X-LockedIn-Workspace": workspaceId,
           "X-LockedIn-Scientist-Version": CLIENT_VERSION }, failOnStatusCode: false });
     assert.equal(revokedPoll.status(), 401, "the old Scientist token must be revoked");
-    step("Ada, her worker presence, assignment UI, and the old Scientist authorization are gone");
+    step("Ada's persona was retained while her worker and old Scientist authorization were stopped");
 
-    // Turning the setting off requires the password, but deliberately restores nothing.
+    // Turning the setting off requires the password. Ada becomes offline and her popup mints a
+    // one-use recovery line that updates, reauthorizes and resumes the original folder.
     await sideSwitch.click();
     await page.waitForFunction(() => document.getElementById("sideSecureSwitch")?.getAttribute("aria-checked") === "false",
       { timeout: 5_000 });
@@ -547,10 +560,19 @@ async function main() {
       const seg = document.querySelectorAll(".presence-seg")[1];
       return !!seg && !seg.classList.contains("sync-dead");
     }, { timeout: 10_000 });
-    assert.equal(await secureMark.locator("[data-assign]").count(), 0,
-      "turning the setting off must not recreate removed agents");
-    assert.equal((await page.locator(".presence-seg").nth(1).locator(".presence-count").innerText()).trim(), "0");
-    step("password-confirmed disable cleared the warning but restored no clients, workers, or agents");
+    assert.equal((await page.locator(".presence-seg").nth(1).locator(".presence-count").innerText()).trim(), "1");
+    await page.locator(".presence-seg").nth(1).click();
+    const stoppedAda = page.locator(".presence-item.presence-agent", { hasText: "Ada" });
+    await stoppedAda.waitFor({ state: "visible", timeout: 5_000 });
+    assert.match(await stoppedAda.innerText(), /offline/i);
+    await stoppedAda.click();
+    const recoveryChat = page.getByRole("dialog", { name: "Direct messages with Ada" });
+    const recoveryCode = recoveryChat.locator(".agent-revive-copy");
+    await recoveryCode.waitFor({ state: "visible", timeout: 5_000 });
+    assert.match(await recoveryCode.innerText(), /setup\/.+\.sh/,
+      "secure-stop recovery must use a fresh setup ticket, not a revoked cached token");
+    assert.match(await recoveryChat.innerText(), /upgrades Scientist.*reauthorizes this laptop/is);
+    step("password-confirmed disable exposed Ada's one-use laptop recovery command");
 
     step("all agents checks passed");
   } catch (error) {

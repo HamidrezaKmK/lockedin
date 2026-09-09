@@ -1000,7 +1000,7 @@ class SecureMode(AgentFixture):
                 self.assertFalse(client.get("/api/me").json()["secure_mode"])
                 put = client.put("/api/settings/secure-mode", json={"enabled": True})
                 self.assertEqual(put.json(), {"enabled": True, "revoked_clients": 1,
-                                              "retired_agents": 0, "cancelled_jobs": 0,
+                                              "stopped_agents": 0, "cancelled_jobs": 0,
                                               "removed_workers": 0})
                 self.assertTrue(client.get("/api/me").json()["secure_mode"])
                 self.assertIsNone(auth.scientist_token_user(token))
@@ -1013,9 +1013,26 @@ class SecureMode(AgentFixture):
                 resumed = client.put("/api/settings/secure-mode",
                                      json={"enabled": False, "current_password": "pw12"})
                 self.assertEqual(resumed.json(), {"enabled": False, "revoked_clients": 0,
-                                                  "retired_agents": 0, "cancelled_jobs": 0,
+                                                  "stopped_agents": 0, "cancelled_jobs": 0,
                                                   "removed_workers": 0})
                 self.assertFalse(client.get("/api/settings/secure-mode").json()["enabled"])
+
+    def test_stop_owner_retains_persona_and_conversation_until_authorized_heartbeat(self):
+        agent = self.register(registered_by="hamid", worker_id="w1")
+        with paths.use_root(self.home):
+            before = agents.get_agent(self.slug, agent["id"], owner="hamid")
+            result = agents.stop_owner(self.slug, "hamid")
+            self.assertEqual(result, {"agents": 1, "cancelled_jobs": 0})
+            stopped = agents.get_agent(self.slug, agent["id"], owner="hamid")
+            for key in ("name", "role", "goal", "personality", "conversation", "worker_id"):
+                self.assertEqual(stopped.get(key), before.get(key))
+            self.assertTrue(stopped["revive_required"])
+            agents.heartbeat(self.slug, worker_id="w1",
+                             agents=[{"id": agent["id"], "attached": False}],
+                             running_job_ids=[], owner="hamid")
+            revived = agents.get_agent(self.slug, agent["id"], owner="hamid")
+            self.assertNotIn("revive_required", revived)
+            self.assertNotIn("stopped_at", revived)
 
 
 class BudgetAndConfinement(AgentFixture):

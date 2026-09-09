@@ -1,3 +1,3 @@
 """lockedin — the ultimate research assistant for grad students."""
 
-__version__ = "0.1.9"
+__version__ = "0.1.10"
