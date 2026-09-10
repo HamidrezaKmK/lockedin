@@ -206,13 +206,13 @@ Shared pages have a theme-cycle button, restricted to the themes you enabled in 
 ## Named agents
 
 After a Scientist client registers a conversation as an agent, it appears under its connected
-folder in the agent menu on a bubble. The row shows its current state: idle, working, attached to
-an interactive chat, or offline. **Manage agents** carries the full role, goal, budget, reset and
-retire controls.
+folder in the agent menu on a bubble. The compact row shows its current state: idle, working,
+attached to an interactive chat, or offline. Use its three-dot button to see the role, goal,
+personality, provider, model, folder, activity, and retirement control.
 
 ## Registration presets
 
-Open **Connect an agent** and go to step 4. Choose **Picasso**, **Spock**, **Sheldon**, or
+Open **Connect an agent** and go to step 4. Choose **Picasso**, **Spock**, **Sheldon**, **Ada**, or
 **Clippy** to fill in a reusable Name, Role, Goal, and Personality, then edit any field you want
 before copying the registration prompt. Editing a preset never changes the saved template.
 

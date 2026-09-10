@@ -231,6 +231,13 @@
     svg.setAttribute("aria-hidden", "true");
     svg.setAttribute("focusable", "false");
     svg.dataset.mode = opts.mode === "developer" ? "developer" : "locked";
+    // Do not leave this animation to CSS :hover alone. Browsers may keep :hover matched when a
+    // parent (the auto-hiding top bar) moves away without another pointer sample, leaving the
+    // chevron visibly stuck. Pointer state is explicit and the bar can clear it as it hides.
+    svg.addEventListener("pointerenter", function () { svg.dataset.hover = "true"; });
+    var clearHover = function () { delete svg.dataset.hover; };
+    svg.addEventListener("pointerleave", clearHover);
+    svg.addEventListener("pointercancel", clearHover);
     svg.innerHTML =
       '<path class="li-brand-shackle" d="M7.3 10V7.4a4.7 4.7 0 0 1 9.4 0V10"/>' +
       '<path class="li-brand-body" d="M5.2 9.8h13.6a1.8 1.8 0 0 1 1.8 1.8v7.1a1.8 1.8 0 0 1-1.8 1.8H5.2a1.8 1.8 0 0 1-1.8-1.8v-7.1a1.8 1.8 0 0 1 1.8-1.8Z"/>' +

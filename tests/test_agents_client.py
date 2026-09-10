@@ -273,6 +273,22 @@ class AgentAttachedTests(unittest.TestCase):
             proc.terminate()
             proc.wait()
 
+    def test_codex_app_server_is_not_a_conversation_attachment(self):
+        """The desktop host survives `/exit`; neither registration nor polling may trust it."""
+        with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as root:
+            codex = Path(tmp) / "codex"
+            codex.symlink_to(sys.executable)
+            proc = subprocess.Popen([str(codex), "-c", "import time; time.sleep(5)", "app-server"])
+            try:
+                with patch.object(os, "getppid", return_value=proc.pid):
+                    self.assertEqual(scientist_cli._chat_pid_for("codex"), 0)
+                agent = {"id": "a1", "vendor": "codex", "conversation": "conversation-long-enough"}
+                _write_json(Path(root) / "config" / "agent-chats.json", {"a1": proc.pid})
+                self.assertFalse(scientist_cli.agent_attached(agent, Path(root)))
+            finally:
+                proc.terminate()
+                proc.wait()
+
 
 # ---------------------------------------------------------------------------
 # 4. agent_turn_prompt
@@ -687,6 +703,38 @@ class AgentRunnerEndToEndTests(unittest.TestCase):
             self.assertEqual(results[0][2]["exit_code"], 0)
             self.assertIn("ENV_JOB_ID=j-000001", results[0][2]["output_tail"])
             self.assertEqual(runner.procs, {})
+            self.assertFalse((Path(data_home) / "runtime" / "workers" / "w1" / "jobs" / "j-000001.pid").exists())
+
+    def test_a_server_completed_job_reaps_a_vendor_root_still_waiting_on_background_work(self):
+        project = _build_project({"ag-1": AGENT_AG1}, {"w1": ["ag-1"]})
+        job = {"id": "j-000001", "agent": AGENT_AG1, "mark": PAGE_MARK, "instruction": ""}
+
+        class RepliedWhileRootWaits(FakeAgentServer):
+            terminal = False
+
+            def request(self, method, suffix, body=None):
+                if method == "GET" and suffix == "jobs/j-000001":
+                    self.calls.append((method, suffix, body))
+                    return {"job": {"status": "done" if self.terminal else "running"}}
+                return super().request(method, suffix, body)
+
+        fake = RepliedWhileRootWaits(heartbeat_jobs=[job])
+        script = "import time; print('waiting for background work', flush=True); time.sleep(30)"
+        with tempfile.TemporaryDirectory() as data_home, patch.dict(
+                os.environ, {"LOCKEDIN_SCIENTIST_HOME": data_home}), patch.object(
+                scientist_cli, "agent_turn_command", lambda agent, prompt, **kw: _fake_vendor_cmd(script)):
+            runner = self._runner(project, fake)
+            runner.tick()
+            self.assertIn("j-000001", runner.procs)
+            fake.terminal = True
+            deadline = time.time() + 10
+            while runner.procs and time.time() < deadline:
+                runner.tick()
+                time.sleep(0.05)
+
+            self.assertEqual(runner.procs, {})
+            self.assertTrue(fake.calls_for("jobs/j-000001"))
+            self.assertEqual(fake.calls_for("jobs/j-000001/result"), [])
             self.assertFalse((Path(data_home) / "runtime" / "workers" / "w1" / "jobs" / "j-000001.pid").exists())
 
     def test_every_turn_has_closed_stdin_and_noninteractive_child_tool_environment(self):

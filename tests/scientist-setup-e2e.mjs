@@ -139,6 +139,10 @@ async function main() {
       null, { timeout: 10_000 });
 
     const unix = await snippet.innerText();
+    assert.deepEqual(await dialog.locator(".setup-tabs").first().locator("button").allInnerTexts(),
+      ["macOS", "Linux", "Windows"], "setup must always expose every target OS");
+    assert.equal(await dialog.locator(".setup-tabs").first().locator("button.active").innerText(), "Linux",
+      "setup must not infer the target machine from the browser OS");
     const ticket = (unix.match(/setup\/([\w-]+)\.sh/) || [])[1];
     assert.ok(ticket, `the snippet must carry a ticket: ${unix}`);
     assert.ok(unix.startsWith("curl "), `a unix snippet must curl: ${unix}`);

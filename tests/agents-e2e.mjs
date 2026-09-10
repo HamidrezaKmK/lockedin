@@ -264,8 +264,28 @@ async function main() {
     await presenceMenu.waitFor({ state: "visible", timeout: 2_000 });
     const adaRow = page.locator(".presence-item.presence-agent", { hasText: "Ada" });
     await adaRow.waitFor({ state: "visible", timeout: 2_000 });
+    assert.doesNotMatch(await adaRow.innerText(), /reviewer/i,
+      "the compact agent row must not spend a second line on the role");
+    const adaMore = page.getByRole("button", { name: "Show details for Ada", exact: true });
+    const moreGeometry = await adaMore.evaluate(node => {
+      const button=node.getBoundingClientRect(),glyph=node.querySelector("svg").getBoundingClientRect();
+      return {width:button.width,height:button.height,
+        dx:(button.left+button.width/2)-(glyph.left+glyph.width/2),
+        dy:(button.top+button.height/2)-(glyph.top+glyph.height/2)};
+    });
+    assert.ok(Math.abs(moreGeometry.dx)<1&&Math.abs(moreGeometry.dy)<1,
+      `three-dot glyph is not centered in its button: ${JSON.stringify(moreGeometry)}`);
+    assert.ok(moreGeometry.width<=30&&moreGeometry.height<=30,
+      `three-dot button is not compact: ${JSON.stringify(moreGeometry)}`);
+    await adaMore.click();
+    const adaProfile = page.locator(`#agent-profile-${agent.id}`);
+    await adaProfile.waitFor({ state: "visible", timeout: 2_000 });
+    const profileText = await adaProfile.innerText();
+    for (const expected of ["reviewer", "answer marks about the variance bound", "terse",
+      "agy", "gemini-3.8-flash-low", "demo"]) assert.match(profileText, new RegExp(expected, "i"));
+    assert.equal(await adaMore.getAttribute("aria-expanded"), "true");
     await shoot(page, "presence-agents");
-    step("the presence menu lists Ada under her worker");
+    step("the compact presence row expands Ada's complete profile from its three-dot button");
 
     // A selected agent is also a direct messaging surface. Queuing from here creates an ordinary
     // worker turn, and its answer stays in the same direct-message thread.
@@ -337,6 +357,42 @@ async function main() {
     await page.mouse.click(700, 500);
     await presenceMenu.waitFor({ state: "hidden", timeout: 2_000 }).catch(() => {});
     if (await presenceMenu.count()) await presenceMenu.evaluate(node => node.remove());
+
+    // The chalk-talk prompt can go straight to a registered agent; copying remains available
+    // for agents outside LockedIn, but is no longer a required detour for Ada.
+    await page.evaluate(route => { location.hash = route; }, `#w/${workspaceId}/bubble/${slug}`);
+    const addTalk = page.locator("[data-newtalk]");
+    await addTalk.waitFor({ state: "visible", timeout: 10_000 });
+    await addTalk.click();
+    await page.locator("[data-auto]").click();
+    const talkPrompt = page.getByRole("heading", { name: "Ask an agent for a chalk talk" }).locator("..");
+    await talkPrompt.locator('[data-f="topic"]').fill("the vanishing variance term");
+    await talkPrompt.locator('[data-f="notes"]').fill("Keep it to four slides.");
+    const expectedTalkPrompt = await talkPrompt.locator("[data-out]").innerText();
+    await talkPrompt.getByRole("button", { name: "Assign", exact: true }).click();
+    const promptAgentMenu = page.locator(".tk-agentmenu");
+    await promptAgentMenu.waitFor({ state: "visible", timeout: 3_000 });
+    assert.ok(await promptAgentMenu.evaluate(node => Number(getComputedStyle(node).zIndex)) > 970,
+      "the agent picker must appear above the chalk-talk prompt");
+    const [talkAssignResponse] = await Promise.all([
+      page.waitForResponse(response => response.request().method() === "POST"
+        && new URL(response.url()).pathname === `/api/bubbles/${slug}/agents/${agent.id}/messages`),
+      promptAgentMenu.locator("button.tk-am[data-agent]").first().click(),
+    ]);
+    assert.ok(talkAssignResponse.ok(), `chalk-talk assignment failed: ${await talkAssignResponse.text()}`);
+    const talkJob = (await talkAssignResponse.json()).job;
+    assert.equal(talkJob.instruction, expectedTalkPrompt,
+      "Assign must queue exactly the prompt shown beside Copy");
+    await scientistApi(context.request, baseUrl, token, "POST",
+      `/api/scientist/v2/bubbles/${slug}/jobs/${talkJob.id}/start`, { worker_id: WORKER_ID }, workspaceId);
+    await scientistApi(context.request, baseUrl, token, "POST",
+      `/api/scientist/v2/bubbles/${slug}/jobs/${talkJob.id}/reply`,
+      { text: "The chalk talk is synced." }, workspaceId);
+    await page.evaluate(route => { location.hash = route; },
+      `#w/${workspaceId}/bubble/${slug}/${pageSlug}`);
+    await page.waitForFunction(expected => document.querySelector("#previewWrap")?.textContent.includes(expected),
+      targetSentence, { timeout: 10_000 });
+    step("assigned the generated chalk-talk prompt directly to Ada");
 
     // ---- step 4: pin a mark on the sentence, then assign it to Ada from its card ----
     const rightToggle = page.locator("#paneRightToggle");
@@ -569,10 +625,40 @@ async function main() {
     const recoveryChat = page.getByRole("dialog", { name: "Direct messages with Ada" });
     const recoveryCode = recoveryChat.locator(".agent-revive-copy");
     await recoveryCode.waitFor({ state: "visible", timeout: 5_000 });
-    assert.match(await recoveryCode.innerText(), /setup\/.+\.sh/,
-      "secure-stop recovery must use a fresh setup ticket, not a revoked cached token");
+    const recoveryTabs = recoveryChat.locator(".agent-revive-tabs");
+    assert.deepEqual(await recoveryTabs.locator("button").allInnerTexts(), ["macOS", "Linux", "Windows"],
+      "recovery must always expose every target OS instead of guessing from the browser");
+    assert.equal(await recoveryTabs.locator("button.active").innerText(), "Linux",
+      "a remote-friendly Linux command is the deterministic default");
+    const unixRecovery = await recoveryCode.innerText();
+    assert.match(unixRecovery, /setup\/.+\.sh/,
+      "Linux recovery must use a fresh setup ticket, not a revoked cached token");
+    await recoveryTabs.getByRole("button", { name: "Windows", exact: true }).click();
+    assert.match(await recoveryCode.innerText(), /setup\/.+\.ps1/,
+      "choosing Windows must switch to the PowerShell recovery command");
+    await recoveryTabs.getByRole("button", { name: "macOS", exact: true }).click();
+    assert.equal(await recoveryCode.innerText(), unixRecovery,
+      "choosing macOS must switch back to the Unix recovery command");
     assert.match(await recoveryChat.innerText(), /upgrades Scientist.*reauthorizes this laptop/is);
-    step("password-confirmed disable exposed Ada's one-use laptop recovery command");
+    step("password-confirmed disable exposed explicit macOS, Linux, and Windows recovery commands");
+
+    // Retirement is available from the agent dialog, calls the owner-scoped delete route, and
+    // immediately removes the agent from the bubble without requiring a page reload.
+    dialogAccepted = false;
+    const [retireResponse] = await Promise.all([
+      page.waitForResponse(response => response.request().method() === "DELETE"
+        && new URL(response.url()).pathname === `/api/bubbles/${slug}/agents/${agent.id}`),
+      recoveryChat.getByRole("button", { name: "Retire Ada", exact: true }).click(),
+    ]);
+    assert.ok(retireResponse.ok(), `retire failed: ${await retireResponse.text()}`);
+    assert.equal(dialogAccepted, true, "retiring an agent must require confirmation");
+    await page.waitForFunction(() => {
+      const seg = document.querySelectorAll(".presence-seg")[1];
+      return !!seg && seg.querySelector(".presence-count")?.textContent === "0";
+    }, { timeout: 5_000 });
+    assert.equal(await page.getByRole("dialog", { name: "Direct messages with Ada" }).count(), 0,
+      "retiring an agent must close its dialog");
+    step("Ada was retired from the dialog and disappeared from the bubble immediately");
 
     step("all agents checks passed");
   } catch (error) {

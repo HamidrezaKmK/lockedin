@@ -91,13 +91,13 @@ async function main(){
         segments[1].click();
       });
       await tap(".presence-add","Manage agents");
-      await tap(".setup-preset","Picasso");
+      await tap(".setup-preset","Ada");
       await p.evaluate(()=>{
         const active=document.querySelector(".setup-preset.active");
         const fields=[...document.querySelectorAll(".setup-persona input,.setup-persona textarea")];
-        if(!active||!active.textContent.includes("Picasso"))throw new Error("Picasso preset is not active");
+        if(!active||!active.textContent.includes("Ada"))throw new Error("Ada preset is not active");
         if(fields.length!==4||fields.some(field=>!field.value.trim()))
-          throw new Error("Picasso preset did not populate all four fields");
+          throw new Error("Ada preset did not populate all four fields");
         const body=document.querySelector(".setup-body");
         const step=document.querySelectorAll(".setup-step")[3];
         body.scrollTop=Math.max(0,step.offsetTop-12);

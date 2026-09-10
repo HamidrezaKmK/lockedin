@@ -540,7 +540,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
 @keyframes tk-jobpulse{0%,100%{opacity:1}50%{opacity:.35}}
 .tk-note .tk-jobrow{display:flex;margin:7px 0 14px}
 /* The agent picker: the same small card as the kind picker, one row per agent. */
-.tk-agentmenu{position:fixed;z-index:961;min-width:230px;max-width:320px;padding:6px;
+.tk-agentmenu{position:fixed;z-index:981;min-width:230px;max-width:320px;padding:6px;
   background:var(--panel);border:1px solid var(--accent);border-radius:10px;box-shadow:var(--shadow);
   font-family:var(--font-ui)}
 .tk-agentmenu .tk-am-title{padding:5px 8px 3px;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
@@ -1767,7 +1767,8 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
       <label class="tk-lab">Paste this to your agent</label>
       <pre class="tk-out" data-out="1"></pre>
       <div class="row" style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
-        <button data-x="1">Close</button><button class="pri" data-copy="1">Copy</button></div>
+        <button data-x="1">Close</button><button data-copy="1">Copy</button>
+        <button class="pri" data-assign-talk="1">Assign</button></div>
     </div></div>`).firstChild;
     const topic = m.querySelector('[data-f="topic"]');
     const notes = m.querySelector('[data-f="notes"]');
@@ -1775,7 +1776,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     const paint = () => { out.textContent = compose(topic.value, notes.value); };
     topic.oninput = notes.oninput = paint;
     paint();
-    const shut = () => m.remove();
+    const shut = () => { closeAgentMenu(); m.remove(); };
     m.onclick = e => { if (e.target === m) shut(); };
     m.querySelectorAll("[data-x]").forEach(x => (x.onclick = shut));
     m.querySelector("[data-copy]").onclick = async () => {
@@ -1788,6 +1789,31 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
       const b = m.querySelector("[data-copy]");
       b.textContent = "Copied";
       setTimeout(() => (b.textContent = "Copy"), 1400);
+    };
+    const assign = m.querySelector("[data-assign-talk]");
+    assign.onclick = async e => {
+      e.stopPropagation();
+      // Presence normally keeps this registry fresh, but the dialog can be opened before its
+      // first heartbeat. Refresh at the moment of intent so newly registered agents appear.
+      assign.disabled = true;
+      await refreshAgents();
+      assign.disabled = false;
+      if (!m.isConnected) return;
+      agentMenu(assign, async agent => {
+        assign.disabled = true;
+        try {
+          await api(`/api/bubbles/${encodeURIComponent(S.slug)}/agents/${encodeURIComponent(agent.id)}/messages`, {
+            method: "POST", body: JSON.stringify({ text: out.textContent }),
+          });
+          toast("Assigned chalk talk to " + agent.name +
+            (agent.status === "attached" ? " — it runs once their chat is closed" : ""));
+          shut();
+        } catch (err) {
+          toast(err.message || "Could not assign the chalk talk");
+          assign.disabled = false;
+        }
+        await refreshAgents();
+      }, { title: "Assign chalk talk to" });
     };
     document.body.append(m);
     setTimeout(() => topic.focus(), 30);

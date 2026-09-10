@@ -687,6 +687,15 @@ class SlideRenderingTests(unittest.TestCase):
         self.assertIn(".tk-foot .tk-dots{display:none}", self.js)
         self.assertIn('<span class="tk-cnt${S.talk.slides.length > 8 ? "" : " few"}">', self.js)
 
+    def test_chalk_talk_prompt_can_be_assigned_without_copying(self):
+        self.assertIn('data-assign-talk="1">Assign</button>', self.js)
+        self.assertIn('{ title: "Assign chalk talk to" }', self.js)
+        self.assertIn('/agents/${encodeURIComponent(agent.id)}/messages', self.js)
+        self.assertIn('JSON.stringify({ text: out.textContent })', self.js)
+        self.assertIn('toast("Assigned chalk talk to " + agent.name', self.js)
+        # The picker is appended to body and therefore must sit above the prompt modal.
+        self.assertIn(".tk-agentmenu{position:fixed;z-index:981", self.js)
+
 
 class PageMarkTests(unittest.TestCase):
     """Marks on report pages share the five kinds but keep the wrapper as their anchor."""

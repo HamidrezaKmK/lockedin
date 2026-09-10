@@ -241,11 +241,11 @@
     transform:rotate(-75deg) scale(.65);transition:opacity .25s ease .08s,
     transform .48s cubic-bezier(.22,.75,.2,1)}
   .li-brand-mark[data-mode="developer"] .li-brand-shackle,
-  .li-brand-mark[data-mode="locked"]:hover .li-brand-shackle{transform:rotate(-38deg) translate(1px,-.4px)}
+  .li-brand-mark[data-mode="locked"][data-hover="true"] .li-brand-shackle{transform:rotate(-38deg) translate(1px,-.4px)}
   .li-brand-mark[data-mode="developer"] .li-brand-keyhole,
-  .li-brand-mark[data-mode="locked"]:hover .li-brand-keyhole{opacity:0;transform:rotate(75deg) scale(.55)}
+  .li-brand-mark[data-mode="locked"][data-hover="true"] .li-brand-keyhole{opacity:0;transform:rotate(75deg) scale(.55)}
   .li-brand-mark[data-mode="developer"] .li-brand-chevron,
-  .li-brand-mark[data-mode="locked"]:hover .li-brand-chevron{opacity:1;transform:rotate(0) scale(1)}
+  .li-brand-mark[data-mode="locked"][data-hover="true"] .li-brand-chevron{opacity:1;transform:rotate(0) scale(1)}
   .landing-lock .li-brand-mark{width:22px;height:22px}
   @media (prefers-reduced-motion:reduce){
     .li-brand-shackle,.li-brand-keyhole,.li-brand-chevron{transition:none}
@@ -1378,9 +1378,19 @@
   .presence-item .presence-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .presence-item .presence-note{flex:none;font-size:11px;color:var(--muted)}
   .presence-item.dead .presence-name{color:var(--muted)}
+  .presence-agent-row{display:flex;align-items:center;gap:2px}
+  .presence-agent-row .presence-agent{flex:1;min-width:0}
   .presence-agent{padding-left:22px}
   .presence-agent .presence-emoji{color:var(--accent);display:inline-flex}
   .presence-agent .presence-emoji .li-ic{width:13px;height:13px}
+  .presence-agent-more{width:28px;height:28px;min-width:28px;min-height:28px;padding:0;border:0;
+    border-radius:7px;flex:none;align-self:center;display:inline-flex;align-items:center;
+    justify-content:center;gap:0;line-height:0;background:none;color:var(--muted);cursor:pointer}
+  .presence-agent-more:hover,.presence-agent-more.on{background:var(--panel2);color:var(--ink)}
+  .presence-agent-more .li-ic{width:14px;height:14px}
+  .presence-agent-detail{margin-left:22px}
+  .presence-agent-detail>span{overflow-wrap:anywhere}
+  .presence-agent-actions{grid-column:1/-1;display:flex;justify-content:flex-end}
   .presence-agent.working .presence-dot{animation:presence-pulse 1.4s ease-in-out infinite}
   @keyframes presence-pulse{0%,100%{opacity:1}50%{opacity:.35}}
   .presence-detail button.danger{min-height:0;padding:3px 9px;font-size:11px;margin-top:4px}
@@ -1400,6 +1410,7 @@
   .agent-revive{display:none;padding:10px 14px;border-bottom:1px solid var(--line);
     background:color-mix(in srgb,var(--warn) 8%,var(--panel));flex:none}
   .agent-revive.show{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 9px;align-items:center}
+  .agent-revive-tabs{grid-column:1/-1;margin:0 0 2px}
   .agent-revive-copy{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
     font:11px/1.35 var(--font-mono);color:var(--ink);background:var(--panel2);border:1px solid var(--line);
     border-radius:7px;padding:7px 9px;user-select:all}
@@ -1851,11 +1862,14 @@
   function mountBrandMark(host,mode="locked"){
     if(host)host.replaceChildren(brandMark(mode));
   }
-  function setHeaderBrandMode(developer){
-    const mark=$("#topbar .li-brand-mark");
-    if(mark)mark.dataset.mode=developer?"developer":"locked";
-  }
   document.querySelectorAll("[data-brand-mark]").forEach(host=>mountBrandMark(host));
+  // Pointerleave is normally enough, but pointer capture, browser chrome, or a moving ancestor
+  // can skip it. Every real pointer move is authoritative: only the mark under that pointer may
+  // retain hover state. Losing the window clears all marks as well.
+  const clearBrandHovers=except=>document.querySelectorAll('.li-brand-mark[data-hover="true"]')
+    .forEach(mark=>{if(mark!==except&&!mark.contains(except))delete mark.dataset.hover;});
+  document.addEventListener("pointermove",e=>clearBrandHovers(e.target),{capture:true,passive:true});
+  window.addEventListener("blur",()=>clearBrandHovers(null));
   const toast = (m)=>{const t=$("#toast"); t.textContent=m; t.classList.remove("hide");
     clearTimeout(t._t); t._t=setTimeout(()=>t.classList.add("hide"),2600);};
   function updateViewportVars(){
@@ -1865,6 +1879,39 @@
   updateViewportVars();
   window.addEventListener("resize",updateViewportVars,{passive:true});
   if(window.visualViewport) window.visualViewport.addEventListener("resize",updateViewportVars,{passive:true});
+
+  // A conventional mouse wheel only reports a vertical delta. Turn that delta into horizontal
+  // motion when the pointer is over an axis-locked horizontal scroller (tabs, wide tables/math,
+  // snippets, talk thumbnails, and future panes with the same overflow contract). Delegation at
+  // document level also covers panes rendered after startup. A genuinely vertical container keeps
+  // its normal wheel behaviour until it reaches its edge, and trackpad horizontal gestures remain
+  // native, so this does not steal scrolling from editors or the page around a nested scroller.
+  document.addEventListener("wheel",e=>{
+    if(e.defaultPrevented||e.ctrlKey||!e.deltaY||Math.abs(e.deltaX)>Math.abs(e.deltaY))return;
+    const down=e.deltaY>0;
+    let horizontal=null;
+    for(const node of e.composedPath()){
+      if(!(node instanceof Element))continue;
+      const style=getComputedStyle(node);
+      const xSlack=node.scrollWidth-node.clientWidth;
+      const ySlack=node.scrollHeight-node.clientHeight;
+      const xScrollable=xSlack>1&&/(auto|scroll)/.test(style.overflowX);
+      const yScrollable=ySlack>1&&/(auto|scroll)/.test(style.overflowY);
+      const canScrollY=yScrollable&&((down&&node.scrollTop<ySlack-1)||(!down&&node.scrollTop>1));
+      // The closest scrollable surface owns the gesture. In particular, a wide table nested in
+      // the vertically scrollable preview must not be disqualified by that outer preview.
+      if(xScrollable){ if(canScrollY)return; horizontal=node; break; }
+      if(canScrollY)return;
+      if(node===document.body||node===document.documentElement)break;
+    }
+    if(!horizontal)return;
+    const xSlack=horizontal.scrollWidth-horizontal.clientWidth;
+    if((down&&horizontal.scrollLeft>=xSlack-1)||(!down&&horizontal.scrollLeft<=1))return;
+    const unit=e.deltaMode===WheelEvent.DOM_DELTA_LINE?16
+      :e.deltaMode===WheelEvent.DOM_DELTA_PAGE?horizontal.clientWidth:1;
+    horizontal.scrollLeft=Math.max(0,Math.min(xSlack,horizontal.scrollLeft+e.deltaY*unit));
+    e.preventDefault();
+  },{passive:false});
 
   // ---------- auto-hiding top bar ----------
   // Hidden until asked for: the mouse touching the top edge, a downward swipe that starts
@@ -1888,6 +1935,9 @@
       hideT=setTimeout(()=>{
         if(holds()){ hide(900); return; }
         bar.classList.remove("reveal");
+        // A transformed-away element can retain the browser's :hover state until the mouse next
+        // moves. The brand uses explicit pointer state, so hiding the bar can close it immediately.
+        bar.querySelectorAll('.li-brand-mark[data-hover="true"]').forEach(mark=>delete mark.dataset.hover);
         // Drop the leftover focus with it, so returning by keyboard starts from the top.
         if(bar.contains(document.activeElement))document.activeElement.blur();
       },delay);};
@@ -4958,13 +5008,6 @@
       finally{ area.remove(); }
     });
   }
-  function detectPlatform(){
-    const hint=(navigator.userAgentData&&navigator.userAgentData.platform)||navigator.platform||navigator.userAgent||"";
-    if(/win/i.test(hint))return "windows";
-    if(/mac|iphone|ipad/i.test(hint))return "mac";
-    return "linux";
-  }
-
   // One line that installs the client, authorizes this terminal, binds a folder to this bubble and
   // sets up whichever agent CLIs are on that machine. The ticket behind the link is minted lazily,
   // when the dialog opens, so merely rendering a bubble never signs a credential.
@@ -5001,6 +5044,12 @@
         personality:"The Connective Brainstormer. Insatiably curious, highly exploratory, and always eager to weave a newly discovered paper into the current thesis."
       },
       {
+        name:"Ada",
+        role:"Generalist",
+        goal:"To keep derivations honest while connecting the project's theory, implementation, experiments, and presentation. This agent moves comfortably across the whole project, spots gaps between specialties, and turns ambiguous questions into concrete next steps.",
+        personality:"The Clear-Headed Generalist. Pragmatic, intellectually flexible, and concise; equally willing to check a proof, inspect an experiment, improve an explanation, or identify the specialist who should take over."
+      },
+      {
         name:"Clippy",
         role:"Formatting Expert",
         goal:"To act as the uncompromising gatekeeper of structural integrity. Whether wrestling with intricate mathematical typesetting, structural markup, or strict publication guidelines, this agent ensures that every line of output renders flawlessly, cleanly, and exactly to spec on the first compile.",
@@ -5021,7 +5070,9 @@
     const refresh=el("button",{class:"setup-refresh",title:"Get a fresh link",
       "aria-label":"Get a fresh link"},ic("refresh"));
     const close=()=>overlay.remove();
-    let commands=null, os=detectPlatform(), agent="claude", agents=null;
+    // The browser may be on a different OS from the remote machine that runs the agents. Keep
+    // Linux as a predictable neutral default and let the person choose explicitly every time.
+    let commands=null, os="linux", agent="claude", agents=null;
     const cli=()=>(commands&&commands.cli_name)||"lockedin-scientist";
     const cliChip=el("code",{class:"setup-inline"},cli());
     const OSES=[["mac","macOS"],["linux","Linux"],["windows","Windows"]];
@@ -5418,7 +5469,6 @@
   function stopPresence(){
     if(S.presenceTimer){ clearInterval(S.presenceTimer); S.presenceTimer=null; }
     S.presence=null; S.presenceView=null; S.presenceSelected=null;
-    setHeaderBrandMode(false);
   }
 
   function presenceAgo(seconds){
@@ -5475,11 +5525,8 @@
     const snap=S.presence||{viewers:[],workers:[]};
     host.classList.remove("hide");
     const viewers=snap.viewers||[], workers=visibleWorkers(snap);
-    // A worker that is still polling is an active agent even when its latest sync is degraded or
-    // briefly unresponsive. Explicitly stopped and failed/dead workers put the product back in
-    // lock mode; this is the same state model the presence controls already expose.
-    setHeaderBrandMode((snap.workers||[]).some(w=>
-      w.state==="live"||w.state==="degraded"||w.state==="unresponsive"));
+    // Worker state belongs to this presence control. It must not hold the product mark in the
+    // same developer pose used for hover: that made an active bubble look like a stuck pointer.
     const worst=worstWorkerState(workers);
     const agentCount=(snap.agents||[]).length;
     const segment=(view,title,state,count,...kids)=>el("button",
@@ -5596,8 +5643,7 @@
     panel.replaceChildren(el("div",{class:"agent-revive-note"},"Preparing a one-use recovery command…"));
     api("/api/bubbles/"+encodeURIComponent(S.bubble)+"/setup-link",{method:"POST"}).then(commands=>{
       if(!S.agentChatEl||S.agentChatEl!==overlay||panel._key!==key)return;
-      const command=detectPlatform()==="windows"?commands.powershell:commands.unix;
-      showAgentReviveCommand(panel,command,
+      showAgentReviveCommands(panel,commands,
         "Paste this in the agent’s project folder. It upgrades Scientist, reauthorizes this laptop, and resumes every retained agent in that folder. The link expires in "+
         Math.round((commands.expires_in||600)/60)+" minutes.");
     }).catch(e=>{
@@ -5616,11 +5662,36 @@
     panel.replaceChildren(code,copy,el("div",{class:"agent-revive-note"},note));
   }
 
+  function showAgentReviveCommands(panel,commands,note){
+    const choices=[["mac","macOS"],["linux","Linux"],["windows","Windows"]];
+    let os="linux";
+    const tabs=el("div",{class:"setup-tabs agent-revive-tabs","aria-label":"Command operating system"});
+    const code=el("code",{class:"agent-revive-copy",tabindex:"0"});
+    const copy=el("button",{class:"primary small"},"Copy");
+    const commandFor=()=>os==="windows"?commands.powershell:commands.unix;
+    const render=()=>{
+      const command=commandFor();
+      code.textContent=command;code.title=command;
+      tabs.replaceChildren(...choices.map(choice=>el("button",{
+        class:"help-tab"+(choice[0]===os?" active":""),type:"button",
+        "aria-pressed":String(choice[0]===os),onclick:()=>{os=choice[0];render();}
+      },choice[1])));
+    };
+    copy.onclick=async()=>{
+      try{await copyText(commandFor());copy.replaceChildren(ic("check"),"Copied");}
+      catch(e){copy.textContent="Select command";code.focus();}
+    };
+    render();
+    panel.replaceChildren(tabs,code,copy,el("div",{class:"agent-revive-note"},note));
+  }
+
   function openAgentChat(agent){
     closePresenceMenu();closeAgentChat();
     const overlay=el("div",{class:"overlay agent-chat-overlay",role:"dialog","aria-modal":"true",
       "aria-label":"Direct messages with "+agent.name});
     const close=el("button",{class:"ghost small icon-btn","aria-label":"Close direct messages"},ic("close"));
+    const retire=el("button",{class:"danger small","aria-label":"Retire "+agent.name},"Retire");
+    retire.onclick=()=>retireAgent(agent,retire);
     const status=el("span",{class:"agent-chat-status"});
     const revive=el("div",{class:"agent-revive"});
     const history=el("div",{class:"agent-message-history"});
@@ -5632,13 +5703,30 @@
     textarea.onkeydown=e=>{if(e.key==="Enter"&&(e.metaKey||e.ctrlKey)){e.preventDefault();send.click();}};
     const card=el("div",{class:"diffbox agent-chat",onclick:e=>e.stopPropagation()},
       el("div",{class:"agent-chat-header"},ic("agent"),
-        el("div",{class:"agent-chat-title"},el("b",{},agent.name),status),close),
+        el("div",{class:"agent-chat-title"},el("b",{},agent.name),status),retire,close),
       revive,history,el("div",{class:"agent-message-compose"},textarea,send));
     overlay.append(card);overlay.onclick=closeAgentChat;close.onclick=closeAgentChat;
     overlay._onKey=e=>{if(e.key==="Escape")closeAgentChat();};
     document.addEventListener("keydown",overlay._onKey);
     document.body.append(overlay);S.agentChatEl=overlay;S.agentChatAgentId=agent.id;
     renderAgentChat();textarea.focus();
+  }
+
+  async function retireAgent(agent,button){
+    if(!confirm("Retire "+agent.name+"?\n\nThis removes the agent from this bubble and cancels any unfinished turns. Its saved "+
+      agent.vendor+" conversation is not deleted."))return;
+    button.disabled=true;
+    try{
+      await api("/api/bubbles/"+encodeURIComponent(S.bubble)+"/agents/"+encodeURIComponent(agent.id),
+        {method:"DELETE"});
+      delete S.agentMessageDrafts[agent.id];
+      closeAgentChat();
+      await loadAgents();
+      toast(agent.name+" retired");
+    }catch(e){
+      button.disabled=false;
+      toast(e.message||"Could not retire "+agent.name);
+    }
   }
 
   async function sendAgentMessage(agent,textarea,button){
@@ -5695,11 +5783,36 @@
     if(view==="agents"){
     const allAgents=snap.agents||S.agents||[];
     const workerAgentRow=(a)=>{
-      menu.append(el("button",{class:"presence-item presence-agent "+a.status,onclick:()=>openAgentChat(a)},
-        el("span",{class:"presence-dot "+({idle:"live",working:"live",attached:"degraded",offline:"dead"}[a.status]||"dead")}),
-        el("span",{class:"presence-emoji"},ic("agent")),
-        el("span",{class:"presence-name",title:(a.role||"")+(a.goal?" — "+a.goal:"")},a.name),
-        el("span",{class:"presence-note"},a.vendor+(a.model?" · "+a.model:"")+" · "+a.status)));
+      const key="a:"+a.id,on=S.presenceSelected===key;
+      const profileId="agent-profile-"+a.id;
+      const more=el("button",{class:"presence-agent-more"+(on?" on":""),
+        "aria-label":"Show details for "+a.name,"aria-expanded":on?"true":"false",
+        "aria-controls":profileId,onclick:e=>{e.stopPropagation();selectPresence(key);}},ic("more"));
+      menu.append(el("div",{class:"presence-agent-row"},
+        el("button",{class:"presence-item presence-agent "+a.status,onclick:()=>openAgentChat(a)},
+          el("span",{class:"presence-dot "+({idle:"live",working:"live",attached:"degraded",offline:"dead"}[a.status]||"dead")}),
+          el("span",{class:"presence-emoji"},ic("agent")),
+          el("span",{class:"presence-name"},a.name),
+          el("span",{class:"presence-note"},a.vendor+(a.model?" · "+a.model:"")+" · "+a.status)),
+        more));
+      if(on){
+        const detail=el("div",{class:"presence-detail presence-agent-detail",id:profileId});
+        const field=(label,value)=>{if(value!==undefined&&value!==null&&String(value).trim())
+          detail.append(el("b",{},label),el("span",{},String(value)));};
+        const worker=workers.find(w=>w.worker_id===a.worker_id);
+        field("role",a.role||"Not specified");
+        field("goal",a.goal||"Not specified");
+        field("personality",a.personality||"Not specified");
+        field("provider",a.vendor||"Not specified");
+        field("model",a.model||"Default");
+        field("state",a.status||"Unknown");
+        field("folder",worker?worker.display:(a.project_label||"Not syncing"));
+        field("activity",(a.turns_last_hour||0)+" turns this hour · "+(a.turns_today||0)+" today");
+        const retire=el("button",{class:"danger small","aria-label":"Retire "+a.name},"Retire agent");
+        retire.onclick=e=>{e.stopPropagation();retireAgent(a,retire);};
+        detail.append(el("div",{class:"presence-agent-actions"},retire));
+        menu.append(detail);
+      }
     };
     menu.append(el("div",{class:"presence-group"},"Folders and agents"));
     if(!workers.length){

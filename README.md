@@ -15,6 +15,8 @@ By default, the deployment is private and local-only (`127.0.0.1`). For web acce
 - **📝 Markdown Reports:** Create multi-page Markdown reports featuring internal links, figures, KaTeX math support, and live previews.
 - **✅ TODO Manager:** GitHub-issue-style task items. Reference a TODO in any report page using `@id` (creates a clickable link). Notes support math/markdown. TODOs can only be deleted once all `@id` references are removed. Manage via web or Slack bot.
 - **🤖 Switchable LLMs:** Easily switch between local models (Qwen via Ollama) and cloud models (OpenAI, Claude, Gemini).
+- **🧑‍🔬 Named CLI Agents:** Connect Codex, Claude Code, or agy conversations to a bubble, message
+  them directly, assign report marks and chalk-talk prompts, and inspect or retire their profiles.
 - **🔌 Optional Integrations:**
   - Slack bot (via Socket Mode)
   - Unlisted read-only sharing links for specific bubbles
@@ -36,7 +38,7 @@ These steps work from any clone path on a local machine or fresh server.
 ### 2. Clone and Install
 
 ```bash
-git clone <repo-url> lockedin
+git clone https://github.com/HamidrezaKmK/lockedin.git
 cd lockedin
 uv sync
 ```
@@ -82,10 +84,12 @@ Windows PowerShell:
 irm https://raw.githubusercontent.com/HamidrezaKmK/lockedin/main/install.ps1 | iex
 ```
 
-The fastest path is the **🤖** button on a bubble page: pick your OS, copy the one line it shows,
-and paste it into a terminal. It installs the client, authorizes it without a browser step, asks
-which folder to use, binds the bubble, and installs the skill for whichever agents you have. The
-link is single-use and expires in ten minutes.
+The fastest path is **Manage agents** in a bubble's agents menu. The dialog always shows macOS,
+Linux, and Windows—choose the operating system of the machine that will actually run the agents,
+which may differ from the browser's device. Copy the one line it shows and paste it into a terminal.
+It installs the client, authorizes it without a browser step, asks which folder to use, binds the
+bubble, and installs the skill for whichever agents you have. The link is single-use and expires
+in ten minutes.
 
 To do the same by hand, authorize and synchronize a bubble from the project where you want the files:
 ```bash

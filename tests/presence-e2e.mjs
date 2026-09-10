@@ -189,8 +189,8 @@ async function main() {
     const card = page.locator(".presence .presence-group-card");
     await card.waitFor({ state: "visible", timeout: 10_000 });
     const headerMark = page.locator("#topbar .li-brand-mark");
-    assert.equal(await headerMark.getAttribute("data-mode"), "developer",
-      "a live or degraded worker must open the brand into developer mode");
+    assert.equal(await headerMark.getAttribute("data-mode"), "locked",
+      "a live or degraded worker must not make the brand look permanently hovered");
     await page.mouse.move(700, 0);
     await page.waitForTimeout(350);
     await shoot(page, "brand-worker-active");
@@ -200,11 +200,10 @@ async function main() {
     await touchContext.addCookies(await context.cookies());
     const touchPage = await touchContext.newPage();
     await touchPage.goto(`${baseUrl}/#bubble/${slug}`, { waitUntil: "domcontentloaded" });
-    await touchPage.waitForFunction(() =>
-      document.querySelector("#topbar .li-brand-mark")?.dataset.mode === "developer", null,
-      { timeout: 10_000 });
-    assert.equal(await touchPage.locator("#topbar .li-brand-mark").getAttribute("data-mode"), "developer",
-      "touch devices must receive worker state without relying on hover");
+    await touchPage.waitForFunction(() => document.querySelectorAll(".presence-seg").length === 2,
+      null, { timeout: 10_000 });
+    assert.equal(await touchPage.locator("#topbar .li-brand-mark").getAttribute("data-mode"), "locked",
+      "touch devices must keep the non-hovered brand locked too");
     await shoot(touchPage, "brand-worker-active-touch");
     await touchContext.close();
     const seg = i => page.locator(".presence-seg").nth(i);
@@ -293,8 +292,7 @@ async function main() {
     await setupDialog.evaluate(node => node.remove());
     step("the bottom connect-an-agent row opens the setup dialog");
 
-    // Degraded still means an agent is running. Once every active worker explicitly stops, only
-    // the rejected dead record remains and the logo closes again.
+    // Stopping active workers updates the presence UI without changing the resting brand.
     assert.equal(await workerPoll(context.request, baseUrl, token, slug,
       { id: "uid-healthy", label: "thesis-repo", status: "stopped" }), 200);
     assert.equal(await workerPoll(context.request, baseUrl, token, slug,
@@ -302,14 +300,17 @@ async function main() {
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.locator(".presence .presence-group-card").waitFor({ state: "visible", timeout: 10_000 });
     assert.equal(await page.locator("#topbar .li-brand-mark").getAttribute("data-mode"), "locked",
-      "the brand must close when every active worker has stopped");
+      "the resting brand must remain locked after every active worker has stopped");
     await shoot(page, "brand-workers-stopped");
-    step("the header mark follows active and explicitly stopped worker state");
+    step("the header mark stays locked at rest independently of worker state");
 
     // Clicking away closes the dropdown; the chip alone remains.
     await seg(1).click();
     await menu.waitFor({ state: "visible", timeout: 2_000 });
-    await page.mouse.click(700, 500);
+    await page.waitForTimeout(50); // togglePresence installs the outside listener next tick.
+    // Dispatch at the document itself: preview/editor widgets legitimately stop their own click
+    // events, which made a screen coordinate a flaky proxy for the outside-click listener.
+    await page.evaluate(() => document.dispatchEvent(new MouseEvent("click", { bubbles: true })));
     await menu.waitFor({ state: "hidden", timeout: 2_000 });
     step("clicking outside closes the dropdown");
 

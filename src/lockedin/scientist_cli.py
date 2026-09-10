@@ -1651,6 +1651,19 @@ def _write_chat_pids(root: Path, data: dict) -> None:
     except OSError: pass
 
 
+def _is_shared_vendor_host(vendor: str, cmdline: "list[bytes] | list[str]") -> bool:
+    """Whether one vendor process hosts many conversations rather than this one chat."""
+    if vendor.lower() != "codex":
+        return False
+    parts = []
+    for part in cmdline:
+        if isinstance(part, bytes):
+            parts.append(part.decode(errors="replace").lower())
+        else:
+            parts.append(str(part).lower())
+    return "app-server" in parts
+
+
 def _chat_pid_for(vendor: str) -> int:
     """The vendor process this command is running inside, if it is.
 
@@ -1675,7 +1688,11 @@ def _chat_pid_for(vendor: str) -> int:
         argv0 = Path((cmdline[0] or b"").decode(errors="replace")).name
         # `claude` is a node script; its argv0 may be the interpreter, so check the whole line.
         joined = b" ".join(cmdline).decode(errors="replace")
-        if argv0 == vendor or f"/{vendor}" in joined or joined.startswith(vendor + " "):
+        matched = argv0 == vendor or f"/{vendor}" in joined or joined.startswith(vendor + " ")
+        # Codex desktop runs every conversation through one long-lived app-server. Recording that
+        # shared PID makes an agent look attached forever after `/exit`. A standalone `codex`
+        # process is still conversation-specific and remains the right lifetime signal.
+        if matched and not _is_shared_vendor_host(vendor, cmdline):
             return pid
         try:
             pid = int(stat.rsplit(")", 1)[1].split()[1])
@@ -1694,7 +1711,7 @@ def _chat_pid_for_windows(vendor: str) -> int:
     try:
         result = subprocess.run(
             ["powershell", "-NoProfile", "-NonInteractive", "-Command",
-             "Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,Name | ConvertTo-Json -Compress"],
+             "Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,Name,CommandLine | ConvertTo-Json -Compress"],
             capture_output=True, text=True, timeout=15,
         )
         if result.returncode != 0 or not result.stdout.strip():
@@ -1705,7 +1722,8 @@ def _chat_pid_for_windows(vendor: str) -> int:
         by_pid = {}
         for row in rows:
             try:
-                by_pid[int(row["ProcessId"])] = (int(row["ParentProcessId"]), str(row.get("Name") or ""))
+                by_pid[int(row["ProcessId"])] = (int(row["ParentProcessId"]), str(row.get("Name") or ""),
+                                                  str(row.get("CommandLine") or ""))
             except (KeyError, TypeError, ValueError):
                 continue
     except (OSError, subprocess.SubprocessError, json.JSONDecodeError, ValueError):
@@ -1720,10 +1738,11 @@ def _chat_pid_for_windows(vendor: str) -> int:
         entry = by_pid.get(pid)
         if not entry:
             break
-        parent_pid, name = entry
+        parent_pid, name, command_line = entry
         stem = Path(name).stem.lower()
         name_lower = name.lower()
-        if stem == vendor_lower or name_lower.startswith(vendor_lower):
+        if (stem == vendor_lower or name_lower.startswith(vendor_lower)) and not (
+                vendor_lower == "codex" and "app-server" in command_line.lower().split()):
             return pid
         if parent_pid == pid or parent_pid <= 0:
             break
@@ -1741,7 +1760,14 @@ def agent_attached(agent: dict, root: Path, *, ignore: set[int] | None = None) -
     except RuntimeError:
         pass
     pid = int(_read_chat_pids(root).get(str(agent.get("id", "")), 0) or 0)
-    if pid and pid not in (ignore or set()) and _alive(pid): return True
+    if pid and pid not in (ignore or set()) and _alive(pid):
+        shared = False
+        if Path("/proc").is_dir():
+            try: shared = _is_shared_vendor_host(str(agent.get("vendor") or ""),
+                                                 (Path("/proc") / str(pid) / "cmdline").read_bytes().split(b"\0"))
+            except OSError: pass
+        if not shared:
+            return True
     proc = Path("/proc")
     if proc.is_dir() and len(conversation) >= 8:
         needle = conversation.encode()
@@ -2401,6 +2427,19 @@ class AgentRunner:
         for job_id, entry in list(self.procs.items()):
             proc = entry["proc"]
             if proc.poll() is None:
+                # An agent can finish the LockedIn job from a child/background task while the
+                # vendor's root CLI keeps waiting for other background work. The server reply is
+                # authoritative: do not hold this agent's queue (Agy can otherwise wait for its
+                # full print timeout after a successful reply). Reap only terminal jobs, and mark
+                # them so the SIGTERM below is cleanup rather than a second, failed result.
+                try:
+                    remote = self.sync._request("GET", f"jobs/{job_id}").get("job", {})
+                except RuntimeError:
+                    remote = {}
+                if remote.get("status") in {"done", "failed", "cancelled"}:
+                    entry["server_finished"] = True
+                    self._terminate(job_id, "")
+                    continue
                 age = now - entry["started"]
                 if ("reason" not in entry and age > AGENT_NETWORK_GRACE_SECONDS
                         and _vendor_network_reconnects(
@@ -2426,6 +2465,12 @@ class AgentRunner:
                 else:
                     self.error = (f"{agent.get('name')}: could not learn the new conversation id; "
                                   f"run `{self.cli} agent chat {agent.get('name')}` once to create it")
+            if entry.get("server_finished"):
+                # The reply/failure already landed through `agent reply`/`agent fail`; emitting a
+                # worker result after terminating the leftover root process would overwrite that
+                # successful terminal state with SIGTERM's non-zero exit code.
+                del self.procs[job_id]
+                continue
             reason, code = entry.get("reason", ""), proc.returncode
             aid = agent.get("id")
             # `_landlock_child_confine` exits exactly 97 when it could not set up confinement, by

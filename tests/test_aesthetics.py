@@ -16,6 +16,7 @@ class AestheticsConfigTests(unittest.TestCase):
             ("Picasso", "Drawer"),
             ("Spock", "Mathematician"),
             ("Sheldon", "Literature Expert"),
+            ("Ada", "Generalist"),
             ("Clippy", "Formatting Expert"),
         ):
             self.assertIn(f'name:"{name}"', page)
@@ -51,10 +52,30 @@ class AestheticsConfigTests(unittest.TestCase):
         self.assertIn('M9.3 12.1 12 14.35 9.3 16.6', icons)  # apex points right
         self.assertNotIn('M4.6 5.6 1.8 12l2.8 6.4', icons)
         self.assertEqual(page.count("data-brand-mark></span>"), 2)
-        self.assertIn('setHeaderBrandMode((snap.workers||[]).some', page)
-        self.assertIn('w.state==="live"||w.state==="degraded"||w.state==="unresponsive"', page)
+        self.assertNotIn("setHeaderBrandMode", page)
+        self.assertIn("Worker state belongs to this presence control", page)
         self.assertIn(".brand .li-brand-mark{transform:translateY(1.5px)}", page)
         self.assertIn("@media (prefers-reduced-motion:reduce)", page)
+        self.assertIn('svg.addEventListener("pointerleave", clearHover)', icons)
+        self.assertIn('[data-mode="locked"][data-hover="true"]', page)
+        self.assertNotIn('[data-mode="locked"]:hover', page)
+        self.assertIn("delete mark.dataset.hover", page)
+        self.assertIn('document.addEventListener("pointermove",e=>clearBrandHovers', page)
+
+    def test_mouse_wheel_support_is_delegated_to_every_horizontal_pane(self):
+        page = (Path(server.WEB_DIR) / "index.html").read_text()
+        talks = (Path(server.WEB_DIR) / "talks.js").read_text()
+        self.assertIn('document.addEventListener("wheel",e=>{', page)
+        self.assertIn("e.composedPath()", page)
+        self.assertIn("horizontal.scrollLeft=Math.max", page)
+        # This inventory is intentionally broad: all current horizontal surfaces are reached by
+        # the one delegated listener, including dynamically rendered chalk-talk panes.
+        for selector in ("#helpTabs", ".preview table", ".katex-display", ".ptab-scroll",
+                         ".setup-snippet"):
+            self.assertIn(selector, page)
+        for selector in (".tk-pages", ".tk-md .katex-display", ".tk-md pre",
+                         ".tk-md .tk-tablewrap", ".tk-dots"):
+            self.assertIn(selector, talks)
 
     def test_every_favicon_uses_the_clean_closed_lock(self):
         page = (Path(server.WEB_DIR) / "index.html").read_text()
