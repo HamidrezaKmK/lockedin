@@ -63,6 +63,7 @@
   :root,body.theme-dark{
     --bg:#0d1018; --panel:#1c2434; --panel2:#2a3346; --line:#3c4a63; --line-strong:#5d7195;
     --ink:#e8ecf4; --muted:#9aa4b8; --accent:#4dd9b8; --accent2:#6ea8fe;
+    --brand-accent:#4dd9b8;
     --warn:#f5c842; --bad:#ff6b6b; --good:#4ade80;
     --ref-accent:#8bb7ff; --focus:#4dd9b8;
     --on-accent:#0d1018; --on-accent2:#0d1018;
@@ -228,8 +229,8 @@
   /* Buttons that pair an icon with a word: one gap rule, so no caller has to add a space. */
   button:has(.li-ic){display:inline-flex;align-items:center;gap:7px}
   .feature-icon .li-ic{width:19px;height:19px;color:var(--accent)}
-  .brand .li-ic{width:24px;height:24px;color:var(--accent2)}
-  .li-brand-mark{width:24px;height:24px;flex:0 0 auto;overflow:visible;color:var(--accent2);
+  .brand .li-ic{width:24px;height:24px;color:var(--brand-accent,var(--accent2))}
+  .li-brand-mark{width:24px;height:24px;flex:0 0 auto;overflow:visible;color:var(--brand-accent,var(--accent2));
     fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
   .li-brand-body{fill:color-mix(in srgb,currentColor 10%,transparent)}
   .li-brand-shackle{transform-box:view-box;transform-origin:7.3px 10px;
@@ -447,12 +448,12 @@
   .landing-kicker{display:inline-flex;align-items:center;gap:8px;color:var(--accent2);font-size:12px;
     font-weight:700;text-transform:uppercase;letter-spacing:.12em;margin-bottom:14px}
   .landing-lock{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;
-    border-radius:8px;background:color-mix(in srgb,var(--accent2) 16%,transparent);
-    border:1px solid color-mix(in srgb,var(--accent2) 34%,var(--line));letter-spacing:0}
+    border-radius:8px;background:color-mix(in srgb,var(--brand-accent,var(--accent2)) 16%,transparent);
+    border:1px solid color-mix(in srgb,var(--brand-accent,var(--accent2)) 34%,var(--line));letter-spacing:0}
   /* The wordmark leads the lockup — sized above the lede so the brand reads first. */
   .landing h1{font-family:var(--font-ui);font-size:clamp(46px,5.2vw,72px);line-height:1;margin:0 0 14px;
     letter-spacing:-.025em;font-weight:700}
-  .landing h1 .lock{color:var(--accent2)}
+  .landing h1 .lock{color:var(--brand-accent,var(--accent2))}
   .landing-lede{max-width:30ch;font-family:var(--font-ui);font-weight:700;letter-spacing:-.012em;
     font-size:clamp(19px,1.8vw,25px);line-height:1.2;color:var(--ink);margin:0;text-wrap:balance}
   .landing-copy{max-width:62ch;color:var(--muted);font-size:14.5px;line-height:1.6;margin:18px 0 0}
@@ -591,7 +592,7 @@
   .brand{display:inline-flex;align-items:center;gap:7px;
     font-size:22px;font-weight:700;font-family:var(--font-ui);letter-spacing:-.02em}
   .brand .li-ic{vertical-align:0}
-  .brand .lock{color:var(--accent2)}
+  .brand .lock{color:var(--brand-accent,var(--accent2))}
   .err{color:var(--bad);min-height:18px;font-size:13px}
 
   /* shell */

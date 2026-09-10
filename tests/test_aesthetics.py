@@ -18,6 +18,8 @@ class AestheticsConfigTests(unittest.TestCase):
             self.assertIn("--accent2:#6ea8fe", source)
             self.assertNotIn("#9b80ff", source)
             self.assertNotIn("#b59cff", source)
+        self.assertIn("--brand-accent:#4dd9b8", page)
+        self.assertIn("color:var(--brand-accent,var(--accent2))", page)
 
     def test_open_lock_uses_the_logo_chevron_instead_of_a_keyhole(self):
         source = (Path(__file__).parents[1] / "src" / "lockedin" / "web" / "icons.js").read_text()
