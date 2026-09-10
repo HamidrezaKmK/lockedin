@@ -53,6 +53,7 @@ class AestheticsConfigTests(unittest.TestCase):
         self.assertEqual(page.count("data-brand-mark></span>"), 2)
         self.assertIn('setHeaderBrandMode((snap.workers||[]).some', page)
         self.assertIn('w.state==="live"||w.state==="degraded"||w.state==="unresponsive"', page)
+        self.assertIn(".brand .li-brand-mark{transform:translateY(1.5px)}", page)
         self.assertIn("@media (prefers-reduced-motion:reduce)", page)
 
     def test_every_favicon_uses_the_clean_closed_lock(self):
