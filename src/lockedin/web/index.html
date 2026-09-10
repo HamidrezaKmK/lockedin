@@ -62,12 +62,12 @@
   */
   :root,body.theme-dark{
     --bg:#0d1018; --panel:#1c2434; --panel2:#2a3346; --line:#3c4a63; --line-strong:#5d7195;
-    --ink:#e8ecf4; --muted:#9aa4b8; --accent:#4dd9b8; --accent2:#6ea8fe;
+    --ink:#e8ecf4; --muted:#9aa4b8; --accent:#4dd9b8; --accent2:#62c6d2;
     --brand-accent:#4dd9b8;
     --warn:#f5c842; --bad:#ff6b6b; --good:#4ade80;
-    --ref-accent:#8bb7ff; --focus:#4dd9b8;
+    --ref-accent:#84d8dc; --focus:#4dd9b8;
     --on-accent:#0d1018; --on-accent2:#0d1018;
-    --text-color-1:#72e5ca; --text-color-2:#8bb7ff; --text-color-3:#f2c94c; --text-color-4:#ff7aa2; --text-color-5:#8bd3ff;
+    --text-color-1:#72e5ca; --text-color-2:#84d8dc; --text-color-3:#f2c94c; --text-color-4:#ff7aa2; --text-color-5:#9ad9cf;
     --shadow-sm:0 1px 6px rgba(0,0,0,.4); --shadow:0 6px 24px rgba(0,0,0,.55);
   }
   /* The bright themes were the ones that hurt: a near-white panel on a barely-tinted canvas
@@ -6084,7 +6084,7 @@
 
   function themeTextColors(){
     const cs=getComputedStyle(document.body);
-    const fallback=["#72e5ca","#8bb7ff","#f2c94c","#ff7aa2","#8bd3ff"];
+    const fallback=["#72e5ca","#84d8dc","#f2c94c","#ff7aa2","#9ad9cf"];
     return fallback.map((f,i)=>normalizeHex(cs.getPropertyValue("--text-color-"+(i+1)).trim())||f);
   }
 

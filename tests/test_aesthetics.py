@@ -15,7 +15,7 @@ class AestheticsConfigTests(unittest.TestCase):
         backend = Path(server.__file__).read_text()
         for source in (page, backend):
             self.assertIn("--accent:#4dd9b8", source)
-            self.assertIn("--accent2:#6ea8fe", source)
+            self.assertIn("--accent2:#62c6d2", source)
             self.assertNotIn("#9b80ff", source)
             self.assertNotIn("#b59cff", source)
         self.assertIn("--brand-accent:#4dd9b8", page)
