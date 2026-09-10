@@ -1280,11 +1280,25 @@
   .setup-run-actions>button.setup-refresh:hover{background:var(--panel2)}
   .setup-refresh.spin .li-ic{animation:setup-spin .7s linear infinite}
   @keyframes setup-spin{to{transform:rotate(360deg)}}
+  .setup-preset-label{margin:4px 0 7px;font-size:11.5px;font-weight:700;color:var(--muted)}
+  .setup-presets{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin-bottom:12px}
+  .setup-preset{display:block;min-height:0;padding:8px 10px;text-align:left;background:var(--panel);
+    border:1px solid var(--line);border-radius:8px;color:var(--ink)}
+  .setup-preset b,.setup-preset span{display:block}
+  .setup-preset b{font-size:12.5px}
+  .setup-preset span{margin-top:2px;font-size:10.5px;color:var(--muted)}
+  .setup-preset.active{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--panel));
+    box-shadow:0 0 0 1px color-mix(in srgb,var(--accent) 55%,transparent) inset}
   .setup-persona{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 10px;margin:8px 0}
   .setup-persona label{display:flex;flex-direction:column;gap:4px;font-size:11.5px;color:var(--muted);
     font-family:var(--font-ui)}
-  .setup-persona input{width:100%;padding:6px 9px;font-size:12.5px}
-  @media (max-width:560px){.setup-persona{grid-template-columns:minmax(0,1fr)}}
+  .setup-persona label.wide{grid-column:1/-1}
+  .setup-persona input,.setup-persona textarea{width:100%;padding:6px 9px;font-size:12.5px}
+  .setup-persona textarea{min-height:68px;line-height:1.45;resize:vertical}
+  @media (max-width:560px){
+    .setup-presets,.setup-persona{grid-template-columns:minmax(0,1fr)}
+    .setup-persona label.wide{grid-column:auto}
+  }
   .setup-snippet-wrap{white-space:pre-wrap;overflow-wrap:anywhere}
   .setup-attach{display:flex;flex-direction:column;gap:6px;font-size:12.5px;line-height:1.5}
   .setup-attach-row b{font-weight:600}
@@ -4965,12 +4979,39 @@
     const agentBody=el("div",{class:"setup-agent"});
     const troubleshootBody=el("div");
     const copy=el("button",{class:"primary",disabled:true},"Copy");
+    const AGENT_PRESETS=[
+      {
+        name:"Picasso",
+        role:"Drawer",
+        goal:"To translate dense abstractions into intuitive, high-impact visuals. This agent spins up rapid numerical experiments purely as a canvas, synthesizing complex theoretical models into singular, defining figures that instantly communicate the core message. They live by the rule that a well-crafted plot is infinitely more valuable than a wall of text.",
+        personality:"Highly communicative, effortlessly creative, and always asking, \"How can we show this rather than tell it?\""
+      },
+      {
+        name:"Spock",
+        role:"Mathematician",
+        goal:"To ensure absolute rigor without sacrificing clarity. This agent meticulously guards notation consistency across the board, verifies theoretical soundness, and actively strips away unnecessary complexity—always championing the most elegant, simple, and communicable mathematical path over convoluted proof methods.",
+        personality:"Deeply knowledgeable but remarkably grounded; they value clarity and elegance above intellectual showmanship."
+      },
+      {
+        name:"Sheldon",
+        role:"Literature Expert",
+        goal:"To scour the vast ocean of academic literature and retrieve the exact foundational frameworks needed. Armed with advanced retrieval tools like Undermind and relentless search heuristics, this agent doesn't just blindly fetch citations—it actively synthesizes disparate research threads to spark new directions and anchor the current work within the broader scientific canon.",
+        personality:"The Connective Brainstormer. Insatiably curious, highly exploratory, and always eager to weave a newly discovered paper into the current thesis."
+      },
+      {
+        name:"Clippy",
+        role:"Formatting Expert",
+        goal:"To act as the uncompromising gatekeeper of structural integrity. Whether wrestling with intricate mathematical typesetting, structural markup, or strict publication guidelines, this agent ensures that every line of output renders flawlessly, cleanly, and exactly to spec on the first compile.",
+        personality:"The Pedant. Unapologetically precise, deeply detail-oriented, and profoundly satisfied by perfect alignment and zero rendering warnings."
+      }
+    ];
     const nameInput=el("input",{type:"text",placeholder:"Ada",autocomplete:"off",oninput:renderPersona});
     const roleInput=el("input",{type:"text",placeholder:"skeptical reviewer",autocomplete:"off",oninput:renderPersona});
-    const goalInput=el("input",{type:"text",placeholder:"keep every derivation honest and readable",
+    const goalInput=el("textarea",{rows:"3",placeholder:"keep every derivation honest and readable",
       autocomplete:"off",oninput:renderPersona});
-    const personalityInput=el("input",{type:"text",placeholder:"terse, prefers concrete counterexamples",
+    const personalityInput=el("textarea",{rows:"3",placeholder:"terse, prefers concrete counterexamples",
       autocomplete:"off",oninput:renderPersona});
+    const presetPicker=el("div",{class:"setup-presets","aria-label":"Agent profile presets"});
     const personaSnippet=el("code",{class:"setup-snippet setup-snippet-wrap"});
     const copy2=el("button",{class:"primary"},"Copy");
     // A circular arrow rather than the words "New link": the button restores a link that went
@@ -5003,7 +5044,33 @@
       if(personality) line+=" Personality: "+personality+".";
       return line;
     }
-    function renderPersona(){ personaSnippet.textContent=personaLine(); }
+    function matchingPreset(){
+      const value=input=>input.value.trim();
+      return AGENT_PRESETS.find(p=>p.name===value(nameInput)&&p.role===value(roleInput)
+        &&p.goal===value(goalInput)&&p.personality===value(personalityInput));
+    }
+    function applyPreset(preset){
+      nameInput.value=preset.name;
+      roleInput.value=preset.role;
+      goalInput.value=preset.goal;
+      personalityInput.value=preset.personality;
+      renderPersona();
+    }
+    function renderPresetPicker(){
+      const selected=matchingPreset();
+      presetPicker.replaceChildren(...AGENT_PRESETS.map(preset=>
+        el("button",{
+          class:"setup-preset"+(selected===preset?" active":""),
+          type:"button",
+          "aria-pressed":String(selected===preset),
+          title:"Use "+preset.name+"'s profile",
+          onclick:()=>applyPreset(preset)
+        },el("b",{},preset.name),el("span",{},preset.role))));
+    }
+    function renderPersona(){
+      personaSnippet.textContent=personaLine();
+      renderPresetPicker();
+    }
     function render(){
       tabRow(osTabs,OSES,os,key=>{ os=key; render(); });
       tabRow(agentTabs,AGENTS,agent,key=>{ agent=key; render(); });
@@ -5159,11 +5226,13 @@
             + "conversation instead — with no terminal to answer from, it just uses the "
             + "folder the agent is working in. Once the skill has loaded, name it in the next step.")),
         step(4,"Give it a name and a personality",
+          el("div",{class:"setup-preset-label"},"Start from a preset"),
+          presetPicker,
           el("div",{class:"setup-persona"},
             el("label",{},"Name",nameInput),
             el("label",{},"Role",roleInput),
-            el("label",{},"Goal",goalInput),
-            el("label",{},"Personality (optional)",personalityInput)),
+            el("label",{class:"wide"},"Goal",goalInput),
+            el("label",{class:"wide"},"Personality (optional)",personalityInput)),
           el("div",{class:"setup-run"}, personaSnippet,
             el("div",{class:"setup-run-actions"}, copy2)),
           el("div",{class:"muted setup-hint"},

@@ -84,7 +84,25 @@ async function main(){
   const cases=[
     ["bubble-assets",  `#bubble/${slug}`, async()=>{ await openMenu(); await tap(".toolmenu-item","Assets"); }, ".asset-modal, [role=dialog]"],
     ["papers",         `#bubble/${slug}`, async()=>{ await openMenu(); await tap(".toolmenu-item","Papers"); }, "[role=dialog]"],
-    ["connect-agent",  `#bubble/${slug}`, async()=>{ await openMenu(); await tap(".toolmenu-item","Connect an agent"); }, "[role=dialog]"],
+    ["connect-agent",  `#bubble/${slug}`, async()=>{
+      await p.evaluate(()=>{
+        const segments=[...document.querySelectorAll(".presence-seg")];
+        if(!segments[1])throw new Error("agents presence segment missing");
+        segments[1].click();
+      });
+      await tap(".presence-add","Manage agents");
+      await tap(".setup-preset","Picasso");
+      await p.evaluate(()=>{
+        const active=document.querySelector(".setup-preset.active");
+        const fields=[...document.querySelectorAll(".setup-persona input,.setup-persona textarea")];
+        if(!active||!active.textContent.includes("Picasso"))throw new Error("Picasso preset is not active");
+        if(fields.length!==4||fields.some(field=>!field.value.trim()))
+          throw new Error("Picasso preset did not populate all four fields");
+        const body=document.querySelector(".setup-body");
+        const step=document.querySelectorAll(".setup-step")[3];
+        body.scrollTop=Math.max(0,step.offsetTop-12);
+      });
+    }, "[role=dialog]"],
     ["tool-menu",      `#bubble/${slug}`, async()=>{ await openMenu(); }, ".toolmenu-panel"],
     ["presence-menu",  `#bubble/${slug}`, async()=>{ await openMenu(); await tap(".toolmenu-item","reading"); }, ".presence-menu"],
     ["new-bubble",     `#bubbles`,        async()=>{ await tap(".view-head button.primary"); }, "[role=dialog]"],

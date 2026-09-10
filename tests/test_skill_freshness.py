@@ -127,6 +127,11 @@ class SkillFreshnessTests(unittest.TestCase):
         self.assertGreaterEqual(SKILL_VERSION, 49)
         self.assertIn("one-use recovery command", GUIDES["agents.md"])
 
+    def test_skill_version_carries_web_registration_presets(self):
+        self.assertGreaterEqual(SKILL_VERSION, 50)
+        self.assertIn("profile chosen from the web\n   app's presets", GUIDES["agents.md"])
+        self.assertIn("do not ask for them again", GUIDES["agents.md"])
+
     def test_editing_reference_guide_distinguishes_page_and_talk_theorem_scope(self):
         guide = reports.guide_section("Editing Guide")
         self.assertIn("numbering continues across that talk's slides", guide)
@@ -134,7 +139,8 @@ class SkillFreshnessTests(unittest.TestCase):
 
     def test_web_help_covers_direct_agent_turns_and_chalk_talk_theorems(self):
         agents_help = reports.guide_section("Agents")
-        for expected in ("Queue turn", "one real agent turn", "open lock", "closed lock"):
+        for expected in ("Queue turn", "one real agent turn", "open lock", "closed lock",
+                         "Picasso", "Spock", "Sheldon", "Clippy", "saved template"):
             self.assertIn(expected, agents_help)
         chalk_help = reports.guide_section("Chalk talks")
         self.assertIn(r"\begin{theorem}[Title]", chalk_help)

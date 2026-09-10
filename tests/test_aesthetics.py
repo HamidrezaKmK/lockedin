@@ -10,6 +10,22 @@ from lockedin import server, service
 
 
 class AestheticsConfigTests(unittest.TestCase):
+    def test_agent_setup_offers_editable_registry_presets(self):
+        page = (Path(server.WEB_DIR) / "index.html").read_text()
+        for name, role in (
+            ("Picasso", "Drawer"),
+            ("Spock", "Mathematician"),
+            ("Sheldon", "Literature Expert"),
+            ("Clippy", "Formatting Expert"),
+        ):
+            self.assertIn(f'name:"{name}"', page)
+            self.assertIn(f'role:"{role}"', page)
+        self.assertIn('class:"setup-presets"', page)
+        self.assertIn("function applyPreset(preset)", page)
+        self.assertIn("goalInput.value=preset.goal", page)
+        self.assertIn("personalityInput.value=preset.personality", page)
+        self.assertIn('el("textarea",{rows:"3",placeholder:', page)
+
     def test_default_dark_theme_uses_teal_and_blue_without_the_old_purple(self):
         page = (Path(server.WEB_DIR) / "index.html").read_text()
         backend = Path(server.__file__).read_text()

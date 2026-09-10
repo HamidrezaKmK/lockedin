@@ -37,7 +37,7 @@ except ImportError:  # Standalone client installed beside agent_vendors.py.
     import agent_vendors  # type: ignore[no-redef]
 
 APP = "lockedin-scientist"
-SCIENTIST_CLIENT_VERSION = "2026.09.09.3"
+SCIENTIST_CLIENT_VERSION = "2026.09.09.4"
 POLL_SECONDS = 5
 # A worker that has not completed a cycle in three polls is wedged rather than merely busy.
 # `doctor` reports that verdict and `resync` repairs exactly what `doctor` complains about, so
@@ -484,7 +484,7 @@ def bubbles_command(account: dict) -> list[dict]:
 
 # Bump when the guide text changes: a project only regenerates SKILL.md when this marker in its
 # copy stops matching, so an edit to the guide reaches no existing agent until this moves.
-SKILL_VERSION = 49
+SKILL_VERSION = 50
 
 # The marker is derived, never typed. It is what the staleness check compares against, so a
 # hand-written copy that drifted from SKILL_VERSION would either pin every project to a stale
@@ -807,7 +807,9 @@ around.
 Only when the user asks you to register, become, or act as an agent. Then:
 
 1. Ask the user, in one short message, for a **name**, a **role** (a few words), a **goal** (one
-   sentence), and optionally a **personality**. Suggest defaults if they want you to.
+   sentence), and optionally a **personality**. Suggest defaults if they want you to. If the
+   registration request already supplies those fields — including a profile chosen from the web
+   app's presets — use them as written and do not ask for them again.
 2. Run, from the project root:
 
        lockedin-scientist agent register --name "Ada" --role "skeptical reviewer" \\

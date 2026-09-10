@@ -210,6 +210,12 @@ folder in the agent menu on a bubble. The row shows its current state: idle, wor
 an interactive chat, or offline. **Manage agents** carries the full role, goal, budget, reset and
 retire controls.
 
+## Registration presets
+
+Open **Connect an agent** and go to step 4. Choose **Picasso**, **Spock**, **Sheldon**, or
+**Clippy** to fill in a reusable Name, Role, Goal, and Personality, then edit any field you want
+before copying the registration prompt. Editing a preset never changes the saved template.
+
 ## Direct messages
 
 Open the agent menu and select an agent to open its direct-message screen. Write any free-form
