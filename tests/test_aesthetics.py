@@ -10,6 +10,15 @@ from lockedin import server, service
 
 
 class AestheticsConfigTests(unittest.TestCase):
+    def test_default_dark_theme_uses_teal_and_blue_without_the_old_purple(self):
+        page = (Path(server.WEB_DIR) / "index.html").read_text()
+        backend = Path(server.__file__).read_text()
+        for source in (page, backend):
+            self.assertIn("--accent:#4dd9b8", source)
+            self.assertIn("--accent2:#6ea8fe", source)
+            self.assertNotIn("#9b80ff", source)
+            self.assertNotIn("#b59cff", source)
+
     def test_open_lock_uses_the_logo_chevron_instead_of_a_keyhole(self):
         source = (Path(__file__).parents[1] / "src" / "lockedin" / "web" / "icons.js").read_text()
         open_lock = source.split('"lock-open":', 1)[1].split("],", 1)[0]
@@ -170,8 +179,8 @@ class AestheticsConfigTests(unittest.TestCase):
         self.assertNotIn("overflow:hidden", group)
         self.assertNotIn("overflow:clip", group)
         self.assertIn("background:var(--accent);color:var(--tabrow-ink)}", source)
-        # Dark's row keeps the page tokens, where the accent is a mid purple rather than the pale
-        # tint the other themes use — white glyphs read better on it than near-black ones.
+        # Dark's row keeps the page tokens, where the accent is a saturated teal rather than the
+        # pale tint the other themes use — white glyphs read better on it than near-black ones.
         self.assertIn("body.theme-dark .editor-pane>.ptabs{--tabrow-ink:#fff}", source)
         # The ⋮ is the presence pill's fourth segment now, not a tab-row button.
         self.assertIn('el("div",{class:"hdr-cluster"},S.presenceEl,S.toolsMenu)', source)

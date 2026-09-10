@@ -466,9 +466,9 @@ def _render_preview_html(*, name: str, page: str, all_pages: list, content: str,
    --line-strong (which draws anything you can operate) clears 3:1 on both. */
 :root,body.theme-dark{{
   --bg:#0d1018;--ink:#e8ecf4;--muted:#9aa4b8;--line:#3c4a63;--line-strong:#5d7195;--panel:#1c2434;
-  --accent:#9b80ff;--accent2:#4dd9b8;--on-accent:#0d1018;--shadow:rgba(0,0,0,.45);
-  --scroll-track:#0d1018;--scroll-thumb:#6957ad;--scroll-thumb-hover:#8c73e8;
-  --ref-accent:#b59cff;
+  --accent:#4dd9b8;--accent2:#6ea8fe;--on-accent:#0d1018;--shadow:rgba(0,0,0,.45);
+  --scroll-track:#0d1018;--scroll-thumb:#277a69;--scroll-thumb-hover:#43bfa3;
+  --ref-accent:#8bb7ff;
 }}
 body.theme-light{{
   --bg:#dde6f1;--ink:#0f1826;--muted:#455872;--line:#8fa4bd;--line-strong:#6b7f9a;--panel:#ffffff;
