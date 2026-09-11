@@ -1044,7 +1044,8 @@ class PrivateReviewComments(unittest.TestCase):
                     json={"content": resolved_state["content"],
                           "base_mtime": resolved_state["page_mtime"]})
                 self.assertEqual(deleted.status_code, 200)
-                self.assertEqual(deleted.json()["threads"], [])
+                self.assertEqual(deleted.json()["threads"][0]["status"], "resolved")
+                self.assertEqual(deleted.json()["threads"][0]["messages"][0]["body"], "Review beta")
 
     def test_comment_creation_wraps_exact_selection_atomically(self):
         with temp_home() as home:

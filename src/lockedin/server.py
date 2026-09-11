@@ -967,6 +967,9 @@ def build_app():
     class TalkNoteEditIn(BaseModel):
         text: str = ""
 
+    class TalkNoteStatusIn(BaseModel):
+        status: str = "resolved"
+
     class TalkShotIn(BaseModel):
         image_b64: str
 
@@ -2189,11 +2192,14 @@ def build_app():
         # The agents registered through each synchronized directory ride along, so the presence
         # menu can list them under their worker without a second request.
         try:
-            snap["agents"] = service.agents_overview(home_of(user), slug,
-                                                    workers=snap["workers"], viewer=user)["agents"]
+            overview = service.agents_overview(home_of(user), slug,
+                                                    workers=snap["workers"], viewer=user)
+            snap["agents"] = overview["agents"]
+            snap["retired_agents"] = overview.get("retired_agents", [])
         except Exception:
             logger.debug("Could not attach agents to presence.", exc_info=True)
             snap["agents"] = []
+            snap["retired_agents"] = []
         return snap
 
     @app.delete("/api/bubbles/{slug}/presence")
@@ -2463,10 +2469,18 @@ def build_app():
         return FileResponse(path, media_type="image/png",
                             headers={"Cache-Control": "private, no-cache"})
 
+    @app.patch("/api/bubbles/{slug}/talks/{talk_id}/notes/{note_id}/status")
+    def resolve_talk_note(slug: str, talk_id: str, note_id: str, body: TalkNoteStatusIn,
+                          user: str = Depends(current_user)):
+        if body.status != "resolved":
+            raise HTTPException(status_code=400, detail="A chalk-talk mark can only be resolved.")
+        return {"ok": service.resolve_talk_note(home_of(user), slug, talk_id, note_id, actor=user)}
+
     @app.delete("/api/bubbles/{slug}/talks/{talk_id}/notes/{note_id}")
     def delete_talk_note(slug: str, talk_id: str, note_id: str,
                          user: str = Depends(current_user)):
-        return {"ok": service.delete_talk_note(home_of(user), slug, talk_id, note_id)}
+        # Older open tabs may still send DELETE. Preserve their mark history too.
+        return {"ok": service.resolve_talk_note(home_of(user), slug, talk_id, note_id, actor=user)}
 
     @app.put("/api/bubbles/{slug}/talks/{talk_id}/slides/{slide}/source")
     def edit_talk_slide_source(slug: str, talk_id: str, slide: int, body: TalkSlideSourceIn,
@@ -2683,15 +2697,13 @@ def build_app():
     @app.delete("/api/bubbles/{slug}/pages/{page}/comments/{thread_id}")
     def del_comment(slug: str, page: str, thread_id: str, body: CommentDeleteIn,
                     user: str = Depends(current_user)):
+        """Compatibility route: old tabs resolve marks instead of erasing their threads."""
         started = time.perf_counter()
         try:
             require_review_base_mtime(home_of(user), slug, page, body.base_mtime)
-            result = service.delete_comment_state(
-                home_of(user), slug, page, thread_id,
+            return service.set_comment_status_state(
+                home_of(user), slug, page, thread_id, "resolved", user,
                 content=body.content, base_mtime=body.base_mtime)
-            if result is None:
-                raise HTTPException(status_code=404, detail="No such review thread.")
-            return result
         except bubbles.PageConflict as e:
             raise HTTPException(status_code=409, detail="Page changed on disk",
                                 headers={"X-Disk-Mtime": repr(e.disk_mtime)})

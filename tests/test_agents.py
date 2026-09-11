@@ -112,14 +112,25 @@ class Registry(AgentFixture):
                                       conversation="c", worker_id="w")
             self.assertFalse(paths.bubble_agents_path(self.slug).exists())
 
-    def test_an_agent_can_be_found_by_name_or_id_and_retired(self):
-        agent = self.register(name="Ada")
+    def test_an_agent_can_be_found_by_name_or_id_and_retired_with_history(self):
+        agent = self.register(name="Ada", registered_by="hamid")
         with paths.use_root(self.home):
             self.assertEqual(agents.get_agent(self.slug, "ada")["id"], agent["id"])
-            job = agents.create_job(self.slug, agent_id="Ada", mark_key=self.page_key)
-            agents.remove_agent(self.slug, agent["id"])
+            job = agents.create_job(self.slug, agent_id="Ada", mark_key=self.page_key,
+                                    created_by="hamid")
+            retired = agents.remove_agent(self.slug, agent["id"], owner="hamid")
             self.assertEqual(agents.list_agents(self.slug), [])
             self.assertEqual(agents.get_job(self.slug, job["id"])["status"], "cancelled")
+            view = agents.overview(self.slug, viewer="hamid")
+            agent_index, _ = agents.indexes(self.slug, owner="hamid")
+        self.assertEqual(view["agents"], [])
+        self.assertEqual(len(view["retired_agents"]), 1)
+        self.assertEqual(view["retired_agents"][0]["status"], "retired")
+        self.assertEqual(view["retired_agents"][0]["conversation"], "conv-ada")
+        self.assertEqual(view["retired_agents"][0]["history"][0]["mark"]["quote"],
+                         "The variance term vanishes in the limit")
+        self.assertEqual(retired["history"], view["retired_agents"][0]["history"])
+        self.assertEqual(agent_index["by_id"], {})
 
     def test_reset_forgets_the_conversation_and_marks_the_next_turn_fresh(self):
         agent = self.register()
@@ -468,7 +479,7 @@ class Jobs(AgentFixture):
         self.assertEqual(row["turn_timeout_seconds"], 1200)
         self.assertEqual(view["jobs"]["open"][0]["activity"], activity)
 
-    def test_a_queued_job_whose_mark_was_deleted_is_cancelled_at_heartbeat(self):
+    def test_a_queued_job_whose_mark_was_resolved_is_cancelled_at_heartbeat(self):
         agent = self.register(worker_id="w1")
         with paths.use_root(self.home):
             job = agents.create_job(self.slug, agent_id=agent["id"], mark_key=self.talk_key)
@@ -477,6 +488,28 @@ class Jobs(AgentFixture):
             status = agents.get_job(self.slug, job["id"])
         self.assertEqual(beat["jobs"], [])
         self.assertEqual(status["status"], "cancelled")
+
+    def test_resolve_preserves_mark_history_before_and_after_retirement(self):
+        agent = self.register(worker_id="w1", registered_by="hamid")
+        with paths.use_root(self.home):
+            job = agents.create_job(self.slug, agent_id=agent["id"], mark_key=self.talk_key,
+                                    created_by="hamid")
+            before = agents.mark_pointer(self.slug, self.talk_key)
+            agents.start_job(self.slug, job["id"], worker_id="w1", actor="hamid")
+            self.assertTrue(service.resolve_talk_note(
+                self.home, self.slug, self.talk, self.note["id"], actor="hamid"))
+            active = agents.overview(self.slug, viewer="hamid")["agents"][0]
+            cancelled = agents.get_job(self.slug, job["id"])
+            beat = agents.heartbeat(self.slug, worker_id="w1", agents=[],
+                                    running_job_ids=[job["id"]], owner="hamid")
+            agents.remove_agent(self.slug, agent["id"], owner="hamid")
+            archived = agents.overview(self.slug, viewer="hamid")["retired_agents"][0]
+        self.assertEqual(cancelled["status"], "cancelled")
+        self.assertEqual(beat["cancelled"], [job["id"]])
+        self.assertEqual(active["history"][0]["mark"]["messages"], before["messages"])
+        self.assertEqual(active["history"][0]["mark"]["status"], "resolved")
+        self.assertEqual(archived["history"], active["history"])
+
 
     def test_requeue_sends_a_running_job_back_to_queued_with_attempts_incremented(self):
         agent = self.register(worker_id="w1")

@@ -488,9 +488,12 @@ def set_comment_status_state(home: Path, slug: str, page_slug: str, thread_id: s
                              status: str, actor: str, *, content: "str | None" = None,
                              base_mtime: "float | None" = None) -> dict:
     with paths.use_root(home):
-        return bubbles.set_comment_status_state(
+        result = bubbles.set_comment_status_state(
             slug, page_slug, thread_id, status, actor,
             content=content, base_mtime=base_mtime)
+        if status == "resolved":
+            agents.resolve_mark_jobs(slug, f"page:{page_slug}:{thread_id}", actor=actor)
+        return result
 
 
 def delete_comment_state(home: Path, slug: str, page_slug: str, thread_id: str, *,
@@ -894,9 +897,20 @@ def fail_job(home: Path, slug: str, job_id: str, reason: str, actor: str = "") -
         return agents.fail_job(slug, job_id, reason=reason, actor=actor)
 
 
-def delete_talk_note(home: Path, slug: str, talk_id: str, note_id: str) -> bool:
+def resolve_talk_note(home: Path, slug: str, talk_id: str, note_id: str, *, actor: str = "") -> bool:
     with paths.use_root(home):
-        return talks.delete_note(slug, talk_id, note_id)
+        resolved = talks.resolve_note(slug, talk_id, note_id, actor=actor)
+        if resolved:
+            sync_id = next((str(rec.get("sync_id") or "") for rec in talks.ensure_sync_ids(slug)
+                            if rec.get("id") == talk_id), "")
+            if sync_id:
+                agents.resolve_mark_jobs(slug, f"{sync_id}:{note_id}", actor=actor)
+        return resolved
+
+
+def delete_talk_note(home: Path, slug: str, talk_id: str, note_id: str) -> bool:
+    """Compatibility wrapper: legacy DELETE clients resolve rather than erase."""
+    return resolve_talk_note(home, slug, talk_id, note_id)
 
 
 def apply_talk_slide_source(home: Path, slug: str, talk_id: str, slide: int, text: str,

@@ -39,6 +39,7 @@
               edit: false, editorObj: null, notes: true, user: "", syncState: "synced",
               syncTimer: null, syncBusy: false, macros: null, mathMacros: {} };
   let root = null;
+  const collapsedMarks = new Set();
 
   const api = async (path, opts = {}) => {
     // Chalk talks live in the active workspace just like pages do. Without this header the
@@ -506,6 +507,12 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
 .tk-note:hover{border-color:var(--accent);border-left-color:var(--kc)}
 .tk-note.orphan{border-style:dashed}
 .tk-note .hd{display:flex;align-items:center;gap:7px;margin-bottom:14px;font-size:11.5px;color:var(--muted)}
+.tk-note.collapsed{padding-bottom:18px}
+.tk-note.collapsed>.hd{margin-bottom:0}
+.tk-note.collapsed>:not(.hd){display:none!important}
+.tk-collapse{box-sizing:border-box;width:25px;height:25px;min-width:25px!important;min-height:25px!important;flex:0 0 25px;padding:0!important;border:0;background:transparent;display:grid;place-items:center;line-height:0;color:var(--muted)}
+.tk-collapse:hover{background:var(--panel2);color:var(--ink)}
+.tk-collapse .li-ic{width:13px;height:13px}
 .tk-badge{font:500 10.5px var(--font-mono);padding:2px 7px;border-radius:999px;letter-spacing:.02em;
   background:color-mix(in srgb,var(--kc) 20%,transparent);color:var(--kc)}
 .tk-note .qt{font-family:var(--font-reading);font-size:12.5px;color:var(--muted);
@@ -518,6 +525,8 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
   min-width:0}
 .tk-turn.agent .tk-said{color:var(--muted);border-left:2px solid
   color-mix(in srgb,var(--accent) 45%,transparent);padding-left:10px}
+.tk-said>:first-child{margin-top:0}.tk-said>:last-child{margin-bottom:0}
+.tk-said p{margin:0 0 6px}.tk-said .katex-display{margin:6px 0;overflow-x:auto;overflow-y:hidden}
 .tk-note .tx{font-size:13.5px;line-height:1.45;overflow-wrap:anywhere;word-break:break-word}
 .tk-note .tk-id{margin-left:auto;font:400 10px var(--font-mono);opacity:.55}
 .tk-note .tk-dim{opacity:.5;font-style:italic}
@@ -1489,6 +1498,8 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
 
   function noteCard(m) {
     const k = KINDS[m.kind] || KINDS.q;
+    const collapseKey = m.jobKey || ((S.talk && S.talk.talk ? S.talk.talk.id : "mark") + ":" + m.id);
+    const collapsed = collapsedMarks.has(collapseKey);
     const msgs = m.messages || [];
     const lastIdx = msgs.length - 1;
     const turn = (msg, i) => `<div class="tk-turn${msg.agent ? " agent" : ""}">
@@ -1496,11 +1507,12 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
         msg.edited_at ? ' <span class="tk-dim">· edited</span>' : ""}</div>
       <div class="tk-said"${i === lastIdx && !msg.agent ? ' data-last="1"' : ""}>${esc(msg.body || "")}</div>
     </div>`;
-    return `<div class="tk-note${m.orphan ? " orphan" : ""}" data-note="${esc(m.id)}"${
+    return `<div class="tk-note${m.orphan ? " orphan" : ""}${collapsed ? " collapsed" : ""}" data-collapse-key="${esc(collapseKey)}" data-note="${esc(m.id)}"${
         m.jobKey ? ` data-jobkey="${esc(m.jobKey)}"` : ""}
         style="--kc:${k.color}">
       <div class="hd"><span class="tk-badge">${k.glyph} ${k.label}</span>
-        <span class="tk-id" title="the id an agent sees">${esc(m.id)}</span></div>
+        <span class="tk-id" title="the id an agent sees">${esc(m.id)}</span>
+        <button class="tk-collapse" data-collapse aria-label="${collapsed ? "Expand" : "Collapse"} mark" aria-expanded="${collapsed ? "false" : "true"}">${LI_IC(collapsed ? "chevron-down" : "chevron-up")}</button></div>
       ${m.jobKey && jobChip(m.jobKey) ? `<div class="tk-jobrow">${jobChip(m.jobKey)}</div>` : ""}
       <div class="qt">${m.orphanNote || ""}${m.quote
         ? "\u201c" + esc(m.quote) + "\u201d"
@@ -1513,7 +1525,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
         <button data-reply="${esc(m.id)}">reply</button>
         ${(!msgs.length || !(msgs[lastIdx] || {}).agent)
           ? `<button data-edit="${esc(m.id)}">edit</button>` : ""}
-        <button data-drop="${esc(m.id)}">remove</button>
+        <button data-drop="${esc(m.id)}">resolve</button>
         ${m.jobKey && M.agents.length && (!msgs.length || !(msgs[lastIdx] || {}).agent)
           ? `<button data-assign="${esc(m.id)}">assign</button>` : ""}
       </div>
@@ -1527,6 +1539,17 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
       e.stopPropagation();
       if (window.LockedInLightbox) window.LockedInLightbox.open(im.src, im.alt);
       else window.open(im.src, "_blank", "noopener");
+    }));
+    host.querySelectorAll(".tk-said:not(.tk-dim)").forEach(node => renderMarkdown(node.textContent || "", node));
+    host.querySelectorAll("[data-collapse]").forEach(button => (button.onclick = e => {
+      e.stopPropagation();
+      const card = button.closest(".tk-note"), key = card && card.dataset.collapseKey;
+      if (!card || !key) return;
+      const collapsed = card.classList.toggle("collapsed");
+      if (collapsed) collapsedMarks.add(key); else collapsedMarks.delete(key);
+      button.setAttribute("aria-expanded", String(!collapsed));
+      button.setAttribute("aria-label", (collapsed ? "Expand" : "Collapse") + " mark");
+      button.innerHTML = LI_IC(collapsed ? "chevron-down" : "chevron-up");
     }));
     host.querySelectorAll("[data-drop]").forEach(b => (b.onclick = e => {
       e.stopPropagation();
@@ -2075,7 +2098,8 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     </div>`);
     wireCard(el, {
       onDelete: async id => {
-        await api(`/api/bubbles/${S.slug}/talks/${S.talk.talk.id}/notes/${id}`, { method: "DELETE" });
+        await api(`/api/bubbles/${S.slug}/talks/${S.talk.talk.id}/notes/${id}/status`,
+                  { method: "PATCH", body: JSON.stringify({ status: "resolved" }) });
         await loadTalk(S.talk.talk.id, true);
       },
       onEdit: async (id, text) => {
@@ -3157,7 +3181,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
       return;
     }
     M.gutter = gutterEl; M.handlers = handlers || {};
-    const list = (threads || []).map(t => {
+    const list = (threads || []).filter(t => t.status !== "resolved").map(t => {
       const loose = t.anchor_state && t.anchor_state !== "attached";
       return { id: t.id, kind: t.kind || "q", author: "",
                jobKey: M.handlers.page ? "page:" + M.handlers.page + ":" + t.id : "",

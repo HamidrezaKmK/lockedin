@@ -373,7 +373,12 @@ def save_note_image(slug: str, talk_id: str, note_id: str, data: bytes) -> str:
 # Notes (your marks)
 # --------------------------------------------------------------------------- #
 def load_notes(slug: str, talk_id: str) -> dict:
-    return _read_yaml(paths.bubble_talk_notes_path(slug, talk_id), {"next_id": 1, "notes": {}})
+    data = _read_yaml(paths.bubble_talk_notes_path(slug, talk_id), {"next_id": 1, "notes": {}})
+    for note in data.setdefault("notes", {}).values():
+        note.setdefault("status", "open")
+        note.setdefault("resolved_at", "")
+        note.setdefault("resolved_by", "")
+    return data
 
 
 def save_notes(slug: str, talk_id: str, data: dict) -> None:
@@ -475,6 +480,7 @@ def add_note(slug: str, talk_id: str, *, slide: int, kind: str, author: str,
         "quote": quote, "prefix": pre, "suffix": suf, "rect": rect or None,
         "paths": paths, "covers": covers,
         "author": author, "created_at": now, "image": "",
+        "status": "open", "resolved_at": "", "resolved_by": "",
         # A mark is the opening of a conversation, not a one-shot. The kind and the anchor are
         # fixed; what gets said about them is a thread.
         "messages": ([{"id": "m1", "author": author, "body": text,
@@ -536,14 +542,22 @@ def edit_note(slug: str, talk_id: str, note_id: str, text: str, *, author: str =
     return note
 
 
-def delete_note(slug: str, talk_id: str, note_id: str) -> bool:
+def resolve_note(slug: str, talk_id: str, note_id: str, *, actor: str = "") -> bool:
+    """Archive a mark: hide it from the working deck while retaining its full thread."""
     data = load_notes(slug, talk_id)
-    if note_id not in data.get("notes", {}):
+    note = data.get("notes", {}).get(note_id)
+    if not note:
         return False
-    del data["notes"][note_id]
+    note["status"] = "resolved"
+    note["resolved_at"] = _now_iso()
+    note["resolved_by"] = actor
     save_notes(slug, talk_id, data)
-    note_image_path(slug, talk_id, note_id).unlink(missing_ok=True)
     return True
+
+
+def delete_note(slug: str, talk_id: str, note_id: str) -> bool:
+    """Compatibility alias: marks are resolved, never physically deleted."""
+    return resolve_note(slug, talk_id, note_id)
 
 
 # --------------------------------------------------------------------------- #
@@ -554,24 +568,21 @@ def read_deck(slug: str, talk_id: str) -> str:
     return p.read_text() if p.exists() else ""
 
 
-def resolve_marks(slug: str, talk_id: str, note_ids: list[str]) -> list[str]:
-    """Delete the named marks — the whole of what resolution is, and the user's act alone.
-
-    No agent-reachable path calls this: a pushed deck cannot delete a mark, only answer it.
-    The one thing an agent's edit can do to a mark is strand it — remove the text it pointed
-    at and it goes orphan, loudly, still visible. Deleting it happens in the app, by the
-    person who made it, once the answer satisfies them.
-    """
+def resolve_marks(slug: str, talk_id: str, note_ids: list[str], *, actor: str = "") -> list[str]:
+    """Archive named marks while preserving anchors, screenshots, and every reply."""
     notes = load_notes(slug, talk_id)
-    dropped = []
+    resolved = []
+    now = _now_iso()
     for note_id in (note_ids or []):
-        if note_id in notes.get("notes", {}):
-            del notes["notes"][note_id]
-            note_image_path(slug, talk_id, note_id).unlink(missing_ok=True)
-            dropped.append(note_id)
-    if dropped:
+        note = notes.get("notes", {}).get(note_id)
+        if note and note.get("status", "open") != "resolved":
+            note["status"] = "resolved"
+            note["resolved_at"] = now
+            note["resolved_by"] = actor
+            resolved.append(note_id)
+    if resolved:
         save_notes(slug, talk_id, notes)
-    return dropped
+    return resolved
 
 
 # --------------------------------------------------------------------------- #
@@ -671,7 +682,8 @@ def _wrap_notes(source: str, notes: list[dict]) -> str:
 
 def slide_edit_source(slug: str, talk_id: str, slides: list[dict], notes: dict, index: int) -> str:
     """The text the editor opens: this slide's markdown, marks materialised as wrappers."""
-    mine = [n for n in notes.values() if n.get("slide") == index and n.get("quote")]
+    mine = [n for n in notes.values() if n.get("slide") == index and n.get("quote")
+            and n.get("status", "open") == "open"]
     wrapped = _wrap_notes(slides[index]["source"], mine)
     return _ATTR.sub("", wrapped, count=1).lstrip("\n")
 
@@ -806,7 +818,8 @@ def talk_detail(slug: str, talk_id: str) -> dict:
     notes = load_notes(slug, talk_id).get("notes", {})
 
     out_notes = []
-    for note in sorted(notes.values(), key=lambda n: n.get("created_at", "")):
+    for note in sorted((n for n in notes.values() if n.get("status", "open") == "open"),
+                       key=lambda n: n.get("created_at", "")):
         # ``source`` includes the title and optional subtitle as well as the body. A title is
         # part of the argument a chalk talk makes, so marks on it must resolve and paint just
         # like marks on a paragraph below it.
@@ -835,11 +848,12 @@ def list_talks(slug: str) -> list[dict]:
     for rec in sorted(load_index(slug).get("talks", []),
                       key=lambda r: (r.get("date", ""), r.get("created_at", "")), reverse=True):
         tid = rec["id"]
-        notes = load_notes(slug, tid).get("notes", {}).values()
+        all_notes = list(load_notes(slug, tid).get("notes", {}).values())
+        open_notes = [n for n in all_notes if n.get("status", "open") == "open"]
         out.append({**rec,
                     "slides": len(parse_deck(read_deck(slug, tid))),
-                    "open": len(list(notes)),
-                    "notes": len(list(notes))})
+                    "open": len(open_notes),
+                    "notes": len(all_notes)})
     return out
 
 
@@ -855,6 +869,8 @@ def open_notes_for_agent(slug: str) -> list[dict]:
         tid = rec["id"]
         slides = parse_deck(read_deck(slug, tid))
         for note in load_notes(slug, tid).get("notes", {}).values():
+            if note.get("status", "open") != "open":
+                continue
             i = note.get("slide", 0)
             s = slides[i] if 0 <= i < len(slides) else {}
             item = {
@@ -971,7 +987,8 @@ def feedback_blocks(slug: str) -> list[str]:
                       key=lambda r: r.get("date", ""), reverse=True):
         tid = rec["id"]
         slides = parse_deck(read_deck(slug, tid))
-        notes = list(load_notes(slug, tid).get("notes", {}).values())
+        notes = [n for n in load_notes(slug, tid).get("notes", {}).values()
+                 if n.get("status", "open") == "open"]
         if not notes:
             continue
         blocks.append(f"## {rec.get('title', tid)}  *(chalk talk, {rec.get('date', '')})*\n\n"
@@ -991,7 +1008,7 @@ def feedback_blocks(slug: str) -> list[str]:
             lines = [f"### {k.get('glyph','')} {k.get('means','')} — slide {i + 1}: "
                      f"{sl.get('title','')}",
                      "",
-                     f"- **id**: `{note['id']}` — answer it; only the user can remove it, "
+                     f"- **id**: `{note['id']}` — answer it; only the user can resolve it, "
                      f"in the app",
                      f"- **on**: {where}",
                      ]
@@ -1020,7 +1037,7 @@ def open_note_images(slug: str) -> dict:
     for rec in load_index(slug).get("talks", []):
         tid = rec["id"]
         for note in load_notes(slug, tid).get("notes", {}).values():
-            if not note.get("image"):
+            if note.get("status", "open") != "open" or not note.get("image"):
                 continue
             path = note_image_path(slug, tid, note["id"])
             if path.is_file():

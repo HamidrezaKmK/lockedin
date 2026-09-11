@@ -219,7 +219,7 @@ before copying the registration prompt. Editing a preset never changes the saved
 ## Direct messages
 
 Open the agent menu and select an agent to open its direct-message screen. Write any free-form
-request and choose **Queue turn** (or press **Ctrl/⌘+Enter**). Each post is one real agent turn and
+request and choose **Send** (or press **Ctrl/⌘+Enter**). Each post is one real agent turn and
 counts against the folder worker's shared budget across all its agents: 100 turns per rolling hour
 and 500 per rolling 24 hours by default. The queued/running state appears in the
 thread, and the agent's response posts immediately underneath it. You can continue with another
@@ -353,14 +353,13 @@ Every mark is a thread. **reply** adds a turn; the agent answers in the same thr
 **edit** your own last turn — but only that, because rewriting something the other side has
 already answered would leave that answer replying to words that no longer exist.
 
-**remove** withdraws a mark entirely.
+**resolve** closes a mark on the working surface while preserving its thread in agent history.
 
 ## What happens to a mark
 
 A mark is working state, and working state should end — but ending it is yours alone. The
 agent answers by editing the slide in place and replying in the thread; it cannot remove a mark,
-anywhere. When the answer satisfies you, hit **remove** and the mark and its picture are deleted
-— completely. Nothing accumulates a list of "resolved" items nobody reads.
+anywhere. When the answer satisfies you, hit **resolve**. The mark leaves the slide, while its quote, picture, and complete conversation remain available in the assigned agent’s history.
 
 If the agent thinks a mark is mistaken, it is told to say so and argue rather than comply.
 
@@ -840,9 +839,9 @@ Because the wrapper surrounds the text, a mark moves with its sentence as you ed
 selection that runs through typeset math cannot be anchored back to the source, so the picker
 stays shut rather than offering a mark it could not place.
 
-Every mark is a thread: **reply** adds a turn, and you can **edit** your own last turn. **remove**
-withdraws the mark entirely — and only you can, the agent cannot. Nothing accumulates a list of
-resolved items. Deleting a report page removes that page's marks with it.
+Every mark is a thread: **reply** adds a turn, and you can **edit** your own last turn. **resolve**
+removes it from the working report — and only you can do that — while preserving the complete thread
+in the assigned agent’s history. Deleting a report page removes that page's marks with it.
 
 ---
 

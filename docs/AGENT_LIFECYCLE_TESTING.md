@@ -24,11 +24,11 @@ person sees must satisfy the same contract.
    chat exits. Queue polling and presence checks consume no model turn.
 5. **A name is one growing memory.** Every successful background turn resumes the conversation id
    stored for that named agent. A missing or provider-rejected id fails visibly and stays stored;
-   it is never cleared automatically. Only the explicit `agent reset` escape hatch can discard
-   history, and retirement removes the identity from LockedIn entirely.
-6. **Retirement is final inside LockedIn.** Website retirement removes the profile and recovery
-   mapping and cancels unfinished jobs. The provider may still retain its own local transcript,
-   but a later setup link does not recreate the retired LockedIn agent.
+   it is never cleared automatically. Only the explicit `agent reset` escape hatch may change the active provider conversation.
+   Resolving a mark and retiring an agent must never erase LockedIn’s readable work history.
+6. **Retirement stops execution, not memory.** Website retirement removes the active profile and
+   recovery mapping and gracefully cancels unfinished jobs. A read-only profile remains available
+   with its direct and mark-based history. A later setup link does not recreate the retired agent.
 7. **Providers have parity.** Registration, attachment, queuing, direct replies, mark edits,
    recovery, continuity, failure reporting, and retirement have the same acceptance criteria for
    Codex, Claude, and agy.
@@ -69,7 +69,14 @@ The automated gate must prove, for all three provider adapters:
 - a Codex stale-writer recovery forks the full history and atomically adopts the returned id;
 - a successful mark edit posts exactly one reply and a direct message returns exactly one reply;
 - the agent popup orders direct jobs and marked threads together and includes mark context plus all replies;
-- retirement cancels open work, removes the profile, and leaves no recovery mapping;
+- resolving a mark hides it from the report or chalk talk, cancels unfinished assigned work, and
+  leaves its quote, image, comments, and replies unchanged in agent history;
+- retirement cancels open work, removes the active profile and recovery mapping, and preserves a
+  read-only history entry;
+- popup and mark-thread replies render inline/display LaTeX through KaTeX, the icon-only Send
+  control stays vertically centered, and the working robot has a reduced-motion fallback;
+- every RHS mark card collapses and expands from its header control without losing draft, job,
+  or conversation state;
 - setup tickets expose all three OS choices, are single-use, and resume an existing binding.
 
 ## Live disposable gate
@@ -123,7 +130,9 @@ Create one disposable chalk talk with three separate, unmistakable typos. Put on
 and assign one to each provider. Ask each agent to change only its typo. Confirm each file diff is
 one word, each mark receives exactly one provider reply, all jobs finish, and all stored conversation
 ids still match the continuity records. Open each agent popup and confirm that its direct exchanges and
-marked quote/comment/reply thread appear together in chronological job order.
+marked quote/comment/reply thread appear together in chronological job order. Include one inline
+and one display LaTeX reply and confirm both render, exercise the working indicator, and collapse and
+re-expand a long RHS mark without changing its job or thread.
 
 ### E. Recovery
 
@@ -136,14 +145,24 @@ For Codex only, also simulate or reproduce a stale writer lock. The first attemp
 adopted fork must contain the prior marker and become the sole stored conversation for later turns.
 A genuinely open interactive chat must never trigger that recovery path.
 
-### F. Missing memory and retirement
+### F. Resolve and preserve history
+
+For each provider, record the full popup history, resolve its completed disposable mark, and reopen
+the popup. The mark must disappear from the working report or chalk talk while the recorded quote,
+picture reference, user turns, agent replies, job status, and order remain unchanged. Repeat once
+with a queued mark and once with a running mark: both jobs must cancel cleanly, no provider child may
+start or continue, and no conversation id may change. Retire the agent and confirm the same history
+is still available read-only under Retired agents, while setup and worker indexes exclude it.
+
+### G. Missing memory and retirement
 
 In an isolated provider home, hide one disposable conversation record and submit one tiny job. It
 must fail visibly, make zero new conversation, and preserve the old id. Restore the record and
 confirm a newly submitted job resumes it.
 
-Retire all disposable agents from the website. Confirm open jobs are cancelled, profiles disappear,
-and running the setup link does not restore them. Delete the disposable bubble/files and verify the
+Retire all disposable agents from the website. Confirm open jobs are cancelled, active profiles
+disappear, read-only histories remain available, and running the setup link does not restore them.
+Delete the disposable bubble/files and verify the
 queue is empty and the worker is healthy or deliberately stopped.
 
 ## Evidence to report

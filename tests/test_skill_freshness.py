@@ -139,7 +139,7 @@ class SkillFreshnessTests(unittest.TestCase):
 
     def test_web_help_covers_direct_agent_turns_and_chalk_talk_theorems(self):
         agents_help = reports.guide_section("Agents")
-        for expected in ("Queue turn", "one real agent turn", "open lock", "closed lock",
+        for expected in ("Send", "one real agent turn", "open lock", "closed lock",
                          "Picasso", "Spock", "Sheldon", "Clippy", "saved template"):
             self.assertIn(expected, agents_help)
         chalk_help = reports.guide_section("Chalk talks")

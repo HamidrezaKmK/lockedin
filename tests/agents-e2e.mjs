@@ -295,6 +295,14 @@ async function main() {
     const directBox = page.getByLabel("Message Ada");
     await directBox.fill("Give me a one-line status.");
     // A presence/jobs poll used to rebuild this whole menu, throwing away focus, caret and scroll
+    const sendAlignment = await agentChat.locator(".agent-message-compose").evaluate(node => {
+      const textarea=node.querySelector("textarea").getBoundingClientRect();
+      const button=node.querySelector(".agent-send").getBoundingClientRect();
+      return {delta:Math.abs((textarea.top+textarea.bottom-button.top-button.bottom)/2),
+              width:button.width,height:button.height};
+    });
+    assert.ok(sendAlignment.delta < 2, `Send button is vertically misaligned by ${sendAlignment.delta}px`);
+    assert.deepEqual([Math.round(sendAlignment.width),Math.round(sendAlignment.height)],[40,40]);
     // even though the draft value happened to be copied into a new textarea.
     await directBox.evaluate(node => { node.dataset.composerIdentity = "original"; });
     await directBox.focus();
@@ -307,7 +315,7 @@ async function main() {
     const [messageResponse] = await Promise.all([
       page.waitForResponse(response => response.request().method() === "POST"
         && new URL(response.url()).pathname === `/api/bubbles/${slug}/agents/${agent.id}/messages`),
-      agentChat.getByRole("button", { name: "Queue turn", exact: true }).click(),
+      agentChat.getByRole("button", { name: "Send", exact: true }).click(),
     ]);
     assert.ok(messageResponse.ok(), `direct message failed: ${await messageResponse.text()}`);
     const directJob = (await messageResponse.json()).job;
@@ -318,13 +326,20 @@ async function main() {
     assert.equal(directBeat.jobs[0].mark.surface, "direct");
     await scientistApi(context.request, baseUrl, token, "POST",
       `/api/scientist/v2/bubbles/${slug}/jobs/${directJob.id}/start`, { worker_id: WORKER_ID }, workspaceId);
+    await page.waitForFunction(() => !!document.querySelector(".agent-working[role=status]"), { timeout: 9_000 });
+    await shoot(page, "agent-working");
+    assert.equal(await agentChat.getByRole("status", { name: "Ada is working" }).count(), 1,
+      "a running turn must animate the robot working state inside the chat pane");
     await scientistApi(context.request, baseUrl, token, "POST",
       `/api/scientist/v2/bubbles/${slug}/jobs/${directJob.id}/reply`,
-      { text: "The variance review is ready." }, workspaceId);
+      { text: "The variance review is ready: $\\sigma^2 = 1$." }, workspaceId);
     await page.waitForFunction(() => {
       const history = document.querySelector(".agent-message-history");
-      return history && history.textContent.includes("The variance review is ready.");
+      return history && history.textContent.includes("The variance review is ready");
     }, { timeout: 9_000 });
+    assert.ok((await agentChat.locator(".agent-message.agent .katex").count()) >= 1,
+      "direct replies must render inline LaTeX in the chat popup");
+    await shoot(page, "agent-chat-math");
     assert.equal(await directBox.evaluate(node => document.activeElement === node), true,
       "the stable composer must regain focus after the queued turn");
 
@@ -333,7 +348,7 @@ async function main() {
     const [followupResponse] = await Promise.all([
       page.waitForResponse(response => response.request().method() === "POST"
         && new URL(response.url()).pathname === `/api/bubbles/${slug}/agents/${agent.id}/messages`),
-      agentChat.getByRole("button", { name: "Queue turn", exact: true }).click(),
+      agentChat.getByRole("button", { name: "Send", exact: true }).click(),
     ]);
     const followupJob = (await followupResponse.json()).job;
     const followupBeat = await scientistApi(context.request, baseUrl, token, "POST",
@@ -347,7 +362,7 @@ async function main() {
       { text: "Review the updated bound." }, workspaceId);
     await page.waitForFunction(() => {
       const history = document.querySelector(".agent-message-history");
-      return history && history.textContent.includes("The variance review is ready.")
+      return history && history.textContent.includes("The variance review is ready")
         && history.textContent.includes("What should I do next?")
         && history.textContent.includes("Review the updated bound.");
     }, { timeout: 9_000 });
@@ -452,7 +467,7 @@ async function main() {
 
     await scientistApi(context.request, baseUrl, token, "POST",
       `/api/scientist/v2/bubbles/${slug}/jobs/${job.id}/reply`,
-      { text: "I wrote the bound in one line." }, workspaceId);
+      { text: "I wrote the bound in one line: $$\\mathcal{L} \\le C\\varepsilon^2.$$" }, workspaceId);
     await page.waitForSelector(".tk-note[data-jobkey] .tk-job.done", { timeout: 9_000 });
     await page.waitForFunction(() => {
       const card = document.querySelector(".tk-note[data-jobkey]");
@@ -461,7 +476,28 @@ async function main() {
         turn.textContent.includes("Ada") && turn.textContent.includes("I wrote the bound"));
     }, { timeout: 9_000 });
     await shoot(page, "chip-done");
+    assert.ok((await page.locator(".tk-turn.agent .katex").count()) >= 1,
+      "mark replies must render LaTeX in the mark card");
+    await shoot(page, "mark-reply-math");
+    const expandedHeight = await mark.evaluate(node => node.getBoundingClientRect().height);
+    await mark.getByRole("button", { name: "Collapse mark" }).click();
+    await mark.waitFor({ state: "visible" });
+    const collapsedHeight = await mark.evaluate(node => node.getBoundingClientRect().height);
+    assert.ok(collapsedHeight < expandedHeight / 2,
+      `collapsed mark should be compact (${collapsedHeight}px vs ${expandedHeight}px)`);
+    await shoot(page, "mark-collapsed");
+    await mark.getByRole("button", { name: "Expand mark" }).click();
+    assert.equal(await mark.getByRole("button", { name: "Collapse mark" }).getAttribute("aria-expanded"), "true");
+    step("the long RHS mark collapsed and expanded from its header control");
     step("the chip turned done and the agent's reply landed in the thread");
+    const collapseAlignment = await mark.locator(".hd").evaluate(header => {
+      const id=header.querySelector(".tk-id").getBoundingClientRect();
+      const button=header.querySelector(".tk-collapse").getBoundingClientRect();
+      return {delta:Math.abs((id.top+id.bottom-button.top-button.bottom)/2),
+              width:button.width,height:button.height};
+    });
+    assert.ok(collapseAlignment.delta < 2, `Collapse button is vertically misaligned by ${collapseAlignment.delta}px`);
+    assert.deepEqual([Math.round(collapseAlignment.width),Math.round(collapseAlignment.height)],[25,25]);
 
     // The agent popup is a complete work history, not a second direct-message-only silo. The
     // marked location, quote, and thread reply must appear alongside the earlier direct turns.
@@ -475,9 +511,9 @@ async function main() {
     const combinedText = await combinedHistory.locator(".agent-message-history").innerText();
     assert.match(combinedText, /variance term/i,
       "the popup must show what text the mark referred to");
-    assert.match(combinedText, /I wrote the bound in one line\./,
+    assert.match(combinedText, /I wrote the bound in one line/,
       "the popup must show the agent's mark-thread reply");
-    assert.match(combinedText, /The variance review is ready\./,
+    assert.match(combinedText, /The variance review is ready/,
       "mark history must not displace the earlier direct conversation");
     await page.keyboard.press("Escape");
     step("the agent popup showed direct and mark-based conversations together");
@@ -533,6 +569,20 @@ async function main() {
       "the guest API must not expose any of the owner's jobs");
     step("the guest sees neither Ada nor her completed job in the UI or API");
     await guestContext.close();
+
+    const [resolveResponse] = await Promise.all([
+      page.waitForResponse(response => response.request().method() === "PATCH"
+        && /\/comments\/[^/]+$/.test(new URL(response.url()).pathname)),
+      jobKeyCard.first().getByRole("button", { name: "resolve", exact: true }).click(),
+    ]);
+    assert.ok(resolveResponse.ok(), `resolve failed: ${await resolveResponse.text()}`);
+    await jobKeyCard.first().waitFor({ state: "hidden", timeout: 5_000 });
+    await page.locator(".presence-seg").nth(1).click();
+    await page.locator(".presence-item.presence-agent", { hasText: "Ada" }).click();
+    const resolvedHistory = page.getByRole("dialog", { name: "Direct messages with Ada" });
+    assert.match(await resolvedHistory.locator(".agent-message-history").innerText(), /I wrote the bound in one line./);
+    await page.keyboard.press("Escape");
+    step("resolving hid the mark but preserved its complete agent-popup conversation");
 
     // Keep one unanswered mark around for the secure-mode UI checks below. Its ordinary assign
     // button is a cleaner assertion than reusing the completed job's redo menu after navigation.
@@ -677,6 +727,20 @@ async function main() {
     }, { timeout: 5_000 });
     assert.equal(await page.getByRole("dialog", { name: "Direct messages with Ada" }).count(), 0,
       "retiring an agent must close its dialog");
+    await page.locator(".presence-seg").nth(1).click();
+    const retiredAda = page.locator(".presence-item.presence-agent.retired", { hasText: "Ada" });
+    await retiredAda.waitFor({ state: "visible", timeout: 5_000 });
+    await retiredAda.click();
+    const archiveChat = page.getByRole("dialog", { name: "Direct messages with Ada" });
+    assert.match(await archiveChat.innerText(), /Retired.*history is preserved read-only/is);
+    assert.ok((await archiveChat.locator(".agent-mark-context").count()) >= 1,
+      "retired history must preserve marked conversations");
+    assert.equal(await archiveChat.locator(".agent-message-compose textarea").count(), 0,
+      "retired history must not expose a message composer");
+    assert.equal(await archiveChat.getByRole("button", { name: "Retire Ada", exact: true }).count(), 0,
+      "a retired archive must not offer retirement again");
+    await archiveChat.getByRole("button", { name: "Close direct messages" }).click();
+    step("Ada retirement preserved a read-only direct and mark history archive");
     step("Ada was retired from the dialog and disappeared from the bubble immediately");
 
     step("all agents checks passed");

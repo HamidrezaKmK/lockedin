@@ -777,7 +777,7 @@ same exact reply is safe to retry.
 `agent reply <job-id>` instead and do not add a reply block: each posts a turn, so doing both
 posts your answer twice. See `guides/agents.md`. That is the whole of your power over a mark: **you cannot
 resolve, remove, or delete one — anywhere** — and a `resolves=` attribute in a slide header is
-ignored. The user removes a mark in the app once your answer satisfies them. If your edit removes
+ignored. The user resolves a mark in the app once your answer satisfies them; its thread remains archived. If your edit removes
 the text a mark points at, the mark goes orphan and stays visible; that is normal, not a problem
 to fix.
 """,

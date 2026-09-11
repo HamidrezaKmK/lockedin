@@ -152,6 +152,7 @@ def _write(path: Path, data: dict) -> None:
 def _agents(slug: str) -> dict:
     data = _read(paths.bubble_agents_path(slug), {"version": 1, "agents": {}})
     data.setdefault("agents", {})
+    data.setdefault("retired", {})
     return data
 
 
@@ -243,6 +244,7 @@ def mark_pointer(slug: str, key: str) -> dict | None:
         anchor = thread.get("anchor") or {}
         kind = str(thread.get("kind") or "")
         return {"surface": "page", "id": local_id, "page": owner,
+                "status": thread.get("status", "open"),
                 "page_title": next((p.get("title", owner) for p in bubbles.list_pages(slug)
                                     if p.get("page_slug") == owner), owner),
                 "kind": kind, "means": talks.KINDS.get(kind, {}).get("means", ""),
@@ -266,6 +268,7 @@ def mark_pointer(slug: str, key: str) -> dict | None:
     except Exception:
         pass
     pointer = {"surface": "chalk_talk", "id": local_id, "talk_id": owner,
+               "status": note.get("status", "open"),
                "talk_title": (rec or {}).get("title", ""), "slide": slide,
                "slide_title": slide_title, "kind": kind,
                "means": talks.KINDS.get(kind, {}).get("means", ""),
@@ -284,7 +287,28 @@ def mark_pointer(slug: str, key: str) -> dict | None:
 
 
 def mark_exists(slug: str, key: str) -> bool:
-    return mark_pointer(slug, key) is not None
+    pointer = mark_pointer(slug, key)
+    return pointer is not None and pointer.get("status", "open") == "open"
+
+
+def resolve_mark_jobs(slug: str, key: str, *, actor: str = "") -> list[str]:
+    """Cancel unfinished work for an archived mark without deleting its conversation."""
+    now = _now_iso()
+    cancelled = []
+    with _bubble_lock(slug):
+        data = _jobs(slug)
+        for job in data["jobs"].values():
+            if (job.get("kind") == "mark" and job.get("mark_key") == key
+                    and job.get("status") in OPEN_STATUSES):
+                job["status"] = "cancelled"
+                job["finished_at"] = now
+                job["error"] = "the mark was resolved"
+                if actor:
+                    job["cancelled_by"] = actor
+                cancelled.append(job["id"])
+        if cancelled:
+            _save_jobs(slug, data)
+    return cancelled
 
 
 def _agent_replied_after(slug: str, key: str, since: str) -> bool:
@@ -467,49 +491,74 @@ def reset_agent(slug: str, agent_id: str, conversation: str = "", *, owner: str 
     """Forget the conversation; the next job starts a new one and re-introduces the persona."""
     return update_agent(slug, agent_id, owner=owner, conversation=conversation, fresh=True)
 
+def _retired_snapshot(slug: str, agent: dict, jobs: dict, retired_at: str) -> dict:
+    """Freeze the readable work history before normal job retention can prune it."""
+    archived = dict(agent)
+    archived["status"] = "retired"
+    archived["retired_at"] = retired_at
+    archived["heartbeat"] = {"at": "", "attached": False}
+    archived["history"] = []
+    for job in sorted((j for j in jobs.values() if j.get("agent_id") == agent["id"]),
+                      key=lambda j: j.get("created_at", "")):
+        item = _job_summary(job, {agent["id"]: agent})
+        if job.get("kind") == "mark":
+            pointer = mark_pointer(slug, job.get("mark_key", ""))
+            item["mark"] = dict(pointer) if pointer else None
+        archived["history"].append(item)
+    archived["messages"] = [j for j in archived["history"] if j.get("kind") == "direct"]
+    return archived
+
+
 
 def remove_agent(slug: str, agent_id: str, *, owner: str | None = None) -> dict:
-    """Retire an agent and cancel whatever it had not finished."""
+    """Retire an agent, cancel unfinished work, and preserve read-only history."""
     with _bubble_lock(slug):
         data = _agents(slug)
         agent = data["agents"].get(agent_id)
         if not agent or (owner is not None and _owner_of(agent) != owner):
             raise NotFound(agent_id)
-        data["agents"].pop(agent_id, None)
-        _save_agents(slug, data)
+        now = _now_iso()
         jobs = _jobs(slug)
         changed = False
         for job in jobs["jobs"].values():
             if job.get("agent_id") == agent_id and job.get("status") in OPEN_STATUSES:
                 job["status"] = "cancelled"
-                job["finished_at"] = _now_iso()
+                job["finished_at"] = now
                 job["error"] = "the agent was retired"
                 changed = True
+        archived = _retired_snapshot(slug, agent, jobs["jobs"], now)
+        data["agents"].pop(agent_id, None)
+        data.setdefault("retired", {})[agent_id] = archived
+        _save_agents(slug, data)
         if changed:
             _save_jobs(slug, jobs)
-        return dict(agent)
+        return dict(archived)
 
 
 def remove_owner(slug: str, owner: str) -> dict:
-    """Retire every agent owned by one account on a bubble and cancel its open jobs."""
+    """Retire every owned agent while retaining each read-only work history."""
     owner = str(owner or "").strip().lower()
     with _bubble_lock(slug):
         registry = _agents(slug)
         removed = [dict(agent) for agent in registry["agents"].values()
                    if _owner_of(agent) == owner]
         removed_ids = {agent["id"] for agent in removed}
-        if removed_ids:
-            registry["agents"] = {aid: agent for aid, agent in registry["agents"].items()
-                                  if aid not in removed_ids}
-            _save_agents(slug, registry)
         data = _jobs(slug)
         cancelled = 0
+        now = _now_iso()
         for job in data["jobs"].values():
             if job.get("owner", "") == owner and job.get("status") in OPEN_STATUSES:
                 job["status"] = "cancelled"
-                job["finished_at"] = _now_iso()
-                job["error"] = "the owner stopped and removed all agents"
+                job["finished_at"] = now
+                job["error"] = "the owner retired all agents"
                 cancelled += 1
+        if removed_ids:
+            for agent in removed:
+                registry.setdefault("retired", {})[agent["id"]] = _retired_snapshot(
+                    slug, agent, data["jobs"], now)
+            registry["agents"] = {aid: agent for aid, agent in registry["agents"].items()
+                                  if aid not in removed_ids}
+            _save_agents(slug, registry)
         if cancelled:
             _save_jobs(slug, data)
     return {"agents": len(removed), "cancelled_jobs": cancelled}
@@ -1015,9 +1064,9 @@ def heartbeat(slug: str, *, worker_id: str, agents: list[dict], running_job_ids:
                     summary["mark"] = {"surface": "direct"}
                 else:
                     pointer = mark_pointer(slug, job.get("mark_key", ""))
-                    if pointer is None:
+                    if pointer is None or pointer.get("status", "open") != "open":
                         job["status"] = "cancelled"; job["finished_at"] = now
-                        job["error"] = "the mark was removed before the agent got to it"
+                        job["error"] = "the mark was resolved before the agent got to it"
                         _save_jobs(slug, data)
                         continue
                     summary["mark"] = pointer
@@ -1058,10 +1107,13 @@ def overview(slug: str, *, workers: list[dict] | None = None, viewer: str = "") 
     filtered = viewer is not None
     secure = bool(filtered and viewer and auth.secure_mode(viewer))
     with _bubble_lock(slug):
-        agents = _agents(slug)["agents"]
+        registry = _agents(slug)
+        agents = registry["agents"]
+        retired = registry.get("retired", {})
         jobs = list(_jobs(slug)["jobs"].values())
     if filtered:
         agents = {aid: a for aid, a in agents.items() if _owner_of(a) == viewer}
+        retired = {aid: a for aid, a in retired.items() if _owner_of(a) == viewer}
         # Filtered on the job's own denormalized ``owner`` — not on whether its agent is still in
         # the filtered map — so a retired agent's job history stays visible to the owner it
         # belonged to (see ``_job_summary``'s ``agent_name`` fallback, the same idea applied to
@@ -1118,7 +1170,16 @@ def overview(slug: str, *, workers: list[dict] | None = None, viewer: str = "") 
                 item["mark"] = dict(pointer) if pointer else None
             row["history"].append(item)
         rows.append(row)
-    return {"agents": rows,
+    retired_rows = []
+    for archived in sorted(retired.values(), key=lambda a: a.get("retired_at", ""), reverse=True):
+        row = dict(archived)
+        row["status"] = "retired"
+        row["owner"] = _owner_of(archived)
+        row["open_jobs"] = 0
+        row["turns_last_hour"] = 0
+        row["turns_today"] = 0
+        retired_rows.append(row)
+    return {"agents": rows, "retired_agents": retired_rows,
             "jobs": {"by_mark": by_mark,
                      "open": [j for j in summaries if j["status"] in OPEN_STATUSES],
                      "recent": [j for j in reversed(summaries) if j["status"] not in OPEN_STATUSES][:30]},

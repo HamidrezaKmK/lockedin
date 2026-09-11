@@ -152,20 +152,23 @@ class TalkTests(unittest.TestCase):
             self.assertEqual([m["body"] for m in msgs], ["Uniformly in what?", "In log-SNR space."])
 
     # -- resolution ------------------------------------------------------------
-    def test_resolving_deletes_the_mark_completely(self):
+    def test_resolving_archives_the_mark_and_hides_it_from_the_working_deck(self):
         with paths.use_root(self.home):
             note = talks.add_note(self.slug, self.talk, slide=1, kind="bad", author="pi",
                                   quote="which kills the variance term", text="Not in the tail.")
+            talks.reply_note(self.slug, self.talk, note["id"], "Ada", "I fixed it.", agent=True)
             talks.save_note_image(self.slug, self.talk, note["id"], b"\x89PNG\r\n\x1a\nfake")
+
+            self.assertEqual(talks.resolve_marks(self.slug, self.talk, [note["id"]], actor="pi"),
+                             [note["id"]])
+
+            archived = talks.load_notes(self.slug, self.talk)["notes"][note["id"]]
+            self.assertEqual(archived["status"], "resolved")
+            self.assertEqual(archived["resolved_by"], "pi")
+            self.assertEqual([m["body"] for m in archived["messages"]],
+                             ["Not in the tail.", "I fixed it."])
             self.assertTrue(talks.note_image_path(self.slug, self.talk, note["id"]).exists())
-
-            talks.resolve_marks(self.slug, self.talk, [note["id"]])
-
-            # Gone: sidecar entry and snapshot both, and nothing archived anywhere. An
-            # addressed mark that lingers — even as history — is context bloat for every
-            # future agent.
-            self.assertEqual(talks.load_notes(self.slug, self.talk)["notes"], {})
-            self.assertFalse(talks.note_image_path(self.slug, self.talk, note["id"]).exists())
+            self.assertEqual(talks.talk_detail(self.slug, self.talk)["notes"], [])
 
 
 class ProjectHandoffTests(unittest.TestCase):
