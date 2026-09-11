@@ -37,7 +37,7 @@ except ImportError:  # Standalone client installed beside agent_vendors.py.
     import agent_vendors  # type: ignore[no-redef]
 
 APP = "lockedin-scientist"
-SCIENTIST_CLIENT_VERSION = "2026.09.11.4"
+SCIENTIST_CLIENT_VERSION = "2026.09.11.5"
 POLL_SECONDS = 5
 # A worker that has not completed a cycle in three polls is wedged rather than merely busy.
 # `doctor` reports that verdict and `resync` repairs exactly what `doctor` complains about, so
@@ -2907,10 +2907,15 @@ def _await_worker_start(worker_id: str, proc, log: Path, *, timeout: float = 5.0
     raise RuntimeError(f"Scientist worker did not start: {detail}. Log: {log}")
 
 
-def start_sync(account: dict, bubble: str, project: Path, *, announce: bool = True) -> None:
+def start_sync(account: dict, bubble: str, project: Path, *, announce: bool = True,
+               recovered_identity: dict | None = None) -> None:
     # `announce=False` is for callers that already printed their own heading (resync).
     if announce: heading("Synchronizing a bubble", f"{bubble} → {project / '.lockedin'}")
-    sync = ProjectSync(account, project, bubble); sync.validate_or_initialize(); sync.sync_once()
+    sync = ProjectSync(account, project, bubble)
+    sync.validate_or_initialize()
+    if recovered_identity and not sync.identity_path.exists():
+        _atomic_json(sync.identity_path, recovered_identity, private=True)
+    sync.sync_once()
     data = load_workers()
     for wid, rec in data.get("workers", {}).items():
         if Path(rec.get("project", "")).resolve() == project.resolve() and _alive(int(rec.get("pid", 0))):
@@ -3169,6 +3174,32 @@ def _install_detected_skills() -> list[str]:
     return installed
 
 
+def _preserve_unbound_root(project: Path) -> tuple[Path, dict | None]:
+    """Move a partial, unidentifiable .lockedin aside without discarding any local work."""
+    root = project / ".lockedin"
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    backup = project.parent / f"{project.name}.lockedin-recovery-{stamp}"
+    if backup.exists():
+        backup = project.parent / f"{project.name}.lockedin-recovery-{stamp}-{secrets.token_hex(2)}"
+    identity = None
+    try:
+        candidate = json.loads((root / "config" / "identity.json").read_text(encoding="utf-8"))
+        if re.fullmatch(r"[0-9a-f]{16}", str(candidate.get("worker_uid") or "")):
+            identity = {"worker_uid": candidate["worker_uid"]}
+    except (OSError, json.JSONDecodeError, AttributeError, TypeError):
+        pass
+    for wid, rec in load_workers().get("workers", {}).items():
+        if Path(rec.get("project", "")).resolve() == project.resolve() and _alive(int(rec.get("pid", 0))):
+            _stop_and_wait(wid)
+    try:
+        root.rename(backup)
+    except OSError as exc:
+        raise RuntimeError(f"Could not preserve the incomplete {root}: {exc}") from exc
+    print(orange("•") + " The existing .lockedin was incomplete; preserved it without uploading at")
+    print("    " + dim(str(backup)))
+    return backup, identity
+
+
 def connect_command(server: str, workspace_id: str, bubble: str, *,
                     ticket: str = "", project_path: str = "") -> None:
     """Do everything a fresh machine needs to work on one bubble with an agent.
@@ -3200,7 +3231,10 @@ def connect_command(server: str, workspace_id: str, bubble: str, *,
                 f"Pick another folder, or run `lockedin-scientist hard-reset {bubble}` there to replace it.")
         resync_command(project)
     else:
-        start_sync(account, bubble, project)
+        recovered_identity = None
+        if (project / ".lockedin").exists():
+            _, recovered_identity = _preserve_unbound_root(project)
+        start_sync(account, bubble, project, recovered_identity=recovered_identity)
 
     heading("Agent skills", "Installed for the agents found on this computer.")
     installed = _install_detected_skills()

@@ -906,6 +906,56 @@ class ScientistProfileAndWorkersTest(unittest.TestCase):
             resync.assert_called_once(); start.assert_not_called()
             self.assertEqual(resync.call_args.args[0], project.resolve())
 
+    def test_connect_preserves_and_rebuilds_an_incomplete_project(self):
+        """A setup link heals the exact partial-root state instead of demanding hard-reset."""
+        with temp_data_home(), tempfile.TemporaryDirectory() as parent, patch.object(
+                scientist_cli, "account_request", return_value={"files": []}), patch.object(
+                scientist_cli.shutil, "which", return_value=None), patch.object(
+                scientist_cli, "start_sync") as start:
+            project = Path(parent) / "project"
+            config = project / ".lockedin" / "config"
+            config.mkdir(parents=True)
+            worker_uid = "0123456789abcdef"
+            (config / "identity.json").write_text(json.dumps({"worker_uid": worker_uid}))
+            sentinel = project / ".lockedin" / "reports" / "pages" / "unsynced.md"
+            sentinel.parent.mkdir(parents=True)
+            sentinel.write_text("local work that must survive")
+            scientist_cli.save_config({"accounts": [dict(ACCOUNT, workspace_id="lab")]})
+
+            out = self._connect(ticket="", project_path=str(project))
+
+            backups = list(Path(parent).glob("project.lockedin-recovery-*"))
+            self.assertEqual(len(backups), 1)
+            self.assertEqual(
+                (backups[0] / "reports" / "pages" / "unsynced.md").read_text(),
+                "local work that must survive")
+            self.assertFalse((project / ".lockedin").exists())
+            self.assertIn(str(backups[0]), out)
+            self.assertEqual(start.call_args.args[1:], ("work", project.resolve()))
+            self.assertEqual(
+                start.call_args.kwargs["recovered_identity"], {"worker_uid": worker_uid})
+
+    def test_start_sync_restores_identity_before_the_first_server_poll(self):
+        proc = type("Running", (), {"pid": 77})()
+        with temp_data_home(), tempfile.TemporaryDirectory() as directory, patch.object(
+                scientist_cli.ProjectSync, "sync_once") as sync_once, patch.object(
+                scientist_cli, "account_request", return_value={"guide": "# Guide"}), patch.object(
+                scientist_cli.subprocess, "Popen", return_value=proc), patch.object(
+                scientist_cli, "_await_worker_start"):
+            project = Path(directory) / "project"
+            identity = {"worker_uid": "0123456789abcdef"}
+
+            scientist_cli.start_sync(
+                dict(ACCOUNT), "work", project, recovered_identity=identity)
+
+            self.assertEqual(
+                json.loads((project / ".lockedin" / "config" / "identity.json").read_text()),
+                identity)
+            self.assertEqual(sync_once.call_count, 1)
+            binding = json.loads(
+                (project / ".lockedin" / "config" / "binding.json").read_text())
+            self.assertEqual(binding["bubble"], "work")
+
     def test_connect_refuses_a_folder_bound_to_another_bubble(self):
         with temp_data_home(), tempfile.TemporaryDirectory() as directory, patch.object(
                 scientist_cli, "account_request", return_value={"files": []}), patch.object(

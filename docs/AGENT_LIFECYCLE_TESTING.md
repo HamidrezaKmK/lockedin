@@ -16,7 +16,10 @@ person sees must satisfy the same contract.
 3. **Recovery preserves identities.** A stopped worker, revoked machine credential, temporary
    network failure, or stale provider writer lock must not erase an agent record or blank its
    conversation id. Running a fresh setup line in the same directory restores synchronization and
-   retained agents. A recovery may adopt a provider-supported full-history fork when the original
+   retained agents. If a failed setup left a partial `.lockedin` without a valid binding, a fresh
+   setup line moves that tree to a timestamped sibling recovery folder, rebuilds from the server,
+   and preserves its stable worker identity; it never silently deletes unsynchronized local work.
+   A recovery may adopt a provider-supported full-history fork when the original
    thread is stuck behind a stale writer, but it must never create an empty replacement silently.
 4. **An attached conversation owns itself.** While its interactive chat is open, report and chalk
    talk files remain ordinary synchronized files and the person can work in them directly. Direct
@@ -83,6 +86,8 @@ The automated gate must prove, for all three provider adapters:
 - setup tickets expose all three OS choices, are single-use, and resume an existing binding;
 - Windows upgrade warnings show only the PowerShell installer, workers are detached from the
   launching PowerShell process, and setup reports success only after the child is verifiably alive.
+- a setup link run against a partial `.lockedin` with no binding preserves the whole partial tree
+  in a timestamped sibling recovery folder, restores the worker identity, and completes a clean sync.
 
 ## Live disposable gate
 
