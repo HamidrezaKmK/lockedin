@@ -7523,11 +7523,37 @@
     });
   }
 
+  function requestResumeAgentsPassword(){
+    return new Promise(resolve=>{
+      const overlay=el("div",{class:"overlay",role:"dialog","aria-modal":"true",
+        "aria-label":"Resume agents confirmation"});
+      const input=el("input",{type:"password",autocomplete:"current-password",
+        placeholder:"Current password","aria-label":"Current password"});
+      const finish=value=>{document.removeEventListener("keydown",onKey);overlay.remove();resolve(value);};
+      const onKey=e=>{
+        if(e.key==="Escape")finish("");
+        else if(e.key==="Enter"&&input.value)finish(input.value);
+      };
+      const cancel=el("button",{class:"ghost",onclick:()=>finish("")},"Cancel");
+      const resume=el("button",{class:"primary",onclick:()=>{if(input.value)finish(input.value);}},
+        "Resume agents");
+      overlay.onclick=e=>{if(e.target===overlay)finish("");};
+      overlay.append(el("div",{class:"diffbox create-dialog"},
+        el("div",{class:"create-dialog-header"},el("b",{},ic("lock-open"),"Resume agents?")),
+        el("div",{class:"create-dialog-body"},
+          el("label",{for:"resumeAgentsPassword"},"Enter your current password to confirm"),input,
+          el("p",{class:"muted"},"Your password stays hidden while you type.")),
+        el("div",{class:"create-dialog-footer"},cancel,resume)));
+      input.id="resumeAgentsPassword";
+      document.body.append(overlay);document.addEventListener("keydown",onKey);input.focus();
+    });
+  }
+
   async function setSecureModeEnabled(enabled){
     if(enabled&&!(await confirmStopAgents()))return null;
     let current_password="";
     if(!enabled){
-      current_password=prompt("Enter your current password to turn secure mode off:")||"";
+      current_password=await requestResumeAgentsPassword();
       if(!current_password)return null;
     }
     const r=await api("/api/settings/secure-mode",{method:"PUT",

@@ -697,6 +697,13 @@ async function main() {
     // Turning the setting off requires the password. Ada becomes offline and her popup mints a
     // one-use recovery line that updates, reauthorizes and resumes the original folder.
     await sideSwitch.click();
+    const resumeDialog = page.getByRole("dialog", { name: "Resume agents confirmation" });
+    await resumeDialog.waitFor({ state: "visible", timeout: 2_000 });
+    const passwordInput = resumeDialog.getByLabel("Current password");
+    assert.equal(await passwordInput.getAttribute("type"), "password",
+      "the current password must be masked while it is entered");
+    await passwordInput.fill("temporary-agents-password");
+    await resumeDialog.getByRole("button", { name: "Resume agents", exact: true }).click();
     await page.waitForFunction(() => document.getElementById("sideSecureSwitch")?.getAttribute("aria-checked") === "false",
       { timeout: 5_000 });
     assert.equal(await page.locator("#sideSecureIcon").getAttribute("href"), "#li-i-lock-open",
