@@ -114,6 +114,27 @@ def devmode():
                "REPORTS/<slug>/_lockedin_papers.md when paper details or citations are needed.")
 
 
+@app.command(name="agent-archives")
+def agent_archives(bubble: str, as_json: bool = typer.Option(
+        False, "--json", help="Print complete archived records as JSON.")):
+    """Inspect retired agents from the authenticated server command line."""
+    from . import service
+
+    user, home = _dev_auth()
+    rows = service.list_retired_agents(home, bubble, owner=user)
+    if as_json:
+        typer.echo(json.dumps(rows, indent=2, ensure_ascii=False))
+        return
+    if not rows:
+        typer.echo(f"No retired agents for {bubble}.")
+        return
+    for agent in rows:
+        typer.echo(
+            f"{agent.get('retired_at', '')}  {agent.get('name', '')}  "
+            f"{agent.get('vendor', '')}  {agent.get('id', '')}  "
+            f"{len(agent.get('history') or [])} history entries")
+
+
 @app.command(name="refresh-asset-metadata")
 def refresh_asset_metadata(force: bool = typer.Option(False, "--force",
                                                        help="Re-extract metadata already present."),

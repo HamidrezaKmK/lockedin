@@ -821,6 +821,11 @@ def list_agents(home: Path, slug: str, *, owner: str | None = None) -> list[dict
         return agents.list_agents(slug, owner=owner)
 
 
+def list_retired_agents(home: Path, slug: str, *, owner: str | None = None) -> list[dict]:
+    with paths.use_root(home):
+        return agents.list_retired_agents(slug, owner=owner)
+
+
 def register_agent(home: Path, slug: str, **kw) -> dict:
     with paths.use_root(home):
         return agents.register_agent(slug, **kw)

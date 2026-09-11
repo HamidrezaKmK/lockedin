@@ -14,8 +14,9 @@ from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
+from typer.testing import CliRunner
 
-from lockedin import agents, bubbles, paths, presence, scientist_sync, service, talks
+from lockedin import agents, bubbles, cli, paths, presence, scientist_sync, service, talks
 
 from tests.test_editing_logic import create_review_comment, temp_home
 from tests.test_presence import temp_base
@@ -122,15 +123,46 @@ class Registry(AgentFixture):
             self.assertEqual(agents.list_agents(self.slug), [])
             self.assertEqual(agents.get_job(self.slug, job["id"])["status"], "cancelled")
             view = agents.overview(self.slug, viewer="hamid")
+            archives = agents.list_retired_agents(self.slug, owner="hamid")
             agent_index, _ = agents.indexes(self.slug, owner="hamid")
         self.assertEqual(view["agents"], [])
-        self.assertEqual(len(view["retired_agents"]), 1)
-        self.assertEqual(view["retired_agents"][0]["status"], "retired")
-        self.assertEqual(view["retired_agents"][0]["conversation"], "conv-ada")
-        self.assertEqual(view["retired_agents"][0]["history"][0]["mark"]["quote"],
+        self.assertEqual(view["retired_agents"], [])
+        self.assertEqual(view["jobs"]["open"], [])
+        self.assertEqual(view["jobs"]["recent"], [])
+        self.assertEqual(len(archives), 1)
+        self.assertEqual(archives[0]["status"], "retired")
+        self.assertEqual(archives[0]["conversation"], "conv-ada")
+        self.assertEqual(archives[0]["history"][0]["mark"]["quote"],
                          "The variance term vanishes in the limit")
-        self.assertEqual(retired["history"], view["retired_agents"][0]["history"])
+        self.assertEqual(retired["history"], archives[0]["history"])
         self.assertEqual(agent_index["by_id"], {})
+
+    def test_retired_name_can_be_reused_without_reviving_the_archive(self):
+        first = self.register(name="Ada", conversation="conv-old", registered_by="hamid")
+        with paths.use_root(self.home):
+            agents.remove_agent(self.slug, first["id"], owner="hamid")
+            second = agents.register_agent(
+                self.slug, name="Ada", role="new role", goal="new goal", vendor="codex",
+                conversation="conv-new", worker_id="w2", registered_by="hamid")
+            view = agents.overview(self.slug, viewer="hamid")
+            archives = agents.list_retired_agents(self.slug, owner="hamid")
+        self.assertNotEqual(first["id"], second["id"])
+        self.assertEqual(view["agents"][0]["id"], second["id"])
+        self.assertEqual(view["agents"][0]["history"], [])
+        self.assertEqual([row["id"] for row in archives], [first["id"]])
+        self.assertEqual(archives[0]["conversation"], "conv-old")
+
+    def test_server_cli_can_read_the_archive_hidden_from_the_web(self):
+        first = self.register(name="Ada", conversation="conv-private", registered_by="hamid")
+        with paths.use_root(self.home):
+            agents.remove_agent(self.slug, first["id"], owner="hamid")
+        with patch.object(cli, "_dev_auth", return_value=("hamid", self.home)):
+            result = CliRunner().invoke(
+                cli.app, ["agent-archives", self.slug, "--json"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        archive = json.loads(result.stdout)
+        self.assertEqual(archive[0]["id"], first["id"])
+        self.assertEqual(archive[0]["conversation"], "conv-private")
 
     def test_reset_forgets_the_conversation_and_marks_the_next_turn_fresh(self):
         agent = self.register()
@@ -503,12 +535,15 @@ class Jobs(AgentFixture):
             beat = agents.heartbeat(self.slug, worker_id="w1", agents=[],
                                     running_job_ids=[job["id"]], owner="hamid")
             agents.remove_agent(self.slug, agent["id"], owner="hamid")
-            archived = agents.overview(self.slug, viewer="hamid")["retired_agents"][0]
+            view = agents.overview(self.slug, viewer="hamid")
+            archived = agents.list_retired_agents(self.slug, owner="hamid")[0]
         self.assertEqual(cancelled["status"], "cancelled")
         self.assertEqual(beat["cancelled"], [job["id"]])
         self.assertEqual(active["history"][0]["mark"]["messages"], before["messages"])
         self.assertEqual(active["history"][0]["mark"]["status"], "resolved")
         self.assertEqual(archived["history"], active["history"])
+        self.assertEqual(view["retired_agents"], [])
+        self.assertEqual(view["jobs"]["recent"], [])
 
 
     def test_requeue_sends_a_running_job_back_to_queued_with_attempts_incremented(self):
@@ -585,7 +620,7 @@ class Jobs(AgentFixture):
         self.assertEqual(view["agents"][0]["open_jobs"], 1)
         self.assertGreater(view["jobs_mtime"], 0)
 
-    def test_retired_agent_name_is_preserved_in_job_history(self):
+    def test_retired_agent_name_is_preserved_only_in_server_history(self):
         agent = self.register(name="Ada", worker_id="w1")
         with paths.use_root(self.home):
             job = agents.create_job(self.slug, agent_id=agent["id"], mark_key=self.page_key)
@@ -597,7 +632,7 @@ class Jobs(AgentFixture):
             fetched = agents.get_job(self.slug, job["id"])
             view = agents.overview(self.slug)
         self.assertEqual(fetched["agent_name"], "Ada")
-        self.assertEqual(view["jobs"]["recent"][0]["agent_name"], "Ada")
+        self.assertEqual(view["jobs"]["recent"], [])
 
     def test_reassign_job_updates_agent_name(self):
         ada = self.register(name="Ada", conversation="c1", worker_id="w1")
@@ -725,7 +760,30 @@ class HttpFlow(unittest.TestCase):
 
                 gone = client.delete(f"/api/bubbles/diffusion/agents/{agent_id}")
                 self.assertEqual(gone.status_code, 200)
-                self.assertEqual(client.get("/api/bubbles/diffusion/agents").json()["agents"], [])
+                self.assertEqual(gone.json(), {
+                    "agent": {"id": agent_id, "name": "Ada", "status": "retired"}})
+                self.assertNotIn("history", gone.text)
+                hidden = client.get("/api/bubbles/diffusion/agents").json()
+                self.assertEqual(hidden["agents"], [])
+                self.assertEqual(hidden["retired_agents"], [])
+                self.assertEqual(hidden["jobs"]["recent"], [])
+                presence_view = client.post("/api/bubbles/diffusion/presence").json()
+                self.assertEqual(presence_view["agents"], [])
+                self.assertNotIn("retired_agents", presence_view)
+
+                replacement = client.post(
+                    "/api/scientist/v2/bubbles/diffusion/agents", headers=scientist,
+                    json={"name": "Ada", "role": "new reviewer", "goal": "new goal",
+                          "vendor": "codex", "conversation": "c2", "worker_id": "w1"})
+                self.assertEqual(replacement.status_code, 200, replacement.text)
+                replacement_id = replacement.json()["agent"]["id"]
+                self.assertNotEqual(replacement_id, agent_id)
+                replacement_view = client.get("/api/bubbles/diffusion/agents").json()["agents"]
+                self.assertEqual(replacement_view[0]["name"], "Ada")
+                self.assertEqual(replacement_view[0]["history"], [])
+                archives = service.list_retired_agents(home, "diffusion", owner="alice")
+                self.assertEqual([archive["id"] for archive in archives], [agent_id])
+                self.assertTrue(archives[0]["history"])
 
     def test_web_user_can_queue_a_direct_agent_message(self):
         from lockedin import server

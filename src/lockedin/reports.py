@@ -249,7 +249,9 @@ Other workspace members have their own agents and their own stop switch.
 A named agent always keeps its stored provider conversation across recovery. If that conversation is
 missing or the provider refuses its id, the job fails visibly and Scientist preserves the id instead
 of silently starting an empty replacement. Website retirement is different: it removes LockedIn's
-profile and recovery mapping, even if the provider still retains a local transcript.
+profile, history, and recovery mapping from the website, even if the provider still retains a local
+transcript. LockedIn keeps a private server-side archive for operators, and the retired name can be
+used immediately for a new agent.
 """,
     },
     {
@@ -353,13 +355,15 @@ Every mark is a thread. **reply** adds a turn; the agent answers in the same thr
 **edit** your own last turn — but only that, because rewriting something the other side has
 already answered would leave that answer replying to words that no longer exist.
 
-**resolve** closes a mark on the working surface while preserving its thread in agent history.
+**resolve** closes a mark on the working surface while preserving its thread while the agent is active.
 
 ## What happens to a mark
 
 A mark is working state, and working state should end — but ending it is yours alone. The
 agent answers by editing the slide in place and replying in the thread; it cannot remove a mark,
-anywhere. When the answer satisfies you, hit **resolve**. The mark leaves the slide, while its quote, picture, and complete conversation remain available in the assigned agent’s history.
+anywhere. When the answer satisfies you, hit **resolve**. The mark leaves the slide, while its quote,
+picture, and complete conversation remain available in the assigned agent’s history until that agent
+is retired. Retirement removes that history from the website but retains a private server archive.
 
 If the agent thinks a mark is mistaken, it is told to say so and argue rather than comply.
 
@@ -841,7 +845,9 @@ stays shut rather than offering a mark it could not place.
 
 Every mark is a thread: **reply** adds a turn, and you can **edit** your own last turn. **resolve**
 removes it from the working report — and only you can do that — while preserving the complete thread
-in the assigned agent’s history. Deleting a report page removes that page's marks with it.
+in the assigned agent’s history while the agent is active. Retiring the agent removes that history
+from the website and retains it only in the server archive. Deleting a report page removes that page's
+marks with it.
 
 ---
 

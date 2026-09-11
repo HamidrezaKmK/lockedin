@@ -2198,11 +2198,9 @@ def build_app():
             overview = service.agents_overview(home_of(user), slug,
                                                     workers=snap["workers"], viewer=user)
             snap["agents"] = overview["agents"]
-            snap["retired_agents"] = overview.get("retired_agents", [])
         except Exception:
             logger.debug("Could not attach agents to presence.", exc_info=True)
             snap["agents"] = []
-            snap["retired_agents"] = []
         return snap
 
     @app.delete("/api/bubbles/{slug}/presence")
@@ -2250,7 +2248,10 @@ def build_app():
     @app.delete("/api/bubbles/{slug}/agents/{agent_id}")
     def bubble_remove_agent(slug: str, agent_id: str, user: str = Depends(current_user)):
         try:
-            return {"agent": service.remove_agent(home_of(user), slug, agent_id, owner=user)}
+            archived = service.remove_agent(home_of(user), slug, agent_id, owner=user)
+            # The full transcript remains server-side. Do not echo it into a browser response.
+            return {"agent": {"id": archived["id"], "name": archived["name"],
+                              "status": "retired"}}
         except (agents.AgentError, agents.NotFound) as e:
             raise agent_failure(e)
 

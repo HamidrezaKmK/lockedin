@@ -395,6 +395,16 @@ def list_agents(slug: str, *, owner: str | None = None) -> list[dict]:
     return sorted((dict(a) for a in agents), key=lambda a: a.get("created_at", ""))
 
 
+def list_retired_agents(slug: str, *, owner: str | None = None) -> list[dict]:
+    """Return server-side archives. These records are deliberately absent from web views."""
+    with _bubble_lock(slug):
+        archived = list(_agents(slug).get("retired", {}).values())
+    if owner is not None:
+        archived = [agent for agent in archived if _owner_of(agent) == owner]
+    return sorted((dict(agent) for agent in archived),
+                  key=lambda agent: agent.get("retired_at", ""), reverse=True)
+
+
 def register_agent(slug: str, *, name: str, role: str, goal: str, personality: str = "",
                    vendor: str, conversation: str, model: str = "", worker_id: str,
                    project_label: str = "", registered_by: str = "") -> dict:
@@ -1109,16 +1119,14 @@ def overview(slug: str, *, workers: list[dict] | None = None, viewer: str = "") 
     with _bubble_lock(slug):
         registry = _agents(slug)
         agents = registry["agents"]
-        retired = registry.get("retired", {})
         jobs = list(_jobs(slug)["jobs"].values())
     if filtered:
         agents = {aid: a for aid, a in agents.items() if _owner_of(a) == viewer}
-        retired = {aid: a for aid, a in retired.items() if _owner_of(a) == viewer}
-        # Filtered on the job's own denormalized ``owner`` — not on whether its agent is still in
-        # the filtered map — so a retired agent's job history stays visible to the owner it
-        # belonged to (see ``_job_summary``'s ``agent_name`` fallback, the same idea applied to
-        # ``owner``).
-        jobs = [j for j in jobs if j.get("owner", "") == viewer]
+        active_ids = set(agents)
+        # Browser views receive only active-agent work. Retired histories remain in the archive
+        # and are available through the server CLI, never through a normal user-facing API.
+        jobs = [j for j in jobs if j.get("owner", "") == viewer
+                and j.get("agent_id") in active_ids]
     running = {j["agent_id"] for j in jobs if j.get("status") == "running"}
     summaries = sorted((_job_summary(j, agents) for j in jobs), key=lambda j: j["created_at"])
     activity_by_job = {}
@@ -1170,16 +1178,7 @@ def overview(slug: str, *, workers: list[dict] | None = None, viewer: str = "") 
                 item["mark"] = dict(pointer) if pointer else None
             row["history"].append(item)
         rows.append(row)
-    retired_rows = []
-    for archived in sorted(retired.values(), key=lambda a: a.get("retired_at", ""), reverse=True):
-        row = dict(archived)
-        row["status"] = "retired"
-        row["owner"] = _owner_of(archived)
-        row["open_jobs"] = 0
-        row["turns_last_hour"] = 0
-        row["turns_today"] = 0
-        retired_rows.append(row)
-    return {"agents": rows, "retired_agents": retired_rows,
+    return {"agents": rows, "retired_agents": [],
             "jobs": {"by_mark": by_mark,
                      "open": [j for j in summaries if j["status"] in OPEN_STATUSES],
                      "recent": [j for j in reversed(summaries) if j["status"] not in OPEN_STATUSES][:30]},

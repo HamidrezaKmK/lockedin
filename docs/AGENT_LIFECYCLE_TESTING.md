@@ -28,10 +28,12 @@ person sees must satisfy the same contract.
 5. **A name is one growing memory.** Every successful background turn resumes the conversation id
    stored for that named agent. A missing or provider-rejected id fails visibly and stays stored;
    it is never cleared automatically. Only the explicit `agent reset` escape hatch may change the active provider conversation.
-   Resolving a mark and retiring an agent must never erase LockedIn’s readable work history.
+   Resolving a mark must never erase the active agent’s readable work history.
 6. **Retirement stops execution, not memory.** Website retirement removes the active profile and
-   recovery mapping and gracefully cancels unfinished jobs. A read-only profile remains available
-   with its direct and mark-based history. A later setup link does not recreate the retired agent.
+   recovery mapping and gracefully cancels unfinished jobs. Its direct and mark-based history is
+   retained only in a private server-side archive; normal web APIs and the frontend expose neither
+   the retired profile nor its jobs. The retired name is immediately reusable. A later setup link
+   does not recreate the retired agent.
 7. **Providers have parity.** Registration, attachment, queuing, direct replies, mark edits,
    recovery, continuity, failure reporting, and retirement have the same acceptance criteria for
    Codex, Claude, and agy.
@@ -76,8 +78,8 @@ The automated gate must prove, for all three provider adapters:
   leaves its quote, image, comments, and replies unchanged in agent history;
 - deleting a chalk-talk slide automatically resolves and archives its marks, preserves their threads
   and screenshots, and shifts marks on every retained later slide;
-- retirement cancels open work, removes the active profile and recovery mapping, and preserves a
-  read-only history entry;
+- retirement cancels open work, removes the active profile, recovery mapping, and jobs from normal
+  web responses, preserves a server-only archive, and permits immediate name reuse;
 - popup and mark-thread replies render inline/display LaTeX through KaTeX, the icon-only Send
   control stays vertically centered, and the working robot has a reduced-motion fallback;
 - every RHS mark card collapses and expands from its header control without losing draft, job,
@@ -170,8 +172,10 @@ For each provider, record the full popup history, resolve its completed disposab
 the popup. The mark must disappear from the working report or chalk talk while the recorded quote,
 picture reference, user turns, agent replies, job status, and order remain unchanged. Repeat once
 with a queued mark and once with a running mark: both jobs must cancel cleanly, no provider child may
-start or continue, and no conversation id may change. Retire the agent and confirm the same history
-is still available read-only under Retired agents, while setup and worker indexes exclude it.
+start or continue, and no conversation id may change. Retire the agent and confirm it and its jobs
+disappear from the frontend and normal web API. On the server, confirm
+`lockedin agent-archives <bubble> --json` retains the same history. Register a new agent with the
+retired name and confirm it receives a distinct id and an empty new history.
 
 ### G. Missing memory and retirement
 
@@ -179,8 +183,9 @@ In an isolated provider home, hide one disposable conversation record and submit
 must fail visibly, make zero new conversation, and preserve the old id. Restore the record and
 confirm a newly submitted job resumes it.
 
-Retire all disposable agents from the website. Confirm open jobs are cancelled, active profiles
-disappear, read-only histories remain available, and running the setup link does not restore them.
+Retire all disposable agents from the website. Confirm open jobs are cancelled, active profiles and
+histories disappear from the frontend, server-side archives remain available, retired names can be
+reused, and running the setup link does not restore them.
 Delete the disposable bubble/files and verify the
 queue is empty and the worker is healthy or deliberately stopped.
 

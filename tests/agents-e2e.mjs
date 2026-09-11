@@ -727,6 +727,9 @@ async function main() {
       recoveryChat.getByRole("button", { name: "Retire Ada", exact: true }).click(),
     ]);
     assert.ok(retireResponse.ok(), `retire failed: ${await retireResponse.text()}`);
+    const retireBody = await retireResponse.json();
+    assert.deepEqual(Object.keys(retireBody.agent).sort(), ["id", "name", "status"],
+      "retirement must not echo the archived transcript into the browser");
     assert.equal(dialogAccepted, true, "retiring an agent must require confirmation");
     await page.waitForFunction(() => {
       const seg = document.querySelectorAll(".presence-seg")[1];
@@ -735,20 +738,49 @@ async function main() {
     assert.equal(await page.getByRole("dialog", { name: "Direct messages with Ada" }).count(), 0,
       "retiring an agent must close its dialog");
     await page.locator(".presence-seg").nth(1).click();
-    const retiredAda = page.locator(".presence-item.presence-agent.retired", { hasText: "Ada" });
-    await retiredAda.waitFor({ state: "visible", timeout: 5_000 });
-    await retiredAda.click();
-    const archiveChat = page.getByRole("dialog", { name: "Direct messages with Ada" });
-    assert.match(await archiveChat.innerText(), /Retired.*history is preserved read-only/is);
-    assert.ok((await archiveChat.locator(".agent-mark-context").count()) >= 1,
-      "retired history must preserve marked conversations");
-    assert.equal(await archiveChat.locator(".agent-message-compose textarea").count(), 0,
-      "retired history must not expose a message composer");
-    assert.equal(await archiveChat.getByRole("button", { name: "Retire Ada", exact: true }).count(), 0,
-      "a retired archive must not offer retirement again");
-    await archiveChat.getByRole("button", { name: "Close direct messages" }).click();
-    step("Ada retirement preserved a read-only direct and mark history archive");
-    step("Ada was retired from the dialog and disappeared from the bubble immediately");
+    assert.equal(await page.locator(".presence-group", { hasText: "Retired agents" }).count(), 0,
+      "the frontend must not list retired agents");
+    assert.equal(await page.locator(".presence-item.presence-agent", { hasText: "Ada" }).count(), 0,
+      "the retired profile must disappear from the frontend");
+    const hiddenOverview = await api(context.request, baseUrl, "GET",
+      `/api/bubbles/${slug}/agents`, undefined, wsHeaders);
+    assert.deepEqual(hiddenOverview.retired_agents, [],
+      "normal web APIs must not expose server-side archives");
+    assert.deepEqual(hiddenOverview.jobs.recent, [],
+      "normal web APIs must not expose retired job history");
+    const hiddenPresence = await api(context.request, baseUrl, "POST",
+      `/api/bubbles/${slug}/presence`, {}, wsHeaders);
+    assert.equal(Object.hasOwn(hiddenPresence, "retired_agents"), false,
+      "presence must not carry a retired archive field");
+    await page.keyboard.press("Escape");
+    step("Ada and her history disappeared from the frontend and normal web APIs");
+
+    const replacementToken = await scientistToken(context.request, baseUrl);
+    assert.equal(await workerPoll(context.request, baseUrl, replacementToken, slug,
+      { id: WORKER_ID, label: WORKER_LABEL, status: "running" }, workspaceId), 200);
+    const replacement = await scientistApi(context.request, baseUrl, replacementToken, "POST",
+      `/api/scientist/v2/bubbles/${slug}/agents`,
+      { name: "Ada", role: "new reviewer", goal: "start with clean LockedIn history",
+        personality: "terse", vendor: "codex", conversation: "conv-2",
+        model: "gpt-5.6-luna", worker_id: WORKER_ID, project_label: "demo" }, workspaceId);
+    assert.notEqual(replacement.agent.id, agent.id,
+      "reusing a retired name must create a distinct active identity");
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.waitForFunction(() => {
+      const seg = document.querySelectorAll(".presence-seg")[1];
+      return !!seg && seg.querySelector(".presence-count")?.textContent === "1";
+    }, { timeout: 10_000 });
+    await page.locator(".presence-seg").nth(1).click();
+    const replacementAda = page.locator(".presence-item.presence-agent", { hasText: "Ada" });
+    await replacementAda.waitFor({ state: "visible", timeout: 5_000 });
+    await replacementAda.click();
+    const replacementChat = page.getByRole("dialog", { name: "Direct messages with Ada" });
+    assert.match(await replacementChat.innerText(), /No work with Ada yet/,
+      "the replacement Ada must start with empty LockedIn history");
+    assert.doesNotMatch(await replacementChat.innerText(), /variance review|updated bound/i,
+      "the replacement must not inherit the retired Ada transcript");
+    await replacementChat.getByRole("button", { name: "Close direct messages" }).click();
+    step("the retired name was reused with a new id and empty frontend history");
 
     step("all agents checks passed");
   } catch (error) {

@@ -3066,7 +3066,7 @@
     baseMtime:null, autosaveTimer:null, saving:false, syncState:"synced", applyingRemote:false,
     previewEl:null, remoteChangePending:false, toolsMenu:null,
     comments:[], selectedComment:null, lastCommentsMtime:null,
-    agents:[], retiredAgents:[], jobsByMark:{}, agentMessageDrafts:{}, agentChatEl:null, agentChatAgentId:"", lastJobsMtime:null,
+    agents:[], jobsByMark:{}, agentMessageDrafts:{}, agentChatEl:null, agentChatAgentId:"", lastJobsMtime:null,
     reviewSelection:null, reviewHitTargets:[], reviewMarkupError:null, reviewHighlightFrame:null,reviewMutationObserver:null,
     reviewMutating:false,reviewMutationEpoch:0,reviewCommentsLoaded:false,
     refAc:null,
@@ -5475,7 +5475,7 @@
       try{
         const snap=await api("/api/bubbles/"+slug+"/presence",{method:"POST"});
         if(S.bubble===slug){ S.presence=snap; renderPresence();
-          if(Array.isArray(snap.agents)){S.agents=snap.agents;S.retiredAgents=snap.retired_agents||S.retiredAgents||[]; if(window.LockedInMarks&&window.LockedInMarks.setAgents)window.LockedInMarks.setAgents(slug,S.agents,S.jobsByMark||{});renderAgentChat();}
+          if(Array.isArray(snap.agents)){S.agents=snap.agents; if(window.LockedInMarks&&window.LockedInMarks.setAgents)window.LockedInMarks.setAgents(slug,S.agents,S.jobsByMark||{});renderAgentChat();}
         }
       }catch(e){ /* ambient: a missed beat just keeps showing the last snapshot */ }
     };
@@ -5625,7 +5625,7 @@
   function renderAgentChat(){
     const overlay=S.agentChatEl;
     if(!overlay)return;
-    const agent=[...(S.agents||[]),...(S.retiredAgents||[])].find(a=>a.id===S.agentChatAgentId);
+    const agent=(S.agents||[]).find(a=>a.id===S.agentChatAgentId);
     if(!agent){closeAgentChat();return;}
     const status=overlay.querySelector(".agent-chat-status");
     if(status)status.textContent=(agent.role||agent.vendor)+(agent.model?" · "+agent.model:"")+" · "+agent.status+
@@ -5676,7 +5676,6 @@
   function renderAgentRevive(agent,overlay){
     const panel=overlay.querySelector(".agent-revive");
     if(!panel)return;
-    if(agent.status==="retired"){panel.classList.remove("show");panel.replaceChildren();return;}
     const dead=agent.status==="offline"||agent.status==="stopped";
     panel.classList.toggle("show",dead);
     if(!dead)return;
@@ -5740,7 +5739,6 @@
 
   function openAgentChat(agent){
     closePresenceMenu();closeAgentChat();
-    const retired=agent.status==="retired";
     const overlay=el("div",{class:"overlay agent-chat-overlay",role:"dialog","aria-modal":"true",
       "aria-label":"Direct messages with "+agent.name});
     const close=el("button",{class:"ghost small icon-btn","aria-label":"Close direct messages"},ic("close"));
@@ -5758,14 +5756,13 @@
     textarea.onkeydown=e=>{if(e.key==="Enter"&&(e.metaKey||e.ctrlKey)){e.preventDefault();send.click();}};
     const card=el("div",{class:"diffbox agent-chat",onclick:e=>e.stopPropagation()},
       el("div",{class:"agent-chat-header"},ic("agent"),
-        el("div",{class:"agent-chat-title"},el("b",{},agent.name),status),retired?null:retire,close),
-      revive,history,retired?el("div",{class:"agent-message-compose agent-message-readonly"},
-        "Retired · history is preserved read-only"):el("div",{class:"agent-message-compose"},textarea,send));
+        el("div",{class:"agent-chat-title"},el("b",{},agent.name),status),retire,close),
+      revive,history,el("div",{class:"agent-message-compose"},textarea,send));
     overlay.append(card);overlay.onclick=closeAgentChat;close.onclick=closeAgentChat;
     overlay._onKey=e=>{if(e.key==="Escape")closeAgentChat();};
     document.addEventListener("keydown",overlay._onKey);
     document.body.append(overlay);S.agentChatEl=overlay;S.agentChatAgentId=agent.id;
-    renderAgentChat();if(!retired)textarea.focus();
+    renderAgentChat();textarea.focus();
   }
 
   async function forgetTrackedFolder(worker,button){
@@ -5785,7 +5782,7 @@
   }
 
   async function retireAgent(agent,button){
-    if(!confirm("Retire "+agent.name+"?\n\nThis stops future work and cancels unfinished turns. LockedIn will preserve a read-only copy of the agent history, while its recovery link will no longer restore the retired agent."))return;
+    if(!confirm("Retire "+agent.name+"?\n\nThis stops future work, cancels unfinished turns, and removes the agent and its history from the website. A private server-side archive is retained, and you may register a new agent with the same name."))return;
     button.disabled=true;
     try{
       await api("/api/bubbles/"+encodeURIComponent(S.bubble)+"/agents/"+encodeURIComponent(agent.id),
@@ -5913,18 +5910,10 @@
       }
       folderAgents.forEach(workerAgentRow);
     });
-    const retiredAgents=snap.retired_agents||S.retiredAgents||[];
     const orphanAgents=allAgents.filter(a=>!workers.some(w=>w.worker_id===a.worker_id));
     if(orphanAgents.length){
       menu.append(el("div",{class:"presence-group"},"Agents whose folder is not syncing"));
       orphanAgents.forEach(workerAgentRow);
-    }
-    if(retiredAgents.length){
-      menu.append(el("div",{class:"presence-group"},"Retired agents"));
-      retiredAgents.forEach(a=>menu.append(el("button",{
-        class:"presence-item presence-agent retired",onclick:()=>openAgentChat(a)
-      },el("span",{class:"presence-dot dead"}),el("span",{class:"presence-emoji"},ic("agent")),
-        el("span",{class:"presence-name"},a.name),el("span",{class:"presence-note"},"history"))));
     }
     // Always the last word in this menu: setup, attachment and troubleshooting belong under a
     // management label. A plus falsely implied that this entry could only create another agent.
@@ -7494,11 +7483,11 @@
     try{
       const r=await api("/api/bubbles/"+bubble+"/agents");
       if(S.bubble!==bubble)return;
-      S.agents=r.agents||[]; S.retiredAgents=r.retired_agents||[]; S.jobsByMark=(r.jobs&&r.jobs.by_mark)||{}; S.lastJobsMtime=r.jobs_mtime==null?S.lastJobsMtime:r.jobs_mtime;
+      S.agents=r.agents||[]; S.jobsByMark=(r.jobs&&r.jobs.by_mark)||{}; S.lastJobsMtime=r.jobs_mtime==null?S.lastJobsMtime:r.jobs_mtime;
       S.secureMode=!!r.secure_mode;
       if(window.LockedInMarks&&window.LockedInMarks.setAgents)window.LockedInMarks.setAgents(bubble,S.agents,S.jobsByMark,r.jobs_mtime);
       if(window.LockedInMarks&&window.LockedInMarks.setSecureMode)window.LockedInMarks.setSecureMode(S.secureMode);
-      if(S.presence){S.presence.agents=S.agents;S.presence.retired_agents=S.retiredAgents;renderPresence();}
+      if(S.presence){S.presence.agents=S.agents;renderPresence();}
       renderAgentChat();
       syncSecureModeUI();
     }catch(e){}
