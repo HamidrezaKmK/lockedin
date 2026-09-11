@@ -520,6 +520,29 @@ class Jobs(AgentFixture):
         self.assertEqual(result["status"], "queued")
         self.assertEqual(result["error"], agents.BUSY_ERROR)
 
+    def test_agent_popup_history_includes_the_mark_context_and_full_reply_thread(self):
+        agent = self.register(name="Ada", worker_id="w1", registered_by="hamid")
+        with paths.use_root(self.home):
+            job = agents.create_job(self.slug, agent_id=agent["id"], mark_key=self.page_key,
+                                    created_by="hamid")
+            agents.start_job(self.slug, job["id"], worker_id="w1")
+            agents.reply_job(self.slug, job["id"], text="The bound needs a uniformity condition.",
+                             actor="hamid")
+            view = agents.overview(self.slug, viewer="hamid")
+
+        history = view["agents"][0]["history"]
+        self.assertEqual(len(history), 1)
+        self.assertEqual(history[0]["kind"], "mark")
+        self.assertEqual(history[0]["mark"]["quote"], "The variance term vanishes in the limit")
+        self.assertEqual(
+            [message["said"] for message in history[0]["mark"]["messages"]],
+            ["why does it vanish?", "The bound needs a uniformity condition."],
+        )
+        self.assertEqual(
+            [message["agent"] for message in history[0]["mark"]["messages"]],
+            [False, True],
+        )
+
     def test_overview_groups_jobs_by_mark_for_the_cards(self):
         agent = self.register(name="Ada")
         with paths.use_root(self.home):

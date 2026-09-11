@@ -128,8 +128,12 @@ class SeamlessUpgradeTests(unittest.TestCase):
                 "    sys.stdout.buffer.write(data)\n"
             )
             curl.chmod(0o755)
-            env = {**os.environ, "HOME": str(root / "home"), "PATH": f"{fake_bin}:/usr/bin:/bin",
-                   "PYTHON": sys.executable}
+            env = {**os.environ, "HOME": str(root / "home"),
+                   # Never inherit a developer/CI XDG root: the real installer writes there in
+                   # preference to HOME, which made this isolation test capable of truncating a
+                   # live installed client when the ambient variable happened to be set.
+                   "XDG_DATA_HOME": str(root / "data"),
+                   "PATH": f"{fake_bin}:/usr/bin:/bin", "PYTHON": sys.executable}
             first = subprocess.run(["bash", str(repository / "install.sh")], env=env,
                                    capture_output=True, text=True)
             second = subprocess.run(["bash", str(repository / "install.sh")], env=env,

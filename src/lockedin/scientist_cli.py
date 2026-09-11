@@ -37,7 +37,7 @@ except ImportError:  # Standalone client installed beside agent_vendors.py.
     import agent_vendors  # type: ignore[no-redef]
 
 APP = "lockedin-scientist"
-SCIENTIST_CLIENT_VERSION = "2026.09.11.1"
+SCIENTIST_CLIENT_VERSION = "2026.09.11.2"
 POLL_SECONDS = 5
 # A worker that has not completed a cycle in three polls is wedged rather than merely busy.
 # `doctor` reports that verdict and `resync` repairs exactly what `doctor` complains about, so
@@ -59,7 +59,10 @@ AGENT_BUSY_SIGNATURES = agent_vendors.COMMON_BUSY_SIGNATURES
 # Substrings (matched case-insensitively) seen in real vendor CLI output when the conversation id
 # on file was deleted or otherwise not honoured, distinct from a turn that failed for its own
 # reasons. Kept specific — no bare "does not exist" — so an ordinary error is not swallowed here.
-AGENT_LOST_CONVERSATION_ERROR = "the agent's saved conversation no longer exists there; a new one is starting"
+AGENT_LOST_CONVERSATION_ERROR = (
+    "the agent's saved conversation is unavailable; its identity and conversation id were preserved, "
+    "and no replacement conversation was started"
+)
 AGENT_LOST_CONVERSATION_SIGNATURES = agent_vendors.COMMON_LOST_SIGNATURES
 AGENT_COOLDOWN_SECONDS = 60
 # Keep this below the server's 45-minute job lease. Twenty minutes proved too short for legitimate
@@ -2332,23 +2335,17 @@ class AgentRunner:
             if self.cooldowns.get(aid, 0.0) > now: continue  # backstop cooldown still running
             self._dispatch(job); busy.add(aid)
 
-    def _clear_conversation(self, agent: dict, job_id: str, *, reason: str,
-                            code: int | None = None, output: str = "") -> None:
-        """Forget a conversation the vendor can no longer find, exactly as `agent reset` does,
-        then requeue the job so the next tick starts a brand-new conversation (persona preamble
-        and all) instead of failing the mark outright.
+    def _preserve_missing_conversation(self, agent: dict, job_id: str, *, reason: str,
+                                       code: int | None = None, output: str = "") -> None:
+        """Fail one turn without replacing a named agent's missing conversation.
 
-        Deliberately never sets a cooldown for this agent: unlike a busy chat, which is expected
-        to close on its own, a deleted conversation will not fix itself by waiting, so starting
-        fresh should happen on the very next tick rather than after ``AGENT_COOLDOWN_SECONDS``.
+        A name denotes one growing vendor conversation. Automatically clearing that id and
+        retrying as ``fresh`` makes the UI appear to recover while silently erasing the person's
+        working memory. Keep the record untouched so reconnecting the same folder/store can make
+        it usable again; only the explicit ``agent reset`` escape hatch may discard that history.
         """
-        try:
-            self.sync._request("POST", f"agents/{agent['id']}", {"conversation": "", "fresh": True})
-        except RuntimeError as exc:
-            self.error = str(exc)
         self.cooldowns.pop(agent.get("id"), None)
-        self._requeued_this_tick.add(agent.get("id"))
-        self._result(job_id, "requeue", code, output, reason)
+        self._result(job_id, "failed", code, output, reason)
 
     def _dispatch(self, job: dict) -> None:
         agent = job["agent"]
@@ -2358,9 +2355,10 @@ class AgentRunner:
             if "server returned 409" in str(exc): return   # another cycle, or another worker, got it
             raise
         if agent.get("conversation") and not conversation_exists(agent):
-            # Cheaper than spawning a vendor doomed to refuse it, and it means the agent recovers
-            # on its own instead of failing every future mark until someone runs `agent reset`.
-            self._clear_conversation(
+            # Cheaper than spawning a vendor doomed to refuse it. Never make apparent progress by
+            # replacing a named person's memory: fail visibly and leave the id available for the
+            # setup-link / folder-store recovery path.
+            self._preserve_missing_conversation(
                 agent, job["id"],
                 reason=f"{agent.get('vendor')} conversation {agent.get('conversation')!r} no longer exists; "
                        f"{AGENT_LOST_CONVERSATION_ERROR}")
@@ -2506,10 +2504,11 @@ class AgentRunner:
                 self._result(job_id, "requeue", code, output, AGENT_BUSY_ERROR)
             elif not reason and code != 0 and _looks_conversation_lost(output, str(agent.get("vendor") or "")):
                 # The conversation existed at dispatch time (or the layout could not be checked)
-                # but the vendor refused the id anyway; recognise its own words and recover the
-                # same way the pre-dispatch check does, instead of failing the job.
-                self._clear_conversation(agent, job_id, reason=AGENT_LOST_CONVERSATION_ERROR,
-                                         code=code, output=output)
+                # but the vendor refused the id anyway. Preserve the named agent's memory just as
+                # the pre-dispatch check does; never turn this into an implicit fresh conversation.
+                self._preserve_missing_conversation(
+                    agent, job_id, reason=AGENT_LOST_CONVERSATION_ERROR,
+                    code=code, output=output)
             else:
                 status = "failed" if reason or code != 0 else "done"
                 vendor = str(agent.get("vendor") or "")

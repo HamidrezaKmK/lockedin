@@ -606,38 +606,6 @@ class CancelAfterStartFakeAgentServer(FakeAgentServer):
         return {}
 
 
-class RecoveringFakeAgentServer(FakeAgentServer):
-    """Simulates what the real service does when the runner clears a conversation: a
-    ``POST agents/<id>`` update changes the agent record, and the job keeps being offered (it was
-    requeued, not finished) until a turn actually completes. Used to prove that a turn dispatched
-    right after the clear is a genuinely fresh one, carrying the persona preamble."""
-
-    def __init__(self, agent: dict, job_template: dict):
-        super().__init__()
-        self.agent = dict(agent)
-        self.job_template = job_template
-        self.offer = True
-
-    def request(self, method: str, suffix: str, body: dict | None = None) -> dict:
-        self.calls.append((method, suffix, body))
-        if suffix == "agents/heartbeat":
-            if not self.offer:
-                return {"jobs": [], "cancelled": []}
-            job = dict(self.job_template); job["agent"] = dict(self.agent)
-            return {"jobs": [job], "cancelled": []}
-        if suffix.endswith("/start"):
-            return {"job": {}}
-        if suffix.endswith("/result"):
-            if (body or {}).get("status") != "requeue":
-                self.offer = False
-            return {"job": {}}
-        if suffix.startswith("agents/"):
-            if body:
-                self.agent.update(body)
-            return {"agent": dict(self.agent)}
-        return {}
-
-
 def _fake_vendor_cmd(script: str) -> list[str]:
     return [sys.executable, "-c", script]
 
@@ -818,18 +786,18 @@ class AgentRunnerEndToEndTests(unittest.TestCase):
         result = fake.calls_for("jobs/j-000001/result")[0][2]
         self.assertEqual(result["error"], "provider account access is disabled")
 
-    def test_an_attached_agent_is_never_dispatched(self):
-        project = _build_project({"ag-1": AGENT_AG1}, {"w1": ["ag-1"]})
-        job = {"id": "j-000001", "agent": AGENT_AG1, "mark": PAGE_MARK, "instruction": ""}
-        fake = FakeAgentServer(heartbeat_jobs=[job])
-        with tempfile.TemporaryDirectory() as data_home, tempfile.TemporaryDirectory() as agy_home, patch.dict(
-                os.environ, {"LOCKEDIN_SCIENTIST_HOME": data_home, "ANTIGRAVITY_CLI_HOME": agy_home}):
-            (Path(agy_home) / "presence").mkdir(parents=True)
-            with _held_agy_lock(Path(agy_home) / "presence" / "c1.lock"):
+    def test_attached_agents_from_every_provider_stay_queued_without_a_model_call(self):
+        for vendor in agent_vendors.names():
+            with self.subTest(vendor=vendor), tempfile.TemporaryDirectory() as data_home, patch.dict(
+                    os.environ, {"LOCKEDIN_SCIENTIST_HOME": data_home}), patch.object(
+                    scientist_cli, "agent_attached", return_value=True):
+                agent = {**AGENT_AG1, "vendor": vendor, "conversation": f"{vendor}-conversation"}
+                project = _build_project({"ag-1": agent}, {"w1": ["ag-1"]})
+                job = {"id": "j-000001", "agent": agent, "mark": PAGE_MARK, "instruction": ""}
+                fake = FakeAgentServer(heartbeat_jobs=[job])
                 runner = self._runner(project, fake)
                 runner.tick()
-                heartbeats = fake.calls_for("agents/heartbeat")
-                reported = heartbeats[0][2]["agents"][0]
+                reported = fake.calls_for("agents/heartbeat")[0][2]["agents"][0]
                 self.assertEqual((reported["id"], reported["attached"]), ("ag-1", True))
                 self.assertEqual(fake.calls_for("jobs/j-000001/start"), [])
                 self.assertEqual(runner.procs, {})
@@ -1049,10 +1017,8 @@ class AgentRunnerEndToEndTests(unittest.TestCase):
             self.assertEqual(results[0][2]["status"], "failed")
             self.assertNotIn("ag-1", runner.cooldowns)
 
-    def test_a_missing_conversation_is_caught_before_spawn_and_requeues(self):
-        """AGENT_AG1's conversation "c1" has no file in the fake agy home: the runner must not
-        spawn agy at all, must tell the server to forget the conversation exactly as `agent
-        reset` does, and must requeue the job with a reason naming what happened."""
+    def test_a_missing_conversation_fails_without_replacing_memory(self):
+        """A missing provider record must never silently turn a named agent into a fresh chat."""
         project = _build_project({"ag-1": AGENT_AG1}, {"w1": ["ag-1"]})
         job = {"id": "j-000001", "agent": AGENT_AG1, "mark": PAGE_MARK, "instruction": ""}
         fake = FakeAgentServer(heartbeat_jobs=[job])
@@ -1067,18 +1033,17 @@ class AgentRunnerEndToEndTests(unittest.TestCase):
             runner.tick()
 
         self.assertEqual(runner.procs, {})
-        clears = fake.calls_for("agents/ag-1")
-        self.assertEqual(len(clears), 1)
-        self.assertEqual(clears[0][2], {"conversation": "", "fresh": True})
+        self.assertEqual(fake.calls_for("agents/ag-1"), [])
         results = fake.calls_for("jobs/j-000001/result")
         self.assertEqual(len(results), 1)
-        self.assertEqual(results[0][2]["status"], "requeue")
-        self.assertIn("no longer exists", results[0][2]["error"])
+        self.assertEqual(results[0][2]["status"], "failed")
+        self.assertIn("no replacement conversation", results[0][2]["error"])
+        self.assertEqual(AGENT_AG1["conversation"], "c1")
+        self.assertFalse(AGENT_AG1["fresh"])
         self.assertNotIn("ag-1", runner.cooldowns)
 
-    def test_a_lost_conversation_error_from_the_vendor_requeues_not_fails(self):
-        """A conversation can vanish between the pre-dispatch check and the spawn, or a vendor may
-        keep the file but refuse the id anyway; recognise its own words instead of failing."""
+    def test_a_vendor_lost_conversation_error_fails_without_replacing_memory(self):
+        """A vendor refusal after spawn must preserve the same identity and conversation id."""
         project = _build_project({"ag-1": AGENT_AG1}, {"w1": ["ag-1"]})
         job = {"id": "j-000001", "agent": AGENT_AG1, "mark": PAGE_MARK, "instruction": ""}
         fake = FakeAgentServer(heartbeat_jobs=[job])
@@ -1087,19 +1052,18 @@ class AgentRunnerEndToEndTests(unittest.TestCase):
                 os.environ, {"LOCKEDIN_SCIENTIST_HOME": data_home, "ANTIGRAVITY_CLI_HOME": agy_home}), patch.object(
                 scientist_cli, "agent_turn_command", lambda agent, prompt, **kw: _fake_vendor_cmd(script)):
             (Path(agy_home) / "conversations").mkdir(parents=True)
-            (Path(agy_home) / "conversations" / "c1.db").write_text("")  # the cheap check passes
+            (Path(agy_home) / "conversations" / "c1.db").write_text("")
             runner = self._runner(project, fake)
             runner.tick()
-            proc = runner.procs["j-000001"]["proc"]
-            proc.wait(timeout=10)
-            runner.tick()  # reaps
+            runner.procs["j-000001"]["proc"].wait(timeout=10)
+            runner.tick()
 
-        clears = fake.calls_for("agents/ag-1")
-        self.assertEqual(len(clears), 1)
-        self.assertEqual(clears[0][2], {"conversation": "", "fresh": True})
+        self.assertEqual(fake.calls_for("agents/ag-1"), [])
         results = fake.calls_for("jobs/j-000001/result")
         self.assertEqual(len(results), 1)
-        self.assertEqual(results[0][2]["status"], "requeue")
+        self.assertEqual(results[0][2]["status"], "failed")
+        self.assertIn("no replacement conversation", results[0][2]["error"])
+        self.assertEqual(AGENT_AG1["conversation"], "c1")
         self.assertNotIn("ag-1", runner.cooldowns)
 
     def test_an_ordinary_conversation_mention_still_fails_not_a_lost_conversation(self):
@@ -1126,28 +1090,25 @@ class AgentRunnerEndToEndTests(unittest.TestCase):
         self.assertEqual(results[0][2]["status"], "failed")
         self.assertEqual(fake.calls_for("agents/ag-1"), [])
 
-    def test_after_clearing_the_next_tick_dispatches_a_fresh_turn_with_the_persona_preamble(self):
-        job_template = {"id": "j-000001", "mark": PAGE_MARK, "instruction": ""}
-        fake = RecoveringFakeAgentServer(AGENT_AG1, job_template)
+    def test_missing_memory_never_dispatches_a_fresh_persona_turn_on_a_later_tick(self):
+        job = {"id": "j-000001", "agent": AGENT_AG1, "mark": PAGE_MARK, "instruction": ""}
+        fake = FakeAgentServer(heartbeat_jobs=[job])
         project = _build_project({"ag-1": AGENT_AG1}, {"w1": ["ag-1"]})
-        script = "print('{\"conversation_id\": \"new-1\"}')"
+
+        def _never_spawn(agent, prompt, **kw):
+            raise AssertionError("missing memory must not become a fresh conversation")
+
         with tempfile.TemporaryDirectory() as data_home, tempfile.TemporaryDirectory() as agy_home, patch.dict(
                 os.environ, {"LOCKEDIN_SCIENTIST_HOME": data_home, "ANTIGRAVITY_CLI_HOME": agy_home}), patch.object(
-                scientist_cli, "agent_turn_command", lambda agent, prompt, **kw: _fake_vendor_cmd(script)):
+                scientist_cli, "agent_turn_command", _never_spawn):
             runner = self._runner(project, fake)
-            runner.tick()  # conversation missing: clears + requeues, no spawn
-            self.assertEqual(runner.procs, {})
-            self.assertEqual(fake.agent.get("conversation"), "")
-            self.assertTrue(fake.agent.get("fresh"))
+            runner.tick()
+            runner.tick()
 
-            runner.tick()  # server now offers the job again with the cleared agent: dispatch fresh
-            self.assertIn("j-000001", runner.procs)
-            proc = runner.procs["j-000001"]["proc"]
-            proc.wait(timeout=10)
-
-            log_path = Path(data_home) / "runtime" / "workers" / "w1" / "jobs" / "j-000001.log"
-            body = log_path.read_text().split("\n\n", 1)[1]
-            self.assertTrue(body.startswith("You are Ada"))
+        self.assertEqual(fake.calls_for("agents/ag-1"), [])
+        self.assertEqual(len(fake.calls_for("jobs/j-000001/start")), 1)
+        results = fake.calls_for("jobs/j-000001/result")
+        self.assertEqual([call[2]["status"] for call in results], ["failed"])
 
     def test_agent_turns_disabled_makes_no_request_and_spawns_nothing(self):
         """LOCKEDIN_AGENT_TURNS=off must stop tick() before any heartbeat, job start, or spawn —

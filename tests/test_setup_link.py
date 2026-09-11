@@ -153,8 +153,14 @@ class SetupScriptWithoutATerminal(unittest.TestCase):
             "curl -fsSL 'https://x.test/setup/agent_vendors.py' -o \"$vendors_tmp\"",
             "true")
         script = script.replace("exec lockedin-scientist connect", "echo CHOSE:")
-        run = subprocess.run(["bash", "-c", script], capture_output=True, text=True,
-                             stdin=subprocess.DEVNULL, cwd="/tmp")
+        with tempfile.TemporaryDirectory() as isolated_home:
+            # The generated setup script intentionally installs a client. Keep that write inside
+            # this test even when the developer or CI environment exports XDG_DATA_HOME.
+            env = {**os.environ, "HOME": isolated_home,
+                   "XDG_DATA_HOME": os.path.join(isolated_home, "data")}
+            os.makedirs(os.path.join(env["XDG_DATA_HOME"], "lockedin-scientist", "client"))
+            run = subprocess.run(["bash", "-c", script], capture_output=True, text=True,
+                                 stdin=subprocess.DEVNULL, cwd="/tmp", env=env)
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertIn("CHOSE:", run.stdout)
         self.assertIn("--project /tmp", run.stdout.replace('"', ""))

@@ -1425,6 +1425,11 @@
     border-radius:10px 10px 10px 3px;background:var(--panel);color:var(--ink)}
   .agent-message-meta{display:block;margin-top:3px;color:var(--muted);font-size:10px}
   .agent-message-error{color:var(--bad)}
+  .agent-mark-context{align-self:stretch;margin:7px 0 1px;padding:8px 10px;border:1px solid var(--line);
+    border-radius:9px;background:var(--panel2);color:var(--muted);overflow-wrap:anywhere}
+  .agent-mark-title{font-size:11px;font-weight:600;color:var(--ink)}
+  .agent-mark-context blockquote{margin:6px 0 0;padding-left:8px;border-left:2px solid var(--warn);
+    color:var(--muted);font-size:11.5px;white-space:pre-wrap}
   .agent-message-compose{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;
     align-items:end;padding:12px 14px;border-top:1px solid var(--line);flex:none}
   .agent-message-compose textarea{width:100%;min-height:58px;max-height:150px;resize:vertical;
@@ -5606,17 +5611,39 @@
     const wasAtBottom=history.scrollHeight-history.scrollTop-history.clientHeight<36;
     const previousTop=history.scrollTop;
     history.replaceChildren();
-    const direct=agent.messages||[];
-    if(!direct.length)history.append(el("div",{class:"agent-message-empty"},
-      "Send a message to start a direct thread with "+agent.name+". Each message runs as one agent turn."));
-    direct.forEach(job=>{
-      history.append(el("div",{class:"agent-message"},job.instruction||"",
-        el("span",{class:"agent-message-meta"},"you · "+job.status)));
-      const reply=job.result&&job.result.reply_text;
-      if(reply)history.append(el("div",{class:"agent-message agent"},reply,
-        el("span",{class:"agent-message-meta"},agent.name)));
-      else if(job.status==="failed")history.append(el("div",{class:"agent-message agent agent-message-error"},
-        job.error||"This turn failed.",el("span",{class:"agent-message-meta"},agent.name+" · failed")));
+    const turns=agent.history||agent.messages||[];
+    if(!turns.length)history.append(el("div",{class:"agent-message-empty"},
+      "No work with "+agent.name+" yet. Direct messages and marked conversations will appear here."));
+    turns.forEach(job=>{
+      if(job.kind!=="mark"){
+        history.append(el("div",{class:"agent-message"},job.instruction||"",
+          el("span",{class:"agent-message-meta"},"you · direct message · "+job.status)));
+        const reply=job.result&&job.result.reply_text;
+        if(reply)history.append(el("div",{class:"agent-message agent"},reply,
+          el("span",{class:"agent-message-meta"},agent.name+" · direct reply")));
+        else if(job.status==="failed")history.append(el("div",{class:"agent-message agent agent-message-error"},
+          job.error||"This turn failed.",el("span",{class:"agent-message-meta"},agent.name+" · failed")));
+        return;
+      }
+      const mark=job.mark||{};
+      const where=mark.surface==="page"
+        ? "Report mark · "+(mark.page_title||mark.page||"removed page")
+        : "Chalk-talk mark · "+(mark.talk_title||mark.talk_id||"removed talk")+
+          (Number.isInteger(mark.slide)?" · slide "+(mark.slide+1):"");
+      const context=el("div",{class:"agent-mark-context"},
+        el("div",{class:"agent-mark-title"},where),
+        mark.quote?el("blockquote",{},mark.quote):null,
+        el("span",{class:"agent-message-meta"},"job "+job.id+" · "+job.status));
+      history.append(context);
+      const conversation=mark.messages||[];
+      conversation.forEach(message=>history.append(el("div",{
+          class:"agent-message"+(message.agent?" agent":"")
+        },message.said||"",
+        el("span",{class:"agent-message-meta"},(message.by||(message.agent?agent.name:"you"))+(message.agent?" · mark reply":" · mark comment")))));
+      if(!conversation.length&&job.status==="failed")history.append(el("div",{
+          class:"agent-message agent agent-message-error"
+        },job.error||"This marked turn failed.",
+        el("span",{class:"agent-message-meta"},agent.name+" · failed")));
     });
     requestAnimationFrame(()=>{history.scrollTop=wasAtBottom?history.scrollHeight:previousTop;});
   }
@@ -5714,7 +5741,7 @@
 
   async function retireAgent(agent,button){
     if(!confirm("Retire "+agent.name+"?\n\nThis removes the agent from this bubble and cancels any unfinished turns. Its saved "+
-      agent.vendor+" conversation is not deleted."))return;
+      agent.vendor+" conversation may remain in that provider, but LockedIn will forget this agent and its recovery link will no longer restore it."))return;
     button.disabled=true;
     try{
       await api("/api/bubbles/"+encodeURIComponent(S.bubble)+"/agents/"+encodeURIComponent(agent.id),

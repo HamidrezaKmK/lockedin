@@ -228,6 +228,9 @@ message in the same thread.
 Ambient presence and job refreshes do not replace the composer: its focus, caret, draft and the
 thread's scroll position stay put while you write.
 
+The same popup is a chronological work history: direct exchanges appear alongside assigned report
+and chalk-talk marks, including the marked location, quoted text, and full user/agent reply thread.
+
 ## Stopping agents
 
 The **Stop agents** switch is an emergency boundary for your account. An open lock means agent
@@ -242,6 +245,11 @@ screen. Run it in that agent's project folder to update Scientist, reauthorize t
 file synchronization and bring every retained agent in that folder back. For an ordinary worker
 crash that did not revoke authorization, run `lockedin-scientist agent revive <name>` instead.
 Other workspace members have their own agents and their own stop switch.
+
+A named agent always keeps its stored provider conversation across recovery. If that conversation is
+missing or the provider refuses its id, the job fails visibly and Scientist preserves the id instead
+of silently starting an empty replacement. Website retirement is different: it removes LockedIn's
+profile and recovery mapping, even if the provider still retains a local transcript.
 """,
     },
     {

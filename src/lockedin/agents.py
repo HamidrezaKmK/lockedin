@@ -1078,9 +1078,12 @@ def overview(slug: str, *, workers: list[dict] | None = None, viewer: str = "") 
         if job["id"] in activity_by_job:
             job["activity"] = activity_by_job[job["id"]]
     by_mark: dict[str, list[dict]] = {}
+    mark_context: dict[str, dict | None] = {}
     for job in summaries:
         if job["kind"] == "mark":
             by_mark.setdefault(job["mark_key"], []).append(job)
+            if job["mark_key"] not in mark_context:
+                mark_context[job["mark_key"]] = mark_pointer(slug, job["mark_key"])
     last_by_agent: dict[str, dict] = {}
     for job in summaries:
         last_by_agent[job["agent_id"]] = job
@@ -1102,8 +1105,18 @@ def overview(slug: str, *, workers: list[dict] | None = None, viewer: str = "") 
         row["turns_today"] = sum(
             1 for j in summaries if j["agent_id"] == agent["id"] and j.get("started_at")
             and now_ts - _parse_ts(j["started_at"]) <= 86400)
-        row["messages"] = [j for j in summaries
-                           if j["agent_id"] == agent["id"] and j["kind"] == "direct"]
+        agent_jobs = [j for j in summaries if j["agent_id"] == agent["id"]]
+        # ``messages`` remains the backwards-compatible direct-message view. ``history`` is the
+        # popup's complete chronological work record: direct turns plus the real marked thread,
+        # including every human and agent reply currently attached to that mark.
+        row["messages"] = [j for j in agent_jobs if j["kind"] == "direct"]
+        row["history"] = []
+        for job in agent_jobs:
+            item = dict(job)
+            if job["kind"] == "mark":
+                pointer = mark_context.get(job["mark_key"])
+                item["mark"] = dict(pointer) if pointer else None
+            row["history"].append(item)
         rows.append(row)
     return {"agents": rows,
             "jobs": {"by_mark": by_mark,

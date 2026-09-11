@@ -264,6 +264,8 @@ systemctl --user enable --now lockedin-slackbot.service
 ```
 For persistent logins, use an HTTPS URL for `LOCKEDIN_URL` and share `LOCKEDIN_SLACK_SHARED_SECRET` between server and bot. 
 Full setup: [docs/SLACKBOT_SETUP.md](docs/SLACKBOT_SETUP.md).
+
+Agent lifecycle release gate: [docs/AGENT_LIFECYCLE_TESTING.md](docs/AGENT_LIFECYCLE_TESTING.md).
 </details>
 
 ## 🛡️ Security

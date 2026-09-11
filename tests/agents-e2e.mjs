@@ -463,6 +463,25 @@ async function main() {
     await shoot(page, "chip-done");
     step("the chip turned done and the agent's reply landed in the thread");
 
+    // The agent popup is a complete work history, not a second direct-message-only silo. The
+    // marked location, quote, and thread reply must appear alongside the earlier direct turns.
+    await page.locator(".presence-seg").nth(1).click();
+    const historyAda = page.locator(".presence-item.presence-agent", { hasText: "Ada" });
+    await historyAda.waitFor({ state: "visible", timeout: 5_000 });
+    await historyAda.click();
+    const combinedHistory = page.getByRole("dialog", { name: "Direct messages with Ada" });
+    await combinedHistory.locator(".agent-mark-context").filter({ hasText: "Report mark" })
+      .waitFor({ state: "visible", timeout: 5_000 });
+    const combinedText = await combinedHistory.locator(".agent-message-history").innerText();
+    assert.match(combinedText, /variance term/i,
+      "the popup must show what text the mark referred to");
+    assert.match(combinedText, /I wrote the bound in one line\./,
+      "the popup must show the agent's mark-thread reply");
+    assert.match(combinedText, /The variance review is ready\./,
+      "mark history must not displace the earlier direct conversation");
+    await page.keyboard.press("Escape");
+    step("the agent popup showed direct and mark-based conversations together");
+
     // ---- step 6: the chip still opens a reassign menu; the card's own assign button is gone
     // now that Ada has answered, since redoing an answered mark belongs to the chip's "redo
     // with" menu, not to a second assign button sitting next to a reply that already exists ----
