@@ -14,6 +14,7 @@ import functools
 import json
 import os
 import shutil
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -482,6 +483,24 @@ class ConversationExistsTests(unittest.TestCase):
             sessions = Path(home) / "sessions" / "2026" / "09"
             sessions.mkdir(parents=True)
             (sessions / "abc123.jsonl").write_text("{}")
+            with patch.dict(os.environ, {"CODEX_HOME": home}):
+                self.assertTrue(scientist_cli.conversation_exists({"vendor": "codex", "conversation": "abc123"}))
+
+    def test_codex_timestamped_rollout_file_is_true(self):
+        with tempfile.TemporaryDirectory() as home:
+            sessions = Path(home) / "sessions" / "2026" / "09" / "10"
+            sessions.mkdir(parents=True)
+            (sessions / "rollout-2026-09-10T19-56-44-abc123.jsonl").write_text("{}")
+            with patch.dict(os.environ, {"CODEX_HOME": home}):
+                self.assertTrue(scientist_cli.conversation_exists({"vendor": "codex", "conversation": "abc123"}))
+
+    def test_codex_present_in_thread_database_is_true(self):
+        with tempfile.TemporaryDirectory() as home:
+            database = sqlite3.connect(Path(home) / "state_5.sqlite")
+            database.execute("CREATE TABLE threads (id TEXT PRIMARY KEY, rollout_path TEXT)")
+            database.execute("INSERT INTO threads VALUES (?, ?)", ("abc123", "/gone/rollout.jsonl"))
+            database.commit()
+            database.close()
             with patch.dict(os.environ, {"CODEX_HOME": home}):
                 self.assertTrue(scientist_cli.conversation_exists({"vendor": "codex", "conversation": "abc123"}))
 

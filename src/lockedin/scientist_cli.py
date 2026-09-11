@@ -37,7 +37,7 @@ except ImportError:  # Standalone client installed beside agent_vendors.py.
     import agent_vendors  # type: ignore[no-redef]
 
 APP = "lockedin-scientist"
-SCIENTIST_CLIENT_VERSION = "2026.09.09.4"
+SCIENTIST_CLIENT_VERSION = "2026.09.10.1"
 POLL_SECONDS = 5
 # A worker that has not completed a cycle in three polls is wedged rather than merely busy.
 # `doctor` reports that verdict and `resync` repairs exactly what `doctor` complains about, so

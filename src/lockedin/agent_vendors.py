@@ -13,6 +13,7 @@ import json
 import os
 import re
 import shutil
+import sqlite3
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -412,9 +413,40 @@ class CodexAdapter(VendorAdapter):
         return found
 
     def conversation_exists(self, conversation: str) -> bool:
+        # Modern Codex records resumable threads in a versioned SQLite store. Prefer an
+        # exact ID lookup there: rollout filenames include a timestamp before the ID and
+        # are not themselves the resume index.
+        try:
+            databases = sorted(
+                self.home().glob("state*.sqlite"),
+                key=lambda path: path.stat().st_mtime,
+                reverse=True,
+            )
+        except OSError:
+            databases = []
+        for database in databases:
+            connection = None
+            try:
+                connection = sqlite3.connect(
+                    f"file:{database}?mode=ro", uri=True, timeout=2,
+                )
+                if connection.execute(
+                    "SELECT 1 FROM threads WHERE id = ? LIMIT 1", (conversation,),
+                ).fetchone():
+                    return True
+            except (OSError, sqlite3.Error):
+                # A locked, partially upgraded, or older store should not make the worker
+                # discard a conversation that the filesystem can still prove exists.
+                continue
+            finally:
+                if connection is not None:
+                    connection.close()
+
         sessions = self.home() / "sessions"
         if sessions.is_dir():
             try:
+                if any(sessions.rglob(f"*-{conversation}.jsonl")): return True
+                # Keep compatibility with old Codex releases that used the bare ID first.
                 if any(sessions.rglob(f"{conversation}*.jsonl")): return True
             except OSError: return True
         index = self.home() / "session_index.jsonl"
