@@ -94,6 +94,9 @@ The automated gate must prove, for all three provider adapters:
 - a disposable Git main checkout and linked worktree are created under `tests/.tmp`; setup run from
   a nested worktree directory binds `.lockedin` to that worktree, and Codex, Claude, and agy all
   register there without borrowing the main checkout or a sibling worktree's conversation.
+- a mark-tagged scratch figure script synchronizes privately, appears under Library → Agent scratch,
+  downloads byte-for-byte, stays invisible to another workspace member, and is edited in place by
+  a second agent assigned to the same mark rather than duplicated.
 
 ## Live disposable gate
 
@@ -160,7 +163,17 @@ and one display LaTeX reply and confirm both render, exercise the working indica
 re-expand a long RHS mark without changing its job or thread. Include a standalone figure whose caption
 has LaTeX and a wikilink; require a visible caption, rendered math, and a working link.
 
-### E. Recovery
+### E. Cross-agent scratch reuse
+
+In the disposable linked worktree, assign one figure mark to a cheap agent and ask it to create and
+run a small Python figure generator. Require every used scratch artifact to have the exact stable
+`mark-...--<description>.<ext>` prefix supplied by the turn. Assign a follow-up on the same mark to a
+different provider and request one unmistakable visual change. Its job log must show that it searched
+the matching prefix, opened the existing script, edited that same pathname, and reran it. Fail if a
+second generator is created. Confirm the final script appears once in Library → Agent scratch,
+downloads byte-for-byte, and is absent from another workspace member's listing and download route.
+
+### F. Recovery
 
 Stop the disposable worker without retiring agents. Mint a fresh setup link from the real bubble
 HTTP route and run it in the same directory. Confirm a healthy replacement worker appears, all
@@ -179,7 +192,7 @@ For Codex only, also simulate or reproduce a stale writer lock. The first attemp
 adopted fork must contain the prior marker and become the sole stored conversation for later turns.
 A genuinely open interactive chat must never trigger that recovery path.
 
-### F. Resolve and preserve history
+### G. Resolve and preserve history
 
 For each provider, record the full popup history, resolve its completed disposable mark, and reopen
 the popup. The mark must disappear from the working report or chalk talk while the recorded quote,
@@ -191,7 +204,7 @@ disappear from the frontend and normal web API. On the server, confirm
 Register a new agent with the
 retired name and confirm it receives a distinct id and an empty new history.
 
-### G. Missing memory and retirement
+### H. Missing memory and retirement
 
 In an isolated provider home, hide one disposable conversation record and submit one tiny job. It
 must fail visibly, make zero new conversation, and preserve the old id. Restore the record and

@@ -44,10 +44,10 @@ _WORKER_PATH_RE = re.compile(r"^/api/scientist/v2/bubbles/([^/]+)(?:/|$)")
 # Keep this equal to ``scientist_cli.SCIENTIST_CLIENT_VERSION``. Bump both when a Scientist
 # release needs an installed client refresh; the dependency-free installed client cannot import
 # package metadata from this server.
-SCIENTIST_CLIENT_VERSION = "2026.09.11.6"
+SCIENTIST_CLIENT_VERSION = "2026.09.11.7"
 # Keep recent releases alive during this Windows-only launcher repair. Existing
 # workers do not need to be interrupted; fresh installers still receive the current source.
-SCIENTIST_COMPATIBLE_CLIENT_VERSIONS = {SCIENTIST_CLIENT_VERSION, "2026.09.11.5", "2026.09.11.4", "2026.09.11.3", "2026.09.11.2"}
+SCIENTIST_COMPATIBLE_CLIENT_VERSIONS = {SCIENTIST_CLIENT_VERSION, "2026.09.11.6", "2026.09.11.5", "2026.09.11.4", "2026.09.11.3", "2026.09.11.2"}
 DEMO_ACCESS_MESSAGE = (
     "Lockedin is an experimental project and currently on demo, to be able to login "
     "and play with our project, email kamkarih@mit.edu"
@@ -2039,7 +2039,7 @@ def build_app():
     @app.post("/api/scientist/v2/bubbles/{slug}/deletes")
     def scientist_delete(slug: str, body: ScientistDeleteIn, user: str = Depends(scientist_user)):
         """Remove report pages/figures a Scientist session deleted, manifest entry included."""
-        return scientist_sync.apply_deletes(home_of(user), slug, body.deletes)
+        return scientist_sync.apply_deletes(home_of(user), slug, body.deletes, actor=user)
 
     @app.post("/api/scientist/v2/bubbles/{slug}/pages")
     def scientist_create_page(slug: str, body: ScientistPageCreateIn, user: str = Depends(scientist_user)):
@@ -2801,6 +2801,20 @@ def build_app():
     @app.get("/api/bubbles/{slug}/assets")
     def list_bubble_assets(slug: str, user: str = Depends(current_user)):
         return {"assets": service.list_bubble_assets(home_of(user), slug)}
+
+    @app.get("/api/scratch")
+    def list_agent_scratch(user: str = Depends(current_user)):
+        """The signed-in user's synchronized agent artifacts in the active workspace."""
+        return {"files": scientist_sync.list_scratch(home_of(user), user)}
+
+    @app.get("/api/bubbles/{slug}/scratch/{filename}")
+    def download_agent_scratch(slug: str, filename: str, user: str = Depends(current_user)):
+        try:
+            path = scientist_sync.scratch_path(home_of(user), slug, user, filename)
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail="No such scratch artifact.")
+        return FileResponse(path, filename=filename, content_disposition_type="attachment",
+                            headers={"Cache-Control": "private, no-store"})
 
     @app.get("/api/bubbles/{slug}/assets/{filename}/text")
     def get_bubble_text_asset(slug: str, filename: str, user: str = Depends(current_user)):

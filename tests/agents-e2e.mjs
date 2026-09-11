@@ -12,6 +12,7 @@
  */
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
@@ -520,6 +521,45 @@ async function main() {
       `Collapse button has an awkward ${collapseAlignment.gap}px gap after the mark ID`);
     assert.deepEqual([Math.round(collapseAlignment.width),Math.round(collapseAlignment.height)],[25,25]);
 
+    // A first agent creates and runs a mark-tagged figure script. A second agent answering the
+    // same mark discovers the exact tag, edits that same file, and reruns it; no replacement
+    // script is introduced. The real provider turn receives this search/reuse contract from its
+    // prompt, while this deterministic E2E verifies the filesystem and transport underneath it.
+    const cleanPart = value => String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    const scratchTag = `mark-page-${cleanPart(job.mark.page)}-${cleanPart(job.mark.id)}`;
+    const scratchName = `${scratchTag}--variance-figure.py`;
+    const scratchPath = `scratch/${scratchName}`;
+    const firstScript = "COLOR = 'blue'\nprint('figure:' + COLOR)\n";
+    const firstPush = await scientistApi(context.request, baseUrl, token, "POST",
+      `/api/scientist/v2/bubbles/${slug}/push`, { writes: [{ path: scratchPath,
+        base_revision: createHash("sha256").update("").digest("hex"),
+        content_b64: Buffer.from(firstScript).toString("base64") }] }, workspaceId);
+    assert.deepEqual(firstPush.applied.map(item => item.path), [scratchPath]);
+    assert.equal(execFileSync("python", ["-c", firstScript], { encoding: "utf8" }).trim(), "figure:blue");
+    const secondScript = firstScript.replace("blue", "teal");
+    const secondPush = await scientistApi(context.request, baseUrl, token, "POST",
+      `/api/scientist/v2/bubbles/${slug}/push`, { writes: [{ path: scratchPath,
+        base_revision: createHash("sha256").update(firstScript).digest("hex"),
+        content_b64: Buffer.from(secondScript).toString("base64") }] }, workspaceId);
+    assert.deepEqual(secondPush.applied.map(item => item.path), [scratchPath]);
+    assert.equal(execFileSync("python", ["-c", secondScript], { encoding: "utf8" }).trim(), "figure:teal");
+    const scratchListing = await api(context.request, baseUrl, "GET", "/api/scratch", undefined, wsHeaders);
+    assert.deepEqual(scratchListing.files.map(item => item.name), [scratchName],
+      "the second agent must edit the first script instead of creating a parallel file");
+
+    const scratchPage = await context.newPage();
+    await scratchPage.goto(`${baseUrl}/#w/${workspaceId}/assets`, { waitUntil: "domcontentloaded" });
+    await scratchPage.getByRole("button", { name: "Agent scratch", exact: true }).click();
+    await scratchPage.getByText(scratchName, { exact: true }).waitFor({ state: "visible", timeout: 5_000 });
+    const download = scratchPage.getByRole("link", { name: /Download/ });
+    await shoot(scratchPage, "agent-scratch-library");
+    const href = await download.getAttribute("href");
+    const downloaded = await context.request.fetch(new URL(href, baseUrl).toString(), { headers: wsHeaders });
+    assert.equal(downloaded.status(), 200);
+    assert.equal(await downloaded.text(), secondScript);
+    await scratchPage.close();
+    step("a second agent reused, edited, reran, listed, and downloaded the first agent's tagged figure script");
+
     // The agent popup is a complete work history, not a second direct-message-only silo. The
     // marked location, quote, and thread reply must appear alongside the earlier direct turns.
     await page.locator(".presence-seg").nth(1).click();
@@ -588,7 +628,12 @@ async function main() {
     assert.deepEqual(guestOverview.agents || [], [], "the guest API must not expose Ada");
     assert.deepEqual((guestOverview.jobs && guestOverview.jobs.by_mark) || {}, {},
       "the guest API must not expose any of the owner's jobs");
-    step("the guest sees neither Ada nor her completed job in the UI or API");
+    const guestScratch = await api(guestContext.request, baseUrl, "GET", "/api/scratch", undefined, wsHeaders);
+    assert.deepEqual(guestScratch.files, [], "the guest must not see the owner's scratch artifacts");
+    const guestDownload = await guestContext.request.fetch(
+      `${baseUrl}/api/bubbles/${slug}/scratch/${encodeURIComponent(scratchName)}`, { headers: wsHeaders });
+    assert.equal(guestDownload.status(), 404, "the guest must not download the owner's scratch artifact");
+    step("the guest sees neither Ada, her completed job, nor her scratch artifacts in the UI or API");
     await guestContext.close();
 
     const [resolveResponse] = await Promise.all([

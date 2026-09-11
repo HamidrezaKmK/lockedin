@@ -152,6 +152,11 @@ def bubble_jobs_path(slug: str) -> Path:
     return bubble_agents_dir(slug) / "jobs.yaml"
 
 
+def bubble_agent_scratch_dir(slug: str, owner: str) -> Path:
+    """Private synchronized scratch artifacts for one user's agents on a shared bubble."""
+    return bubble_agents_dir(slug) / "scratch" / owner
+
+
 def ensure_user_dirs(user: str) -> None:
     """Create a user's ASSETS/, REPORTS/, config/ (idempotent)."""
     home = user_home(user)
@@ -182,4 +187,3 @@ def bubble_talk_shots_dir(slug: str) -> Path:
     it lives in its own directory and is served by its own route.
     """
     return bubble_talks_dir(slug) / "shots"
-

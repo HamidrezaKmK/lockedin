@@ -3072,7 +3072,8 @@
     refAc:null,
     healthTimer:null, healthSeq:0, verifiedActive:null,
     shareActive:false, shareToken:"", bubbleFocus:false, showHiddenPages:false, renderVersion:0,
-    availableThemes:["dark","light","pink","techno","pearl"], secureMode:false
+    availableThemes:["dark","light","pink","techno","pearl"], secureMode:false,
+    assetSection:"papers"
   };
 
   // Browser navigations (new tabs, PDFs, images, and preview pages) cannot carry the API header.
@@ -3995,6 +3996,15 @@
   async function viewAssets(){
     const {m,version}=beginMainRender();
     m.append(el("h2",{class:"section-title"},ic("library"),"Library"));
+    const papersTab=el("button",{class:S.assetSection==="scratch"?"":"active",onclick:()=>{
+      S.assetSection="papers";viewAssets();}},"Papers");
+    const scratchTab=el("button",{class:S.assetSection==="scratch"?"active":"",onclick:()=>{
+      S.assetSection="scratch";viewAssets();}},"Agent scratch");
+    m.append(el("div",{class:"seg",style:"align-self:flex-start;margin-bottom:12px"},papersTab,scratchTab));
+    if(S.assetSection==="scratch"){
+      await renderAgentScratch(m,version);
+      return;
+    }
     // Start both reads immediately: the bubble list populates the upload selector, while the
     // asset request is often the expensive one for a large library.
     const bubblesRequest=api("/api/bubbles");
@@ -4151,6 +4161,50 @@
     filterBubble.addEventListener("change",renderFiltered);
     renderFiltered();
     m.append(filters,grid);
+  }
+
+  async function renderAgentScratch(main,version){
+    const loading=viewLoading("Loading agent scratch…",4);main.append(loading);
+    let response;
+    try{response=await api("/api/scratch");}
+    catch(e){if(isCurrentRender(version))loading.replaceWith(el("div",{class:"err"},
+      "Could not load agent scratch: "+e.message));return;}
+    if(!isCurrentRender(version))return;
+    loading.remove();
+    main.append(el("div",{class:"card col stack-card first"},
+      el("b",{},"Reusable agent code and resources"),
+      el("div",{class:"muted"},"Files used for a mark or direct reply are tagged by their origin. "+
+        "Agents working on the same thread search these files first and edit relevant work in place.")));
+    const files=response.files||[];
+    if(!files.length){
+      main.append(el("div",{class:"muted"},"No tagged scratch artifacts have synchronized yet."));
+      return;
+    }
+    const search=el("input",{placeholder:"Search by filename or bubble…"});
+    const count=el("div",{class:"asset-count"});
+    const grid=el("div",{class:"grid"});
+    const render=()=>{
+      const q=search.value.trim().toLowerCase();
+      const shown=files.filter(file=>!q||[file.name,file.bubble,file.bubble_name].join(" ").toLowerCase().includes(q));
+      count.textContent=shown.length===files.length?plural(files.length,"file"):
+        shown.length+" of "+plural(files.length,"file");
+      grid.innerHTML="";
+      shown.forEach(file=>{
+        const href=workspaceUrl("/api/bubbles/"+encodeURIComponent(file.bubble)+"/scratch/"+
+          encodeURIComponent(file.name));
+        grid.append(el("div",{class:"acard"},
+          el("div",{class:"acard-head"},el("div",{class:"acard-title"},
+            el("h4",{class:"acard-name",title:file.name},file.name))),
+          el("div",{class:"muted truncate",title:file.bubble},file.bubble_name||file.bubble),
+          el("div",{class:"acard-meta row-meta"},el("span",{},formatFileSize(file.size)),
+            el("span",{},"•"),el("span",{},new Date(Number(file.modified_at)*1000).toLocaleString())),
+          el("div",{class:"acard-actions"},el("span",{class:"spacer"}),
+            el("a",{href,download:file.name},el("button",{class:"primary small"},ic("download"),"Download")))));
+      });
+      if(!shown.length)grid.append(el("div",{class:"muted"},"No scratch files match that search."));
+    };
+    search.addEventListener("input",render);render();
+    main.append(el("div",{class:"asset-filter"},el("label",{},"Search",search),count),grid);
   }
   function assetCard(a){
     const c=el("div",{class:"acard"});

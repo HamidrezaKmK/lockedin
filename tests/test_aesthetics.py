@@ -165,8 +165,9 @@ class AestheticsConfigTests(unittest.TestCase):
         # that made figures un-cacheable outright, so every page re-render re-downloaded all of
         # them and the reading view visibly flashed.
         source = (Path(server.__file__).read_text())
-        self.assertIn('"Cache-Control": "private, no-cache"', source)
-        self.assertNotIn('"Cache-Control": "private, no-store"', source)
+        handler = source[source.index("def get_bubble_image"):source.index("return app", source.index("def get_bubble_image"))]
+        self.assertIn('"Cache-Control": "private, no-cache"', handler)
+        self.assertNotIn('"Cache-Control": "private, no-store"', handler)
 
     def test_open_readers_watch_the_assets_signal_and_retry_with_fresh_img_nodes(self):
         # restartGifs:true is what forces fresh <img> nodes — the resource-reuse path would put

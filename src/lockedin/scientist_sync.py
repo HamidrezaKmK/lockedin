@@ -9,6 +9,7 @@ import base64
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 
 from slugify import slugify
@@ -25,6 +26,7 @@ def revision(data: bytes) -> str:
 # rest of the bubble put together — a 3.9 GB zip is ~2.2 s of hashing per poll, and clients poll
 # every few seconds. ``lockedin-scientist assets`` fetches them on request instead.
 LARGE_ASSET_BYTES = int(os.environ.get("LOCKEDIN_SYNC_MAX_ASSET_BYTES") or 25 * 1024 * 1024)
+SCRATCH_SYNC_NAME = re.compile(r"^(?:mark|thread)-[a-z0-9][a-z0-9._-]*--[a-z0-9][a-z0-9._-]*$")
 
 
 def _is_large(source: Path | bytes) -> bool:
@@ -44,6 +46,11 @@ def _approved(slug: str) -> bool:
 def _safe_rel(rel: str) -> bool:
     parts = Path(rel).parts
     return bool(parts) and not any(part in ("", ".", "..") for part in parts)
+
+
+def scratch_sync_name(name: str) -> bool:
+    """Only flat artifacts with explicit mark/thread provenance enter shared synchronization."""
+    return bool(Path(name).name == name and SCRATCH_SYNC_NAME.fullmatch(name))
 
 
 def _json_bytes(value) -> bytes:
@@ -352,6 +359,13 @@ def _files(home: Path, slug: str, *, owner: str = "") -> dict[str, Path | bytes]
         # JSON indexes are always present, even in a clean bubble. Their tiny counts tell an
         # agent whether deeper retrieval is needed without loading any deck or feedback body.
         out.update(_indexed_context(slug, owner=owner))
+        if owner:
+            scratch = paths.bubble_agent_scratch_dir(slug, owner)
+            if scratch.exists():
+                for path in sorted(scratch.iterdir()):
+                    if (path.is_file() and not path.is_symlink()
+                            and scratch_sync_name(path.name) and not path.name.endswith(".tmp")):
+                        out[f"scratch/{path.name}"] = path
         for rec in talks.ensure_sync_ids(slug):
             out[f"reports/talks/{rec['sync_id']}/slides.md"] = paths.bubble_talk_path(slug, rec["id"])
         return out
@@ -457,6 +471,8 @@ def writable_path(slug: str, rel: str) -> bool:
     if not _safe_rel(rel):
         return False
     parts = Path(rel).parts
+    if len(parts) == 2 and parts[0] == "scratch":
+        return scratch_sync_name(parts[1]) and not parts[1].endswith(".tmp")
     if len(parts) not in (3, 4) or parts[0] != "reports":
         return False
     # Generated, not an asset: a client that pushed its copy back would turn the marker into a
@@ -481,8 +497,12 @@ def writable_path(slug: str, rel: str) -> bool:
     return bool(page_slug and slugify(page_slug) == page_slug)
 
 
-def _server_path(slug: str, rel: str) -> Path:
+def _server_path(slug: str, rel: str, *, owner: str = "") -> Path:
     parts = Path(rel).parts
+    if parts[0] == "scratch":
+        if not owner:
+            raise ValueError("Scratch synchronization requires an owner.")
+        return paths.bubble_agent_scratch_dir(slug, owner) / parts[1]
     if parts[1] == "assets":
         return paths.bubble_assets_dir(slug) / parts[2]
     if parts[1] == "talks":
@@ -539,7 +559,7 @@ def apply_writes(home: Path, slug: str, writes: list[dict], *, actor: str = "") 
                 raw = base64.b64decode(str(item.get("content_b64", "")), validate=True)
             except Exception:
                 conflicts.append({"path": rel, "reason": "invalid content"}); continue
-            target = _server_path(slug, rel)
+            target = _server_path(slug, rel, owner=actor)
             current = target.read_bytes() if target.exists() else b""
             if str(item.get("base_revision", "")) != revision(current):
                 conflicts.append({"path": rel, "reason": "stale revision", "revision": revision(current),
@@ -634,7 +654,7 @@ def register_page(home: Path, slug: str, page_slug: str, content_b64: str, base_
     return {"applied": [{"path": rel, "revision": revision(stored), "content_b64": base64.b64encode(stored).decode("ascii")}], "conflicts": []}
 
 
-def apply_deletes(home: Path, slug: str, deletes: list[dict]) -> dict:
+def apply_deletes(home: Path, slug: str, deletes: list[dict], *, actor: str = "") -> dict:
     conflicts, applied = [], []
     with paths.use_root(home):
         if not _approved(slug):
@@ -643,11 +663,15 @@ def apply_deletes(home: Path, slug: str, deletes: list[dict]) -> dict:
             rel = str(item.get("path", ""))
             if not writable_path(slug, rel):
                 conflicts.append({"path": rel, "reason": "read-only or invalid Scientist path"}); continue
-            target = _server_path(slug, rel); current = target.read_bytes() if target.exists() else b""
+            target = _server_path(slug, rel, owner=actor); current = target.read_bytes() if target.exists() else b""
             if str(item.get("base_revision", "")) != revision(current):
                 conflicts.append({"path": rel, "reason": "stale revision", "revision": revision(current),
                                   "content_b64": base64.b64encode(current).decode("ascii")}); continue
-            if Path(rel).parts[1] == "pages":
+            if Path(rel).parts[0] == "scratch":
+                removed = False
+                if target.exists():
+                    target.unlink(); removed = True
+            elif Path(rel).parts[1] == "pages":
                 try: removed = bubbles.delete_page(slug, Path(rel).stem)
                 except ValueError as exc:
                     conflicts.append({"path": rel, "reason": str(exc), "revision": revision(current),
@@ -663,3 +687,37 @@ def apply_deletes(home: Path, slug: str, deletes: list[dict]) -> dict:
             if removed: applied.append({"path": rel})
             else: conflicts.append({"path": rel, "reason": "no such Scientist file"})
     return {"applied": applied, "conflicts": conflicts}
+
+
+def list_scratch(home: Path, owner: str) -> list[dict]:
+    """Owner-private synchronized scratch artifacts across approved bubbles."""
+    with paths.use_root(home):
+        rows = []
+        registry = bubbles.load_registry()
+        for slug, bubble in registry.items():
+            if not bubble.get("approved"):
+                continue
+            root = paths.bubble_agent_scratch_dir(slug, owner)
+            if not root.exists():
+                continue
+            for path in sorted(root.iterdir()):
+                if not path.is_file() or path.is_symlink() or not scratch_sync_name(path.name):
+                    continue
+                stat = path.stat()
+                rows.append({"bubble": slug, "bubble_name": bubble.get("name") or slug,
+                             "name": path.name, "size": stat.st_size,
+                             "modified_at": stat.st_mtime})
+        return sorted(rows, key=lambda row: (-row["modified_at"], row["bubble"], row["name"]))
+
+
+def scratch_path(home: Path, slug: str, owner: str, name: str) -> Path:
+    """Resolve one owner-private scratch download without accepting path traversal."""
+    if not scratch_sync_name(name):
+        raise FileNotFoundError(name)
+    with paths.use_root(home):
+        if not _approved(slug):
+            raise FileNotFoundError(name)
+        path = paths.bubble_agent_scratch_dir(slug, owner) / name
+        if not path.is_file() or path.is_symlink():
+            raise FileNotFoundError(name)
+        return path

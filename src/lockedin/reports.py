@@ -423,6 +423,14 @@ of the editor. Use ↑/↓ to move, Enter/Tab to insert, or click an item.
     {
         "title": "Library",
         "content": """\
+## Papers and agent scratch
+
+Library has two sections. **Papers** is the workspace's research-paper inventory. **Agent scratch**
+lists the reusable scripts, data, and other resources agents actually used while answering a mark
+or direct thread. Scratch filenames carry their originating mark/thread tag, can be searched by
+bubble or filename, and download as their original files. They are private to your account: another
+member of the same workspace does not see or download your agents' scratch artifacts.
+
 ## Uploading papers
 
 Use **Library** to add a PDF or a paper URL. You can optionally set:

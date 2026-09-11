@@ -370,6 +370,19 @@ class AgentTurnPromptTests(unittest.TestCase):
         self.assertIn("<comment-begin=Qx7>", prompt)
         self.assertIn("lockedin-scientist-dev agent reply j-000011", prompt)
         self.assertNotIn("You are Ada", prompt)
+        self.assertIn("Scratch tag: mark-page-overview-qx7", prompt)
+        self.assertIn("inspect `.lockedin/scratch/mark-page-overview-qx7--*`", prompt)
+        self.assertIn("Reuse and edit a relevant existing file in place", prompt)
+
+    def test_two_agents_answering_the_same_mark_receive_the_same_scratch_tag(self):
+        followup = {**PAGE_JOB, "id": "j-000099",
+                    "agent": {**PAGE_JOB["agent"], "name": "Picasso"}}
+        self.assertEqual(scientist_cli.agent_scratch_tag(PAGE_JOB),
+                         scientist_cli.agent_scratch_tag(followup))
+
+    def test_direct_message_receives_a_thread_scratch_tag(self):
+        prompt = scientist_cli.agent_turn_prompt(DIRECT_JOB, cli="lockedin-scientist-dev", fresh=False)
+        self.assertIn("Scratch tag: thread-j-000012", prompt)
 
     def test_page_job_prompt_for_a_fresh_conversation(self):
         prompt = scientist_cli.agent_turn_prompt(PAGE_JOB, cli="lockedin-scientist-dev", fresh=True)
@@ -1576,8 +1589,7 @@ class AgentTurnPromptConfinementTests(unittest.TestCase):
 
 
 class ScratchSurvivesSyncTests(unittest.TestCase):
-    """``.lockedin/scratch/`` is never scanned by ``_report_paths`` and is not one of the fixed
-    top-level names ``sync_once`` prunes, so a sync cycle must leave it untouched."""
+    """Only flat provenance-tagged scratch artifacts sync; private local scratch survives."""
 
     class _FakeBubbleServer:
         def __init__(self):
@@ -1594,7 +1606,24 @@ class ScratchSurvivesSyncTests(unittest.TestCase):
                 return {"files": [{"path": p, "revision": scientist_cli.ProjectSync._rev(self.files[p]),
                                    "content_b64": base64.b64encode(self.files[p]).decode()}
                                   for p in (body or {}).get("paths", []) if p in self.files]}
-            if endpoint.endswith("/push") or endpoint.endswith("/deletes") or endpoint.endswith("/pages"):
+            if endpoint.endswith("/push"):
+                applied = []
+                for item in (body or {}).get("writes", []):
+                    current = self.files.get(item["path"], b"")
+                    if item["base_revision"] != scientist_cli.ProjectSync._rev(current):
+                        raise AssertionError("unexpected stale test write")
+                    raw = base64.b64decode(item["content_b64"])
+                    self.files[item["path"]] = raw
+                    applied.append({"path": item["path"],
+                                    "revision": scientist_cli.ProjectSync._rev(raw)})
+                return {"applied": applied, "conflicts": []}
+            if endpoint.endswith("/deletes"):
+                applied = []
+                for item in (body or {}).get("deletes", []):
+                    if item["path"] in self.files:
+                        del self.files[item["path"]]; applied.append({"path": item["path"]})
+                return {"applied": applied, "conflicts": []}
+            if endpoint.endswith("/pages"):
                 return {"applied": [], "conflicts": []}
             raise AssertionError(f"unexpected endpoint in scratch-survival test: {endpoint}")
 
@@ -1621,6 +1650,43 @@ class ScratchSurvivesSyncTests(unittest.TestCase):
             sync.sync_once()
             self.assertEqual(keep.read_text(), "throwaway work")
             self.assertNotIn("scratch/notes.txt", fake.files)
+
+    def test_only_provenance_tagged_flat_scratch_is_selected_for_sync(self):
+        fake = self._FakeBubbleServer()
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+                scientist_cli, "request", side_effect=fake.request):
+            sync = scientist_cli.ProjectSync(dict(ACCOUNT), Path(directory), "work")
+            sync.validate_or_initialize()
+            (sync.root / "scratch" / "mark-page-overview-qx7--figure.py").write_text("print('figure')")
+            (sync.root / "scratch" / "notes.txt").write_text("local only")
+            nested = sync.root / "scratch" / "mark-page-overview-qx7--nested"
+            nested.mkdir(); (nested / "helper.py").write_text("pass")
+            selected = sync._report_paths()
+            self.assertIn("scratch/mark-page-overview-qx7--figure.py", selected)
+            self.assertNotIn("scratch/notes.txt", selected)
+            self.assertFalse(any("nested" in path for path in selected))
+
+    def test_a_second_project_copy_pulls_and_edits_the_first_agents_script_in_place(self):
+        fake = self._FakeBubbleServer()
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+                scientist_cli, "request", side_effect=fake.request):
+            root = Path(directory)
+            first = scientist_cli.ProjectSync(dict(ACCOUNT), root / "first", "work")
+            second = scientist_cli.ProjectSync(dict(ACCOUNT), root / "second", "work")
+            first.validate_or_initialize(); second.validate_or_initialize()
+            rel = "scratch/mark-page-overview-qx7--figure.py"
+            first_path = first.root / rel
+            first_path.write_text("COLOR = 'blue'\nprint(COLOR)\n")
+            first.sync_once()
+            self.assertEqual(fake.files[rel], first_path.read_bytes())
+
+            second.sync_once()
+            second_path = second.root / rel
+            self.assertEqual(second_path.read_text(), first_path.read_text())
+            second_path.write_text(second_path.read_text().replace("blue", "teal"))
+            second.sync_once()
+            self.assertEqual(fake.files[rel], second_path.read_bytes())
+            self.assertEqual([path for path in fake.files if path.startswith("scratch/")], [rel])
 
 
 # ---------------------------------------------------------------------------

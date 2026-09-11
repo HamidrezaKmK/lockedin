@@ -66,6 +66,50 @@ def resolve_review_thread(slug, page, thread_id, actor):
         base_mtime=source_path.stat().st_mtime)["thread"]
 
 
+class ScratchArtifactSyncTests(unittest.TestCase):
+    def test_tagged_scratch_is_private_to_the_agent_owner_and_downloadable(self):
+        with workspace() as (home, slug):
+            rel = "scratch/mark-page-overview-n7--figure.py"
+            raw = b"print('first figure')\n"
+            result = scientist_sync.apply_writes(home, slug, [{
+                "path": rel, "base_revision": scientist_sync.revision(b""),
+                "content_b64": base64.b64encode(raw).decode(),
+            }], actor="alice")
+            self.assertEqual([item["path"] for item in result["applied"]], [rel])
+            self.assertIn(rel, {item["path"] for item in scientist_sync.manifest(home, slug, owner="alice")["files"]})
+            self.assertNotIn(rel, {item["path"] for item in scientist_sync.manifest(home, slug, owner="bob")["files"]})
+            self.assertEqual(scientist_sync.scratch_path(
+                home, slug, "alice", "mark-page-overview-n7--figure.py").read_bytes(), raw)
+            with self.assertRaises(FileNotFoundError):
+                scientist_sync.scratch_path(home, slug, "bob", "mark-page-overview-n7--figure.py")
+            listed = scientist_sync.list_scratch(home, "alice")
+            self.assertEqual([(item["bubble"], item["name"]) for item in listed],
+                             [(slug, "mark-page-overview-n7--figure.py")])
+
+    def test_untagged_or_nested_scratch_paths_are_rejected(self):
+        for rel in ("scratch/figure.py", "scratch/mark-x--folder/figure.py",
+                    "scratch/mark-x--figure.py.tmp", "scratch/../secret"):
+            self.assertFalse(scientist_sync.writable_path("work", rel), rel)
+
+    def test_a_second_agent_can_update_the_first_agents_tagged_script_in_place(self):
+        with workspace() as (home, slug):
+            rel = "scratch/mark-talk-talk-demo-n4--draw.py"
+            first = b"COLOR = 'blue'\nprint(COLOR)\n"
+            first_revision = scientist_sync.revision(first)
+            scientist_sync.apply_writes(home, slug, [{
+                "path": rel, "base_revision": scientist_sync.revision(b""),
+                "content_b64": base64.b64encode(first).decode(),
+            }], actor="alice")
+            second = first.replace(b"blue", b"teal")
+            result = scientist_sync.apply_writes(home, slug, [{
+                "path": rel, "base_revision": first_revision,
+                "content_b64": base64.b64encode(second).decode(),
+            }], actor="alice")
+            self.assertEqual([item["path"] for item in result["applied"]], [rel])
+            self.assertEqual(scientist_sync.scratch_path(
+                home, slug, "alice", Path(rel).name).read_bytes(), second)
+
+
 class FakeBubbleServer:
     def __init__(self, files: dict[str, bytes], normalize=None):
         self.files = dict(files)

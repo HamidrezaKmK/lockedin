@@ -37,7 +37,7 @@ except ImportError:  # Standalone client installed beside agent_vendors.py.
     import agent_vendors  # type: ignore[no-redef]
 
 APP = "lockedin-scientist"
-SCIENTIST_CLIENT_VERSION = "2026.09.11.6"
+SCIENTIST_CLIENT_VERSION = "2026.09.11.7"
 POLL_SECONDS = 5
 # A worker that has not completed a cycle in three polls is wedged rather than merely busy.
 # `doctor` reports that verdict and `resync` repairs exactly what `doctor` complains about, so
@@ -83,6 +83,7 @@ AGENT_MAX_TURNS_PER_HOUR = int(os.environ.get("LOCKEDIN_AGENT_MAX_TURNS_PER_HOUR
 AGENT_MAX_TURNS_PER_DAY = int(os.environ.get("LOCKEDIN_AGENT_MAX_TURNS_PER_DAY") or 500)
 AGENT_BUDGET_HOUR_SECONDS = 3600
 AGENT_BUDGET_DAY_SECONDS = 24 * 3600
+SCRATCH_SYNC_NAME = re.compile(r"^(?:mark|thread)-[a-z0-9][a-z0-9._-]*--[a-z0-9][a-z0-9._-]*$")
 
 
 class SecureModeStop(RuntimeError):
@@ -495,7 +496,7 @@ def bubbles_command(account: dict) -> list[dict]:
 
 # Bump when the guide text changes: a project only regenerates SKILL.md when this marker in its
 # copy stops matching, so an edit to the guide reaches no existing agent until this moves.
-SKILL_VERSION = 51
+SKILL_VERSION = 52
 
 # The marker is derived, never typed. It is what the staleness check compares against, so a
 # hand-written copy that drifted from SKILL_VERSION would either pin every project to a stale
@@ -631,9 +632,16 @@ explicitly asks to combine it with project code or files.
 
 ## Scratch
 
-`.lockedin/scratch/` is yours: throwaway code, virtual environments, and outputs. Nothing there is
-synchronized — it never reaches the bubble and is never pruned during sync — so it is the right
-place for anything you do not need to keep.""",
+`.lockedin/scratch/` is shared by the agents attached to this project and is the first place to
+look for reusable code or resources. Before creating a script, inspect the flat files whose
+`mark-...--` prefix matches the current mark's **Scratch tag** from the job prompt. Read the
+relevant candidates and prefer editing and rerunning one in place over creating a replacement.
+
+Any scratch code, data, or resource used to answer a LockedIn job must be a flat file named
+`<scratch-tag>--<descriptive-name>.<ext>`, using the exact tag supplied in the prompt. Examples:
+`mark-talk-a1b2-n7--reward-landscape.py` and `mark-page-overview-c4--samples.csv`. Matching tagged
+files are synchronized privately and can be downloaded from **Library → Agent scratch**. Untagged
+files, subdirectories, caches, and virtual environments stay local and are never synchronized.""",
 
     'reports.md': """\
 # Writing reports
@@ -810,6 +818,17 @@ stress-testing or trying out project code without risking it: write a script und
 imports its modules) and calls into it, writing any result under `.lockedin/scratch/`. A write
 aimed at the project itself failing is the guarantee working as intended, not an error to route
 around.
+
+## Reuse scratch work before creating it again
+
+Every mark or direct-message prompt supplies a stable **Scratch tag**. Before making code or a
+resource, list `.lockedin/scratch/<scratch-tag>--*`, inspect relevant matches, and prioritize
+editing and rerunning them in place. This is how a second agent continues a figure generator or
+experiment created by the first agent on the same mark. Do not create a parallel script merely
+because another agent authored the existing one. If no relevant match exists, create a flat file
+named `<scratch-tag>--<descriptive-name>.<ext>`. Every scratch file actually used in the response
+must carry that exact prefix; untagged scratch remains private to this machine and is not shown in
+the frontend.
 
 ## Registering (once per conversation)
 
@@ -1364,7 +1383,7 @@ class ProjectSync:
         (folder / (stem + ".patch")).write_text(patch, encoding="utf-8")
 
     def _report_paths(self) -> list[str]:
-        """Local report content this sync may carry: pages, flat figures, and chalk-talk decks.
+        """Local writable content: reports plus flat, provenance-tagged scratch artifacts.
 
         A deck an agent wrote was scanned nowhere, so it stayed local forever while the server
         would happily have taken it — writing one file is the whole documented way to create a
@@ -1383,6 +1402,11 @@ class ProjectSync:
             for p in talks_root.glob("talk-*/slides.md"):
                 if p.is_file() and not p.is_symlink():
                     out.append(p.relative_to(self.root).as_posix())
+        scratch_root = self.root / "scratch"
+        if scratch_root.exists():
+            for p in scratch_root.iterdir():
+                if p.is_file() and not p.is_symlink() and scratch_sync_name(p.name):
+                    out.append(f"scratch/{p.name}")
         return sorted(out)
 
     def unsynced_figures(self) -> list[str]:
@@ -1475,6 +1499,8 @@ class ProjectSync:
                 return False
             parts = Path(rel).parts
             return bool(
+                len(parts) == 2 and parts[0] == "scratch" and scratch_sync_name(parts[1])
+                or
                 len(parts) == 3 and parts[:2] in (("reports", "pages"), ("reports", "assets"))
                 or len(parts) == 4 and parts[:2] == ("reports", "talks")
                 and parts[3] == "slides.md"
@@ -1549,8 +1575,8 @@ class ProjectSync:
                 rel = item["path"]; local = self._local(rel).read_bytes() if self._local(rel).exists() else b""
                 if item.get("content_b64"):
                     raw = base64.b64decode(item["content_b64"]); self._conflict(rel, b"", local, raw); self._write_remote(item); tracked[rel] = {"revision": item["revision"]}
-        # Everything except report pages and report assets is server-authoritative. This includes
-        # the report manifest and paper inventory that agents read but never edit.
+        # Everything except writable report content and tagged scratch is server-authoritative.
+        # This includes the report manifest and paper inventory that agents read but never edit.
         for rel in sorted(r for r in remote if r not in report_remote and r not in oversize):
             path = self._local(rel)
             if (not path.exists() or self._rev(path.read_bytes()) != remote[rel]
@@ -1609,6 +1635,30 @@ def cli_name() -> str:
     if announced: return announced
     name = Path(sys.argv[0] or "").name
     return name if name.startswith(APP) else APP
+
+
+def scratch_sync_name(name: str) -> bool:
+    """Whether a flat scratch artifact carries the required mark/thread provenance tag."""
+    return bool(Path(name).name == name and SCRATCH_SYNC_NAME.fullmatch(name))
+
+
+def _scratch_part(value: object, fallback: str) -> str:
+    cleaned = re.sub(r"[^a-z0-9]+", "-", str(value or "").lower()).strip("-")
+    return (cleaned or fallback)[:80].rstrip("-")
+
+
+def agent_scratch_tag(job: dict) -> str:
+    """Stable filename prefix shared by every agent turn attached to the same mark."""
+    mark = job.get("mark") or {}
+    if job.get("kind") == "direct" or mark.get("surface") == "direct":
+        return f"thread-{_scratch_part(job.get('thread_id') or job.get('id'), 'unknown')}"
+    mark_id = _scratch_part(mark.get("id") or mark.get("note_id"), "unknown")
+    if mark and mark.get("surface") == "page":
+        return f"mark-page-{_scratch_part(mark.get('page'), 'page')}-{mark_id}"
+    if mark:
+        talk = _scratch_part(mark.get("talk_id") or mark.get("talk"), "talk")
+        return f"mark-talk-{talk}-{mark_id}"
+    return f"thread-{_scratch_part(job.get('thread_id') or job.get('id'), 'unknown')}"
 
 
 def _git_toplevel(start: Path) -> Path | None:
@@ -1822,7 +1872,13 @@ def agent_turn_prompt(job: dict, *, cli: str, fresh: bool, mode: str | None = No
         if mode == "none":
             lines.append("Nothing on this machine enforces that boundary right now — keep to it yourself.")
         lines.append("")
-    lines += [f"LockedIn job {job['id']}. Do it now, without asking questions.", ""]
+    scratch_tag = agent_scratch_tag(job)
+    lines += [f"LockedIn job {job['id']}. Do it now, without asking questions.",
+              f"Scratch tag: {scratch_tag}",
+              f"Before creating code or resources, inspect `.lockedin/scratch/{scratch_tag}--*`. "
+              "Reuse and edit a relevant existing file in place, even if another agent made it. "
+              f"Every scratch file used for this answer must be flat and named `{scratch_tag}--<description>.<ext>`.",
+              ""]
     if job.get("kind") == "direct" or mark.get("surface") == "direct":
         sender = str(job.get("created_by") or "the user")
         lines += [f"Direct message from {sender}:", str(job.get("instruction") or ""), "",
