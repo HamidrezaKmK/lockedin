@@ -39,6 +39,10 @@ _LOCK = threading.Lock()
 _VIEWERS: dict[tuple[str, str], dict[str, float]] = {}
 # (workspace_id, slug) -> worker_id -> record
 _WORKERS: dict[tuple[str, str], dict[str, dict]] = {}
+# Explicitly dismissed inactive rows stay hidden if a broken/outdated worker keeps repeating the
+# exact same heartbeat. A changed version or health state is a real reconnection and clears the
+# dismissal automatically.
+_DISMISSED_WORKERS: dict[tuple[str, str], dict[str, dict]] = {}
 
 
 def _clean(value: str, limit: int = 200) -> str:
@@ -75,16 +79,25 @@ def touch_worker(workspace_id: str, slug: str, *, worker_id: str, user: str, lab
     if not worker_id or not user:
         return
     now = time.time() if now is None else now
+    key = _key(workspace_id, slug)
+    signature = {"user": user, "label": _clean(label, 80), "status": _clean(status, 40),
+                 "error": _clean(error, 300), "version": _clean(version, 40),
+                 "rejected": _clean(rejected, 40)}
     with _LOCK:
-        workers = _WORKERS.setdefault(_key(workspace_id, slug), {})
+        dismissed = _DISMISSED_WORKERS.get(key, {}).get(worker_id)
+        if dismissed == signature:
+            return
+        if dismissed is not None:
+            _DISMISSED_WORKERS[key].pop(worker_id, None)
+            if not _DISMISSED_WORKERS[key]:
+                _DISMISSED_WORKERS.pop(key, None)
+        workers = _WORKERS.setdefault(key, {})
         rec = workers.get(worker_id)
         if rec is None:
             if len(workers) >= MAX_PER_BUBBLE:
                 return
             rec = workers[worker_id] = {"worker_id": worker_id, "first_seen": now}
-        rec.update(user=user, label=_clean(label, 80), status=_clean(status, 40),
-                   error=_clean(error, 300), version=_clean(version, 40),
-                   rejected=_clean(rejected, 40), last_seen=now)
+        rec.update(signature, last_seen=now)
 
 
 def _viewer_rows(key: tuple[str, str], now: float) -> list[dict]:
@@ -183,7 +196,39 @@ def drop_workers(user: str) -> int:
                     removed += 1
             if not workers:
                 _WORKERS.pop(key, None)
+        for key, dismissed in list(_DISMISSED_WORKERS.items()):
+            for worker_id, signature in list(dismissed.items()):
+                if signature.get("user") == user:
+                    del dismissed[worker_id]
+            if not dismissed:
+                _DISMISSED_WORKERS.pop(key, None)
     return removed
+
+
+def forget_worker(workspace_id: str, slug: str, worker_id: str, *, user: str,
+                  now: float | None = None) -> dict:
+    """Remove one owned inactive row; suppress an unchanged dead worker until it recovers."""
+    now = time.time() if now is None else now
+    key = _key(workspace_id, slug)
+    with _LOCK:
+        rec = _WORKERS.get(key, {}).get(worker_id)
+        if rec is None or rec.get("user") != user:
+            raise KeyError(worker_id)
+        state, reason = _health(rec, now)
+        if state not in ("dead", "unresponsive"):
+            raise ValueError("Only an inactive folder can be forgotten. Stop its sync worker first.")
+        signature = {name: rec.get(name, "") for name in
+                     ("user", "label", "status", "error", "version", "rejected")}
+        if state == "dead":
+            dismissed = _DISMISSED_WORKERS.setdefault(key, {})
+            if worker_id not in dismissed and len(dismissed) >= MAX_PER_BUBBLE:
+                dismissed.pop(next(iter(dismissed)))
+            dismissed[worker_id] = signature
+        del _WORKERS[key][worker_id]
+        if not _WORKERS[key]:
+            _WORKERS.pop(key, None)
+    return {"worker_id": worker_id, "label": rec.get("label", ""),
+            "state": state, "reason": reason}
 
 
 def reset() -> None:
@@ -191,3 +236,4 @@ def reset() -> None:
     with _LOCK:
         _VIEWERS.clear()
         _WORKERS.clear()
+        _DISMISSED_WORKERS.clear()

@@ -131,6 +131,39 @@ class Registry(unittest.TestCase):
         self.assertEqual((rows["stale"]["state"], rows["stale"]["attention"]), ("dead", True))
         self.assertEqual((rows["healthy"]["state"], rows["healthy"]["attention"]), ("live", False))
 
+    def test_an_inactive_worker_can_be_forgotten_until_its_state_changes(self):
+        presence.touch_worker("ws", "d", worker_id="u", user="alice", label="old",
+                              version="old", rejected="outdated")
+        removed = presence.forget_worker("ws", "d", "u", user="alice")
+        self.assertEqual((removed["worker_id"], removed["state"]), ("u", "dead"))
+        self.assertEqual(presence.snapshot("ws", "d")["workers"], [])
+        # A broken client repeating the identical poll must not immediately resurrect the row.
+        presence.touch_worker("ws", "d", worker_id="u", user="alice", label="old",
+                              version="old", rejected="outdated")
+        self.assertEqual(presence.snapshot("ws", "d")["workers"], [])
+        # A repaired worker is a genuine reconnection and becomes visible again.
+        presence.touch_worker("ws", "d", worker_id="u", user="alice", label="old",
+                              version="current", status="running")
+        row = presence.snapshot("ws", "d")["workers"][0]
+        self.assertEqual((row["worker_id"], row["state"]), ("u", "live"))
+
+    def test_a_forgotten_unresponsive_worker_reappears_on_its_next_heartbeat(self):
+        presence.touch_worker("ws", "d", worker_id="sleepy", user="alice",
+                              status="running", now=1000.0)
+        presence.forget_worker("ws", "d", "sleepy", user="alice",
+                               now=1000.0 + presence.WORKER_TTL + 1)
+        presence.touch_worker("ws", "d", worker_id="sleepy", user="alice",
+                              status="running", now=1100.0)
+        row = presence.snapshot("ws", "d", now=1100.0)["workers"][0]
+        self.assertEqual((row["worker_id"], row["state"]), ("sleepy", "live"))
+
+    def test_a_live_or_differently_owned_worker_cannot_be_forgotten(self):
+        presence.touch_worker("ws", "d", worker_id="live", user="alice", status="running")
+        with self.assertRaisesRegex(ValueError, "inactive folder"):
+            presence.forget_worker("ws", "d", "live", user="alice")
+        with self.assertRaises(KeyError):
+            presence.forget_worker("ws", "d", "live", user="bob")
+
     def test_a_reported_sync_error_shows_as_degraded_with_its_reason(self):
         presence.touch_worker("ws", "d", worker_id="u", user="alice", label="t",
                               status="degraded", error="server returned 409: conflict")
@@ -193,6 +226,32 @@ class HttpFlow(unittest.TestCase):
             from lockedin import server
             with TestClient(server.build_app(), base_url="https://testserver") as client:
                 self.assertEqual(client.post("/api/bubbles/x/presence").status_code, 401)
+
+    def test_web_user_can_forget_only_an_inactive_folder_without_agents(self):
+        with temp_base():
+            from lockedin import auth, server, service, workspaces
+            auth.create_user("alice", "pw12")
+            personal = workspaces.ensure_personal("alice", auth.load_accounts()["alice"])
+            home = workspaces.workspace_home(personal["id"])
+            service.ensure_workspace(home)
+            service.create_bubble(home, "Diffusion")
+            service.approve_bubble(home, "diffusion")
+            presence.touch_worker(personal["id"], "diffusion", worker_id="uid-old",
+                                  user="alice", label="old-clone", status="failed")
+            agent = service.register_agent(
+                home, "diffusion", name="Ada", role="reviewer", goal="review", vendor="codex",
+                conversation="c1", worker_id="uid-old", registered_by="alice")
+            with TestClient(server.build_app(), base_url="https://testserver") as client:
+                client.post("/api/login", json={"username": "alice", "password": "pw12"})
+                blocked = client.delete("/api/bubbles/diffusion/workers/uid-old")
+                self.assertEqual(blocked.status_code, 409)
+                self.assertIn("Retire", blocked.json()["detail"])
+                service.remove_agent(home, "diffusion", agent["id"], owner="alice")
+                removed = client.delete("/api/bubbles/diffusion/workers/uid-old")
+                self.assertEqual(removed.status_code, 200, removed.text)
+                self.assertEqual(removed.json()["worker"]["worker_id"], "uid-old")
+                self.assertEqual(presence.snapshot(personal["id"], "diffusion")["workers"], [])
+                self.assertEqual(client.delete("/api/bubbles/diffusion/workers/uid-old").status_code, 404)
 
     def test_an_outdated_worker_is_still_listed_with_its_rejection(self):
         with temp_base():

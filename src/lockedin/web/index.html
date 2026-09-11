@@ -1390,7 +1390,7 @@
   .presence-agent-more .li-ic{width:14px;height:14px}
   .presence-agent-detail{margin-left:22px}
   .presence-agent-detail>span{overflow-wrap:anywhere}
-  .presence-agent-actions{grid-column:1/-1;display:flex;justify-content:flex-end}
+  .presence-agent-actions,.presence-folder-actions{grid-column:1/-1;display:flex;justify-content:flex-end}
   .presence-agent.working .presence-dot{animation:presence-pulse 1.4s ease-in-out infinite}
   @keyframes presence-pulse{0%,100%{opacity:1}50%{opacity:.35}}
   .presence-detail button.danger{min-height:0;padding:3px 9px;font-size:11px;margin-top:4px}
@@ -5739,6 +5739,22 @@
     renderAgentChat();textarea.focus();
   }
 
+  async function forgetTrackedFolder(worker,button){
+    const label=presenceLabel(worker.display);
+    if(!confirm("Forget "+label+"?\n\nThis removes the inactive folder from this bubble’s tracking list. It does not delete files. If the folder reconnects with a repaired worker, it will appear again."))return;
+    button.disabled=true;
+    try{
+      await api("/api/bubbles/"+encodeURIComponent(S.bubble)+"/workers/"+encodeURIComponent(worker.worker_id),
+        {method:"DELETE"});
+      if(S.presence){
+        S.presence.workers=(S.presence.workers||[]).filter(w=>w.worker_id!==worker.worker_id);
+        const active=visibleWorkers(S.presence).filter(w=>w.state!=="dead");
+        S.presence.duplicate_workers=active.length>1?active.map(w=>w.display):[];
+      }
+      S.presenceSelected=null;renderPresence();toast(label+" forgotten");
+    }catch(e){button.disabled=false;toast(e.message||"Could not forget "+label);}
+  }
+
   async function retireAgent(agent,button){
     if(!confirm("Retire "+agent.name+"?\n\nThis removes the agent from this bubble and cancels any unfinished turns. Its saved "+
       agent.vendor+" conversation may remain in that provider, but LockedIn will forget this agent and its recovery link will no longer restore it."))return;
@@ -5846,6 +5862,8 @@
       menu.append(el("div",{class:"presence-empty"},"No project directory is syncing this bubble."));
     }
     workers.forEach(w=>{
+      const folderAgents=allAgents.filter(a=>a.worker_id===w.worker_id);
+      const canForget=!folderAgents.length&&(w.state==="dead"||w.state==="unresponsive");
       const key="w:"+w.worker_id, on=S.presenceSelected===key;
       menu.append(el("button",{class:"presence-item "+w.state+(on?" on":""),onclick:()=>selectPresence(key)},
         el("span",{class:"presence-dot "+w.state}),
@@ -5858,9 +5876,14 @@
           el("b",{},"running for"),el("span",{},presenceFor(w.uptime)));
         if(w.version)detail.append(el("b",{},"client"),el("span",{},w.version));
         if(w.reason)detail.append(el("span",{class:"presence-reason"},w.reason));
+        if(canForget){
+          const forget=el("button",{class:"danger small","aria-label":"Forget "+presenceLabel(w.display)},"Forget folder");
+          forget.onclick=e=>{e.stopPropagation();forgetTrackedFolder(w,forget);};
+          detail.append(el("div",{class:"presence-folder-actions"},forget));
+        }
         menu.append(detail);
       }
-      allAgents.filter(a=>a.worker_id===w.worker_id).forEach(workerAgentRow);
+      folderAgents.forEach(workerAgentRow);
     });
     const orphanAgents=allAgents.filter(a=>!workers.some(w=>w.worker_id===a.worker_id));
     if(orphanAgents.length){

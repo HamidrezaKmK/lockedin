@@ -2201,6 +2201,24 @@ def build_app():
         presence.drop_viewer(active_workspace_id(user), slug, user)
         return {"ok": True}
 
+    @app.delete("/api/bubbles/{slug}/workers/{worker_id}")
+    def bubble_forget_worker(slug: str, worker_id: str, user: str = Depends(current_user)):
+        workspace_id = active_workspace_id(user)
+        home = home_of(user)
+        tracked = next((row for row in presence.snapshot(workspace_id, slug)["workers"]
+                        if row["worker_id"] == worker_id and row["user"] == user), None)
+        if tracked is None:
+            raise HTTPException(status_code=404, detail="No such tracked folder.")
+        if any(agent.get("worker_id") == worker_id for agent in service.list_agents(home, slug)):
+            raise HTTPException(status_code=409, detail="Retire this folder’s agents before forgetting it.")
+        try:
+            worker = presence.forget_worker(workspace_id, slug, worker_id, user=user)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="No such tracked folder.") from None
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from None
+        return {"worker": worker}
+
     # ---- agents: named CLI conversations a mark can be assigned to ----
     def agent_failure(exc: Exception) -> HTTPException:
         if isinstance(exc, agents.TooMany):

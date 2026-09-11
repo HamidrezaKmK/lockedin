@@ -280,9 +280,27 @@ async function main() {
     step("selecting a failing worker reveals the reason and its client version");
 
     const stale = page.locator(".presence-item", { hasText: "old-clone" });
+    await stale.click();
     assert.ok(await stale.evaluate(node => node.classList.contains("dead")),
       "a rejected client must read as dead rather than disappear");
     assert.match(await stale.innerText(), /dead/);
+    // An inactive folder with no agents has a deliberate cleanup action. It removes only the
+    // tracking row, survives identical failed polls, and leaves active folder warnings intact.
+    page.once("dialog", async dialog => {
+      assert.match(dialog.message(), /does not delete files/i);
+      await dialog.accept();
+    });
+    await page.getByRole("button", { name: "Forget old-clone" }).click();
+    await stale.waitFor({ state: "hidden", timeout: 2_000 });
+    assert.match(await menu.locator(".presence-summary").innerText(), /2 folders syncing/);
+    assert.equal(await menu.getByRole("button", { name: /Forget/ }).count(), 0,
+      "active folders must not expose the forget action");
+    assert.equal(await workerPoll(context.request, baseUrl, token, slug,
+      { id: "uid-stale", label: "old-clone" }, { version: "2020.01.01.1" }), 426);
+    const afterRepeatedFailure = await api(context.request, baseUrl, "POST", `/api/bubbles/${slug}/presence`);
+    assert.ok(!afterRepeatedFailure.workers.some(worker => worker.id === "uid-stale" || worker.worker_id === "uid-stale"),
+      "an identical failed poll must not immediately resurrect a forgotten folder");
+    step("forgot the inactive agentless folder without hiding active folders or deleting files");
 
     // The bottom row is the one action left once the robot button is gone: it opens the same
     // connect-an-agent dialog the robot used to.
