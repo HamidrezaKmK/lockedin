@@ -149,14 +149,21 @@ class AliveTests(unittest.TestCase):
         self.assertFalse(scientist_cli._alive(2 ** 22 + 7))
 
     def test_the_posix_path_is_gated_behind_an_os_name_check_not_unconditional(self):
-        # Pin the contract described in scientist_cli._alive's comment: os.kill(pid, 0) on
-        # Windows maps to TerminateProcess, not a probe, so the function must never reach that
-        # call path unconditionally. Source-inspect for the guard rather than the exact wording.
+        # os.kill(pid, 0) on Windows maps to TerminateProcess, not a probe, so a typed Win32
+        # wait handle must guard the POSIX fallback.
         import inspect
         source = inspect.getsource(scientist_cli._alive)
         self.assertIn('os.name == "nt"', source)
-        self.assertIn("TerminateProcess", source)
-        self.assertIn("os.kill", source)  # the POSIX fallback still exists
+        self.assertIn("WinDLL", source)
+        self.assertIn("WaitForSingleObject", source)
+        self.assertIn("os.kill", source)
+
+    @staticmethod
+    def _win_function(result):
+        class Function:
+            def __init__(self, value): self.value = value
+            def __call__(self, *args): return self.value
+        return Function(result)
 
     def test_the_windows_branch_never_calls_os_kill(self):
         import ctypes
@@ -164,50 +171,34 @@ class AliveTests(unittest.TestCase):
         def guard(pid, sig):
             raise AssertionError("os.kill must never be called on the Windows path")
 
-        fake_kernel32 = types.SimpleNamespace(OpenProcess=lambda *a: 0)  # null handle: "gone"
-        fake_windll = types.SimpleNamespace(kernel32=fake_kernel32)
+        kernel = types.SimpleNamespace(
+            OpenProcess=self._win_function(0),
+            WaitForSingleObject=self._win_function(0),
+            CloseHandle=self._win_function(1),
+        )
         with patch.object(os, "name", "nt"), patch.object(os, "kill", guard), \
-                patch.object(ctypes, "windll", fake_windll, create=True):
+                patch.object(ctypes, "WinDLL", return_value=kernel, create=True), \
+                patch.object(ctypes, "get_last_error", return_value=87, create=True):
             self.assertFalse(scientist_cli._alive(4242))
 
-    def test_the_windows_branch_reports_alive_when_still_active(self):
+    def test_the_windows_branch_reports_alive_for_a_waitable_process(self):
         import ctypes
-        from ctypes import wintypes
 
-        STILL_ACTIVE = 259
-        WAIT_TIMEOUT = 0x102
-
-        def guard(pid, sig):
-            raise AssertionError("os.kill must never be called on the Windows path")
-
-        def get_exit_code_process(handle, ptr):
-            ptr._obj.value = STILL_ACTIVE
-            return 1
-
-        fake_kernel32 = types.SimpleNamespace(
-            OpenProcess=lambda *a: 999,
-            GetExitCodeProcess=get_exit_code_process,
-            WaitForSingleObject=lambda handle, timeout: WAIT_TIMEOUT,
-            CloseHandle=lambda handle: 1,
+        kernel = types.SimpleNamespace(
+            OpenProcess=self._win_function(0x123456789),
+            WaitForSingleObject=self._win_function(0x102),
+            CloseHandle=self._win_function(1),
         )
-        fake_windll = types.SimpleNamespace(kernel32=fake_kernel32)
-        with patch.object(os, "name", "nt"), patch.object(os, "kill", guard), \
-                patch.object(ctypes, "windll", fake_windll, create=True):
+        with patch.object(os, "name", "nt"), \
+                patch.object(ctypes, "WinDLL", return_value=kernel, create=True):
             self.assertTrue(scientist_cli._alive(4242))
 
     def test_the_windows_branch_is_conservative_on_any_ctypes_failure(self):
         import ctypes
 
-        def guard(pid, sig):
-            raise AssertionError("os.kill must never be called on the Windows path")
-
-        class ExplodingWindll:
-            @property
-            def kernel32(self):
-                raise OSError("no such attribute on this platform")
-
-        with patch.object(os, "name", "nt"), patch.object(os, "kill", guard), \
-                patch.object(ctypes, "windll", ExplodingWindll(), create=True):
+        with patch.object(os, "name", "nt"), patch.object(os, "kill",
+                side_effect=AssertionError("os.kill must never be called on Windows")), \
+                patch.object(ctypes, "WinDLL", side_effect=OSError("unavailable"), create=True):
             self.assertTrue(scientist_cli._alive(4242))
 
 

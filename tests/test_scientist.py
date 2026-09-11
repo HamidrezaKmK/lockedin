@@ -979,10 +979,26 @@ class ScientistProfileAndWorkersTest(unittest.TestCase):
         self.assertIs(kwargs["stdout"], stream)
         self.assertIs(kwargs["stderr"], stream)
 
+    def test_windows_liveness_uses_a_non_truncated_waitable_handle(self):
+        import ctypes
+
+        class Function:
+            def __init__(self, result): self.result = result
+            def __call__(self, *args): return self.result
+
+        class Kernel:
+            OpenProcess = Function(0x123456789)
+            WaitForSingleObject = Function(0x102)
+            CloseHandle = Function(1)
+
+        with patch.object(scientist_cli.os, "name", "nt"), \
+                patch.object(ctypes, "WinDLL", return_value=Kernel(), create=True):
+            self.assertTrue(scientist_cli._alive(77))
+            self.assertIs(Kernel.OpenProcess.restype, ctypes.wintypes.HANDLE)
+
     def test_worker_start_failure_is_reported_instead_of_claiming_running(self):
         proc = type("Exited", (), {"pid": 77, "poll": lambda self: 1})()
         with patch.object(scientist_cli, "_worker_record", return_value={"status": "starting"}), \
-                patch.object(scientist_cli, "_alive", return_value=False), \
                 patch.object(scientist_cli, "_update_worker") as update:
             with self.assertRaisesRegex(RuntimeError, "did not stay running"):
                 scientist_cli._await_worker_start("worker", proc, Path("worker.log"), timeout=.01)
@@ -991,7 +1007,8 @@ class ScientistProfileAndWorkersTest(unittest.TestCase):
     def test_worker_start_success_requires_a_live_running_record(self):
         proc = type("Running", (), {"pid": 77, "poll": lambda self: None})()
         with patch.object(scientist_cli, "_worker_record", return_value={"status": "running"}), \
-                patch.object(scientist_cli, "_alive", return_value=True), \
+                patch.object(scientist_cli, "_alive",
+                             side_effect=AssertionError("PID probe must not decide startup")), \
                 patch.object(scientist_cli.time, "sleep"):
             scientist_cli._await_worker_start("worker", proc, Path("worker.log"), timeout=.01)
 

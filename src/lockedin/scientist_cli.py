@@ -37,7 +37,7 @@ except ImportError:  # Standalone client installed beside agent_vendors.py.
     import agent_vendors  # type: ignore[no-redef]
 
 APP = "lockedin-scientist"
-SCIENTIST_CLIENT_VERSION = "2026.09.11.3"
+SCIENTIST_CLIENT_VERSION = "2026.09.11.4"
 POLL_SECONDS = 5
 # A worker that has not completed a cycle in three polls is wedged rather than merely busy.
 # `doctor` reports that verdict and `resync` repairs exactly what `doctor` complains about, so
@@ -2743,37 +2743,42 @@ def agent_command(args) -> None:
 def _alive(pid: int) -> bool:
     if pid <= 0: return False
     if os.name == "nt":
-        # Windows trap: os.kill(pid, 0) does NOT probe the process there. Per the stdlib docs,
-        # any signal other than CTRL_C_EVENT/CTRL_BREAK_EVENT maps to TerminateProcess, so a
-        # naive os.kill(pid, 0) call actually *kills* the process it meant only to check —
-        # which killed the very worker/chat these callers were inspecting. Use the Win32 API
-        # instead: OpenProcess + GetExitCodeProcess (STILL_ACTIVE), backed up by
-        # WaitForSingleObject in case a real exit code happens to equal STILL_ACTIVE (259).
+        # Use a correctly typed Win32 HANDLE. ctypes defaults function results to a 32-bit int;
+        # on 64-bit Windows that can truncate OpenProcess handles and falsely report a live
+        # worker dead. SYNCHRONIZE is the minimum access needed for a zero-timeout wait.
         try:
             import ctypes
             from ctypes import wintypes
 
-            PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
-            STILL_ACTIVE = 259
+            SYNCHRONIZE = 0x00100000
+            WAIT_OBJECT_0 = 0
             WAIT_TIMEOUT = 0x102
+            ERROR_ACCESS_DENIED = 5
 
-            kernel32 = ctypes.windll.kernel32
-            handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+            kernel32.OpenProcess.restype = wintypes.HANDLE
+            kernel32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+            kernel32.WaitForSingleObject.restype = wintypes.DWORD
+            kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+            kernel32.CloseHandle.restype = wintypes.BOOL
+
+            handle = kernel32.OpenProcess(SYNCHRONIZE, False, pid)
             if not handle:
-                return False
+                # Access denied still proves a process owns the PID. Any other failure means the
+                # PID is absent (or cannot be determined), and the caller may use a Popen handle.
+                return ctypes.get_last_error() == ERROR_ACCESS_DENIED
             try:
-                exit_code = wintypes.DWORD()
-                if not kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
-                    return True  # Can't tell; assume alive rather than risk a false "dead".
-                if exit_code.value != STILL_ACTIVE:
+                result = kernel32.WaitForSingleObject(handle, 0)
+                if result == WAIT_TIMEOUT:
+                    return True
+                if result == WAIT_OBJECT_0:
                     return False
-                # Exit code happened to equal STILL_ACTIVE; confirm via a zero-timeout wait.
-                wait_result = kernel32.WaitForSingleObject(handle, 0)
-                return wait_result == WAIT_TIMEOUT
+                return True  # Unknown wait result: do not kill or replace a possibly live worker.
             finally:
                 kernel32.CloseHandle(handle)
         except Exception:
-            return True  # Any ctypes failure: be conservative, don't report a live process dead.
+            return True  # A probe failure is not evidence that the process died.
     try: os.kill(pid, 0); return True
     except OSError: return False
 
@@ -2876,21 +2881,27 @@ def _await_worker_start(worker_id: str, proc, log: Path, *, timeout: float = 5.0
     while time.monotonic() < deadline:
         rec = _worker_record(worker_id) or {}
         status = str(rec.get("status") or "starting")
-        alive = _alive(int(getattr(proc, "pid", 0) or 0))
-        if status in {"running", "degraded"} and alive:
-            # Catch immediate console-lifetime exits instead of racing the success message.
-            time.sleep(0.15)
-            if _alive(int(getattr(proc, "pid", 0) or 0)):
-                return
+        # Popen.poll uses the original Windows process handle, so it is authoritative during
+        # startup. The separate PID probe is for later commands running in another process.
         exit_code = proc.poll()
-        if status in {"failed", "stopped"} or exit_code is not None or not alive:
+        alive = exit_code is None
+        if status in {"running", "degraded"} and alive:
+            time.sleep(0.15)
+            if proc.poll() is None:
+                return
+        if status in {"failed", "stopped"} or not alive:
             detail = str(rec.get("last_error") or rec.get("error") or
                          f"worker process exited during startup (code {exit_code})")
+            if alive:
+                try: proc.terminate()
+                except OSError: pass
             _update_worker(worker_id, status="failed", error=detail, last_error=detail,
                            stopped_at=time.time())
             raise RuntimeError(f"Scientist worker did not stay running: {detail}. Log: {log}")
         time.sleep(0.05)
     detail = f"worker did not report ready within {timeout:g} seconds"
+    try: proc.terminate()
+    except OSError: pass
     _update_worker(worker_id, status="failed", error=detail, last_error=detail,
                    stopped_at=time.time())
     raise RuntimeError(f"Scientist worker did not start: {detail}. Log: {log}")
