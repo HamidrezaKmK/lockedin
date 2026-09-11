@@ -58,24 +58,8 @@ def _supports(executable: str, option: str, *, subcommand: str = "") -> bool:
 
 
 def _worktree_paths(project: Path) -> set[str]:
-    found = {str(project.resolve())}
-    try:
-        out = subprocess.run(
-            ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
-            cwd=project, capture_output=True, text=True, timeout=10,
-        )
-        if out.returncode == 0 and out.stdout.strip():
-            main = Path(out.stdout.strip()).parent
-            listed = subprocess.run(
-                ["git", "worktree", "list", "--porcelain"], cwd=main,
-                capture_output=True, text=True, timeout=10,
-            )
-            for line in listed.stdout.splitlines():
-                if line.startswith("worktree "):
-                    found.add(str(Path(line[9:].strip()).resolve()))
-    except (OSError, subprocess.SubprocessError):
-        pass
-    return found
+    """Conversation discovery is local to the active checkout/worktree directory."""
+    return {str(project.resolve())}
 
 
 @dataclass(frozen=True)

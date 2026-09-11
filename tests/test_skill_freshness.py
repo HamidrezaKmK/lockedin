@@ -87,8 +87,8 @@ class SkillFreshnessTests(unittest.TestCase):
         # A real Windows run: a user connected a plain folder that was not a git repository, and
         # the agent refused with "not a Git repository, so the required project root cannot be
         # resolved" because both documents named `.git` as the primary way to find the root. The
-        # root must be findable by walking up for `.lockedin/config/binding.json`, with git kept
-        # only as the worktree fallback.
+        # root must be findable by walking up for `.lockedin/config/binding.json`; Git only limits
+        # that walk to the active checkout/worktree boundary.
         for document, label in ((VENDOR_SKILL_BOOTSTRAP, "bootstrap"), (skill_document(), "router")):
             self.assertIn(".lockedin/config/binding.json", document, f"{label} must name the root marker file")
             self.assertIn("git is not required", document.lower(),
@@ -102,12 +102,12 @@ class SkillFreshnessTests(unittest.TestCase):
         self.assertNotIn("the directory holding the shared", skill_document(),
                          "the router must not define the root as the directory holding the shared .git")
 
-    def test_the_worktree_fallback_still_names_the_git_command(self):
-        # Git remains the fallback for the worktree case, where `.lockedin/` genuinely cannot be
-        # found by walking up from the working directory (it lives in the main checkout instead).
-        git_common_dir_command = "git rev-parse --path-format=absolute --git-common-dir"
-        self.assertIn(git_common_dir_command, VENDOR_SKILL_BOOTSTRAP)
-        self.assertIn(git_common_dir_command, skill_document())
+    def test_each_worktree_is_its_own_project_boundary(self):
+        command = "git rev-parse --path-format=absolute --show-toplevel"
+        for document in (VENDOR_SKILL_BOOTSTRAP, skill_document()):
+            self.assertIn(command, document)
+            self.assertIn("sibling worktree", document)
+            self.assertIn("Never cross", document)
 
     def test_bootstrap_still_carries_its_vendor_marker_and_front_matter(self):
         self.assertIn(MANAGED_VENDOR_SKILL_MARKER, VENDOR_SKILL_BOOTSTRAP)
@@ -115,6 +115,9 @@ class SkillFreshnessTests(unittest.TestCase):
 
     def test_skill_version_has_reached_the_git_optional_root_fix(self):
         self.assertGreaterEqual(SKILL_VERSION, 44)
+
+    def test_skill_version_has_reached_worktree_local_bindings(self):
+        self.assertGreaterEqual(SKILL_VERSION, 51)
 
     def test_skill_version_carries_direct_turns_and_talk_local_theorems(self):
         self.assertGreaterEqual(SKILL_VERSION, 48)

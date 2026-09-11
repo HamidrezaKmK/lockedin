@@ -11,10 +11,9 @@
  * Screenshots land in LOCKEDIN_E2E_SHOTS when set, for eyeballing the visual result.
  */
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import net from "node:net";
-import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { setTimeout as delay } from "node:timers/promises";
@@ -68,6 +67,11 @@ async function stopProcess(child) {
     new Promise(resolve => child.once("exit", resolve)),
     delay(3_000).then(() => child.kill("SIGKILL")),
   ]);
+}
+
+function removeSandbox(sandbox) {
+  try { execFileSync("chmod", ["-R", "u+w", sandbox]); } catch (_) { /* may already be gone */ }
+  fs.rmSync(sandbox, { recursive: true, force: true });
 }
 
 async function api(request, baseUrl, method, pathname, data, headers) {
@@ -172,7 +176,17 @@ async function selectPreview(page, selected, occurrence = 0) {
 
 async function main() {
   assert.ok(fs.existsSync(CHROME), `Chrome is not installed at ${CHROME}`);
-  const dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), "lockedin-agents-e2e-"));
+  const testTmp = path.join(REPO, "tests", ".tmp");
+  fs.mkdirSync(testTmp, { recursive: true });
+  const sandbox = fs.mkdtempSync(path.join(testTmp, "lockedin-agents-e2e-"));
+  const dataRoot = path.join(sandbox, "server-data");
+  const mainRepo = path.join(sandbox, "repository");
+  const worktree = path.join(sandbox, "worktrees", "feature");
+  fs.mkdirSync(mainRepo, { recursive: true });
+  execFileSync("git", ["init", "-q"], { cwd: mainRepo });
+  execFileSync("git", ["-c", "user.email=e2e@lockedin.test", "-c", "user.name=LockedIn E2E",
+    "commit", "-q", "--allow-empty", "-m", "initial"], { cwd: mainRepo });
+  execFileSync("git", ["worktree", "add", "-q", "-b", "feature", worktree], { cwd: mainRepo });
   const port = await freePort();
   const baseUrl = `http://127.0.0.1:${port}`;
   let serverOutput = "";
@@ -187,7 +201,7 @@ async function main() {
     child.stdout.on("data", chunk => { serverOutput += chunk; });
     child.stderr.on("data", chunk => { serverOutput += chunk; });
     await waitForServer(baseUrl, child, () => serverOutput);
-    step("disposable server is ready");
+    step("disposable server, user data, repository, and linked worktree are ready inside tests/.tmp");
 
     browser = await chromium.launch({
       executablePath: CHROME, headless: true,
@@ -789,7 +803,7 @@ async function main() {
   } finally {
     if (browser) await browser.close().catch(() => {});
     await stopProcess(child);
-    fs.rmSync(dataRoot, { recursive: true, force: true });
+    removeSandbox(sandbox);
   }
 }
 

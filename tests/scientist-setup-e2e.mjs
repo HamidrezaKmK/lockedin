@@ -11,10 +11,9 @@
  * Screenshots land in LOCKEDIN_E2E_SHOTS when set, for eyeballing the visual result.
  */
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import net from "node:net";
-import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { setTimeout as delay } from "node:timers/promises";
@@ -65,6 +64,22 @@ async function stopProcess(child) {
   ]);
 }
 
+function pidAlive(pid) {
+  try { process.kill(pid, 0); return true; } catch (_) { return false; }
+}
+
+async function stopDisposableWorker(pid) {
+  if (!pidAlive(pid)) return;
+  process.kill(pid, "SIGTERM");
+  for (let attempt = 0; attempt < 50 && pidAlive(pid); attempt += 1) await delay(100);
+  if (pidAlive(pid)) process.kill(pid, "SIGKILL");
+}
+
+function removeSandbox(sandbox) {
+  try { execFileSync("chmod", ["-R", "u+w", sandbox]); } catch (_) { /* may already be gone */ }
+  fs.rmSync(sandbox, { recursive: true, force: true });
+}
+
 async function api(request, baseUrl, method, pathname, data) {
   const response = await request.fetch(`${baseUrl}${pathname}`, { method, data, failOnStatusCode: false });
   const raw = await response.text();
@@ -82,11 +97,29 @@ async function shoot(page, name) {
 
 async function main() {
   assert.ok(fs.existsSync(CHROME), `Chrome is not installed at ${CHROME}`);
-  const dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), "lockedin-setup-e2e-"));
+  const testTmp = path.join(REPO, "tests", ".tmp");
+  fs.mkdirSync(testTmp, { recursive: true });
+  const sandbox = fs.mkdtempSync(path.join(testTmp, "lockedin-setup-e2e-"));
+  const dataRoot = path.join(sandbox, "server-data");
+  const mainRepo = path.join(sandbox, "repository");
+  const worktree = path.join(sandbox, "worktrees", "feature");
+  const nested = path.join(worktree, "src", "experiment");
+  const clientHome = path.join(sandbox, "client-home");
+  const clientData = path.join(sandbox, "client-data");
+  fs.mkdirSync(mainRepo, { recursive: true });
+  fs.mkdirSync(clientHome, { recursive: true });
+  execFileSync("git", ["init", "-q"], { cwd: mainRepo });
+  execFileSync("git", ["-c", "user.email=e2e@lockedin.test", "-c", "user.name=LockedIn E2E",
+    "commit", "-q", "--allow-empty", "-m", "initial"], { cwd: mainRepo });
+  execFileSync("git", ["worktree", "add", "-q", "-b", "feature", worktree], { cwd: mainRepo });
+  const mainBinding = path.join(mainRepo, ".lockedin", "config", "binding.json");
+  fs.mkdirSync(path.dirname(mainBinding), { recursive: true });
+  fs.writeFileSync(mainBinding, JSON.stringify({ sentinel: "must-not-be-borrowed" }));
+  fs.mkdirSync(nested, { recursive: true });
   const port = await freePort();
   const baseUrl = `http://127.0.0.1:${port}`;
   let serverOutput = "";
-  let child, browser;
+  let child, browser, disposableWorkerPid = 0;
 
   try {
     child = spawn("uv", ["run", "lockedin", "serve", "--host", "127.0.0.1", "--port", String(port)], {
@@ -97,7 +130,7 @@ async function main() {
     child.stdout.on("data", chunk => { serverOutput += chunk; });
     child.stderr.on("data", chunk => { serverOutput += chunk; });
     await waitForServer(baseUrl, child, () => serverOutput);
-    step("disposable server is ready");
+    step("disposable server, user data, repository, and linked worktree are ready inside tests/.tmp");
 
     browser = await chromium.launch({
       executablePath: CHROME, headless: true,
@@ -228,6 +261,56 @@ async function main() {
     assert.ok(!text.includes("li_sc_"), "serving the script must not leak the token");
     step("the link serves a script that installs, connects, and can still prompt");
 
+    // Run the real dependency-free client against the disposable account and repository. The
+    // ticket must bind the linked worktree itself, even when later commands start in a nested
+    // directory. Main checkout state is a sentinel and must never be borrowed or modified.
+    const workspaceId = (text.match(/--workspace '([^']+)'/) || [])[1];
+    assert.ok(workspaceId, `could not read workspace id from setup script:\n${text}`);
+    const python = path.join(REPO, ".venv", "bin", "python");
+    const scientist = path.join(REPO, "src", "lockedin", "scientist_cli.py");
+    const clientEnv = { ...process.env, HOME: clientHome, XDG_DATA_HOME: clientData,
+      PATH: "/usr/bin:/bin", PYTHONUNBUFFERED: "1" };
+    const runClient = (args, cwd = nested) => spawnSync(python, [scientist, ...args], {
+      cwd, env: clientEnv, encoding: "utf8", timeout: 30_000,
+    });
+    const connected = runClient(["connect", "--server", baseUrl, "--workspace", workspaceId,
+      "--bubble", slug, "--ticket", ticket, "--project", nested], worktree);
+    assert.equal(connected.status, 0, `real setup failed:\n${connected.stdout}\n${connected.stderr}`);
+    assert.ok(fs.existsSync(path.join(worktree, ".lockedin", "config", "binding.json")),
+      "setup must put .lockedin in the linked worktree");
+    assert.deepEqual(JSON.parse(fs.readFileSync(mainBinding, "utf8")),
+      { sentinel: "must-not-be-borrowed" },
+      "setup must not read, replace, or repair the main checkout's .lockedin");
+    const doctor = runClient(["doctor"]);
+    assert.equal(doctor.status, 0, `doctor from a nested worktree directory failed:\n${doctor.stdout}\n${doctor.stderr}`);
+
+    for (const [name, vendor] of [["Worktree-Codex", "codex"],
+                                  ["Worktree-Claude", "claude"],
+                                  ["Worktree-Agy", "agy"]]) {
+      const registered = runClient(["agent", "register", "--name", name, "--role", "test",
+        "--goal", "verify worktree-local registration", "--vendor", vendor,
+        "--conversation", `${vendor}-worktree-conversation`]);
+      assert.equal(registered.status, 0,
+        `${vendor} registration from nested worktree failed:\n${registered.stdout}\n${registered.stderr}`);
+    }
+    const listed = runClient(["agent", "list"]);
+    assert.equal(listed.status, 0, `agent list from worktree failed:\n${listed.stdout}\n${listed.stderr}`);
+    for (const name of ["Worktree-Codex", "Worktree-Claude", "Worktree-Agy"])
+      assert.ok(listed.stdout.includes(name), `agent list did not include ${name}:\n${listed.stdout}`);
+    step("real setup and all three provider registrations stayed inside the linked worktree");
+
+    const workerId = (connected.stdout.match(/worker\s+([0-9a-f]{12})\s+is running/i) || [])[1];
+    assert.ok(workerId, `could not read worker id from setup output:\n${connected.stdout}`);
+    const workerRegistry = JSON.parse(fs.readFileSync(
+      path.join(clientData, "lockedin-scientist", "runtime", "workers.json"), "utf8"));
+    disposableWorkerPid = Number(workerRegistry.workers[workerId]?.pid || 0);
+    assert.ok(disposableWorkerPid > 0, "disposable worker pid was not recorded");
+    const stopped = runClient(["stop", workerId], worktree);
+    assert.equal(stopped.status, 0, `could not stop disposable worker:\n${stopped.stdout}\n${stopped.stderr}`);
+    await stopDisposableWorker(disposableWorkerPid);
+    assert.equal(pidAlive(disposableWorkerPid), false, "disposable worker survived cleanup");
+    disposableWorkerPid = 0;
+
     // Same one control surface on a phone, where this flow matters most.
     await page.setViewportSize({ width: 390, height: 800 });
     await shoot(page, "setup-dialog-phone");
@@ -239,7 +322,8 @@ async function main() {
   } finally {
     if (browser) await browser.close().catch(() => {});
     await stopProcess(child);
-    fs.rmSync(dataRoot, { recursive: true, force: true });
+    if (disposableWorkerPid) await stopDisposableWorker(disposableWorkerPid);
+    removeSandbox(sandbox);
   }
 }
 

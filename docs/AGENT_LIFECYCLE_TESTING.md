@@ -53,6 +53,7 @@ uv run python -m unittest \
   tests.test_setup_link \
   tests.test_skill_freshness -v
 node tests/agents-e2e.mjs
+node tests/scientist-setup-e2e.mjs
 ```
 
 Before and after the gate, verify that the installed client was not touched. The installer test
@@ -90,12 +91,17 @@ The automated gate must prove, for all three provider adapters:
   launching PowerShell process, and setup reports success only after the child is verifiably alive.
 - a setup link run against a partial `.lockedin` with no binding preserves the whole partial tree
   in a timestamped sibling recovery folder, restores the worker identity, and completes a clean sync.
+- a disposable Git main checkout and linked worktree are created under `tests/.tmp`; setup run from
+  a nested worktree directory binds `.lockedin` to that worktree, and Codex, Claude, and agy all
+  register there without borrowing the main checkout or a sibling worktree's conversation.
 
 ## Live disposable gate
 
 Run this after automated tests for lifecycle, queue, setup, provider-adapter, or installer changes.
-Do not use a real research agent. Create a disposable bubble or clearly named disposable agents,
-and record every original conversation id before starting.
+The harness must create its own test account, workspace, bubble, server data, Git repository, linked
+worktree, provider homes, and client state beneath a unique `tests/.tmp/` directory, then remove that
+directory even after failure. Never use a production account, production bubble (including
+`drifting-models-for-rl`), repository outside the harness, or the operator's provider/session stores.
 
 Suggested low-cost models as of 2026-09-11:
 
@@ -113,6 +119,13 @@ choose the cheapest model that still supports file edits and tools.
 For each OS tab, confirm that selecting it changes only the displayed command. Execute one Linux or
 macOS line on the test host. Confirm the second redemption fails, the existing directory binding is
 resumed rather than rebuilt, and no provider process was launched.
+
+Create a main Git checkout plus a linked worktree in the disposable directory. Connect from a nested
+directory inside the linked worktree and require `.lockedin/config/binding.json` to be created at the
+linked worktree top level. Put a sentinel binding in main and prove setup neither borrows nor modifies
+it. Run `doctor`, registration, listing, recovery, and retirement from that nested directory. Seed
+newer fake Codex and agy conversations in main and a sibling tree; discovery must select only the
+active worktree. Claude's environment session id must register against the same worktree-local binding.
 
 For each provider, start one cheap interactive conversation in the disposable project, invoke the
 skill, register a unique disposable name, and exit. Record name, provider, model, agent id, and

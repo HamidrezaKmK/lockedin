@@ -37,7 +37,7 @@ except ImportError:  # Standalone client installed beside agent_vendors.py.
     import agent_vendors  # type: ignore[no-redef]
 
 APP = "lockedin-scientist"
-SCIENTIST_CLIENT_VERSION = "2026.09.11.5"
+SCIENTIST_CLIENT_VERSION = "2026.09.11.6"
 POLL_SECONDS = 5
 # A worker that has not completed a cycle in three polls is wedged rather than merely busy.
 # `doctor` reports that verdict and `resync` repairs exactly what `doctor` complains about, so
@@ -118,15 +118,16 @@ CLI agents start command tools in their own scratch folder; that scratch folder 
 project. Do not search from there, reuse a previous project, or guess a project from the user's
 home directory. Git is not required for this: the project does not have to be a repository.
 
-If the search finds nothing and the session is inside a **git worktree**, the root is the main
-checkout, because `.lockedin/` is untracked and does not travel to a worktree:
+If the session is inside a Git repository or linked **worktree**, first resolve its own boundary:
 
 ```
-git rev-parse --path-format=absolute --git-common-dir   # -> <project-root>/.git
+git rev-parse --path-format=absolute --show-toplevel
 ```
 
-names that checkout's `.git`, so its parent is the root. This is a normal setup, not a problem to
-report. Read exactly the one path resolved this way. Never use `find`, a glob, `grep`, or a
+Search for the binding only from the active session directory up to and including that boundary.
+Never cross into the main checkout through `--git-common-dir`, and never borrow `.lockedin` or a
+conversation from a sibling worktree. If this worktree is not connected yet, use its bubble setup
+link here; the link creates `.lockedin` in this worktree. Never use `find`, a glob, `grep`, or a
 home-directory search to locate other `.lockedin` directories or guides.
 It contains the current bubble's editing guide, paper context, math conventions, permitted write
 paths, conflict recovery rules, and—when present—rules for the local Overleaf checkout. Follow it
@@ -494,7 +495,7 @@ def bubbles_command(account: dict) -> list[dict]:
 
 # Bump when the guide text changes: a project only regenerates SKILL.md when this marker in its
 # copy stops matching, so an edit to the guide reaches no existing agent until this moves.
-SKILL_VERSION = 50
+SKILL_VERSION = 51
 
 # The marker is derived, never typed. It is what the staleness check compares against, so a
 # hand-written copy that drifted from SKILL_VERSION would either pin every project to a stale
@@ -530,14 +531,12 @@ your working directory and walking up through its parents, that contains
 `.lockedin/config/binding.json`. Resolve it once at the start of a session and use it as the
 prefix. Git is not required for this: the project does not have to be a repository.
 
-If that search finds nothing and you are working in a **git worktree**, the root is the main
-checkout, not the worktree: `git rev-parse --path-format=absolute --git-common-dir` names that
-checkout's `.git` (its parent is the root). `.lockedin/` is untracked, so it does not come along —
-and the sync worker only watches the main checkout's copy. Read and edit that copy. This is the
-ordinary arrangement: do not describe it to the user, do not treat it as a problem, and do not run
-`lockedin-scientist sync` inside the worktree to obtain a local one — the worker registry keys on
-directory, so that would start a second worker on the same bubble and the bubble page would flag
-the pair as conflicting.
+If you are working in a Git repository or linked **worktree**, its own
+`git rev-parse --path-format=absolute --show-toplevel` is the project boundary. Search only from
+the active session directory up to that boundary. Never cross through `--git-common-dir` into the
+main checkout and never borrow `.lockedin` or a conversation from a sibling worktree. If this
+worktree has no binding, run its bubble setup link from this worktree; that creates the local
+`.lockedin` used by this agent and worker.
 
 ## Project work and LockedIn boundaries
 
@@ -611,9 +610,9 @@ GUIDES = {
 
 ## Direct LockedIn paths — do not search for them
 
-Use these exact paths when their information is needed, resolved against the project root above —
-in a worktree they are in the main checkout, not the current directory. Do not spend time searching
-the project for an alternative copy:
+Use these exact paths when their information is needed, resolved against the project root above.
+In a linked worktree they are inside that worktree's own `.lockedin`, never the main checkout's.
+Do not spend time searching the project for an alternative copy:
 
 - `.lockedin/config/math.yaml` — workspace math macros; the generated macro table below is the
   preferred ready-to-use form.
@@ -663,8 +662,8 @@ Before telling the user that a report edit is synchronized—or before making a 
 that relies on background synchronization—run `lockedin-scientist doctor` from the project root.
 It verifies that this `.lockedin` directory has a matching, healthy worker and can reach its bound
 LockedIn bubble. If it fails, do not claim the work was submitted; show the user the failure and
-ask whether they want to repair it, in this order. Run these from the project root — from a
-worktree they fail with "No valid `.lockedin/config/binding.json` in this project":
+ask whether they want to repair it, in this order. Run these from the connected checkout or
+worktree's own project root:
 
 1. `lockedin-scientist ps` — every worker on this machine and the folder each one syncs.
 2. `lockedin-scientist resync` — the usual repair. It resumes whatever bubble this project is
@@ -1612,18 +1611,31 @@ def cli_name() -> str:
     return name if name.startswith(APP) else APP
 
 
-def _project_root(start: Path) -> Path:
-    """The directory holding ``.lockedin``: the cwd, or a worktree's main checkout."""
-    start = start.resolve()
-    if (start / ".lockedin" / "config" / "binding.json").exists(): return start
+def _git_toplevel(start: Path) -> Path | None:
+    """Return this checkout/worktree's own top level, never Git's shared common directory."""
     try:
-        out = subprocess.run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+        out = subprocess.run(["git", "rev-parse", "--path-format=absolute", "--show-toplevel"],
                              cwd=start, capture_output=True, text=True, timeout=10)
         if out.returncode == 0 and out.stdout.strip():
-            root = Path(out.stdout.strip()).parent
-            if (root / ".lockedin" / "config" / "binding.json").exists(): return root
-    except (OSError, subprocess.SubprocessError): pass
-    return start
+            return Path(out.stdout.strip()).resolve()
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return None
+
+
+def _project_root(start: Path) -> Path:
+    """Find this checkout's binding without escaping into a parent or sibling worktree."""
+    start = start.resolve()
+    boundary = _git_toplevel(start)
+    candidates = (start, *start.parents)
+    for candidate in candidates:
+        if boundary is not None and candidate != boundary and boundary not in candidate.parents:
+            break
+        if (candidate / ".lockedin" / "config" / "binding.json").exists():
+            return candidate
+        if boundary is not None and candidate == boundary:
+            break
+    return boundary or start
 
 
 def conversation_exists(agent: dict) -> bool:
@@ -2560,7 +2572,10 @@ def _find_agent(sync: ProjectSync, ref: str) -> dict:
 def agent_register_command(start: Path, *, name: str, role: str, goal: str, personality: str,
                            model: str, vendor: str, conversation: str) -> None:
     project, binding, sync = _agent_context(start)
-    vendor, conversation = detect_conversation(project, vendor=vendor, conversation=conversation)
+    # Conversation discovery is scoped to the directory where this chat is actually open. A
+    # linked worktree must not accidentally adopt a newer session from main or a sibling tree.
+    vendor, conversation = detect_conversation(start.resolve(), vendor=vendor,
+                                               conversation=conversation)
     agent = sync._request("POST", "agents", {
         "name": name, "role": role, "goal": goal, "personality": personality, "vendor": vendor,
         "conversation": conversation, "model": model, "worker_id": sync.worker_uid(),
@@ -3148,7 +3163,12 @@ def _ask_project(supplied: str) -> Path:
         print(green("✓") + f" Created {dim(str(project.resolve()))}")
     if not project.is_dir():
         raise RuntimeError(f"{project} is not a directory. Re-run with `--project <path>`.")
-    return project.resolve()
+    project = project.resolve()
+    top = _git_toplevel(project)
+    if top is not None and top != project:
+        print(dim(f"  Using this checkout's project root: {top}"))
+        project = top
+    return project
 
 
 def _install_detected_skills() -> list[str]:
@@ -3758,22 +3778,23 @@ def _main() -> None:
     warn_if_outdated()
     if args.command == "ps": ps_command(); return
     if args.command == "stop": stop_command(args.worker_id); return
-    if args.command == "doctor": doctor_command(Path.cwd()); return
+    if args.command == "doctor": doctor_command(_project_root(Path.cwd())); return
     # Also from the project's own binding: an agent registers from wherever its chat was opened.
     if args.command == "agent": agent_command(args); return
     # Deliberately dispatched before choose_account(): resync resolves its account from the
     # project's own binding, so it must not depend on which account was authorized last.
-    if args.command == "resync": resync_command(Path.cwd()); return
+    if args.command == "resync": resync_command(_project_root(Path.cwd())); return
     if args.command == "assets":
+        project = _project_root(Path.cwd())
         if args.assets_command == "pull":
-            assets_command(Path.cwd(), args.name, pull_all=args.pull_all)
+            assets_command(project, args.name, pull_all=args.pull_all)
         elif args.assets_command == "push":
-            assets_command(Path.cwd(), [], push=args.name, push_all=args.push_all)
+            assets_command(project, [], push=args.name, push_all=args.push_all)
         elif args.assets_command == "rm":
-            assets_command(Path.cwd(), [], remove=args.name, remove_all=args.remove_all,
+            assets_command(project, [], remove=args.name, remove_all=args.remove_all,
                            assume_yes=args.assume_yes, force=args.force)
         else:
-            assets_command(Path.cwd(), [])
+            assets_command(project, [])
         return
     # Also above choose_account(): connect runs on a machine with no account yet — it is the
     # command that creates one.
@@ -3784,7 +3805,7 @@ def _main() -> None:
         if args.vendor_command == "setup": setup_vendor_command(args.command)
         return
     if args.command == "overleaf":
-        project = Path.cwd()
+        project = _project_root(Path.cwd())
         if args.overleaf_command == "help": overleaf_help_command()
         elif args.overleaf_command == "connect": overleaf_connect(project)
         elif args.overleaf_command == "status": overleaf_status(project)
@@ -3798,7 +3819,7 @@ def _main() -> None:
         else: workspaces_command(account)
         return
     if args.command == "bubbles": bubbles_command(account); return
-    project = Path.cwd()
+    project = _project_root(Path.cwd())
     if args.command == "sync": start_sync(account, args.bubble, project); return
     if args.command == "hard-reset": hard_reset(account, args.bubble, project, discard_overleaf=args.discard_overleaf); return
 

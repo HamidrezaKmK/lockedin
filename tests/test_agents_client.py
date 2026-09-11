@@ -130,6 +130,36 @@ class DetectConversationTests(unittest.TestCase):
             with patch.dict(os.environ, _bare_env(CODEX_HOME=codex_home), clear=True):
                 self.assertEqual(scientist_cli.detect_conversation(project_path), ("codex", "sid-1"))
 
+    def test_codex_and_agy_never_borrow_a_sibling_worktrees_conversation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            main, feature = root / "main", root / "worktrees" / "feature"
+            agy_home, codex_home = root / "agy-home", root / "codex-home"
+            main.mkdir(); feature.mkdir(parents=True)
+
+            agy_home.mkdir()
+            (agy_home / "history.jsonl").write_text("\n".join([
+                json.dumps({"workspace": str(main.resolve()), "conversationId": "agy-main",
+                            "timestamp": 2000}),
+                json.dumps({"workspace": str(feature.resolve()), "conversationId": "agy-feature",
+                            "timestamp": 1000}),
+            ]) + "\n")
+            sessions = codex_home / "sessions" / "2026" / "09" / "11"
+            sessions.mkdir(parents=True)
+            (sessions / "main.jsonl").write_text(json.dumps({
+                "payload": {"id": "codex-main", "cwd": str(main.resolve())}}) + "\n")
+            (sessions / "feature.jsonl").write_text(json.dumps({
+                "payload": {"id": "codex-feature", "cwd": str(feature.resolve())}}) + "\n")
+
+            with patch.dict(os.environ, _bare_env(
+                    ANTIGRAVITY_CLI_HOME=str(agy_home), CODEX_HOME=str(codex_home)), clear=True):
+                self.assertEqual(
+                    [cid for cid, _ in agent_vendors.get("agy").conversations_for(feature)],
+                    ["agy-feature"])
+                self.assertEqual(
+                    [cid for cid, _ in agent_vendors.get("codex").conversations_for(feature)],
+                    ["codex-feature"])
+
     def test_nothing_found_raises(self):
         with tempfile.TemporaryDirectory() as project, patch.dict(os.environ, _bare_env(), clear=True):
             with self.assertRaises(RuntimeError):

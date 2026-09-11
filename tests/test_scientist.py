@@ -643,9 +643,9 @@ class SkillVersionReachesRunningWorkers(unittest.TestCase):
 
 
 class GitWorktreeLayout(unittest.TestCase):
-    """The locator the skills hand agents has to actually resolve a worktree."""
+    """A linked worktree is its own Scientist project boundary."""
 
-    def test_the_common_dir_names_the_main_checkout_from_inside_a_worktree(self):
+    def test_a_worktree_never_borrows_the_main_checkouts_binding(self):
         import shutil as _shutil
         import subprocess
         git = _shutil.which("git")
@@ -653,7 +653,7 @@ class GitWorktreeLayout(unittest.TestCase):
             self.skipTest("git is not installed")
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            main, tree = root / "main", root / "feature"
+            main, tree = root / "main", root / "worktrees" / "feature"
             run = lambda *args, cwd: subprocess.run([git, *args], cwd=cwd, check=True,
                                                     capture_output=True, text=True)
             main.mkdir()
@@ -664,14 +664,17 @@ class GitWorktreeLayout(unittest.TestCase):
             (main / ".lockedin" / "config" / "binding.json").write_text("{}")
             run("worktree", "add", "-q", str(tree), "-b", "feature", cwd=main)
 
-            # The situation the skills describe: no .lockedin here.
+            # Main is connected, but a chat opened in the linked tree must not silently use it.
             self.assertFalse((tree / ".lockedin").exists())
-            common = subprocess.run(
-                [git, "rev-parse", "--path-format=absolute", "--git-common-dir"],
-                cwd=tree, check=True, capture_output=True, text=True).stdout.strip()
-            resolved = Path(common).parent
-            self.assertEqual(resolved.resolve(), main.resolve())
-            self.assertTrue((resolved / ".lockedin" / "config" / "binding.json").exists())
+            nested = tree / "src" / "package"; nested.mkdir(parents=True)
+            self.assertEqual(scientist_cli._project_root(nested), tree.resolve())
+            self.assertEqual(scientist_cli._ask_project(str(nested)), tree.resolve())
+
+            # Once the worktree is connected, nested agent commands resolve its local binding.
+            (tree / ".lockedin" / "config").mkdir(parents=True)
+            (tree / ".lockedin" / "config" / "binding.json").write_text("{}")
+            self.assertEqual(scientist_cli._project_root(nested), tree.resolve())
+            self.assertNotEqual(scientist_cli._project_root(nested), main.resolve())
 
 
 class ScientistProfileAndWorkersTest(unittest.TestCase):
@@ -1224,14 +1227,13 @@ class ScientistProfileAndWorkersTest(unittest.TestCase):
         self.assertIn("Direct LockedIn paths — do not search for them", scientist_cli.SKILL_RULES)
         self.assertIn("For any report-related search, search only inside `.lockedin/`", scientist_cli.SKILL_RULES)
         self.assertIn("lockedin-scientist doctor", scientist_cli.SKILL_RULES)
-        # A session started in a git worktree is ordinary, and .lockedin/ is untracked so it stays
-        # in the main checkout. Both skills must resolve that root instead of assuming the cwd —
-        # without it an agent rediscovers the situation every session and narrates it.
+        # Every provider treats the active linked worktree as its own project. It must not borrow
+        # a binding or conversation from the main checkout or a sibling tree.
         for text in (scientist_cli.SKILL_RULES, scientist_cli.VENDOR_SKILL_BOOTSTRAP):
-            self.assertIn("--git-common-dir", text)
+            self.assertIn("--show-toplevel", text)
             self.assertIn("worktree", text)
-        self.assertIn("do not describe it to", scientist_cli.SKILL_RULES)
-        self.assertIn("second worker on the same bubble", scientist_cli.SKILL_RULES)
+            self.assertIn("sibling worktree", text)
+        self.assertIn("worktree's own `.lockedin`", scientist_cli.SKILL_RULES)
 
     def test_skill_embeds_the_active_math_macro_table(self):
         self.assertIn("| `\\E` | `\\mathbb{E}` |", scientist_cli.macros_guide({"\\E": "\\mathbb{E}"}))
@@ -1250,10 +1252,11 @@ class ScientistProfileAndWorkersTest(unittest.TestCase):
                 content = skill.read_text()
                 self.assertIn("name: lockedin-scientist", content)
                 self.assertIn(".lockedin/SKILL.md", content)
-                # All three vendors get the same bootstrap verbatim, so the worktree locator has
-                # to reach codex and agy exactly as it reaches claude.
-                self.assertIn("--git-common-dir", content)
+                # All three vendors get the same bootstrap verbatim and the same local-worktree
+                # boundary, regardless of their different conversation stores.
+                self.assertIn("--show-toplevel", content)
                 self.assertIn("worktree", content)
+                self.assertIn("sibling worktree", content)
                 self.assertIn("Never use `find`, a glob", content)
                 self.assertIn("active workspace directory", content)
             bodies = {next(p for p in t if p.name == "SKILL.md").read_text()
