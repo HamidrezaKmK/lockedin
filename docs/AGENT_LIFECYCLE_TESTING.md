@@ -80,7 +80,9 @@ The automated gate must prove, for all three provider adapters:
 - every RHS mark card collapses and expands from its header control without losing draft, job,
   or conversation state;
 - a standalone chalk-talk image visibly renders its Markdown caption, including LaTeX and links;
-- setup tickets expose all three OS choices, are single-use, and resume an existing binding.
+- setup tickets expose all three OS choices, are single-use, and resume an existing binding;
+- Windows upgrade warnings show only the PowerShell installer, workers are detached from the
+  launching PowerShell process, and setup reports success only after the child is verifiably alive.
 
 ## Live disposable gate
 
@@ -144,6 +146,14 @@ Stop the disposable worker without retiring agents. Mint a fresh setup link from
 HTTP route and run it in the same directory. Confirm a healthy replacement worker appears, all
 three identities and conversation ids remain, and a third marker-recall message succeeds. Redeeming
 the same ticket again must fail.
+
+On a Windows test host, run the PowerShell setup line from an ordinary PowerShell terminal and
+again through `iex`. After each run, wait for at least three sync intervals, then require `ps` to
+show exactly one live worker for the project and `doctor` to pass. Close the launching shell and
+repeat both checks from a new shell. Force an outdated-client response and confirm the warning
+contains `install.ps1 | iex` and contains neither `install.sh` nor `bash`. A child that exits during
+startup must make setup fail with its worker log path; it must never print a successful “running”
+line.
 
 For Codex only, also simulate or reproduce a stale writer lock. The first attempt may requeue; any
 adopted fork must contain the prior marker and become the sole stored conversation for later turns.

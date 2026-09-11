@@ -145,6 +145,13 @@ class ScientistServerBoundaryTest(unittest.TestCase):
             self.assertEqual(response.status_code, 426)
             self.assertIn("/lockedin/main/install.sh", response.json()["detail"])
 
+    def test_previous_client_remains_compatible_during_windows_launcher_rollout(self):
+        with TestClient(server.build_app()) as client:
+            response = client.post(
+                "/api/scientist/v2/device", json={"client_name": "existing-worker"},
+                headers={"X-LockedIn-Scientist-Version": "2026.09.11.2"})
+        self.assertEqual(response.status_code, 200)
+
     def test_overleaf_field_normalizes_and_is_exported_only_when_assigned(self):
         with workspace() as (home, slug):
             with paths.use_root(home):
@@ -949,6 +956,44 @@ class ScientistProfileAndWorkersTest(unittest.TestCase):
         with patch.object(scientist_cli, "account_request", side_effect=RuntimeError("LockedIn Scientist is out of date. Reinstall it, then retry.")):
             with redirect_stderr(output): scientist_cli.warn_if_outdated(dict(ACCOUNT))
         self.assertIn("Reinstall: curl -fsSL", output.getvalue())
+
+    def test_outdated_warning_uses_powershell_on_windows(self):
+        output = io.StringIO()
+        with patch.object(scientist_cli.os, "name", "nt"), patch.object(
+                scientist_cli, "account_request",
+                side_effect=RuntimeError("LockedIn Scientist is out of date. Reinstall it, then retry.")):
+            with redirect_stderr(output):
+                scientist_cli.warn_if_outdated(dict(ACCOUNT))
+        self.assertIn("install.ps1 | iex", output.getvalue())
+        self.assertNotIn("install.sh", output.getvalue())
+        self.assertNotIn("bash", output.getvalue())
+
+    def test_windows_worker_launch_is_detached_from_powershell(self):
+        stream = object()
+        with patch.object(scientist_cli.os, "name", "nt"), \
+                patch.object(scientist_cli.subprocess, "DETACHED_PROCESS", 8, create=True), \
+                patch.object(scientist_cli.subprocess, "CREATE_NEW_PROCESS_GROUP", 512, create=True):
+            kwargs = scientist_cli._worker_launch_kwargs(stream)
+        self.assertEqual(kwargs["creationflags"], 520)
+        self.assertNotIn("start_new_session", kwargs)
+        self.assertIs(kwargs["stdout"], stream)
+        self.assertIs(kwargs["stderr"], stream)
+
+    def test_worker_start_failure_is_reported_instead_of_claiming_running(self):
+        proc = type("Exited", (), {"pid": 77, "poll": lambda self: 1})()
+        with patch.object(scientist_cli, "_worker_record", return_value={"status": "starting"}), \
+                patch.object(scientist_cli, "_alive", return_value=False), \
+                patch.object(scientist_cli, "_update_worker") as update:
+            with self.assertRaisesRegex(RuntimeError, "did not stay running"):
+                scientist_cli._await_worker_start("worker", proc, Path("worker.log"), timeout=.01)
+        self.assertEqual(update.call_args.kwargs["status"], "failed")
+
+    def test_worker_start_success_requires_a_live_running_record(self):
+        proc = type("Running", (), {"pid": 77, "poll": lambda self: None})()
+        with patch.object(scientist_cli, "_worker_record", return_value={"status": "running"}), \
+                patch.object(scientist_cli, "_alive", return_value=True), \
+                patch.object(scientist_cli.time, "sleep"):
+            scientist_cli._await_worker_start("worker", proc, Path("worker.log"), timeout=.01)
 
     def test_overleaf_help_and_unlinked_connect_are_actionable(self):
         output = io.StringIO()

@@ -37,7 +37,7 @@ except ImportError:  # Standalone client installed beside agent_vendors.py.
     import agent_vendors  # type: ignore[no-redef]
 
 APP = "lockedin-scientist"
-SCIENTIST_CLIENT_VERSION = "2026.09.11.2"
+SCIENTIST_CLIENT_VERSION = "2026.09.11.3"
 POLL_SECONDS = 5
 # A worker that has not completed a cycle in three polls is wedged rather than merely busy.
 # `doctor` reports that verdict and `resync` repairs exactly what `doctor` complains about, so
@@ -393,6 +393,13 @@ def choose_account() -> dict:
     return accounts[-1]
 
 
+def installer_command() -> str:
+    """The native reinstall command for this client's operating system."""
+    if os.name == "nt":
+        return "irm https://raw.githubusercontent.com/HamidrezaKmK/lockedin/main/install.ps1 | iex"
+    return "curl -fsSL https://raw.githubusercontent.com/HamidrezaKmK/lockedin/main/install.sh | bash"
+
+
 def warn_if_outdated(account: dict | None = None) -> None:
     """Show an upgrade warning for local-only commands before a worker discovers it later."""
     if account is None:
@@ -406,7 +413,7 @@ def warn_if_outdated(account: dict | None = None) -> None:
         if "out of date" not in str(exc).lower():
             return
         print(orange("! LockedIn Scientist is out of date."), file=sys.stderr)
-        print("  Reinstall: curl -fsSL https://raw.githubusercontent.com/HamidrezaKmK/lockedin/main/install.sh | bash", file=sys.stderr)
+        print(f"  Reinstall: {installer_command()}", file=sys.stderr)
 
 
 def login(server: str) -> None:
@@ -2850,6 +2857,45 @@ def _run_worker(worker_id: str, project: str) -> None:
     _update_worker(worker_id, status="stopped", stopped_at=time.time())
 
 
+def _worker_launch_kwargs(stream) -> dict:
+    """Detach a long-lived worker from the shell that happened to install or resume it."""
+    kwargs = {"stdin": subprocess.DEVNULL, "stdout": stream, "stderr": stream}
+    if os.name == "nt":
+        # A PowerShell setup link runs through nested scripts. Without a detached process, its
+        # console lifetime can take the worker with it as soon as setup returns.
+        kwargs["creationflags"] = (subprocess.DETACHED_PROCESS |
+                                   subprocess.CREATE_NEW_PROCESS_GROUP)
+    else:
+        kwargs["start_new_session"] = True
+    return kwargs
+
+
+def _await_worker_start(worker_id: str, proc, log: Path, *, timeout: float = 5.0) -> None:
+    """Do not claim success until the child has entered its worker loop and stayed alive."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        rec = _worker_record(worker_id) or {}
+        status = str(rec.get("status") or "starting")
+        alive = _alive(int(getattr(proc, "pid", 0) or 0))
+        if status in {"running", "degraded"} and alive:
+            # Catch immediate console-lifetime exits instead of racing the success message.
+            time.sleep(0.15)
+            if _alive(int(getattr(proc, "pid", 0) or 0)):
+                return
+        exit_code = proc.poll()
+        if status in {"failed", "stopped"} or exit_code is not None or not alive:
+            detail = str(rec.get("last_error") or rec.get("error") or
+                         f"worker process exited during startup (code {exit_code})")
+            _update_worker(worker_id, status="failed", error=detail, last_error=detail,
+                           stopped_at=time.time())
+            raise RuntimeError(f"Scientist worker did not stay running: {detail}. Log: {log}")
+        time.sleep(0.05)
+    detail = f"worker did not report ready within {timeout:g} seconds"
+    _update_worker(worker_id, status="failed", error=detail, last_error=detail,
+                   stopped_at=time.time())
+    raise RuntimeError(f"Scientist worker did not start: {detail}. Log: {log}")
+
+
 def start_sync(account: dict, bubble: str, project: Path, *, announce: bool = True) -> None:
     # `announce=False` is for callers that already printed their own heading (resync).
     if announce: heading("Synchronizing a bubble", f"{bubble} → {project / '.lockedin'}")
@@ -2869,11 +2915,18 @@ def start_sync(account: dict, bubble: str, project: Path, *, announce: bool = Tr
            # How this client is invoked here, so a headless agent turn is told the right command.
            "cli": cli_name()}
     data.setdefault("workers", {})[wid] = rec; save_workers(data)
-    with log.open("ab") as stream:
-        proc = subprocess.Popen([sys.executable, str(Path(__file__).resolve()), "_worker", wid, str(project.resolve())],
-                                stdin=subprocess.DEVNULL, stdout=stream, stderr=stream,
-                                start_new_session=os.name != "nt")
-    _update_worker(wid, pid=proc.pid)
+    try:
+        with log.open("ab") as stream:
+            proc = subprocess.Popen(
+                [sys.executable, str(Path(__file__).resolve()), "_worker", wid, str(project.resolve())],
+                **_worker_launch_kwargs(stream))
+    except OSError as exc:
+        detail = f"could not launch worker: {exc}"
+        _update_worker(wid, status="failed", error=detail, last_error=detail,
+                       stopped_at=time.time())
+        raise RuntimeError(f"{detail}. Log: {log}") from exc
+    _update_worker(wid, pid=proc.pid, log=str(log))
+    _await_worker_start(wid, proc, log)
     print(green("✓") + f" Synced {bold(bubble)}; worker {bold(wid)} is running.")
     print(dim("  Reports sync every five seconds. Run your agent normally from this project."))
 
@@ -2886,7 +2939,11 @@ def ps_command() -> None:
         print(dim("  No managed workers on this device."))
     for rec in records:
         if rec.get("status") in {"running", "starting", "degraded"} and not _alive(int(rec.get("pid", 0))):
+            previous = rec.get("status", "unknown")
             rec["status"] = "stopped"; rec["stopped_at"] = time.time()
+            if not rec.get("last_error"):
+                suffix = f" See {rec['log']}." if rec.get("log") else ""
+                rec["last_error"] = f"worker process exited unexpectedly while {previous}.{suffix}"
     records.sort(key=lambda rec: (0 if rec.get("status") in ATTENTION_WORKER_STATUSES else
                                   1 if rec.get("status") not in TERMINAL_WORKER_STATUSES else 2,
                                   -rec.get("started_at", 0)))

@@ -44,7 +44,10 @@ _WORKER_PATH_RE = re.compile(r"^/api/scientist/v2/bubbles/([^/]+)(?:/|$)")
 # Keep this equal to ``scientist_cli.SCIENTIST_CLIENT_VERSION``. Bump both when a Scientist
 # release needs an installed client refresh; the dependency-free installed client cannot import
 # package metadata from this server.
-SCIENTIST_CLIENT_VERSION = "2026.09.11.2"
+SCIENTIST_CLIENT_VERSION = "2026.09.11.3"
+# Keep the immediately previous release alive during this Windows-only launcher repair. Existing
+# workers do not need to be interrupted; fresh installers still receive the current source.
+SCIENTIST_COMPATIBLE_CLIENT_VERSIONS = {SCIENTIST_CLIENT_VERSION, "2026.09.11.2"}
 DEMO_ACCESS_MESSAGE = (
     "Lockedin is an experimental project and currently on demo, to be able to login "
     "and play with our project, email kamkarih@mit.edu"
@@ -1196,7 +1199,7 @@ def build_app():
         return personal["id"]
 
     def scientist_client_version(x_lockedin_scientist_version: Optional[str] = Header(default=None)) -> None:
-        if x_lockedin_scientist_version != SCIENTIST_CLIENT_VERSION:
+        if x_lockedin_scientist_version not in SCIENTIST_COMPATIBLE_CLIENT_VERSIONS:
             raise HTTPException(
                 status_code=426,
                 detail=scientist_reinstall_detail(),
