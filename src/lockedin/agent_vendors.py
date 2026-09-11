@@ -106,7 +106,8 @@ class VendorAdapter:
         raise NotImplementedError
 
     def turn_command(self, agent: dict, prompt: str, *, new_id: str, permissive: bool,
-                     turn_minutes: int, binary: BinaryResolver) -> list[str]:
+                     turn_minutes: int, fork_conversation: bool,
+                     binary: BinaryResolver) -> list[str]:
         raise NotImplementedError
 
     def turn_environment(self) -> dict[str, str]:
@@ -194,7 +195,8 @@ class AgyAdapter(VendorAdapter):
         return f"Restart agy if it is open, then use /skills to select {app} in a synchronized project."
 
     def turn_command(self, agent: dict, prompt: str, *, new_id: str, permissive: bool,
-                     turn_minutes: int, binary: BinaryResolver) -> list[str]:
+                     turn_minutes: int, fork_conversation: bool,
+                     binary: BinaryResolver) -> list[str]:
         cmd = [binary(self.name), "--output-format", "json", "--disable-slash-commands"]
         cmd += ["--dangerously-skip-permissions"] if permissive else ["--mode", "accept-edits"]
         cmd += ["--print-timeout", f"{turn_minutes}m0s"]
@@ -300,7 +302,8 @@ class ClaudeAdapter(VendorAdapter):
         return f"Restart Claude Code if it is open, then invoke /{app} in a synchronized project."
 
     def turn_command(self, agent: dict, prompt: str, *, new_id: str, permissive: bool,
-                     turn_minutes: int, binary: BinaryResolver) -> list[str]:
+                     turn_minutes: int, fork_conversation: bool,
+                     binary: BinaryResolver) -> list[str]:
         executable = binary(self.name)
         cmd = [executable, "-p", "--output-format", "json", "--permission-mode",
                "bypassPermissions" if permissive else "acceptEdits"]
@@ -378,7 +381,8 @@ class CodexAdapter(VendorAdapter):
         return {"CODEX_CA_CERTIFICATE": str(target)}
 
     def turn_command(self, agent: dict, prompt: str, *, new_id: str, permissive: bool,
-                     turn_minutes: int, binary: BinaryResolver) -> list[str]:
+                     turn_minutes: int, fork_conversation: bool,
+                     binary: BinaryResolver) -> list[str]:
         executable = binary(self.name)
         cmd = [executable, "exec"]
         cmd += ["--dangerously-bypass-approvals-and-sandbox"] if permissive else [
@@ -387,7 +391,8 @@ class CodexAdapter(VendorAdapter):
             cmd += ["--dangerously-bypass-hook-trust"]
         cmd += ["--skip-git-repo-check", "--json"]
         if agent.get("model"): cmd += ["-m", str(agent["model"])]
-        if agent.get("conversation"): cmd += ["resume", str(agent["conversation"])]
+        if agent.get("conversation"):
+            cmd += ["fork" if fork_conversation else "resume", str(agent["conversation"])]
         return cmd + [prompt]
 
     def chat_command(self, agent: dict, *, new_id: str, binary: BinaryResolver) -> list[str]:

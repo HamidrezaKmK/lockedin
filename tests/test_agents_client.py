@@ -403,6 +403,13 @@ class AgentTurnCommandTests(unittest.TestCase):
             cmd = scientist_cli.agent_turn_command(agent, "PROMPT")
         self.assertEqual(cmd[-3:], ["resume", "c1", "PROMPT"])
 
+    def test_codex_busy_retry_forks_the_existing_conversation(self):
+        with patch.object(scientist_cli.shutil, "which", return_value="/bin/codex"):
+            agent = {"vendor": "codex", "conversation": "c1", "model": ""}
+            cmd = scientist_cli.agent_turn_command(
+                agent, "PROMPT", fork_conversation=True)
+        self.assertEqual(cmd[-3:], ["fork", "c1", "PROMPT"])
+
     def test_unknown_vendor_raises(self):
         agent = {"vendor": "unknown"}
         with self.assertRaises(RuntimeError):
@@ -997,6 +1004,32 @@ class AgentRunnerEndToEndTests(unittest.TestCase):
             runner.tick()  # heartbeat re-offers the same job; the cooldown must still block it
             starts_after = len(fake.calls_for("jobs/j-000001/start"))
             self.assertEqual(starts_before, starts_after)
+
+    def test_a_requeued_codex_writer_conflict_forks_and_adopts_the_new_thread(self):
+        codex_agent = {**AGENT_AG1, "vendor": "codex", "conversation": "thread-1"}
+        project = _build_project({"ag-1": codex_agent}, {"w1": ["ag-1"]})
+        job = {"id": "j-000001", "agent": codex_agent, "mark": PAGE_MARK,
+               "instruction": "", "attempts": 2, "error": scientist_cli.AGENT_BUSY_ERROR}
+        fake = FakeAgentServer(heartbeat_jobs=[job])
+        observed = []
+
+        def command(agent, prompt, **kwargs):
+            observed.append(kwargs.get("fork_conversation"))
+            return _fake_vendor_cmd(
+                "print('{\"type\":\"thread.started\",\"thread_id\":\"thread-2\"}')")
+
+        with tempfile.TemporaryDirectory() as data_home, patch.dict(
+                os.environ, {"LOCKEDIN_SCIENTIST_HOME": data_home}), patch.object(
+                scientist_cli, "conversation_exists", return_value=True), patch.object(
+                scientist_cli, "agent_turn_command", command):
+            runner = self._runner(project, fake)
+            runner.tick()
+            runner.procs["j-000001"]["proc"].wait(timeout=10)
+            runner.tick()
+
+        self.assertEqual(observed, [True])
+        updates = fake.calls_for("agents/ag-1")
+        self.assertEqual(updates[0][2], {"conversation": "thread-2", "fresh": False})
 
     def test_an_ordinary_error_still_fails_the_job(self):
         project = _build_project({"ag-1": AGENT_AG1}, {"w1": ["ag-1"]})

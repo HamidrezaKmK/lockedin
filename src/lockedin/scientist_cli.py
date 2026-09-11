@@ -37,7 +37,7 @@ except ImportError:  # Standalone client installed beside agent_vendors.py.
     import agent_vendors  # type: ignore[no-redef]
 
 APP = "lockedin-scientist"
-SCIENTIST_CLIENT_VERSION = "2026.09.10.1"
+SCIENTIST_CLIENT_VERSION = "2026.09.11.1"
 POLL_SECONDS = 5
 # A worker that has not completed a cycle in three polls is wedged rather than merely busy.
 # `doctor` reports that verdict and `resync` repairs exactly what `doctor` complains about, so
@@ -2088,7 +2088,8 @@ def apply_confinement(cmd: list[str], mode: str, project: Path) -> tuple[list[st
     return cmd, {}
 
 
-def agent_turn_command(agent: dict, prompt: str, *, new_id: str = "", mode: str | None = None) -> list[str]:
+def agent_turn_command(agent: dict, prompt: str, *, new_id: str = "", mode: str | None = None,
+                       fork_conversation: bool = False) -> list[str]:
     """One headless turn of the agent's conversation. Flags first: agy reads `-p` as the prompt's flag.
 
     ``mode`` selects the vendor flags (see ``confinement_mode``): a confined turn or an operator's
@@ -2103,7 +2104,8 @@ def agent_turn_command(agent: dict, prompt: str, *, new_id: str = "", mode: str 
     permissive = mode in ("landlock", "seatbelt", "trust")
     adapter = agent_vendors.get(str(agent.get("vendor") or ""))
     return adapter.turn_command(agent, prompt, new_id=new_id, permissive=permissive,
-                                turn_minutes=minutes, binary=_vendor_binary)
+                                turn_minutes=minutes, fork_conversation=fork_conversation,
+                                binary=_vendor_binary)
 
 
 def agent_chat_argv(agent: dict, *, new_id: str = "") -> list[str]:
@@ -2364,13 +2366,24 @@ class AgentRunner:
                        f"{AGENT_LOST_CONVERSATION_ERROR}")
             return
         fresh = bool(agent.get("fresh")) or not agent.get("conversation")
+        # Codex can leave a conversation's writer owned after the registering terminal has
+        # closed. The first resume reports that precise conflict and is requeued; on the retry,
+        # fork the same history into a worker-owned thread instead of retrying forever or wiping
+        # the agent's memory.
+        fork_conversation = (
+            str(agent.get("vendor") or "") == "codex"
+            and bool(agent.get("conversation"))
+            and int(job.get("attempts", 1) or 1) > 1
+            and str(job.get("error") or "").startswith(AGENT_BUSY_ERROR)
+        )
         new_id = str(uuid.uuid4())
         mode = confinement_mode()
         prompt = agent_turn_prompt(job, cli=self.cli, fresh=fresh, mode=mode)
         self.jobs_dir.mkdir(parents=True, exist_ok=True)
         log = self.jobs_dir / f"{job['id']}.log"
         try:
-            cmd = agent_turn_command(agent, prompt, new_id=new_id, mode=mode)
+            cmd = agent_turn_command(agent, prompt, new_id=new_id, mode=mode,
+                                     fork_conversation=fork_conversation)
         except RuntimeError as exc:
             log.write_text(str(exc) + "\n", encoding="utf-8")
             self._result(job["id"], "failed", None, "", str(exc)); return
@@ -2409,6 +2422,7 @@ class AgentRunner:
         (self.jobs_dir / f"{job['id']}.pid").write_text(str(proc.pid), encoding="utf-8")
         self.procs[job["id"]] = {"proc": proc, "agent": agent, "job": job, "started": started,
                                  "log": log, "stream": stream, "fresh": fresh,
+                                 "adopt_conversation": fresh or fork_conversation,
                                  "new_id": new_id if agent_vendors.get(str(agent.get("vendor") or "")).preassigns_conversation_id
                                  and fresh else ""}
 
@@ -2456,7 +2470,7 @@ class AgentRunner:
             (self.jobs_dir / f"{job_id}.pid").unlink(missing_ok=True)
             output = _tail(entry["log"], AGENT_OUTPUT_TAIL)
             agent = entry["agent"]
-            if entry["fresh"]:
+            if entry.get("adopt_conversation", entry["fresh"]):
                 conversation = entry["new_id"] or _discover_conversation(
                     str(agent.get("vendor") or ""), output, started=entry["started"], project=self.sync.project)
                 if conversation:
@@ -2484,7 +2498,10 @@ class AgentRunner:
             # normally have caught this before dispatch, but it cannot be perfect on every vendor
             # or every OS, so fall back to sniffing the output for a known busy signature.
             elif not reason and code != 0 and _looks_vendor_busy(output, str(agent.get("vendor") or "")):
-                self.cooldowns[aid] = time.monotonic() + AGENT_COOLDOWN_SECONDS
+                if str(agent.get("vendor") or "") == "codex":
+                    self.cooldowns.pop(aid, None)
+                else:
+                    self.cooldowns[aid] = time.monotonic() + AGENT_COOLDOWN_SECONDS
                 self._requeued_this_tick.add(aid)
                 self._result(job_id, "requeue", code, output, AGENT_BUSY_ERROR)
             elif not reason and code != 0 and _looks_conversation_lost(output, str(agent.get("vendor") or "")):
