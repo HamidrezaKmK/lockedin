@@ -559,9 +559,12 @@ def apply_writes(home: Path, slug: str, writes: list[dict], *, actor: str = "") 
                     conflicts.append({"path": rel, "reason": "a deck must be UTF-8 text"})
                     continue
                 try:
-                    talks.absorb_push(slug, talk_id, decoded,
-                                       actor=actor or "the connected user",
-                                       author_for=_author_for(slug, sync_id, decoded))
+                    resolved_notes = talks.absorb_push(
+                        slug, talk_id, decoded, actor=actor or "the connected user",
+                        author_for=_author_for(slug, sync_id, decoded))
+                    for note_id in resolved_notes:
+                        agents.resolve_mark_jobs(
+                            slug, f"{sync_id}:{note_id}", actor=actor or "slide deleted")
                 except (KeyError, ValueError) as exc:
                     conflicts.append({"path": rel, "reason": str(exc),
                                       "revision": revision(current),

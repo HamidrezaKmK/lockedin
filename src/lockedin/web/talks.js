@@ -617,6 +617,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
 .tk-mini{aspect-ratio:16/10;border:1px solid var(--line);border-radius:10px;background:var(--panel);
   padding:11px 12px;position:relative;overflow:hidden;cursor:pointer}
 .tk-mini:hover,.tk-mini.cur{border-color:var(--accent)}
+.tk-mini.note{box-shadow:inset 0 0 0 1px var(--warn)}
 .tk-mini .n{font:500 10px var(--font-mono);color:var(--muted)}
 .tk-mini .t{font-weight:600;font-size:13px;margin:5px 0 7px;line-height:1.3}
 .tk-mini .s{font-family:var(--font-reading);font-size:11.5px;color:var(--muted);line-height:1.35}
@@ -2026,7 +2027,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
             <button data-ink="1" title="draw — freehand strokes become the feedback">${LI_IC("mark-ink","mark")}</button>
             <button data-editdeck="1" title="edit this slide's markdown by hand">${LI_IC("pencil")}</button>
             <button data-add="1" title="add a blank slide after this one" aria-label="Add a slide">${LI_IC("plus")}</button>
-            <button data-del="1" class="tk-danger" title="delete this slide and its marks">${LI_IC("trash")}</button>
+            <button data-del="1" class="tk-danger" title="delete this slide and resolve its marks">${LI_IC("trash")}</button>
           </div>
           <button class="tk-fab" data-fab="1" title="slide tools" aria-label="slide tools"
             aria-haspopup="true">${LI_IC("pencil")}</button>
@@ -2106,7 +2107,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     const el = h(`<div style="display:contents">
       <div class="tk-gh">Your notes · slide ${S.slide + 1}<span class="tk-sp"></span>
         ${openCount() ? `<button type="button" class="tk-tag open" data-jump-sheet="1"
-            title="See every slide" aria-label="${openCount()} open — see every slide">${openCount()} open</button>`
+            title="See every slide" aria-label="${openCount()} open — see every slide">${openCount()} open in talk</button>`
                       : `<button type="button" class="tk-tag done" data-jump-sheet="1"
             title="See every slide" aria-label="All closed — see every slide">all closed</button>`}</div>
       ${mine.length ? "" : `<div class="tk-empty tk-empty-notes" style="font-size:14px">
@@ -2354,9 +2355,9 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
   function renderSheet() {
     const el = h(`<div class="tk-sheet"><div class="tk-grid">
       ${S.talk.slides.map((s, i) => {
-        const by = {};
-        notesOn(i).forEach(n => (by[n.kind] = (by[n.kind] || 0) + 1));
-        return `<div class="tk-mini${i === S.slide ? " cur" : ""}" data-i="${i}">
+        const by = {}, openNotes = notesOn(i);
+        openNotes.forEach(n => (by[n.kind] = (by[n.kind] || 0) + 1));
+        return `<div class="tk-mini${i === S.slide ? " cur" : ""}${openNotes.length ? " note" : ""}" data-i="${i}">
           <div class="n">${String(i + 1).padStart(2, "0")} · ${esc(s.kind)}</div>
           <div class="t" data-line="title"></div>
           <div class="s" data-line="sub"></div>

@@ -21,6 +21,7 @@ from __future__ import annotations
 import os
 import re
 import hashlib
+from difflib import SequenceMatcher
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -760,6 +761,88 @@ def _shift_slide_refs(slug: str, talk_id: str, at: int, delta: int) -> None:
         save_notes(slug, talk_id, notes)
 
 
+def _slide_similarity(left: dict, right: dict) -> float:
+    """How likely two positions are the same slide across a whole-deck rewrite."""
+    def ratio(key: str) -> float:
+        a = " ".join(str(left.get(key, "")).lower().split())
+        b = " ".join(str(right.get(key, "")).lower().split())
+        return SequenceMatcher(None, a, b, autojunk=False).ratio()
+
+    title = ratio("title")
+    exact_title = bool(left.get("title")) and title == 1.0
+    return ((6.0 if exact_title else 3.0 * title) + ratio("body") + 0.5 * ratio("sub")
+            + (0.25 if left.get("kind") == right.get("kind") else 0.0))
+
+
+def _slide_mapping(old: list[dict], new: list[dict]) -> dict[int, int]:
+    """Monotone old-index -> new-index mapping for insertions/deletions in a pushed deck."""
+    if len(old) == len(new):
+        return {i: i for i in range(len(old))}
+
+    def subset(larger: list[dict], smaller: list[dict]) -> dict[int, int]:
+        # Match every smaller item to an ordered subset of the larger list. A removed middle
+        # slide then loses to its still-similar neighbours even when one title also changed.
+        m, n = len(larger), len(smaller)
+        neg = float("-inf")
+        scores = [[neg] * (n + 1) for _ in range(m + 1)]
+        take = [[False] * (n + 1) for _ in range(m + 1)]
+        for i in range(m + 1):
+            scores[i][0] = 0.0
+        for i in range(1, m + 1):
+            for j in range(1, min(i, n) + 1):
+                skipped = scores[i - 1][j]
+                matched = scores[i - 1][j - 1] + _slide_similarity(larger[i - 1], smaller[j - 1])
+                if matched >= skipped:
+                    scores[i][j], take[i][j] = matched, True
+                else:
+                    scores[i][j] = skipped
+        result = {}
+        i, j = m, n
+        while j:
+            if take[i][j]:
+                result[i - 1] = j - 1
+                i, j = i - 1, j - 1
+            else:
+                i -= 1
+        return result
+
+    if len(old) > len(new):
+        return subset(old, new)
+    inserted = subset(new, old)
+    return {old_i: new_i for new_i, old_i in inserted.items()}
+
+
+def _reconcile_note_slides(slug: str, talk_id: str, old: list[dict], new: list[dict],
+                           *, actor: str = "slide deleted") -> list[str]:
+    """Follow retained slides and archive marks whose slide disappeared."""
+    mapping = _slide_mapping(old, new)
+    data = load_notes(slug, talk_id)
+    changed = False
+    resolved = []
+    now = _now_iso()
+    for note in data.get("notes", {}).values():
+        index = note.get("slide", 0)
+        if index in mapping:
+            target = mapping[index]
+            if target != index:
+                note["slide"] = target
+                changed = True
+            continue
+        # Also repairs legacy ghosts already beyond the end of the current deck.
+        if note.get("status", "open") == "open":
+            note["status"] = "resolved"
+            note["resolved_at"] = now
+            note["resolved_by"] = actor
+            note["resolution"] = "slide_deleted"
+            if 0 <= index < len(old):
+                note["deleted_slide_title"] = old[index].get("title", "")
+            resolved.append(note["id"])
+            changed = True
+    if changed:
+        save_notes(slug, talk_id, data)
+    return resolved
+
+
 def insert_slide(slug: str, talk_id: str, after: int) -> int:
     """Insert a blank slide after `after` (−1 for the front). Returns the new index."""
     slides = parse_deck(read_deck(slug, talk_id))
@@ -771,21 +854,14 @@ def insert_slide(slug: str, talk_id: str, after: int) -> int:
     return pos
 
 
-def delete_slide(slug: str, talk_id: str, index: int) -> bool:
-    """Remove one slide — and with it every mark and snapshot it carried."""
-    slides = parse_deck(read_deck(slug, talk_id))
-    if not 0 <= index < len(slides):
+def delete_slide(slug: str, talk_id: str, index: int, *, actor: str = "") -> bool:
+    """Remove one slide, resolving its marks and shifting marks on retained slides."""
+    old = parse_deck(read_deck(slug, talk_id))
+    if not 0 <= index < len(old):
         return False
-    del slides[index]
+    slides = old[:index] + old[index + 1:]
+    _reconcile_note_slides(slug, talk_id, old, slides, actor=actor or "slide deleted")
     _atomic_write(paths.bubble_talk_path(slug, talk_id), render_deck(slides))
-
-    notes = load_notes(slug, talk_id)
-    for nid, n in list(notes.get("notes", {}).items()):
-        if n.get("slide") == index:
-            del notes["notes"][nid]
-            note_image_path(slug, talk_id, nid).unlink(missing_ok=True)
-    save_notes(slug, talk_id, notes)
-    _shift_slide_refs(slug, talk_id, index, -1)
     return True
 
 
@@ -815,6 +891,8 @@ def talk_detail(slug: str, talk_id: str) -> dict:
     if rec is None:
         raise KeyError(talk_id)
     slides = parse_deck(read_deck(slug, talk_id))
+    # Repair open ghosts left by older whole-deck deletions before counting them.
+    _reconcile_note_slides(slug, talk_id, slides, slides)
     notes = load_notes(slug, talk_id).get("notes", {})
 
     out_notes = []
@@ -848,10 +926,12 @@ def list_talks(slug: str) -> list[dict]:
     for rec in sorted(load_index(slug).get("talks", []),
                       key=lambda r: (r.get("date", ""), r.get("created_at", "")), reverse=True):
         tid = rec["id"]
+        slides = parse_deck(read_deck(slug, tid))
+        _reconcile_note_slides(slug, tid, slides, slides)
         all_notes = list(load_notes(slug, tid).get("notes", {}).values())
         open_notes = [n for n in all_notes if n.get("status", "open") == "open"]
         out.append({**rec,
-                    "slides": len(parse_deck(read_deck(slug, tid))),
+                    "slides": len(slides),
                     "open": len(open_notes),
                     "notes": len(all_notes)})
     return out
@@ -868,6 +948,7 @@ def open_notes_for_agent(slug: str) -> list[dict]:
     for rec in load_index(slug).get("talks", []):
         tid = rec["id"]
         slides = parse_deck(read_deck(slug, tid))
+        _reconcile_note_slides(slug, tid, slides, slides)
         for note in load_notes(slug, tid).get("notes", {}).values():
             if note.get("status", "open") != "open":
                 continue
@@ -903,7 +984,7 @@ def open_notes_for_agent(slug: str) -> list[dict]:
     return out
 
 
-def absorb_push(slug: str, talk_id: str, text: str, *, actor: str, author_for=None) -> None:
+def absorb_push(slug: str, talk_id: str, text: str, *, actor: str, author_for=None) -> list[str]:
     """Take a deck an agent pushed. The slide becomes what was pushed — nothing more.
 
     Deliberately powerless over marks: an agent can edit the text a mark points at (which may
@@ -930,13 +1011,15 @@ def absorb_push(slug: str, talk_id: str, text: str, *, actor: str, author_for=No
         raise ValueError("no such chalk-talk mark: " + ", ".join(sorted(set(unknown))))
     text = _REPLY.sub("", text)
 
-    old = {s["index"]: s for s in parse_deck(read_deck(slug, talk_id))}
+    old_slides = parse_deck(read_deck(slug, talk_id))
+    old = {s["index"]: s for s in old_slides}
     new = parse_deck(text)
     for slide in new:
         was = old.get(slide["index"])
         edited = was is not None and (was["body"] != slide["body"] or was["title"] != slide["title"])
         if edited:
             slide["date"] = _today()
+    resolved = _reconcile_note_slides(slug, talk_id, old_slides, new, actor=actor or "slide deleted")
     _atomic_write(paths.bubble_talk_path(slug, talk_id), render_deck(new))
     for note_id, body in replies:
         fingerprint = hashlib.sha256(
@@ -951,6 +1034,7 @@ def absorb_push(slug: str, talk_id: str, text: str, *, actor: str, author_for=No
         author = f"{name} on behalf of {actor}" if name else f"agent on behalf of {actor}"
         reply_note(slug, talk_id, note_id, author, body,
                    source_key="scientist:" + fingerprint, agent=True)
+    return resolved
 
 
 # --------------------------------------------------------------------------- #

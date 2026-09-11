@@ -10,7 +10,7 @@ import unittest
 from unittest.mock import patch
 from pathlib import Path
 
-from lockedin import agents, bubbles, feedback, paths, scientist_sync, talks
+from lockedin import agents, bubbles, feedback, paths, scientist_sync, service, talks
 
 from tests.test_editing_logic import temp_home
 
@@ -873,19 +873,65 @@ class ManualEditTests(unittest.TestCase):
         self.assertEqual(note["slide"], 2)          # followed its slide
         self.assertFalse(note["orphan"])
 
-    def test_delete_slide_takes_its_marks_and_shifts_the_rest(self):
+    def test_delete_slide_resolves_its_marks_and_shifts_the_rest(self):
         with paths.use_root(self.home):
-            talks.add_note(self.slug, self.talk, slide=0, kind="cut", author="pi",
-                           quote="Sample the noise level")
-            talks.add_note(self.slug, self.talk, slide=1, kind="q", author="pi",
-                           quote="The residual term survives")
-            self.assertTrue(talks.delete_slide(self.slug, self.talk, 0))
+            deleted = talks.add_note(self.slug, self.talk, slide=0, kind="cut", author="pi",
+                                     quote="Sample the noise level", text="Cut it.")
+            retained = talks.add_note(self.slug, self.talk, slide=1, kind="q", author="pi",
+                                      quote="The residual term survives")
+            talks.save_note_image(self.slug, self.talk, deleted["id"], b"\x89PNG\r\n\x1a\nfake")
+            sync_id = talks.ensure_sync_ids(self.slug)[0]["sync_id"]
+            agent = agents.register_agent(self.slug, name="Ada", role="reviewer", goal="fix it",
+                                          vendor="codex", conversation="conv-1", worker_id="worker-1")
+            job = agents.create_job(self.slug, agent_id=agent["id"],
+                                    mark_key=f"{sync_id}:{deleted['id']}", instruction="Cut it.")
+            self.assertTrue(service.delete_talk_slide(self.home, self.slug, self.talk, 0, actor="pi"))
             detail = talks.talk_detail(self.slug, self.talk)
-        self.assertEqual([s["title"] for s in detail["slides"]],
-                         ["The residual term survives"])
-        self.assertEqual(len(detail["notes"]), 1)   # slide 0's mark died with it
+            archive = talks.load_notes(self.slug, self.talk)["notes"]
+            image_exists = talks.note_image_path(self.slug, self.talk, deleted["id"]).exists()
+            cancelled = agents.get_job(self.slug, job["id"])
+        self.assertEqual([s["title"] for s in detail["slides"]], ["The residual term survives"])
+        self.assertEqual([n["id"] for n in detail["notes"]], [retained["id"]])
         self.assertEqual(detail["notes"][0]["slide"], 0)
         self.assertFalse(detail["notes"][0]["orphan"])
+        self.assertEqual(archive[deleted["id"]]["status"], "resolved")
+        self.assertEqual(archive[deleted["id"]]["resolution"], "slide_deleted")
+        self.assertEqual(archive[deleted["id"]]["messages"][0]["body"], "Cut it.")
+        self.assertTrue(image_exists)
+        self.assertEqual(cancelled["status"], "cancelled")
+        self.assertEqual(cancelled["error"], "the mark was resolved")
+
+    def test_agent_deleting_a_middle_slide_resolves_its_marks_and_repoints_later_ones(self):
+        third = "\n---\n\n<!-- slide: kind=evidence, date=2026-08-27 -->\n# Final evidence\n\nKeep me.\n"
+        with paths.use_root(self.home):
+            talks.absorb_push(self.slug, self.talk, talks.read_deck(self.slug, self.talk) + third, actor="pi")
+            removed = talks.add_note(self.slug, self.talk, slide=1, kind="cut", author="pi",
+                                     quote="The residual term survives", text="Delete this slide.")
+            retained = talks.add_note(self.slug, self.talk, slide=2, kind="q", author="pi",
+                                      quote="Final evidence", text="Keep this mark.")
+            slides = talks.parse_deck(talks.read_deck(self.slug, self.talk))
+            talks.absorb_push(self.slug, self.talk, talks.render_deck([slides[0], slides[2]]), actor="Ada")
+            detail = talks.talk_detail(self.slug, self.talk)
+            archive = talks.load_notes(self.slug, self.talk)["notes"]
+        self.assertEqual(detail["open"], 1)
+        self.assertEqual(detail["notes"][0]["id"], retained["id"])
+        self.assertEqual(detail["notes"][0]["slide"], 1)
+        self.assertEqual(archive[removed["id"]]["status"], "resolved")
+        self.assertEqual(archive[removed["id"]]["resolved_by"], "Ada")
+
+    def test_legacy_out_of_range_open_mark_is_auto_resolved_not_counted(self):
+        with paths.use_root(self.home):
+            ghost = talks.add_note(self.slug, self.talk, slide=1, kind="q", author="pi",
+                                   quote="The residual term survives", text="Old mark.")
+            data = talks.load_notes(self.slug, self.talk)
+            data["notes"][ghost["id"]]["slide"] = 99
+            talks.save_notes(self.slug, self.talk, data)
+            detail = talks.talk_detail(self.slug, self.talk)
+            archive = talks.load_notes(self.slug, self.talk)["notes"][ghost["id"]]
+        self.assertEqual(detail["open"], 0)
+        self.assertEqual(detail["notes"], [])
+        self.assertEqual(archive["status"], "resolved")
+        self.assertEqual(archive["resolution"], "slide_deleted")
 
     def test_malformed_wrappers_are_left_alone_not_eaten(self):
         clean, found = talks._parse_wrappers(

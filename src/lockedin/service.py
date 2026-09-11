@@ -924,9 +924,18 @@ def insert_talk_slide(home: Path, slug: str, talk_id: str, after: int) -> int:
         return talks.insert_slide(slug, talk_id, after)
 
 
-def delete_talk_slide(home: Path, slug: str, talk_id: str, slide: int) -> bool:
+def delete_talk_slide(home: Path, slug: str, talk_id: str, slide: int, *, actor: str = "") -> bool:
     with paths.use_root(home):
-        return talks.delete_slide(slug, talk_id, slide)
+        note_ids = [n["id"] for n in talks.load_notes(slug, talk_id).get("notes", {}).values()
+                    if n.get("slide") == slide and n.get("status", "open") == "open"]
+        ok = talks.delete_slide(slug, talk_id, slide, actor=actor)
+        if ok and note_ids:
+            sync_id = next((str(rec.get("sync_id") or "") for rec in talks.ensure_sync_ids(slug)
+                            if rec.get("id") == talk_id), "")
+            if sync_id:
+                for note_id in note_ids:
+                    agents.resolve_mark_jobs(slug, f"{sync_id}:{note_id}", actor=actor)
+        return ok
 
 
 def save_talk_note_image(home: Path, slug: str, talk_id: str, note_id: str, data: bytes) -> str:

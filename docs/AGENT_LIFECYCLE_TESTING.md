@@ -71,6 +71,8 @@ The automated gate must prove, for all three provider adapters:
 - the agent popup orders direct jobs and marked threads together and includes mark context plus all replies;
 - resolving a mark hides it from the report or chalk talk, cancels unfinished assigned work, and
   leaves its quote, image, comments, and replies unchanged in agent history;
+- deleting a chalk-talk slide automatically resolves and archives its marks, preserves their threads
+  and screenshots, and shifts marks on every retained later slide;
 - retirement cancels open work, removes the active profile and recovery mapping, and preserves a
   read-only history entry;
 - popup and mark-thread replies render inline/display LaTeX through KaTeX, the icon-only Send

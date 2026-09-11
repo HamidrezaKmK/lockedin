@@ -344,7 +344,7 @@ labels and counters never change report-page references. Citations remain bubble
 paper keeps the same citation number on slides and pages.
 
 A hand edit lands in place — the slide simply becomes what you saved. **+** inserts a blank
-slide after the current one; the **delete** button removes the slide with its marks; the delete
+slide after the current one; the **delete** button removes the slide and resolves its marks. The delete
 button on a talk card on the bubble page removes the whole talk.
 
 ## Marks are conversations

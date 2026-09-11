@@ -101,6 +101,13 @@ async function main(){
     const {id:talkId}=await(await req(`/api/bubbles/${slug}/talks`,{title:"Reading the clock",body:deck})).json();
     const shortDeck=[slide(1),slide(2),slide(3)].join("\n\n---\n\n");
     const {id:shortId}=await(await req(`/api/bubbles/${slug}/talks`,{title:"A short deck",body:shortDeck})).json();
+    const deletionDeck=[slide(1),slide(2)].join("\n\n---\n\n");
+    const {id:deletionId}=await(await req(`/api/bubbles/${slug}/talks`,{title:"Deleted-slide marks",body:deletionDeck})).json();
+    await req(`/api/bubbles/${slug}/talks/${deletionId}/notes`,
+      {slide:1,kind:"q",quote:"Body text for slide 2",text:"Remove this slide."});
+    await req(`/api/bubbles/${slug}/talks/${deletionId}/slides/1`,{},"DELETE");
+    const deletionState=await(await seed.request.fetch(`${base}/api/bubbles/${slug}/talks/${deletionId}`)).json();
+    assert.equal(deletionState.open,0,"deleting a slide must resolve its marks immediately");
     const cookies=await seed.cookies(); await seed.close();
 
     const errs=[];
@@ -181,6 +188,11 @@ async function main(){
     await p.goto(`${base}/#bubble/${slug}/talk/${encodeURIComponent(shortId)}/slide/2`,{waitUntil:"networkidle"});
     await p.waitForSelector(".tk-slide",{timeout:15000}); await delay(700);
     await shot("pager-short",".tk-foot");
+    await p.goto(`${base}/#bubble/${slug}/talk/${encodeURIComponent(deletionId)}/slide/1`,{waitUntil:"networkidle"});
+    await p.waitForSelector(".tk-gh [data-jump-sheet]",{timeout:15000});
+    assert.equal((await p.locator(".tk-gh [data-jump-sheet]").innerText()).trim(),"all closed",
+      "a deleted slide must not leave a ghost open counter");
+    console.log("PROBE deleted-slide marks: all closed");
     // And the edit-mode footer, which carries the same pager.
     await p.goto(`${base}/#bubble/${slug}/talk/${encodeURIComponent(talkId)}/slide/9/edit`,{waitUntil:"networkidle"});
     await p.waitForSelector(".tk-editcard",{timeout:15000}); await delay(1200);
@@ -253,6 +265,8 @@ async function main(){
     const notesOpenBefore=await p.evaluate(()=>document.querySelector(".tk-overlay").classList.contains("notes-open"));
     await pill.click();
     await p.waitForSelector(".tk-sheet",{timeout:5000});
+    assert.equal(await p.locator(".tk-mini.note").count(),1,
+      "the contact sheet must visibly identify every slide carrying an open mark");
     assert.equal(await p.locator(".tk-slide").count(),0,"the deck slide must be gone once the sheet is showing");
     const notesOpenAfter=await p.evaluate(()=>document.querySelector(".tk-overlay").classList.contains("notes-open"));
     assert.equal(notesOpenAfter,notesOpenBefore,

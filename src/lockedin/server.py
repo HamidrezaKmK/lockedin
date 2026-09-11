@@ -2503,7 +2503,7 @@ def build_app():
     @app.delete("/api/bubbles/{slug}/talks/{talk_id}/slides/{slide}")
     def delete_talk_slide(slug: str, talk_id: str, slide: int,
                           user: str = Depends(current_user)):
-        return {"ok": service.delete_talk_slide(home_of(user), slug, talk_id, slide)}
+        return {"ok": service.delete_talk_slide(home_of(user), slug, talk_id, slide, actor=user)}
 
     @app.get("/api/bubbles/{slug}/talk-notes")
     def talk_notes_for_agent(slug: str, user: str = Depends(current_user)):
