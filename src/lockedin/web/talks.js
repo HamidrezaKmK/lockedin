@@ -510,9 +510,17 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
 .tk-note.collapsed{padding-bottom:18px}
 .tk-note.collapsed>.hd{margin-bottom:0}
 .tk-note.collapsed>:not(.hd){display:none!important}
-.tk-collapse{box-sizing:border-box;width:25px;height:25px;min-width:25px!important;min-height:25px!important;flex:0 0 25px;padding:0!important;border:0;background:transparent;display:grid;place-items:center;line-height:0;color:var(--muted)}
+.tk-note .hd>.tk-collapse{appearance:none;box-sizing:border-box;width:25px!important;height:25px!important;
+  min-width:25px!important;min-height:25px!important;max-width:25px!important;max-height:25px!important;
+  flex:0 0 25px!important;margin:0!important;padding:0!important;border:0;background:transparent;
+  display:inline-flex!important;align-items:center!important;justify-content:center!important;align-self:center;
+  line-height:0!important;color:var(--muted)}
 .tk-collapse:hover{background:var(--panel2);color:var(--ink)}
 .tk-collapse .li-ic{width:13px;height:13px}
+.tk-md figure{margin:0 0 15px;text-align:center}
+.tk-md figure>img{display:block;margin:0 auto;max-width:100%}
+.tk-md figcaption{max-width:92%;margin:8px auto 0;color:var(--muted);font-family:var(--font-reading);
+  font-size:12.5px;line-height:1.45;font-style:italic;text-align:center;overflow-wrap:anywhere}
 .tk-badge{font:500 10.5px var(--font-mono);padding:2px 7px;border-radius:999px;letter-spacing:.02em;
   background:color-mix(in srgb,var(--kc) 20%,transparent);color:var(--kc)}
 .tk-note .qt{font-family:var(--font-reading);font-size:12.5px;color:var(--muted);
@@ -1147,6 +1155,22 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
           displayMode: m.display, throwOnError: false, macros: mathMacros(),
         });
       } catch (e) { node.textContent = m.src; }
+    });
+    // Markdown defines an image alt as its caption, but marked leaves that text hidden in the
+    // alt attribute. Promote standalone images after the parent slide math is complete; each
+    // caption then safely runs through this same Markdown and KaTeX pipeline.
+    into.querySelectorAll("p>img").forEach(img => {
+      const paragraph = img.parentElement;
+      if (!paragraph || paragraph.children.length !== 1 || paragraph.textContent.trim()) return;
+      const caption = String(img.getAttribute("alt") || "").trim();
+      const figure = document.createElement("figure");
+      paragraph.replaceWith(figure);
+      figure.append(img);
+      if (caption) {
+        const figcaption = document.createElement("figcaption");
+        renderInline(caption, figcaption, context);
+        figure.append(figcaption);
+      }
     });
   }
 

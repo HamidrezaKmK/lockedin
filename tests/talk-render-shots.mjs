@@ -30,6 +30,8 @@ const RICH = String.raw`<!-- slide: kind=derivation -->
 
 *Figure from [[Pretrained VAMP]] §2.1. Held-out error on the vertical axis (log scale, roughly $2\times10^{-3}$ to $6\times10^{-2}$), source time on the horizontal axis ($0$ to $0.9$).*
 
+![Reward caption with $\E[X]$ and [[Pretrained VAMP]]](/brand/lockedin-lock.svg)
+
 The bridge expectation $\E[\psi(X_T) \mid X_s]$ is the object the sampler actually
 evaluates, and $\Var[\psi]$ is what the estimator's variance is written in.
 
@@ -131,12 +133,20 @@ async function main(){
         theoremTitles:[...md.querySelectorAll(".tk-theorem-title")].map(x=>x.textContent),
         theoremRefs:[...md.querySelectorAll(".tk-thm-ref")].map(x=>x.textContent),
         rawTheorem:/\\begin\{(?:theorem|lemma)\}/.test(md.textContent),
+        captions:md.querySelectorAll("figure>figcaption").length,
+        captionText:md.querySelector("figure>figcaption")?.textContent || "",
+        captionKatex:md.querySelectorAll("figure>figcaption .katex").length,
+        captionLinks:md.querySelectorAll("figure>figcaption a.tk-wikilink").length,
         macros:JSON.stringify((window.S&&window.S.mathMacros)||null),
       };
     });
     assert.deepEqual(probe.theoremTitles,["Theorem 1 (Bridge readout)","Lemma 1"]);
     assert.deepEqual(probe.theoremRefs,["Theorem 1","Lemma 1"]);
     assert.equal(probe.rawTheorem,false,"theorem source syntax must not leak onto the slide");
+    assert.equal(probe.captions,1,"standalone slide image must have a visible caption");
+    assert.ok(probe.captionKatex>0,"caption LaTeX must render through KaTeX");
+    assert.equal(probe.captionLinks,1,"caption wikilinks must stay interactive");
+    assert.ok(!probe.captionText.includes("$"),"caption must not leak raw math delimiters");
     console.log("PROBE slide1:",JSON.stringify(probe,null,1));
     // Clicking a resolved wikilink has to leave the deck and open that page.
     await p.click(".tk-slide a.tk-wikilink[data-page]");

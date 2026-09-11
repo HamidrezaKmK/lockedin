@@ -20,7 +20,7 @@
      two surfaces cannot drift apart. -->
 <script src="/lightbox.js"></script>
 <!-- Chalk talks: dated slide decks the agent writes, and the marks you leave on them. -->
-<script src="/talks.js"></script>
+<script src="/talks.js?v=20260911-caption-controls"></script>
 <!-- Icon set: one geometric family replacing the OS emoji, inheriting currentColor so a single
      drawing is correct in every theme and on every device. -->
 <script src="/icons.js"></script>
@@ -1433,13 +1433,13 @@
   .agent-mark-context blockquote{margin:6px 0 0;padding-left:8px;border-left:2px solid var(--warn);
     color:var(--muted);font-size:11.5px;white-space:pre-wrap}
   .agent-message-compose{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;
-    align-items:center;padding:12px 14px;border-top:1px solid var(--line);flex:none}
+    align-items:end;padding:12px 14px;border-top:1px solid var(--line);flex:none}
   .agent-message-compose textarea{width:100%;min-height:58px;max-height:150px;resize:vertical;
     padding:7px 8px;font:12px/1.4 var(--font-ui)}
   .agent-message-compose button{min-height:34px;padding:6px 10px}
-  .agent-send{box-sizing:border-box;width:40px;height:40px;min-width:40px!important;min-height:40px!important;
-    padding:0!important;display:grid;place-items:center;align-self:center;border-radius:50%;line-height:0}
-  .agent-send .li-ic{width:17px;height:17px}
+  .agent-message-compose .agent-send{box-sizing:border-box;width:40px;height:40px;min-width:40px!important;min-height:40px!important;
+    padding:0!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;align-self:end;border-radius:50%;line-height:0;gap:0!important}
+  .agent-send .li-ic{display:block;width:17px;height:17px;vertical-align:0}
   .agent-working{align-self:flex-start;display:flex;align-items:center;gap:8px;padding:7px 10px;color:var(--muted);font-size:11px}
   .agent-working-bot{position:relative;display:inline-grid;place-items:center;width:30px;height:30px;border-radius:50%;background:color-mix(in srgb,var(--accent) 12%,var(--panel));color:var(--accent)}
   .agent-working-bot .li-ic{width:18px;height:18px}

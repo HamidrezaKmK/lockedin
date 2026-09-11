@@ -500,6 +500,9 @@ class SlideCaptionTests(unittest.TestCase):
         self.assertIn("captions.push(cap)", js)
         # The guard has to run before the math pass, or it is pointless.
         self.assertLess(js.index("@@LICAP"), js.index("stashMath(theorems.text)"))
+        self.assertIn('into.querySelectorAll("p>img")', js)
+        self.assertIn('document.createElement("figcaption")', js)
+        self.assertIn("renderInline(caption, figcaption, context)", js)
 
 
 class ClientScanTests(unittest.TestCase):

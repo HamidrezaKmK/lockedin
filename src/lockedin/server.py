@@ -1242,10 +1242,10 @@ def build_app():
     # ---- static ----
     @app.get("/")
     def index():
-        # no-cache: the browser must revalidate before reusing a cached copy, so SPA
-        # updates land immediately (it can still 304 when unchanged). Without this,
+        # no-store: a deployment must replace the app shell even in browsers and tunnel caches;
+        # an already-open URL fetch cannot receive a 304 for yesterday's shell. Without this,
         # FileResponse sets no Cache-Control and browsers may serve a stale SPA.
-        return FileResponse(WEB_DIR / "index.html", headers={"Cache-Control": "no-cache"})
+        return FileResponse(WEB_DIR / "index.html", headers={"Cache-Control": "no-store"})
 
     @app.get("/icons.js")
     def icons_js():

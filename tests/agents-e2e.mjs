@@ -298,10 +298,15 @@ async function main() {
     const sendAlignment = await agentChat.locator(".agent-message-compose").evaluate(node => {
       const textarea=node.querySelector("textarea").getBoundingClientRect();
       const button=node.querySelector(".agent-send").getBoundingClientRect();
-      return {delta:Math.abs((textarea.top+textarea.bottom-button.top-button.bottom)/2),
+      const icon=node.querySelector(".agent-send svg").getBoundingClientRect();
+      return {bottomDelta:Math.abs(textarea.bottom-button.bottom),
+              iconDx:(button.left+button.width/2)-(icon.left+icon.width/2),
+              iconDy:(button.top+button.height/2)-(icon.top+icon.height/2),
               width:button.width,height:button.height};
     });
-    assert.ok(sendAlignment.delta < 2, `Send button is vertically misaligned by ${sendAlignment.delta}px`);
+    assert.ok(sendAlignment.bottomDelta < 2, `Send button bottom is misaligned by ${sendAlignment.bottomDelta}px`);
+    assert.ok(Math.abs(sendAlignment.iconDx)<1 && Math.abs(sendAlignment.iconDy)<1,
+      `Send arrow is not centered in its circle: ${JSON.stringify(sendAlignment)}`);
     assert.deepEqual([Math.round(sendAlignment.width),Math.round(sendAlignment.height)],[40,40]);
     // even though the draft value happened to be copied into a new textarea.
     await directBox.evaluate(node => { node.dataset.composerIdentity = "original"; });
@@ -493,10 +498,12 @@ async function main() {
     const collapseAlignment = await mark.locator(".hd").evaluate(header => {
       const id=header.querySelector(".tk-id").getBoundingClientRect();
       const button=header.querySelector(".tk-collapse").getBoundingClientRect();
-      return {delta:Math.abs((id.top+id.bottom-button.top-button.bottom)/2),
+      return {delta:Math.abs((id.top+id.bottom-button.top-button.bottom)/2), gap:button.left-id.right,
               width:button.width,height:button.height};
     });
     assert.ok(collapseAlignment.delta < 2, `Collapse button is vertically misaligned by ${collapseAlignment.delta}px`);
+    assert.ok(collapseAlignment.gap >= 5 && collapseAlignment.gap <= 10,
+      `Collapse button has an awkward ${collapseAlignment.gap}px gap after the mark ID`);
     assert.deepEqual([Math.round(collapseAlignment.width),Math.round(collapseAlignment.height)],[25,25]);
 
     // The agent popup is a complete work history, not a second direct-message-only silo. The

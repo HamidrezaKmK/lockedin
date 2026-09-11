@@ -77,6 +77,7 @@ The automated gate must prove, for all three provider adapters:
   control stays vertically centered, and the working robot has a reduced-motion fallback;
 - every RHS mark card collapses and expands from its header control without losing draft, job,
   or conversation state;
+- a standalone chalk-talk image visibly renders its Markdown caption, including LaTeX and links;
 - setup tickets expose all three OS choices, are single-use, and resume an existing binding.
 
 ## Live disposable gate
@@ -132,7 +133,8 @@ one word, each mark receives exactly one provider reply, all jobs finish, and al
 ids still match the continuity records. Open each agent popup and confirm that its direct exchanges and
 marked quote/comment/reply thread appear together in chronological job order. Include one inline
 and one display LaTeX reply and confirm both render, exercise the working indicator, and collapse and
-re-expand a long RHS mark without changing its job or thread.
+re-expand a long RHS mark without changing its job or thread. Include a standalone figure whose caption
+has LaTeX and a wikilink; require a visible caption, rendered math, and a working link.
 
 ### E. Recovery
 
