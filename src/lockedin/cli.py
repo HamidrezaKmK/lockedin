@@ -116,11 +116,20 @@ def devmode():
 
 @app.command(name="agent-archives")
 def agent_archives(bubble: str, as_json: bool = typer.Option(
-        False, "--json", help="Print complete archived records as JSON.")):
+        False, "--json", help="Print complete archived records as JSON."),
+        workspace: str = typer.Option("", "--workspace", help="Server workspace id."),
+        owner: str = typer.Option("", "--owner", help="Agent owner in that workspace.")):
     """Inspect retired agents from the authenticated server command line."""
-    from . import service
+    from . import service, workspaces
 
-    user, home = _dev_auth()
+    if bool(workspace) != bool(owner):
+        typer.secho("✗ Use --workspace and --owner together.", fg="red")
+        raise typer.Exit(2)
+    if workspace:
+        user = owner.strip().lower()
+        home = workspaces.workspace_home(workspace.strip())
+    else:
+        user, home = _dev_auth()
     rows = service.list_retired_agents(home, bubble, owner=user)
     if as_json:
         typer.echo(json.dumps(rows, indent=2, ensure_ascii=False))

@@ -174,7 +174,8 @@ picture reference, user turns, agent replies, job status, and order remain uncha
 with a queued mark and once with a running mark: both jobs must cancel cleanly, no provider child may
 start or continue, and no conversation id may change. Retire the agent and confirm it and its jobs
 disappear from the frontend and normal web API. On the server, confirm
-`lockedin agent-archives <bubble> --json` retains the same history. Register a new agent with the
+`lockedin agent-archives <bubble> --workspace <id> --owner <user> --json` retains the same history.
+Register a new agent with the
 retired name and confirm it receives a distinct id and an empty new history.
 
 ### G. Missing memory and retirement

@@ -164,6 +164,15 @@ class Registry(AgentFixture):
         self.assertEqual(archive[0]["id"], first["id"])
         self.assertEqual(archive[0]["conversation"], "conv-private")
 
+        with patch("lockedin.workspaces.workspace_home", return_value=self.home), patch.object(
+                cli, "_dev_auth") as dev_auth:
+            explicit = CliRunner().invoke(cli.app, [
+                "agent-archives", self.slug, "--workspace", "workspace-id",
+                "--owner", "hamid", "--json"])
+        self.assertEqual(explicit.exit_code, 0, explicit.output)
+        dev_auth.assert_not_called()
+        self.assertEqual(json.loads(explicit.stdout)[0]["id"], first["id"])
+
     def test_reset_forgets_the_conversation_and_marks_the_next_turn_fresh(self):
         agent = self.register()
         with paths.use_root(self.home):
