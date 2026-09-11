@@ -1589,7 +1589,7 @@ class AgentTurnPromptConfinementTests(unittest.TestCase):
 
 
 class ScratchSurvivesSyncTests(unittest.TestCase):
-    """Only flat provenance-tagged scratch artifacts sync; private local scratch survives."""
+    """Flat tagged and legacy scratch sync; nested caches and staging files remain local."""
 
     class _FakeBubbleServer:
         def __init__(self):
@@ -1649,21 +1649,25 @@ class ScratchSurvivesSyncTests(unittest.TestCase):
             sync.sync_once()
             sync.sync_once()
             self.assertEqual(keep.read_text(), "throwaway work")
-            self.assertNotIn("scratch/notes.txt", fake.files)
+            self.assertIn("scratch/notes.txt", fake.files)
 
-    def test_only_provenance_tagged_flat_scratch_is_selected_for_sync(self):
+    def test_tagged_and_legacy_flat_scratch_are_selected_for_sync(self):
         fake = self._FakeBubbleServer()
         with tempfile.TemporaryDirectory() as directory, patch.object(
                 scientist_cli, "request", side_effect=fake.request):
             sync = scientist_cli.ProjectSync(dict(ACCOUNT), Path(directory), "work")
             sync.validate_or_initialize()
             (sync.root / "scratch" / "mark-page-overview-qx7--figure.py").write_text("print('figure')")
-            (sync.root / "scratch" / "notes.txt").write_text("local only")
+            (sync.root / "scratch" / "notes.txt").write_text("legacy")
+            (sync.root / "scratch" / ".hidden").write_text("local only")
+            (sync.root / "scratch" / "upload.tmp").write_text("local only")
             nested = sync.root / "scratch" / "mark-page-overview-qx7--nested"
             nested.mkdir(); (nested / "helper.py").write_text("pass")
             selected = sync._report_paths()
             self.assertIn("scratch/mark-page-overview-qx7--figure.py", selected)
-            self.assertNotIn("scratch/notes.txt", selected)
+            self.assertIn("scratch/notes.txt", selected)
+            self.assertNotIn("scratch/.hidden", selected)
+            self.assertNotIn("scratch/upload.tmp", selected)
             self.assertFalse(any("nested" in path for path in selected))
 
     def test_a_second_project_copy_pulls_and_edits_the_first_agents_script_in_place(self):

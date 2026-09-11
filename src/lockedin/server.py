@@ -44,10 +44,10 @@ _WORKER_PATH_RE = re.compile(r"^/api/scientist/v2/bubbles/([^/]+)(?:/|$)")
 # Keep this equal to ``scientist_cli.SCIENTIST_CLIENT_VERSION``. Bump both when a Scientist
 # release needs an installed client refresh; the dependency-free installed client cannot import
 # package metadata from this server.
-SCIENTIST_CLIENT_VERSION = "2026.09.11.7"
+SCIENTIST_CLIENT_VERSION = "2026.09.11.8"
 # Keep recent releases alive during this Windows-only launcher repair. Existing
 # workers do not need to be interrupted; fresh installers still receive the current source.
-SCIENTIST_COMPATIBLE_CLIENT_VERSIONS = {SCIENTIST_CLIENT_VERSION, "2026.09.11.6", "2026.09.11.5", "2026.09.11.4", "2026.09.11.3", "2026.09.11.2"}
+SCIENTIST_COMPATIBLE_CLIENT_VERSIONS = {SCIENTIST_CLIENT_VERSION, "2026.09.11.7", "2026.09.11.6", "2026.09.11.5", "2026.09.11.4", "2026.09.11.3", "2026.09.11.2"}
 DEMO_ACCESS_MESSAGE = (
     "Lockedin is an experimental project and currently on demo, to be able to login "
     "and play with our project, email kamkarih@mit.edu"
@@ -2802,10 +2802,10 @@ def build_app():
     def list_bubble_assets(slug: str, user: str = Depends(current_user)):
         return {"assets": service.list_bubble_assets(home_of(user), slug)}
 
-    @app.get("/api/scratch")
-    def list_agent_scratch(user: str = Depends(current_user)):
-        """The signed-in user's synchronized agent artifacts in the active workspace."""
-        return {"files": scientist_sync.list_scratch(home_of(user), user)}
+    @app.get("/api/bubbles/{slug}/scratch")
+    def list_agent_scratch(slug: str, user: str = Depends(current_user)):
+        """The signed-in user's synchronized artifacts for this bubble."""
+        return {"files": scientist_sync.list_scratch(home_of(user), user, slug)}
 
     @app.get("/api/bubbles/{slug}/scratch/{filename}")
     def download_agent_scratch(slug: str, filename: str, user: str = Depends(current_user)):

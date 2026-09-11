@@ -543,22 +543,37 @@ async function main() {
         content_b64: Buffer.from(secondScript).toString("base64") }] }, workspaceId);
     assert.deepEqual(secondPush.applied.map(item => item.path), [scratchPath]);
     assert.equal(execFileSync("python", ["-c", secondScript], { encoding: "utf8" }).trim(), "figure:teal");
-    const scratchListing = await api(context.request, baseUrl, "GET", "/api/scratch", undefined, wsHeaders);
-    assert.deepEqual(scratchListing.files.map(item => item.name), [scratchName],
+    const legacyName = "older-figure-helper.py";
+    const legacyScript = "print('legacy helper')\n";
+    const legacyPush = await scientistApi(context.request, baseUrl, token, "POST",
+      `/api/scientist/v2/bubbles/${slug}/push`, { writes: [{ path: `scratch/${legacyName}`,
+        base_revision: createHash("sha256").update("").digest("hex"),
+        content_b64: Buffer.from(legacyScript).toString("base64") }] }, workspaceId);
+    assert.deepEqual(legacyPush.applied.map(item => item.path), [`scratch/${legacyName}`]);
+    const scratchListing = await api(context.request, baseUrl, "GET",
+      `/api/bubbles/${slug}/scratch`, undefined, wsHeaders);
+    assert.deepEqual(new Set(scratchListing.files.map(item => item.name)), new Set([scratchName, legacyName]),
       "the second agent must edit the first script instead of creating a parallel file");
+    assert.equal(scratchListing.files.find(item => item.name === scratchName).mark_linked, true);
+    assert.equal(scratchListing.files.find(item => item.name === legacyName).mark_linked, false);
 
     const scratchPage = await context.newPage();
-    await scratchPage.goto(`${baseUrl}/#w/${workspaceId}/assets`, { waitUntil: "domcontentloaded" });
+    await scratchPage.goto(`${baseUrl}/#w/${workspaceId}/bubble/${slug}`, { waitUntil: "domcontentloaded" });
+    await scratchPage.getByRole("button", { name: "Bubble tools" }).click();
+    await scratchPage.getByRole("button", { name: "Assets", exact: true }).click();
     await scratchPage.getByRole("button", { name: "Agent scratch", exact: true }).click();
     await scratchPage.getByText(scratchName, { exact: true }).waitFor({ state: "visible", timeout: 5_000 });
-    const download = scratchPage.getByRole("link", { name: /Download/ });
-    await shoot(scratchPage, "agent-scratch-library");
+    await scratchPage.getByText(legacyName, { exact: true }).waitFor({ state: "visible" });
+    await scratchPage.getByText("legacy · not linked", { exact: true }).waitFor({ state: "visible" });
+    const taggedRow = scratchPage.locator(".asset-file-row", { hasText: scratchName });
+    const download = taggedRow.getByRole("link", { name: /Download/ });
+    await shoot(scratchPage, "agent-scratch-bubble");
     const href = await download.getAttribute("href");
     const downloaded = await context.request.fetch(new URL(href, baseUrl).toString(), { headers: wsHeaders });
     assert.equal(downloaded.status(), 200);
     assert.equal(await downloaded.text(), secondScript);
     await scratchPage.close();
-    step("a second agent reused, edited, reran, listed, and downloaded the first agent's tagged figure script");
+    step("bubble Assets listed and downloaded reused tagged scratch, while labeling legacy scratch honestly");
 
     // The agent popup is a complete work history, not a second direct-message-only silo. The
     // marked location, quote, and thread reply must appear alongside the earlier direct turns.
@@ -628,7 +643,8 @@ async function main() {
     assert.deepEqual(guestOverview.agents || [], [], "the guest API must not expose Ada");
     assert.deepEqual((guestOverview.jobs && guestOverview.jobs.by_mark) || {}, {},
       "the guest API must not expose any of the owner's jobs");
-    const guestScratch = await api(guestContext.request, baseUrl, "GET", "/api/scratch", undefined, wsHeaders);
+    const guestScratch = await api(guestContext.request, baseUrl, "GET",
+      `/api/bubbles/${slug}/scratch`, undefined, wsHeaders);
     assert.deepEqual(guestScratch.files, [], "the guest must not see the owner's scratch artifacts");
     const guestDownload = await guestContext.request.fetch(
       `${baseUrl}/api/bubbles/${slug}/scratch/${encodeURIComponent(scratchName)}`, { headers: wsHeaders });

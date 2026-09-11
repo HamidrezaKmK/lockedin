@@ -120,11 +120,12 @@ class SkillFreshnessTests(unittest.TestCase):
         self.assertGreaterEqual(SKILL_VERSION, 51)
 
     def test_skill_version_has_reached_mark_linked_scratch_reuse(self):
-        self.assertGreaterEqual(SKILL_VERSION, 52)
+        self.assertGreaterEqual(SKILL_VERSION, 53)
         document = GUIDES["agents.md"] + GUIDES["paths.md"]
         self.assertIn("<scratch-tag>--<descriptive-name>.<ext>", document)
         self.assertIn("prioritize", document)
-        self.assertIn("Library → Agent scratch", document)
+        self.assertIn("Assets → Agent\nscratch", document)
+        self.assertIn("legacy", document.lower())
 
     def test_skill_version_carries_direct_turns_and_talk_local_theorems(self):
         self.assertGreaterEqual(SKILL_VERSION, 48)

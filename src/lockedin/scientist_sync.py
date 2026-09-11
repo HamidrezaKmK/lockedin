@@ -53,6 +53,12 @@ def scratch_sync_name(name: str) -> bool:
     return bool(Path(name).name == name and SCRATCH_SYNC_NAME.fullmatch(name))
 
 
+def scratch_file_name(name: str) -> bool:
+    """Whether a flat scratch filename is safe to synchronize, including legacy files."""
+    return bool(Path(name).name == name and name and not name.startswith(".")
+                and not name.endswith(".tmp"))
+
+
 def _json_bytes(value) -> bytes:
     return (json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode("utf-8")
 
@@ -363,8 +369,7 @@ def _files(home: Path, slug: str, *, owner: str = "") -> dict[str, Path | bytes]
             scratch = paths.bubble_agent_scratch_dir(slug, owner)
             if scratch.exists():
                 for path in sorted(scratch.iterdir()):
-                    if (path.is_file() and not path.is_symlink()
-                            and scratch_sync_name(path.name) and not path.name.endswith(".tmp")):
+                    if path.is_file() and not path.is_symlink() and scratch_file_name(path.name):
                         out[f"scratch/{path.name}"] = path
         for rec in talks.ensure_sync_ids(slug):
             out[f"reports/talks/{rec['sync_id']}/slides.md"] = paths.bubble_talk_path(slug, rec["id"])
@@ -472,7 +477,7 @@ def writable_path(slug: str, rel: str) -> bool:
         return False
     parts = Path(rel).parts
     if len(parts) == 2 and parts[0] == "scratch":
-        return scratch_sync_name(parts[1]) and not parts[1].endswith(".tmp")
+        return scratch_file_name(parts[1])
     if len(parts) not in (3, 4) or parts[0] != "reports":
         return False
     # Generated, not an asset: a client that pushed its copy back would turn the marker into a
@@ -689,30 +694,27 @@ def apply_deletes(home: Path, slug: str, deletes: list[dict], *, actor: str = ""
     return {"applied": applied, "conflicts": conflicts}
 
 
-def list_scratch(home: Path, owner: str) -> list[dict]:
-    """Owner-private synchronized scratch artifacts across approved bubbles."""
+def list_scratch(home: Path, owner: str, slug: str) -> list[dict]:
+    """Owner-private synchronized scratch artifacts for one approved bubble."""
     with paths.use_root(home):
         rows = []
-        registry = bubbles.load_registry()
-        for slug, bubble in registry.items():
-            if not bubble.get("approved"):
-                continue
-            root = paths.bubble_agent_scratch_dir(slug, owner)
-            if not root.exists():
-                continue
+        if not _approved(slug):
+            return rows
+        root = paths.bubble_agent_scratch_dir(slug, owner)
+        if root.exists():
             for path in sorted(root.iterdir()):
-                if not path.is_file() or path.is_symlink() or not scratch_sync_name(path.name):
+                if not path.is_file() or path.is_symlink() or not scratch_file_name(path.name):
                     continue
                 stat = path.stat()
-                rows.append({"bubble": slug, "bubble_name": bubble.get("name") or slug,
-                             "name": path.name, "size": stat.st_size,
-                             "modified_at": stat.st_mtime})
-        return sorted(rows, key=lambda row: (-row["modified_at"], row["bubble"], row["name"]))
+                rows.append({"name": path.name, "size": stat.st_size,
+                             "modified_at": stat.st_mtime,
+                             "mark_linked": scratch_sync_name(path.name)})
+        return sorted(rows, key=lambda row: (-row["modified_at"], row["name"]))
 
 
 def scratch_path(home: Path, slug: str, owner: str, name: str) -> Path:
     """Resolve one owner-private scratch download without accepting path traversal."""
-    if not scratch_sync_name(name):
+    if not scratch_file_name(name):
         raise FileNotFoundError(name)
     with paths.use_root(home):
         if not _approved(slug):

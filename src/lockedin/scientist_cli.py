@@ -37,7 +37,7 @@ except ImportError:  # Standalone client installed beside agent_vendors.py.
     import agent_vendors  # type: ignore[no-redef]
 
 APP = "lockedin-scientist"
-SCIENTIST_CLIENT_VERSION = "2026.09.11.7"
+SCIENTIST_CLIENT_VERSION = "2026.09.11.8"
 POLL_SECONDS = 5
 # A worker that has not completed a cycle in three polls is wedged rather than merely busy.
 # `doctor` reports that verdict and `resync` repairs exactly what `doctor` complains about, so
@@ -496,7 +496,7 @@ def bubbles_command(account: dict) -> list[dict]:
 
 # Bump when the guide text changes: a project only regenerates SKILL.md when this marker in its
 # copy stops matching, so an edit to the guide reaches no existing agent until this moves.
-SKILL_VERSION = 52
+SKILL_VERSION = 53
 
 # The marker is derived, never typed. It is what the staleness check compares against, so a
 # hand-written copy that drifted from SKILL_VERSION would either pin every project to a stale
@@ -640,8 +640,11 @@ relevant candidates and prefer editing and rerunning one in place over creating 
 Any scratch code, data, or resource used to answer a LockedIn job must be a flat file named
 `<scratch-tag>--<descriptive-name>.<ext>`, using the exact tag supplied in the prompt. Examples:
 `mark-talk-a1b2-n7--reward-landscape.py` and `mark-page-overview-c4--samples.csv`. Matching tagged
-files are synchronized privately and can be downloaded from **Library → Agent scratch**. Untagged
-files, subdirectories, caches, and virtual environments stay local and are never synchronized.""",
+files are synchronized privately and can be downloaded from the bubble's **Assets → Agent
+scratch** tab. Older untagged flat files are shown there as **Legacy · not linked to a mark**.
+If no exact-tag candidate exists, inspect clearly relevant legacy files; when reusing one, rename
+that same file once with the current scratch tag before editing it. Subdirectories, caches, hidden
+files, and virtual environments stay local and are never synchronized.""",
 
     'reports.md': """\
 # Writing reports
@@ -826,9 +829,10 @@ resource, list `.lockedin/scratch/<scratch-tag>--*`, inspect relevant matches, a
 editing and rerunning them in place. This is how a second agent continues a figure generator or
 experiment created by the first agent on the same mark. Do not create a parallel script merely
 because another agent authored the existing one. If no relevant match exists, create a flat file
-named `<scratch-tag>--<descriptive-name>.<ext>`. Every scratch file actually used in the response
-must carry that exact prefix; untagged scratch remains private to this machine and is not shown in
-the frontend.
+named `<scratch-tag>--<descriptive-name>.<ext>`. Older untagged files are legacy bubble scratch:
+if no exact-tag match exists, inspect a clearly relevant legacy filename and adopt it by renaming
+that same file once with the current tag before editing. Every scratch file actually used in the
+response must carry that exact prefix.
 
 ## Registering (once per conversation)
 
@@ -1405,7 +1409,7 @@ class ProjectSync:
         scratch_root = self.root / "scratch"
         if scratch_root.exists():
             for p in scratch_root.iterdir():
-                if p.is_file() and not p.is_symlink() and scratch_sync_name(p.name):
+                if p.is_file() and not p.is_symlink() and scratch_file_name(p.name):
                     out.append(f"scratch/{p.name}")
         return sorted(out)
 
@@ -1499,7 +1503,7 @@ class ProjectSync:
                 return False
             parts = Path(rel).parts
             return bool(
-                len(parts) == 2 and parts[0] == "scratch" and scratch_sync_name(parts[1])
+                len(parts) == 2 and parts[0] == "scratch" and scratch_file_name(parts[1])
                 or
                 len(parts) == 3 and parts[:2] in (("reports", "pages"), ("reports", "assets"))
                 or len(parts) == 4 and parts[:2] == ("reports", "talks")
@@ -1640,6 +1644,12 @@ def cli_name() -> str:
 def scratch_sync_name(name: str) -> bool:
     """Whether a flat scratch artifact carries the required mark/thread provenance tag."""
     return bool(Path(name).name == name and SCRATCH_SYNC_NAME.fullmatch(name))
+
+
+def scratch_file_name(name: str) -> bool:
+    """Safe flat scratch, including legacy files created before provenance tags existed."""
+    return bool(Path(name).name == name and name and not name.startswith(".")
+                and not name.endswith(".tmp"))
 
 
 def _scratch_part(value: object, fallback: str) -> str:
@@ -1877,6 +1887,8 @@ def agent_turn_prompt(job: dict, *, cli: str, fresh: bool, mode: str | None = No
               f"Scratch tag: {scratch_tag}",
               f"Before creating code or resources, inspect `.lockedin/scratch/{scratch_tag}--*`. "
               "Reuse and edit a relevant existing file in place, even if another agent made it. "
+              "If there is no tagged match, inspect clearly relevant untagged legacy files and "
+              "rename the same file with this tag before editing it. "
               f"Every scratch file used for this answer must be flat and named `{scratch_tag}--<description>.<ext>`.",
               ""]
     if job.get("kind") == "direct" or mark.get("surface") == "direct":

@@ -82,14 +82,27 @@ class ScratchArtifactSyncTests(unittest.TestCase):
                 home, slug, "alice", "mark-page-overview-n7--figure.py").read_bytes(), raw)
             with self.assertRaises(FileNotFoundError):
                 scientist_sync.scratch_path(home, slug, "bob", "mark-page-overview-n7--figure.py")
-            listed = scientist_sync.list_scratch(home, "alice")
-            self.assertEqual([(item["bubble"], item["name"]) for item in listed],
-                             [(slug, "mark-page-overview-n7--figure.py")])
+            listed = scientist_sync.list_scratch(home, "alice", slug)
+            self.assertEqual([(item["name"], item["mark_linked"]) for item in listed],
+                             [("mark-page-overview-n7--figure.py", True)])
 
-    def test_untagged_or_nested_scratch_paths_are_rejected(self):
-        for rel in ("scratch/figure.py", "scratch/mark-x--folder/figure.py",
-                    "scratch/mark-x--figure.py.tmp", "scratch/../secret"):
+    def test_legacy_flat_scratch_is_allowed_but_unsafe_paths_are_rejected(self):
+        self.assertTrue(scientist_sync.writable_path("work", "scratch/figure.py"))
+        for rel in ("scratch/mark-x--folder/figure.py", "scratch/mark-x--figure.py.tmp",
+                    "scratch/.hidden", "scratch/../secret"):
             self.assertFalse(scientist_sync.writable_path("work", rel), rel)
+
+    def test_legacy_scratch_is_listed_without_fabricated_mark_provenance(self):
+        with workspace() as (home, slug):
+            rel = "scratch/figure.py"
+            raw = b"print('legacy')\n"
+            scientist_sync.apply_writes(home, slug, [{
+                "path": rel, "base_revision": scientist_sync.revision(b""),
+                "content_b64": base64.b64encode(raw).decode(),
+            }], actor="alice")
+            listed = scientist_sync.list_scratch(home, "alice", slug)
+            self.assertEqual([(item["name"], item["mark_linked"]) for item in listed],
+                             [("figure.py", False)])
 
     def test_a_second_agent_can_update_the_first_agents_tagged_script_in_place(self):
         with workspace() as (home, slug):

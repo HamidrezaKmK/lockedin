@@ -423,13 +423,13 @@ of the editor. Use ↑/↓ to move, Enter/Tab to insert, or click an item.
     {
         "title": "Library",
         "content": """\
-## Papers and agent scratch
+## Papers and bubble scratch
 
-Library has two sections. **Papers** is the workspace's research-paper inventory. **Agent scratch**
-lists the reusable scripts, data, and other resources agents actually used while answering a mark
-or direct thread. Scratch filenames carry their originating mark/thread tag, can be searched by
-bubble or filename, and download as their original files. They are private to your account: another
-member of the same workspace does not see or download your agents' scratch artifacts.
+**Library** is the workspace's research-paper inventory. Each bubble's **⋮ → Assets** dialog has
+two tabs: **Published assets** contains files used by its reports, while **Agent scratch** contains
+that bubble's reusable scripts, data, and other agent resources. New scratch filenames carry their
+originating mark/thread tag. Older files appear as legacy scratch without a fabricated association.
+All scratch downloads are private to your account: another workspace member cannot see them.
 
 ## Uploading papers
 

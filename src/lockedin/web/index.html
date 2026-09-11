@@ -3072,8 +3072,7 @@
     refAc:null,
     healthTimer:null, healthSeq:0, verifiedActive:null,
     shareActive:false, shareToken:"", bubbleFocus:false, showHiddenPages:false, renderVersion:0,
-    availableThemes:["dark","light","pink","techno","pearl"], secureMode:false,
-    assetSection:"papers"
+    availableThemes:["dark","light","pink","techno","pearl"], secureMode:false
   };
 
   // Browser navigations (new tabs, PDFs, images, and preview pages) cannot carry the API header.
@@ -3996,15 +3995,6 @@
   async function viewAssets(){
     const {m,version}=beginMainRender();
     m.append(el("h2",{class:"section-title"},ic("library"),"Library"));
-    const papersTab=el("button",{class:S.assetSection==="scratch"?"":"active",onclick:()=>{
-      S.assetSection="papers";viewAssets();}},"Papers");
-    const scratchTab=el("button",{class:S.assetSection==="scratch"?"active":"",onclick:()=>{
-      S.assetSection="scratch";viewAssets();}},"Agent scratch");
-    m.append(el("div",{class:"seg",style:"align-self:flex-start;margin-bottom:12px"},papersTab,scratchTab));
-    if(S.assetSection==="scratch"){
-      await renderAgentScratch(m,version);
-      return;
-    }
     // Start both reads immediately: the bubble list populates the upload selector, while the
     // asset request is often the expensive one for a large library.
     const bubblesRequest=api("/api/bubbles");
@@ -4163,49 +4153,6 @@
     m.append(filters,grid);
   }
 
-  async function renderAgentScratch(main,version){
-    const loading=viewLoading("Loading agent scratch…",4);main.append(loading);
-    let response;
-    try{response=await api("/api/scratch");}
-    catch(e){if(isCurrentRender(version))loading.replaceWith(el("div",{class:"err"},
-      "Could not load agent scratch: "+e.message));return;}
-    if(!isCurrentRender(version))return;
-    loading.remove();
-    main.append(el("div",{class:"card col stack-card first"},
-      el("b",{},"Reusable agent code and resources"),
-      el("div",{class:"muted"},"Files used for a mark or direct reply are tagged by their origin. "+
-        "Agents working on the same thread search these files first and edit relevant work in place.")));
-    const files=response.files||[];
-    if(!files.length){
-      main.append(el("div",{class:"muted"},"No tagged scratch artifacts have synchronized yet."));
-      return;
-    }
-    const search=el("input",{placeholder:"Search by filename or bubble…"});
-    const count=el("div",{class:"asset-count"});
-    const grid=el("div",{class:"grid"});
-    const render=()=>{
-      const q=search.value.trim().toLowerCase();
-      const shown=files.filter(file=>!q||[file.name,file.bubble,file.bubble_name].join(" ").toLowerCase().includes(q));
-      count.textContent=shown.length===files.length?plural(files.length,"file"):
-        shown.length+" of "+plural(files.length,"file");
-      grid.innerHTML="";
-      shown.forEach(file=>{
-        const href=workspaceUrl("/api/bubbles/"+encodeURIComponent(file.bubble)+"/scratch/"+
-          encodeURIComponent(file.name));
-        grid.append(el("div",{class:"acard"},
-          el("div",{class:"acard-head"},el("div",{class:"acard-title"},
-            el("h4",{class:"acard-name",title:file.name},file.name))),
-          el("div",{class:"muted truncate",title:file.bubble},file.bubble_name||file.bubble),
-          el("div",{class:"acard-meta row-meta"},el("span",{},formatFileSize(file.size)),
-            el("span",{},"•"),el("span",{},new Date(Number(file.modified_at)*1000).toLocaleString())),
-          el("div",{class:"acard-actions"},el("span",{class:"spacer"}),
-            el("a",{href,download:file.name},el("button",{class:"primary small"},ic("download"),"Download")))));
-      });
-      if(!shown.length)grid.append(el("div",{class:"muted"},"No scratch files match that search."));
-    };
-    search.addEventListener("input",render);render();
-    main.append(el("div",{class:"asset-filter"},el("label",{},"Search",search),count),grid);
-  }
   function assetCard(a){
     const c=el("div",{class:"acard"});
     const paperTitle=a.extracted_title||a.title||"Extracting paper title…";
@@ -4957,6 +4904,11 @@
     const ring=el("div",{class:"upload-ring"},el("b",{},"0%"));
     const progressLabel=el("span",{});
     const progress=el("div",{class:"upload-progress",style:"display:none",role:"status","aria-live":"polite"},ring,progressLabel);
+    const publishedTab=el("button",{class:"active"},"Published assets");
+    const scratchTab=el("button",{},"Agent scratch");
+    const tabs=el("div",{class:"seg"},publishedTab,scratchTab);
+    const footer=el("div",{class:"asset-modal-footer"},file,el("span",{class:"spacer"}),progress,upload);
+    let section="assets";
     let inflight=null,session=null;
     // Closing the dialog abandons the upload for real: without the abort the request would keep
     // running in the background and land a file the user thought they had stopped. Cancelling is
@@ -4970,10 +4922,11 @@
       }
       overlay.remove();
     };
-    const render=async()=>{
+    const renderAssets=async()=>{
       list.innerHTML=""; list.append(el("div",{class:"muted"},"Loading files…"));
       try{
         const r=await api("/api/bubbles/"+encodeURIComponent(slug)+"/assets");
+        if(section!=="assets")return;
         list.innerHTML="";
         const entries=r.assets||[];
         if(!entries.length){ list.append(el("div",{class:"muted"},"No files in this bubble yet.")); return; }
@@ -5006,13 +4959,47 @@
             el("a",{href:url,download:item.name,onclick:e=>e.stopPropagation()},el("button",{class:"ghost small"},ic("download"),"Download")));
           row.append(el("button",{class:"danger small",onclick:async()=>{
             if(!confirm("Delete "+item.name+"? This can break report links that use this file."))return;
-            try{ await api("/api/bubbles/"+encodeURIComponent(slug)+"/assets/"+encodeURIComponent(item.name),{method:"DELETE"}); toast("Deleted "+item.name); render(); }
+            try{ await api("/api/bubbles/"+encodeURIComponent(slug)+"/assets/"+encodeURIComponent(item.name),{method:"DELETE"}); toast("Deleted "+item.name); renderAssets(); }
             catch(e){ toast(e.message); }
           }},"Delete"));
           list.append(row);
         });
       }catch(e){ list.innerHTML=""; list.append(el("div",{class:"err"},e.message)); }
     };
+    const renderScratch=async()=>{
+      list.innerHTML=""; list.append(el("div",{class:"muted"},"Loading agent scratch…"));
+      try{
+        const r=await api("/api/bubbles/"+encodeURIComponent(slug)+"/scratch");
+        if(section!=="scratch")return;
+        list.innerHTML="";
+        list.append(el("div",{class:"muted",style:"margin-bottom:8px"},
+          "Private reusable code and resources synchronized by your agents in this bubble."));
+        const entries=r.files||[];
+        if(!entries.length){list.append(el("div",{class:"muted"},"No agent scratch has synchronized yet."));return;}
+        entries.forEach(item=>{
+          const url=workspaceUrl("/api/bubbles/"+encodeURIComponent(slug)+"/scratch/"+encodeURIComponent(item.name));
+          list.append(el("div",{class:"asset-file-row"},
+            el("span",{class:"asset-file-preview asset-file-icon",title:"Scratch file"},ic("doc")),
+            el("span",{class:"asset-file-name truncate",title:item.name},item.name),
+            el("span",{class:"muted asset-file-size",style:"font-size:12px"},formatFileSize(item.size)),
+            el("span",{class:"asset-tag"+(item.mark_linked?"":" bad"),
+              title:item.mark_linked?"This file is linked to a mark or direct-message thread.":
+                "This older file has no reliable mark association."},
+              item.mark_linked?"mark-linked":"legacy · not linked"),
+            el("a",{href:url,download:item.name,onclick:e=>e.stopPropagation()},
+              el("button",{class:"ghost small"},ic("download"),"Download"))));
+        });
+      }catch(e){list.innerHTML="";list.append(el("div",{class:"err"},e.message));}
+    };
+    const selectSection=next=>{
+      section=next;
+      publishedTab.classList.toggle("active",section==="assets");
+      scratchTab.classList.toggle("active",section==="scratch");
+      footer.style.display=section==="assets"?"":"none";
+      (section==="assets"?renderAssets:renderScratch)();
+    };
+    publishedTab.onclick=()=>selectSection("assets");
+    scratchTab.onclick=()=>selectSection("scratch");
     upload.onclick=async()=>{
       const files=[...file.files]; if(!files.length){file.click();return;}
       // Progress is measured over every picked file at once, so the ring fills monotonically
@@ -5041,7 +5028,7 @@
             xhr=>{inflight=xhr;}, id=>{session=id;});
           inflight=null; session=null; sentBefore+=picked.size; showProgress(sentBefore,grandTotal);
         }
-        file.value=""; toast(files.length===1?"File uploaded":"Files uploaded"); await render();
+        file.value=""; toast(files.length===1?"File uploaded":"Files uploaded"); await renderAssets();
       }catch(e){
         // The staged bytes survive a failure, so say so rather than implying a fresh start.
         if(!e.aborted)toast(e.message+(e.resumable
@@ -5056,14 +5043,14 @@
     };
     file.onchange=()=>{ if(file.files.length)upload.textContent="Upload "+file.files.length+" file"+(file.files.length===1?"":"s"); };
     box.append(
-      el("div",{class:"asset-modal-header"},el("b",{},ic("folder"),"Bubble assets"),el("span",{class:"spacer"}),el("button",{class:"ghost small icon-btn",title:"Close",onclick:close},ic("close"))),
+      el("div",{class:"asset-modal-header"},el("b",{},ic("folder"),"Bubble assets"),tabs,el("span",{class:"spacer"}),el("button",{class:"ghost small icon-btn",title:"Close",onclick:close},ic("close"))),
       list,
-      el("div",{class:"asset-modal-footer"},file,el("span",{class:"spacer"}),progress,upload));
+      footer);
     overlay.append(box);
     // Clicking the backdrop closes the dialog, but not while a file is going up: a 4 GB upload
     // is minutes long, and a stray click beside the box should not be able to bin it silently.
     overlay.onclick=e=>{ if(e.target===overlay&&!inflight)close(); };
-    document.body.append(overlay); render();
+    document.body.append(overlay); selectSection("assets");
   }
 
   // Copying is new in this app, so both halves are here: the modern API, and execCommand for the

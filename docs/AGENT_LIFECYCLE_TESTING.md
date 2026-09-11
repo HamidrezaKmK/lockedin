@@ -94,9 +94,11 @@ The automated gate must prove, for all three provider adapters:
 - a disposable Git main checkout and linked worktree are created under `tests/.tmp`; setup run from
   a nested worktree directory binds `.lockedin` to that worktree, and Codex, Claude, and agy all
   register there without borrowing the main checkout or a sibling worktree's conversation.
-- a mark-tagged scratch figure script synchronizes privately, appears under Library → Agent scratch,
+- a mark-tagged scratch figure script synchronizes privately, appears under the bubble's
+  Assets → Agent scratch tab,
   downloads byte-for-byte, stays invisible to another workspace member, and is edited in place by
-  a second agent assigned to the same mark rather than duplicated.
+  a second agent assigned to the same mark rather than duplicated; an untagged flat file also
+  synchronizes into that bubble as legacy scratch without a fabricated mark association.
 
 ## Live disposable gate
 
@@ -170,8 +172,10 @@ run a small Python figure generator. Require every used scratch artifact to have
 `mark-...--<description>.<ext>` prefix supplied by the turn. Assign a follow-up on the same mark to a
 different provider and request one unmistakable visual change. Its job log must show that it searched
 the matching prefix, opened the existing script, edited that same pathname, and reran it. Fail if a
-second generator is created. Confirm the final script appears once in Library → Agent scratch,
-downloads byte-for-byte, and is absent from another workspace member's listing and download route.
+second generator is created. Confirm the final script appears once in the bubble's Assets → Agent
+scratch tab, downloads byte-for-byte, and is absent from another workspace member's listing and
+download route. Add an untagged flat file and confirm it appears only in this bubble with the
+**Legacy · not linked** label; nested, hidden, and temporary files must remain local.
 
 ### F. Recovery
 
