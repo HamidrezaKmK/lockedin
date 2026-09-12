@@ -241,6 +241,11 @@ def _record(slug: str, talk_id: str) -> dict | None:
     return None
 
 
+def talk_exists(slug: str, talk_id: str) -> bool:
+    """Cheap existence check for polling endpoints that must not parse a deck."""
+    return _record(slug, talk_id) is not None
+
+
 def create_talk(slug: str, title: str, *, intent: str = "", kicker: str = "",
                 date: str | None = None, body: str = "") -> str:
     """Register a new deck. `body` may be a full multi-slide markdown document."""
@@ -1056,7 +1061,8 @@ def _region_phrase(rect: dict, *, has_picture: bool) -> str:
 
 def _ink_phrase(note: dict) -> str:
     n = len(note.get("paths") or [])
-    base = f"a freehand drawing over the whole slide ({n} stroke{'s' if n != 1 else ''})"
+    area = "a selected region of the slide" if note.get("rect") else "the whole slide"
+    base = f"a freehand drawing over {area} ({n} stroke{'s' if n != 1 else ''})"
     return base + (" — open the picture: the strokes ARE the feedback. Crossed-out text wants "
                    "rewriting, arrows want things moved, circles want attention or expansion, "
                    "handwriting wants reading."

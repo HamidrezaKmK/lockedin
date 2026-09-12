@@ -40,6 +40,27 @@
               syncTimer: null, syncBusy: false, macros: null, mathMacros: {} };
   let root = null;
   const collapsedMarks = new Set();
+  const COLLAPSE_KEY = "lockedin.collapsed-talk-marks.v1";
+
+  function collapseScope() {
+    return [S.user || "anonymous", S.workspaceId || "personal", S.slug || ""]
+      .map(encodeURIComponent).join(":");
+  }
+  function loadCollapsedMarks() {
+    collapsedMarks.clear();
+    try {
+      const saved = JSON.parse(localStorage.getItem(COLLAPSE_KEY) || "{}");
+      (saved[collapseScope()] || []).forEach(key => collapsedMarks.add(String(key)));
+    } catch (e) { /* private browsing or an old malformed value: start expanded */ }
+  }
+  function saveCollapsedMarks() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(COLLAPSE_KEY) || "{}");
+      // Bound stale history without throwing away the most recently toggled cards.
+      saved[collapseScope()] = [...collapsedMarks].slice(-500);
+      localStorage.setItem(COLLAPSE_KEY, JSON.stringify(saved));
+    } catch (e) { /* collapse still works for this visit when storage is unavailable */ }
+  }
 
   const api = async (path, opts = {}) => {
     // Chalk talks live in the active workspace just like pages do. Without this header the
@@ -375,6 +396,15 @@ body:has(.tk-inkdraw),body:has(.tk-draw){
   font:500 11.5px var(--font-ui)}
 .tk-inkbar b{color:var(--muted);font-weight:500}
 .tk-inkbar button{padding:3px 10px;min-height:0;font-size:11.5px;border-radius:999px}
+.tk-cropbox{position:absolute;z-index:8;border:2px solid var(--accent);border-radius:8px;
+  box-shadow:0 0 0 9999px color-mix(in srgb,var(--bg) 34%,transparent);cursor:move;
+  box-sizing:border-box;touch-action:none}
+.tk-crophandle{position:absolute;width:18px;height:18px;border:2px solid var(--panel);
+  border-radius:50%;background:var(--accent);box-shadow:var(--shadow-sm)}
+.tk-crophandle[data-edge="nw"]{left:2px;top:2px;cursor:nwse-resize}
+.tk-crophandle[data-edge="ne"]{right:2px;top:2px;cursor:nesw-resize}
+.tk-crophandle[data-edge="se"]{right:2px;bottom:2px;cursor:nwse-resize}
+.tk-crophandle[data-edge="sw"]{left:2px;bottom:2px;cursor:nesw-resize}
 .tk-slide.tk-capturing .tk-ink{display:none}
 .tk-slide.tk-capturing .tk-ink.tk-capture-target{display:block}
 
@@ -844,11 +874,25 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     }
     const restore = flattenColors(slide);
     try {
-      const canvas = await h2c(slide, {
+      let canvas = await h2c(slide, {
         backgroundColor: getComputedStyle(document.body).getPropertyValue("--panel") || "#161b25",
         scale: Math.min(2, window.devicePixelRatio || 1),
         logging: false, useCORS: true,
       });
+      const note = (S.talk && S.talk.notes || []).find(n => n.id === noteId);
+      // Ink may carry a user-adjusted outer box. Paths remain in whole-slide coordinates for
+      // replay, while only the stored picture is cropped to the part the reviewer chose.
+      if (note && note.paths && note.rect) {
+        const r = note.rect;
+        const sx = Math.max(0, Math.round(canvas.width * r.x / 100));
+        const sy = Math.max(0, Math.round(canvas.height * r.y / 100));
+        const sw = Math.max(1, Math.min(canvas.width - sx, Math.round(canvas.width * r.w / 100)));
+        const sh = Math.max(1, Math.min(canvas.height - sy, Math.round(canvas.height * r.h / 100)));
+        const cropped = document.createElement("canvas");
+        cropped.width = sw; cropped.height = sh;
+        cropped.getContext("2d").drawImage(canvas, sx, sy, sw, sh, 0, 0, sw, sh);
+        canvas = cropped;
+      }
       await api(`/api/bubbles/${S.slug}/talks/${S.talk.talk.id}/notes/${noteId}/shot.png`,
                 { method: "PUT", body: JSON.stringify({ image_b64: canvas.toDataURL("image/png") }) });
     } catch (e) {
@@ -1572,6 +1616,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
       if (!card || !key) return;
       const collapsed = card.classList.toggle("collapsed");
       if (collapsed) collapsedMarks.add(key); else collapsedMarks.delete(key);
+      saveCollapsedMarks();
       button.setAttribute("aria-expanded", String(!collapsed));
       button.setAttribute("aria-label", (collapsed ? "Expand" : "Collapse") + " mark");
       button.innerHTML = LI_IC(collapsed ? "chevron-down" : "chevron-up");
@@ -1638,8 +1683,10 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
   // `keepSlide` matters after pinning or removing a mark: reloading the deck must not throw the
   // reader back to slide 1, which is where they were emphatically not looking.
   async function loadTalk(id, keepSlide) {
-    if (!REFS) await loadRefs(S.slug);
-    S.talk = await api(`/api/bubbles/${encodeURIComponent(S.slug)}/talks/${encodeURIComponent(id)}`);
+    const refsRequest = REFS ? Promise.resolve() : loadRefs(S.slug);
+    const talkRequest = api(`/api/bubbles/${encodeURIComponent(S.slug)}/talks/${encodeURIComponent(id)}`);
+    const [, talk] = await Promise.all([refsRequest, talkRequest]);
+    S.talk = talk;
     S.syncState = "synced";
     if (!keepSlide) S.slide = 0;
     S.slide = Math.min(S.slide, Math.max(0, S.talk.slides.length - 1));
@@ -1675,7 +1722,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     const id = S.talk.talk.id;
     const known = S.talk.revision;
     try {
-      const remote = await api(`/api/bubbles/${encodeURIComponent(S.slug)}/talks/${encodeURIComponent(id)}`);
+      const remote = await api(`/api/bubbles/${encodeURIComponent(S.slug)}/talks/${encodeURIComponent(id)}/status`);
       if (!S.talk || S.talk.talk.id !== id || S.view !== "deck") return;
       if (remote.revision && known && remote.revision !== known) setTalkSync("stale");
       // Job chips follow their own signal, so an agent finishing a mark shows up without the
@@ -1683,6 +1730,9 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
       if (remote.jobs_mtime != null && remote.jobs_mtime !== M.jobsMtime) await refreshAgents();
     } catch (e) {
       // A transient polling failure must not pretend the local view is out of date.
+      // An expired login or revoked workspace access is not transient: stop the interval so a
+      // forgotten tab cannot retry forever in the background.
+      if (e.status === 401 || e.status === 403) stopTalkSync();
     }
   }
   async function resyncTalk() {
@@ -2123,9 +2173,26 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     </div>`);
     wireCard(el, {
       onDelete: async id => {
-        await api(`/api/bubbles/${S.slug}/talks/${S.talk.talk.id}/notes/${id}/status`,
-                  { method: "PATCH", body: JSON.stringify({ status: "resolved" }) });
-        await loadTalk(S.talk.talk.id, true);
+        const talk = S.talk, before = talk.notes, beforeOpen = talk.open;
+        // Resolve is visually immediate. The server still preserves the conversation and a
+        // failed request restores this exact card, so latency never looks like a dead button.
+        talk.notes = before.filter(note => note.id !== id);
+        talk.open = Math.max(0, Number(beforeOpen || before.length) - 1);
+        render();
+        try {
+          const result = await api(`/api/bubbles/${S.slug}/talks/${talk.talk.id}/notes/${id}/status`,
+                    { method: "PATCH", body: JSON.stringify({ status: "resolved" }) });
+          if (S.talk === talk) {
+            if (result.revision) talk.revision = result.revision;
+            if (result.jobs_mtime != null) M.jobsMtime = result.jobs_mtime;
+          }
+          refreshAgents();
+        } catch (e) {
+          if (S.talk === talk) {
+            talk.notes = before; talk.open = beforeOpen; render();
+          }
+          toast("Couldn’t resolve this mark: " + e.message);
+        }
       },
       onEdit: async (id, text) => {
         if (id === null) { render(); return; }
@@ -2764,6 +2831,72 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     return textUnderStrokes(slide, [pts]);
   }
 
+  // Let the reviewer choose how much context the drawing's screenshot carries. The box starts
+  // at the whole slide for backwards-compatible captures; drag it to move, or drag a corner
+  // inward. Coordinates use the same whole-slide percentages as strokes and region marks.
+  function chooseInkCrop(slide, onDone, onCancel) {
+    const box = h(`<div class="tk-cropbox" aria-label="Drawing screenshot crop">
+      <i class="tk-crophandle" data-edge="nw"></i><i class="tk-crophandle" data-edge="ne"></i>
+      <i class="tk-crophandle" data-edge="se"></i><i class="tk-crophandle" data-edge="sw"></i>
+    </div>`).firstChild;
+    const bar = h(`<div class="tk-inkbar"><b>adjust the screenshot box</b>
+      <button data-full="1">full slide</button><button data-cancel="1">cancel</button>
+      <button class="pri" data-done="1">${LI_IC("check")} continue</button></div>`).firstChild;
+    slide.append(box, bar);
+    let crop = { x: 0, y: 0, w: 100, h: 100 };
+    const draw = () => {
+      box.style.left = crop.x + "%"; box.style.top = crop.y + "%";
+      box.style.width = crop.w + "%"; box.style.height = crop.h + "%";
+    };
+    draw();
+    let drag = null;
+    const clamp = (v, lo, hi) => Math.max(lo, Math.min(v, hi));
+    const point = e => {
+      const r = slide.getBoundingClientRect();
+      return { x: clamp((e.clientX - r.left) / r.width * 100, 0, 100),
+               y: clamp((e.clientY - r.top) / r.height * 100, 0, 100) };
+    };
+    const move = e => {
+      if (!drag) return;
+      const p = point(e), dx = p.x - drag.p.x, dy = p.y - drag.p.y, min = 5;
+      let x1 = drag.c.x, y1 = drag.c.y, x2 = x1 + drag.c.w, y2 = y1 + drag.c.h;
+      if (!drag.edge) {
+        const w = x2 - x1, h2 = y2 - y1;
+        x1 = clamp(x1 + dx, 0, 100 - w); y1 = clamp(y1 + dy, 0, 100 - h2);
+        x2 = x1 + w; y2 = y1 + h2;
+      } else {
+        if (drag.edge.includes("w")) x1 = clamp(x1 + dx, 0, x2 - min);
+        if (drag.edge.includes("e")) x2 = clamp(x2 + dx, x1 + min, 100);
+        if (drag.edge.includes("n")) y1 = clamp(y1 + dy, 0, y2 - min);
+        if (drag.edge.includes("s")) y2 = clamp(y2 + dy, y1 + min, 100);
+      }
+      crop = { x: +x1.toFixed(2), y: +y1.toFixed(2),
+               w: +(x2 - x1).toFixed(2), h: +(y2 - y1).toFixed(2) };
+      draw(); e.preventDefault();
+    };
+    const up = () => {
+      drag = null;
+      removeEventListener("pointermove", move, true);
+      removeEventListener("pointerup", up, true);
+    };
+    box.onpointerdown = e => {
+      drag = { p: point(e), c: { ...crop }, edge: (e.target.closest("[data-edge]") || {}).dataset?.edge || "" };
+      addEventListener("pointermove", move, true); addEventListener("pointerup", up, true);
+      e.preventDefault(); e.stopPropagation();
+    };
+    const cleanup = () => {
+      up(); box.remove(); bar.remove(); removeEventListener("keydown", key, true);
+    };
+    const key = e => { if (e.key === "Escape") { cleanup(); onCancel(); e.stopPropagation(); } };
+    addEventListener("keydown", key, true);
+    bar.querySelector("[data-full]").onclick = () => { crop = { x: 0, y: 0, w: 100, h: 100 }; draw(); };
+    bar.querySelector("[data-cancel]").onclick = () => { cleanup(); onCancel(); };
+    bar.querySelector("[data-done]").onclick = () => {
+      const full = crop.x < .01 && crop.y < .01 && crop.w > 99.99 && crop.h > 99.99;
+      cleanup(); onDone(full ? null : crop);
+    };
+  }
+
   // Draw anything over the slide — cross a line out, arrow a paragraph somewhere else, circle
   // the weak step, write in the margin. Done pins a single ✍ mark whose snapshot carries the
   // strokes; to the agent the picture IS the feedback.
@@ -2825,7 +2958,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     const teardown = () => {
       getSelection().removeAllRanges();   // no phantom selection re-materializing on exit
       layer.remove(); bar.remove();
-      removeEventListener("keydown", esc, true);
+      removeEventListener("keydown", key, true);
     };
     layer._cancel = teardown;
     layer.onpointerdown = e => {
@@ -2868,24 +3001,33 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
       if (!paths.length) { teardown(); return; }
       bar.remove();
       layer.style.pointerEvents = "none";
-      const covers = textUnderStrokes(slide, paths).filter(Boolean);
-      inkComposer(e.clientX, Math.min(e.clientY + 10, innerHeight - 200), async text => {
-        teardown();
-        S.notes = true;
-        const created = await api(`/api/bubbles/${S.slug}/talks/${S.talk.talk.id}/notes`, {
-          method: "POST",
-          body: JSON.stringify({ slide: S.slide, kind: "ink", paths, text, covers }),
-        });
-        if (innerWidth <= 900) root.classList.add("notes-open");
-        await loadTalk(S.talk.talk.id, true);
-        // The snapshot is the message here, so it is captured with the strokes repainted on
-        // the fresh render — same lifecycle as a region mark's picture.
-        await captureNote(created.note.id);
-        await loadTalk(S.talk.talk.id, true);
+      removeEventListener("keydown", key, true);
+      chooseInkCrop(slide, crop => {
+        const covers = textUnderStrokes(slide, paths).filter(Boolean);
+        inkComposer(e.clientX, Math.min(e.clientY + 10, innerHeight - 200), async text => {
+          teardown();
+          S.notes = true;
+          const created = await api(`/api/bubbles/${S.slug}/talks/${S.talk.talk.id}/notes`, {
+            method: "POST",
+            body: JSON.stringify({ slide: S.slide, kind: "ink", paths, rect: crop, text, covers }),
+          });
+          if (innerWidth <= 900) root.classList.add("notes-open");
+          await loadTalk(S.talk.talk.id, true);
+          // The snapshot is the message here, so it is captured with the strokes repainted on
+          // the fresh render — same lifecycle as a region mark's picture.
+          await captureNote(created.note.id);
+          await loadTalk(S.talk.talk.id, true);
+        }, () => teardown());
       }, () => teardown());
     };
-    const esc = e => { if (e.key === "Escape") { teardown(); e.stopPropagation(); } };
-    addEventListener("keydown", esc, true);
+    const key = e => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
+        if (cur) cur = null; else paths.pop();
+        repaint(); e.preventDefault(); e.stopPropagation(); return;
+      }
+      if (e.key === "Escape") { teardown(); e.stopPropagation(); }
+    };
+    addEventListener("keydown", key, true);
   }
 
   // The five-kind picker makes no sense here — the drawing already is the mark. Just an
@@ -3076,6 +3218,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     S.user = (opts && opts.user) || "";
     S.owner = (opts && opts.owner) || "";
     S.workspaceId = (opts && opts.workspaceId) || "";
+    loadCollapsedMarks();
     S.onPage = (opts && opts.onPage) || null;
     // A getter, not a snapshot: the host loads them asynchronously and Settings can change them
     // while a deck is open.

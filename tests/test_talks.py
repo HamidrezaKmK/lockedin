@@ -136,6 +136,25 @@ class TalkTests(unittest.TestCase):
         self.assertNotEqual(initial, after_note)
         self.assertNotEqual(after_note, after_deck)
 
+    def test_talk_status_is_lightweight_and_tracks_remote_changes(self):
+        """Five-second browser polling must never rebuild the full talk payload."""
+        first = service.talk_status(self.home, self.slug, self.talk)
+        with paths.use_root(self.home):
+            talks.add_note(self.slug, self.talk, slide=0, kind="q", author="pi",
+                           quote="Sample the noise level", text="Which range?")
+        with patch.object(talks, "talk_detail", side_effect=AssertionError("full talk parsed")):
+            second = service.talk_status(self.home, self.slug, self.talk)
+        self.assertNotEqual(first["revision"], second["revision"])
+        self.assertIn("jobs_mtime", second)
+
+    def test_talk_status_rejects_an_unknown_talk(self):
+        with self.assertRaises(KeyError):
+            service.talk_status(self.home, self.slug, "missing-talk")
+
+    def test_talk_poller_stops_after_authorization_expires(self):
+        js = (Path(__file__).resolve().parents[1] / "src/lockedin/web/talks.js").read_text()
+        self.assertIn("if (e.status === 401 || e.status === 403) stopTalkSync();", js)
+
     # -- threads ---------------------------------------------------------------
     def test_only_the_last_turn_of_a_thread_can_be_edited(self):
         with paths.use_root(self.home):
@@ -547,6 +566,7 @@ class RouteSurfaceTests(unittest.TestCase):
             ("GET", "/api/bubbles/{slug}/talks"),
             ("POST", "/api/bubbles/{slug}/talks"),
             ("GET", "/api/bubbles/{slug}/talks/{talk_id}"),
+            ("GET", "/api/bubbles/{slug}/talks/{talk_id}/status"),
             ("PATCH", "/api/bubbles/{slug}/talks/{talk_id}"),
             ("DELETE", "/api/bubbles/{slug}/talks/{talk_id}"),
             ("POST", "/api/bubbles/{slug}/talks/{talk_id}/notes"),

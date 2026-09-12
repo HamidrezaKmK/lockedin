@@ -2398,6 +2398,13 @@ def build_app():
         except KeyError:
             raise HTTPException(status_code=404, detail="no such talk")
 
+    @app.get("/api/bubbles/{slug}/talks/{talk_id}/status")
+    def get_talk_status(slug: str, talk_id: str, user: str = Depends(current_user)):
+        try:
+            return service.talk_status(home_of(user), slug, talk_id)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="no such talk")
+
     @app.patch("/api/bubbles/{slug}/talks/{talk_id}")
     def update_talk_metadata(slug: str, talk_id: str, body: TalkMetadataIn,
                              user: str = Depends(current_user)):
@@ -2478,7 +2485,10 @@ def build_app():
                           user: str = Depends(current_user)):
         if body.status != "resolved":
             raise HTTPException(status_code=400, detail="A chalk-talk mark can only be resolved.")
-        return {"ok": service.resolve_talk_note(home_of(user), slug, talk_id, note_id, actor=user)}
+        home = home_of(user)
+        result = {"ok": service.resolve_talk_note(home, slug, talk_id, note_id, actor=user)}
+        result.update(service.talk_status(home, slug, talk_id))
+        return result
 
     @app.delete("/api/bubbles/{slug}/talks/{talk_id}/notes/{note_id}")
     def delete_talk_note(slug: str, talk_id: str, note_id: str,

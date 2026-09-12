@@ -84,7 +84,14 @@ The automated gate must prove, for all three provider adapters:
 - popup and mark-thread replies render inline/display LaTeX through KaTeX, the icon-only Send
   control stays vertically centered, and the working robot has a reduced-motion fallback;
 - every RHS mark card collapses and expands from its header control without losing draft, job,
-  or conversation state;
+  or conversation state, and its collapsed state survives reload plus logout/login for that
+  user, workspace, and bubble;
+- an open chalk talk polls only its lightweight revision/status route for at least two minutes;
+  it must not repeatedly download or parse the full deck, notes, or job history, and resolving a
+  mark must hide its card immediately while safely restoring it if the request fails; an expired
+  or revoked login must stop that tab's polling interval instead of retrying forever;
+- freehand drawing accepts Ctrl+Z and Cmd+Z as undo, exposes an adjustable outer screenshot box,
+  stores the chosen region, and uploads a PNG whose dimensions match that smaller crop;
 - a standalone chalk-talk image visibly renders its Markdown caption, including LaTeX and links;
 - setup tickets expose all three OS choices, are single-use, and resume an existing binding;
 - Windows upgrade warnings show only the PowerShell installer, workers are detached from the
@@ -162,8 +169,13 @@ one word, each mark receives exactly one provider reply, all jobs finish, and al
 ids still match the continuity records. Open each agent popup and confirm that its direct exchanges and
 marked quote/comment/reply thread appear together in chronological job order. Include one inline
 and one display LaTeX reply and confirm both render, exercise the working indicator, and collapse and
-re-expand a long RHS mark without changing its job or thread. Include a standalone figure whose caption
-has LaTeX and a wikilink; require a visible caption, rendered math, and a working link.
+re-expand a long RHS mark without changing its job or thread. Reload, then log out and back in, and
+require that mark to remain collapsed both times. Delay one resolve response by a full second and
+require the card to disappear before the response arrives. Leave the talk open for at least two
+minutes and require repeated lightweight status calls but no repeated full-talk downloads. Draw two
+strokes, undo one with Ctrl/Cmd+Z, shrink and move the screenshot box, and require one stored stroke
+plus a cropped PNG. Include a standalone figure whose caption has LaTeX and a wikilink; require a
+visible caption, rendered math, and a working link.
 
 ### E. Cross-agent scratch reuse
 

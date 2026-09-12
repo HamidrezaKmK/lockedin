@@ -777,6 +777,15 @@ def talk_detail(home: Path, slug: str, talk_id: str) -> dict:
         return detail
 
 
+def talk_status(home: Path, slug: str, talk_id: str) -> dict:
+    """Cheap change signal for an open talk; never parses deck, notes, or jobs YAML."""
+    with paths.use_root(home):
+        if not talks.talk_exists(slug, talk_id):
+            raise KeyError(talk_id)
+        return {"revision": talks.talk_revision(slug, talk_id),
+                "jobs_mtime": agents.jobs_mtime(slug)}
+
+
 def create_talk(home: Path, slug: str, title: str, **kw) -> str:
     with paths.use_root(home):
         return talks.create_talk(slug, title, **kw)
