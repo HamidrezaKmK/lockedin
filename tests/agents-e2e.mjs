@@ -332,11 +332,23 @@ async function main() {
     assert.equal(await directBox.getAttribute("data-composer-identity"), "original",
       "polling must preserve the composer node rather than rebuilding it");
     assert.equal(await directBox.inputValue(), "Give me a one-line status.");
-    const [messageResponse] = await Promise.all([
-      page.waitForResponse(response => response.request().method() === "POST"
-        && new URL(response.url()).pathname === `/api/bubbles/${slug}/agents/${agent.id}/messages`),
-      agentChat.getByRole("button", { name: "Send", exact: true }).click(),
-    ]);
+    const directPath=`/api/bubbles/${slug}/agents/${agent.id}/messages`;
+    const directRoute=url=>new URL(url).pathname===directPath;
+    await page.route(directRoute,async route=>{
+      await delay(900);await route.continue();
+    });
+    const messageResponsePromise=page.waitForResponse(response=>response.request().method()==="POST"
+      &&new URL(response.url()).pathname===directPath);
+    const sentAt=Date.now();
+    await agentChat.getByRole("button", { name: "Send", exact: true }).click();
+    await page.waitForFunction(()=>document.querySelector(".agent-message-history")?.textContent.includes("Give me a one-line status.")
+      &&document.querySelector(".agent-message-history")?.textContent.includes("queuing"),{timeout:250});
+    assert.ok(Date.now()-sentAt<250,"the chat did not render its pending turn immediately");
+    assert.equal(await agentChat.getByRole("status",{name:"Ada is queued"}).count(),1,
+      "the popup must show a queued activity indicator before the worker confirms start");
+    assert.equal(await directBox.inputValue(),"","Send must clear the composer before the network response");
+    const messageResponse=await messageResponsePromise;
+    await page.unroute(directRoute);
     assert.ok(messageResponse.ok(), `direct message failed: ${await messageResponse.text()}`);
     const directJob = (await messageResponse.json()).job;
     const directBeat = await scientistApi(context.request, baseUrl, token, "POST",
@@ -346,7 +358,9 @@ async function main() {
     assert.equal(directBeat.jobs[0].mark.surface, "direct");
     await scientistApi(context.request, baseUrl, token, "POST",
       `/api/scientist/v2/bubbles/${slug}/jobs/${directJob.id}/start`, { worker_id: WORKER_ID }, workspaceId);
-    await page.waitForFunction(() => !!document.querySelector(".agent-working[role=status]"), { timeout: 9_000 });
+    await page.waitForFunction(() =>
+      document.querySelector('.agent-working[role=status]')?.getAttribute("aria-label")==="Ada is working",
+      { timeout: 9_000 });
     await shoot(page, "agent-working");
     assert.equal(await agentChat.getByRole("status", { name: "Ada is working" }).count(), 1,
       "a running turn must animate the robot working state inside the chat pane");

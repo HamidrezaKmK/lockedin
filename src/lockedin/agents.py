@@ -230,23 +230,31 @@ def _talk_note(slug: str, sync_id: str, note_id: str) -> tuple[str | None, dict 
     return talk_id, note, rec
 
 
-def mark_pointer(slug: str, key: str) -> dict | None:
+def mark_pointer(slug: str, key: str, *, _cache: dict | None = None) -> dict | None:
     """Everything a worker needs to brief an agent on one mark, or ``None`` if it is gone.
 
     Mirrors the shape of ``indexes/marks.json`` pointers and adds the human's words, so the
     headless prompt can be rendered without a second lookup on the client.
     """
+    cache = _cache if _cache is not None else {}
     surface, owner, local_id = parse_mark_key(key)
     if surface == "page":
-        thread = _page_thread(slug, owner, local_id)
+        page_threads = cache.setdefault("page_threads", {})
+        if owner not in page_threads:
+            try:
+                page_threads[owner] = bubbles.list_comments(slug, owner).get("threads", [])
+            except Exception:
+                page_threads[owner] = []
+        thread = next((t for t in page_threads[owner] if t.get("id") == local_id), None)
         if not thread:
             return None
         anchor = thread.get("anchor") or {}
         kind = str(thread.get("kind") or "")
+        if "page_titles" not in cache:
+            cache["page_titles"] = {p.get("page_slug"): p.get("title") for p in bubbles.list_pages(slug)}
         return {"surface": "page", "id": local_id, "page": owner,
                 "status": thread.get("status", "open"),
-                "page_title": next((p.get("title", owner) for p in bubbles.list_pages(slug)
-                                    if p.get("page_slug") == owner), owner),
+                "page_title": cache["page_titles"].get(owner) or owner,
                 "kind": kind, "means": talks.KINDS.get(kind, {}).get("means", ""),
                 "glyph": talks.KINDS.get(kind, {}).get("glyph", ""),
                 "quote": str(anchor.get("quote") or ""),
@@ -255,14 +263,27 @@ def mark_pointer(slug: str, key: str) -> dict | None:
                               "agent": bool(m.get("agent"))} for m in thread.get("messages", [])],
                 "source_path": f"reports/pages/{owner}.md",
                 "detail_path": f"feedback/pages/{owner}.json"}
-    talk_id, note, rec = _talk_note(slug, owner, local_id)
+    if "talk_records" not in cache:
+        cache["talk_records"] = {str(r.get("sync_id") or ""): r
+                                 for r in talks.ensure_sync_ids(slug)}
+    rec = cache["talk_records"].get(owner)
+    talk_id = str((rec or {}).get("id") or "") or None
+    if not talk_id:
+        return None
+    talk_notes = cache.setdefault("talk_notes", {})
+    if talk_id not in talk_notes:
+        talk_notes[talk_id] = talks.load_notes(slug, talk_id).get("notes", {})
+    note = talk_notes[talk_id].get(local_id)
     if not note:
         return None
     kind = str(note.get("kind") or "")
     slide = int(note.get("slide", 0) or 0)
     slide_title = ""
     try:
-        slides = talks.parse_deck(talks.read_deck(slug, talk_id))
+        talk_slides = cache.setdefault("talk_slides", {})
+        if talk_id not in talk_slides:
+            talk_slides[talk_id] = talks.parse_deck(talks.read_deck(slug, talk_id))
+        slides = talk_slides[talk_id]
         if 0 <= slide < len(slides):
             slide_title = slides[slide].get("title", "")
     except Exception:
@@ -1139,11 +1160,13 @@ def overview(slug: str, *, workers: list[dict] | None = None, viewer: str = "") 
             job["activity"] = activity_by_job[job["id"]]
     by_mark: dict[str, list[dict]] = {}
     mark_context: dict[str, dict | None] = {}
+    pointer_cache: dict = {}
     for job in summaries:
         if job["kind"] == "mark":
             by_mark.setdefault(job["mark_key"], []).append(job)
             if job["mark_key"] not in mark_context:
-                mark_context[job["mark_key"]] = mark_pointer(slug, job["mark_key"])
+                mark_context[job["mark_key"]] = mark_pointer(
+                    slug, job["mark_key"], _cache=pointer_cache)
     last_by_agent: dict[str, dict] = {}
     for job in summaries:
         last_by_agent[job["agent_id"]] = job

@@ -37,7 +37,7 @@ except ImportError:  # Standalone client installed beside agent_vendors.py.
     import agent_vendors  # type: ignore[no-redef]
 
 APP = "lockedin-scientist"
-SCIENTIST_CLIENT_VERSION = "2026.09.11.8"
+SCIENTIST_CLIENT_VERSION = "2026.09.11.9"
 POLL_SECONDS = 5
 # A worker that has not completed a cycle in three polls is wedged rather than merely busy.
 # `doctor` reports that verdict and `resync` repairs exactly what `doctor` complains about, so
@@ -2895,6 +2895,16 @@ def _run_worker(worker_id: str, project: str) -> None:
     _update_worker(worker_id, status="running", pid=os.getpid(), last_error="",
                    client_version=SCIENTIST_CLIENT_VERSION)
     while not stop:
+        # Dispatch first. A large bubble sync can take many seconds, but the heartbeat that
+        # claims a queued chat turn is tiny and independent of file transfer. Running it after
+        # sync made a message wait one sleep interval plus the entire sync before the UI could
+        # honestly say the agent was working.
+        try:
+            runner.tick()
+            agent_error = runner.error
+        except Exception as exc:
+            agent_error = str(exc)
+        _update_worker(worker_id, jobs=runner.running_job_ids(), agent_error=agent_error)
         try:
             sync.sync_once()
             # Figures the sync cannot carry are a real (silent) loss of an agent's work, so they
@@ -2925,14 +2935,6 @@ def _run_worker(worker_id: str, project: str) -> None:
                 return
             _update_worker(worker_id, status="degraded", last_error=str(exc))
             sync.report = {"status": "degraded", "error": str(exc)}
-        # Agents ride on the same cycle: one heartbeat when this directory owns any, nothing when
-        # it owns none. A failure here is reported beside the sync status, never in place of it.
-        try:
-            runner.tick()
-            agent_error = runner.error
-        except Exception as exc:
-            agent_error = str(exc)
-        _update_worker(worker_id, jobs=runner.running_job_ids(), agent_error=agent_error)
         for _ in range(POLL_SECONDS * 10):
             if stop: break
             time.sleep(.1)

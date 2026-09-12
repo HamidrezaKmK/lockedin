@@ -44,10 +44,10 @@ _WORKER_PATH_RE = re.compile(r"^/api/scientist/v2/bubbles/([^/]+)(?:/|$)")
 # Keep this equal to ``scientist_cli.SCIENTIST_CLIENT_VERSION``. Bump both when a Scientist
 # release needs an installed client refresh; the dependency-free installed client cannot import
 # package metadata from this server.
-SCIENTIST_CLIENT_VERSION = "2026.09.11.8"
-# Keep recent releases alive during this Windows-only launcher repair. Existing
-# workers do not need to be interrupted; fresh installers still receive the current source.
-SCIENTIST_COMPATIBLE_CLIENT_VERSIONS = {SCIENTIST_CLIENT_VERSION, "2026.09.11.7", "2026.09.11.6", "2026.09.11.5", "2026.09.11.4", "2026.09.11.3", "2026.09.11.2"}
+SCIENTIST_CLIENT_VERSION = "2026.09.11.9"
+# Keep recent releases alive while fresh installers receive responsiveness and launcher fixes.
+# Existing workers need not be interrupted in the middle of a turn.
+SCIENTIST_COMPATIBLE_CLIENT_VERSIONS = {SCIENTIST_CLIENT_VERSION, "2026.09.11.8", "2026.09.11.7", "2026.09.11.6", "2026.09.11.5", "2026.09.11.4", "2026.09.11.3", "2026.09.11.2"}
 DEMO_ACCESS_MESSAGE = (
     "Lockedin is an experimental project and currently on demo, to be able to login "
     "and play with our project, email kamkarih@mit.edu"

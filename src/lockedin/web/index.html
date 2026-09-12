@@ -5709,8 +5709,11 @@
         },job.error||"This marked turn failed.",
         el("span",{class:"agent-message-meta"},agent.name+" · failed")));
     });
+    const queued=turns.some(job=>job.kind!=="mark"&&(job.status==="queuing"||job.status==="queued"));
     if(agent.status==="working")history.append(el("div",{class:"agent-working",role:"status","aria-label":agent.name+" is working"},
       el("span",{class:"agent-working-bot"},ic("agent")),el("span",{},agent.name+" is working…")));
+    else if(queued)history.append(el("div",{class:"agent-working",role:"status","aria-label":agent.name+" is queued"},
+      el("span",{class:"agent-working-bot"},ic("agent")),el("span",{},agent.name+" is queued…")));
     requestAnimationFrame(()=>{history.scrollTop=wasAtBottom?history.scrollHeight:previousTop;});
   }
 
@@ -5841,15 +5844,33 @@
   async function sendAgentMessage(agent,textarea,button){
     const text=(textarea.value||"").trim();
     if(!text)return;
+    const pendingId="pending-"+Date.now()+"-"+Math.random().toString(16).slice(2);
+    const pending={id:pendingId,agent_id:agent.id,agent_name:agent.name,kind:"direct",
+      instruction:text,status:"queuing",created_by:S.user,created_at:new Date().toISOString(),
+      started_at:"",finished_at:"",result:{reply_text:""}};
+    // A click is a visible turn immediately, even if saving the queue or rebuilding history is
+    // slow. Keep the temporary id until the server returns the durable job, then replace it.
+    agent.history=[...(agent.history||agent.messages||[]),pending];
+    agent.messages=[...(agent.messages||[]),pending];
+    delete S.agentMessageDrafts[agent.id];
+    textarea.value="";
     textarea.disabled=true;button.disabled=true;
+    renderAgentChat();
     try{
-      await api("/api/bubbles/"+S.bubble+"/agents/"+encodeURIComponent(agent.id)+"/messages",
+      const result=await api("/api/bubbles/"+S.bubble+"/agents/"+encodeURIComponent(agent.id)+"/messages",
         {method:"POST",body:JSON.stringify({text})});
-      delete S.agentMessageDrafts[agent.id];
+      const durable=result.job;
+      const replace=list=>(list||[]).map(job=>job.id===pendingId?durable:job);
+      agent.history=replace(agent.history);agent.messages=replace(agent.messages);
       toast("Message queued for "+agent.name+" — this counts as one turn");
-      await loadAgents();
-      textarea.value="";textarea.disabled=false;button.disabled=false;textarea.focus();
+      textarea.disabled=false;button.disabled=false;renderAgentChat();textarea.focus();
+      // Reconcile status/history in the background. The immediate durable turn above no longer
+      // holds the composer hostage to the size of the agent's accumulated mark history.
+      loadAgents();
     }catch(e){
+      const remove=list=>(list||[]).filter(job=>job.id!==pendingId);
+      agent.history=remove(agent.history);agent.messages=remove(agent.messages);
+      textarea.value=text;S.agentMessageDrafts[agent.id]=text;renderAgentChat();
       toast(e.message||"Could not queue the message");
       textarea.disabled=false;button.disabled=false;textarea.focus();
     }

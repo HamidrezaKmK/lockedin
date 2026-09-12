@@ -202,6 +202,19 @@ class Jobs(AgentFixture):
         self.assertEqual(view["agents"][0]["messages"][0]["id"], job["id"])
         self.assertNotIn("", view["jobs"]["by_mark"])
 
+    def test_overview_parses_a_shared_talk_sidecar_only_once(self):
+        """A long popup history must not parse the same marks file once per old job."""
+        agent = self.register(name="Ada", registered_by="hamid")
+        keys = self.make_marks(4)
+        with paths.use_root(self.home):
+            for key in keys:
+                agents.create_job(self.slug, agent_id=agent["id"], mark_key=key,
+                                  created_by="hamid")
+            with patch.object(talks, "load_notes", wraps=talks.load_notes) as load_notes:
+                view = agents.overview(self.slug, viewer="hamid")
+        self.assertEqual(len(view["agents"][0]["history"]), 4)
+        self.assertEqual(load_notes.call_count, 1)
+
     def test_an_empty_direct_message_is_refused(self):
         agent = self.register()
         with paths.use_root(self.home), self.assertRaises(agents.AgentError):

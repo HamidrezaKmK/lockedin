@@ -11,6 +11,7 @@ from __future__ import annotations
 import base64
 import fcntl
 import functools
+import inspect
 import json
 import os
 import shutil
@@ -1741,6 +1742,11 @@ class ArgparseSmokeTests(unittest.TestCase):
     def test_default_turn_budget_is_shared_100_per_hour_and_500_per_day(self):
         self.assertEqual(scientist_cli.AGENT_MAX_TURNS_PER_HOUR, 100)
         self.assertEqual(scientist_cli.AGENT_MAX_TURNS_PER_DAY, 500)
+
+    def test_worker_claims_agent_jobs_before_a_potentially_long_file_sync(self):
+        source = inspect.getsource(scientist_cli._run_worker)
+        loop = source[source.index("while not stop:"):]
+        self.assertLess(loop.index("runner.tick()"), loop.index("sync.sync_once()"))
 
     def test_agent_help_lists_every_subcommand(self):
         import io

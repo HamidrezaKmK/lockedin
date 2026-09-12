@@ -74,6 +74,11 @@ The automated gate must prove, for all three provider adapters:
 - a missing id and a provider “not found” response fail without updating `conversation` or `fresh`;
 - a Codex stale-writer recovery forks the full history and atomically adopts the returned id;
 - a successful mark edit posts exactly one reply and a direct message returns exactly one reply;
+- a direct chat renders a pending turn synchronously on Send, restores the draft on failure, and
+  never waits for accumulated mark history before clearing and re-enabling its composer; it
+  shows queued activity immediately, then changes to working only after the worker confirms start;
+- agent popup refresh parses each shared report page or chalk-talk sidecar at most once per
+  response, and the worker claims queued turns before beginning a potentially long file sync;
 - the agent popup orders direct jobs and marked threads together and includes mark context plus all replies;
 - resolving a mark hides it from the report or chalk talk, cancels unfinished assigned work, and
   leaves its quote, image, comments, and replies unchanged in agent history;
