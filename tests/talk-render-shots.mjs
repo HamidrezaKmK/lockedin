@@ -98,9 +98,9 @@ async function main(){
                "and the derivation is on [[Pretrained VAMP]].",
       goal:"Get $\\Var[\\psi]$ below the Handke bound."},"PUT");
     const deck=[RICH,...Array.from({length:9},(_,i)=>slide(i+2))].join("\n\n---\n\n");
-    const {id:talkId}=await(await req(`/api/bubbles/${slug}/talks`,{title:"Reading the clock",body:deck})).json();
+    const {id:talkId}=await(await req(`/api/bubbles/${slug}/talks`,{title:"Reading the clock",intent:String.raw`Read $\E[\psi]$ from [[Pretrained VAMP]].`,body:deck})).json();
     const shortDeck=[slide(1),slide(2),slide(3)].join("\n\n---\n\n");
-    const {id:shortId}=await(await req(`/api/bubbles/${slug}/talks`,{title:"A short deck",body:shortDeck})).json();
+    const {id:shortId}=await(await req(`/api/bubbles/${slug}/talks`,{title:"A short deck",intent:String.raw`Li et al. \cite{clock2026} establish the baseline.`,body:shortDeck})).json();
     const deletionDeck=[slide(1),slide(2)].join("\n\n---\n\n");
     const {id:deletionId}=await(await req(`/api/bubbles/${slug}/talks`,{title:"Deleted-slide marks",body:deletionDeck})).json();
     await req(`/api/bubbles/${slug}/talks/${deletionId}/notes`,
@@ -377,13 +377,22 @@ async function main(){
     // Home page of the bubble: abstract also goes through the same markdown pipeline.
     await p.goto(`${base}/#bubble/${slug}`,{waitUntil:"networkidle"}); await delay(900);
     await shot("home");
-    console.log("PROBE home:",JSON.stringify(await p.evaluate(()=>{
-      const a=document.querySelector(".tk-abstract");
+    const homeSummary=await p.evaluate(()=>{
+      const a=document.querySelector(".tk-abstract"),summaries=[...document.querySelectorAll(".tk-card .i")];
       return {wiki:[...a.querySelectorAll("a.tk-wikilink")].map(x=>x.textContent),
               raw:(a.textContent.match(/\[\[[^\]]+\]\]/g)||[]),
               katexErrors:[...a.querySelectorAll(".katex-error")].length,
+              summaryMath:summaries.reduce((n,x)=>n+x.querySelectorAll(".katex").length,0),
+              summaryCites:summaries.reduce((n,x)=>n+x.querySelectorAll(".tk-cites").length,0),
+              summaryLinks:summaries.reduce((n,x)=>n+x.querySelectorAll("a.tk-wikilink").length,0),
+              summaryRaw:summaries.some(x=>/\$|\\cite\{|\[\[/.test(x.textContent)),
               html:a.innerHTML.slice(0,120)};
-    })));
+    });
+    console.log("PROBE home:",JSON.stringify(homeSummary));
+    assert.ok(homeSummary.summaryMath>0,"chalk-talk summary LaTeX must render through KaTeX");
+    assert.ok(homeSummary.summaryCites>0,"chalk-talk summary citations must render as references");
+    assert.equal(homeSummary.summaryRaw,false,"chalk-talk summary must not expose Markdown/LaTeX source");
+    assert.ok(homeSummary.summaryLinks>0,"chalk-talk summary wikilinks must render as links");
     // Narrow: the pager is tightest on a phone, which is where clipped dots first showed up.
     const mob=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,deviceScaleFactor:2});
     // The persistence check above deliberately logged out and back in, rotating the session.

@@ -37,7 +37,7 @@ except ImportError:  # Standalone client installed beside agent_vendors.py.
     import agent_vendors  # type: ignore[no-redef]
 
 APP = "lockedin-scientist"
-SCIENTIST_CLIENT_VERSION = "2026.09.11.9"
+SCIENTIST_CLIENT_VERSION = "2026.09.16.1"
 POLL_SECONDS = 5
 # A worker that has not completed a cycle in three polls is wedged rather than merely busy.
 # `doctor` reports that verdict and `resync` repairs exactly what `doctor` complains about, so
@@ -48,6 +48,7 @@ WORKER_HISTORY_LIMIT = 10
 TERMINAL_WORKER_STATUSES = {"stopped"}
 ATTENTION_WORKER_STATUSES = {"degraded", "failed"}
 VENDORS = agent_vendors.names()
+SKILL_VENDORS = agent_vendors.skill_names()
 MANAGED_VENDOR_SKILL_MARKER = "<!-- Managed by lockedin-scientist -->"
 # One headless agent turn per assigned mark. The worker ends a turn that runs longer than this and
 # reports it failed; the vendor's own print-mode timeout is set to match.
@@ -202,7 +203,7 @@ def welcome() -> None:
     print(f"  {cyan('•')} {dim('What a headless turn runs when it is done with a job')}\n     {cyan('lockedin-scientist agent reply <job-id> --text <answer>')}\n     {cyan('lockedin-scientist agent fail <job-id> --reason <why>')}")
     print()
     print(bold("Native agent skills"))
-    print(f"  {cyan('•')} {dim('Install the LockedIn Scientist skill once for your agent')}\n     {cyan('lockedin-scientist <codex|claude|agy> setup')}")
+    print(f"  {cyan('•')} {dim('Install the LockedIn Scientist skill once for your agent')}\n     {cyan('lockedin-scientist <codex|claude|agy|opencode> setup')}")
     print()
     print(bold("Manual Overleaf publishing"))
     print(f"  {cyan('•')} {dim('Link an Overleaf project from the bubble page, then connect its local checkout')}\n     {cyan('lockedin-scientist overleaf connect')}")
@@ -228,13 +229,29 @@ def workers_path() -> Path: return data_root() / "runtime" / "workers.json"
 
 
 def _atomic_json(path: Path, value: dict, *, private: bool = False) -> None:
+    """Replace one JSON file without sharing a temporary name across processes.
+
+    Every synchronized folder has its own worker process, but all of them write the device-wide
+    worker registry. A fixed ``workers.json.tmp`` let one worker rename another worker's temporary
+    file, crashing the loser with ``FileNotFoundError`` and making every agent in that folder look
+    disconnected. Unique sibling files retain atomic ``os.replace`` semantics without that race.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    tmp.replace(path)
-    if private:
-        try: os.chmod(path, 0o600)
-        except OSError: pass
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.{secrets.token_hex(8)}.tmp")
+    try:
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+        fd = os.open(tmp, flags, 0o600 if private else 0o666)
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            stream.write(json.dumps(value, indent=2, sort_keys=True) + "\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(tmp, path)
+        if private:
+            try: os.chmod(path, 0o600)
+            except OSError: pass
+    finally:
+        try: tmp.unlink()
+        except FileNotFoundError: pass
 
 
 def _figure_name(filename: str) -> str:
@@ -288,9 +305,55 @@ def _prune_worker_history(data: dict) -> None:
         workers.pop(worker_id, None)
 
 
-def save_workers(data: dict) -> None:
+def _save_workers_unlocked(data: dict) -> None:
     _prune_worker_history(data)
     _atomic_json(workers_path(), data, private=True)
+
+
+@contextmanager
+def _worker_registry_lock():
+    """Serialize device-wide worker registry mutations on Unix and Windows."""
+    path = workers_path().with_suffix(".lock")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    stream = path.open("a+b")
+    acquired = False
+    try:
+        if os.name == "nt":
+            import msvcrt
+            stream.seek(0, os.SEEK_END)
+            if stream.tell() == 0:
+                stream.write(b"0"); stream.flush()
+            stream.seek(0)
+            msvcrt.locking(stream.fileno(), msvcrt.LK_LOCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
+        acquired = True
+        yield
+    finally:
+        try:
+            if acquired and os.name == "nt":
+                import msvcrt
+                stream.seek(0); msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
+            elif acquired:
+                import fcntl
+                fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
+        finally:
+            stream.close()
+
+
+def save_workers(data: dict) -> None:
+    with _worker_registry_lock():
+        _save_workers_unlocked(data)
+
+
+def _mutate_workers(change):
+    """Apply one read-modify-write transaction without dropping another worker's update."""
+    with _worker_registry_lock():
+        data = load_workers()
+        result = change(data)
+        _save_workers_unlocked(data)
+        return result
 
 
 def header_value(value: object) -> str:
@@ -496,7 +559,7 @@ def bubbles_command(account: dict) -> list[dict]:
 
 # Bump when the guide text changes: a project only regenerates SKILL.md when this marker in its
 # copy stops matching, so an edit to the guide reaches no existing agent until this moves.
-SKILL_VERSION = 53
+SKILL_VERSION = 57
 
 # The marker is derived, never typed. It is what the staleness check compares against, so a
 # hand-written copy that drifted from SKILL_VERSION would either pin every project to a stale
@@ -513,6 +576,7 @@ turn out not to need costs the user real money and crowds out what you are reaso
 | guide | read it | size |
 |---|---|---|
 | `guides/feedback.md` | before acting on a feedback index hit, or writing a chalk talk | small |
+| `guides/reviewing.md` | before changing report or chalk-talk content | small |
 | `guides/paths.md` | before looking for anything under `.lockedin/` | small |
 | `guides/reports.md` | before creating, deleting or submitting a report page | small |
 | `guides/macros.md` | before using a `\\\\`-macro in maths | tiny |
@@ -524,6 +588,17 @@ turn out not to need costs the user real money and crowds out what you are reaso
 rest. Do not read it end to end: search it for the one construct you are unsure of, and skip it
 entirely when editing prose or maths you already know how to write. It opens with its own
 contents list.
+
+## Low-cost exact-edit fast path
+
+When the request names one exact report or talk file and one unambiguous spelling,
+punctuation, or literal substitution, do not load `guides/paths.md` or
+`guides/reviewing.md`. Resolve this worktree's root, then read `IDEA.md` and the complete
+review boundary in one tool batch. Apply only the named substitution, reread that boundary once
+in the same edit/verification batch, then run `lockedin-scientist await-sync <file>` and stop.
+Do not search, inspect status, delegate, or send progress narration. Reply with one
+sentence naming the change and reviewed scope only after `await-sync` confirms that exact file;
+if it fails, report the failure instead of claiming the edit reached LockedIn.
 
 ## Where `.lockedin/` is
 
@@ -564,9 +639,12 @@ relevance papers first.
 
 ## Sync and conflicts
 
-The sync worker publishes report changes periodically. If it restores a server copy, inspect
-`.lockedin/config/conflicts/` and reapply the intended change to the current report instead of
-restoring stale content. Use Markdown with `$...$` and `$$...$$` math delimiters only.
+The sync worker publishes report changes periodically. `lockedin-scientist doctor` proves only
+that the worker is healthy and can reach the bubble; it does **not** prove that a particular edit
+was accepted. After editing, run `lockedin-scientist await-sync <file>` before saying the edit is
+synchronized. If it reports that the file was replaced, inspect `.lockedin/config/conflicts/` and
+reapply the intended change to the current report instead of restoring stale content. Use Markdown
+with `$...$` and `$$...$$` math delimiters only.
 
 ## What this bubble is for
 
@@ -606,6 +684,73 @@ expensive; do not read it during a healthy indexed lookup.
 
 
 GUIDES = {
+    'reviewing.md': """\
+# Clarifying and reviewing content changes
+
+This gate applies to every batch of report-page or chalk-talk content changes, whether requested
+interactively, by a mark, or by a direct-message job. Related changes requested in one user turn
+are one batch and receive one review, not one review per file write.
+
+## Before writing: remove ambiguity
+
+Establish the exact target, requested transformation, boundaries, and intended end state from the
+prompt, mark, thread, and directly relevant artifact. A mark's kind is itself an instruction, so a
+mark is not ambiguous merely because its optional sentence is empty. Inspect narrowly relevant
+context to resolve facts, but never invent user intent or choose among materially different
+outcomes.
+
+If ambiguity that could change the result remains, make **no content change**, do not start a
+reviewer, and ask the smallest direct clarification question through the ordinary reply path. Ask
+a second question only when the two decisions cannot be separated. Never make a partial or
+best-guess edit while waiting for clarification.
+
+## After writing: review the result in context
+
+Before replying or calling the edit complete, define the review boundary yourself:
+
+- For a chalk talk, reread the final `slides.md` in order from the first slide through the last.
+- For a report, reread the edited logical section from its heading to the next heading of equal or
+  higher level, plus its immediate incoming/outgoing transitions and the definitions or notation
+  it depends on. If there is no reliable section boundary, reread the whole page.
+
+The final text must stand on the context contained in the document or talk itself. Check that
+notation is introduced before use, terminology stays consistent, claims and transitions agree,
+and the local edit did not create repetition, unnecessary caveats, bloated slides, or conflict
+with surrounding material. Keep the requested edit narrow; this review is not permission to
+rewrite unrelated content.
+
+A mechanical spelling, punctuation, or exact-substitution edit never warrants another model
+call: perform the bounded reread yourself in the current turn. For a substantive edit, delegate
+only when the platform can start a fresh reviewer with **no inherited parent conversation** and a
+hard-bounded context and output; otherwise use the same self-review fallback. When that isolated
+delegation is available and authorized, use the cheapest suitable model at its lowest useful
+reasoning and output settings.
+
+The parent must tell the reviewer the exact file path, exact heading/line/slide boundary,
+requested change, and only the applicable checks. Tell it to read the file at that path; do not
+paste the artifact into the prompt. The reviewer must read nothing outside that boundary, must not
+search, load guides, edit, run tests, or delegate, and must return exactly `PASS` or at most
+three short findings with locations. It must not rewrite or summarize the artifact.
+
+Use at most one reviewer call per edit batch. Apply valid findings, then personally reread the
+same boundary. A second independent call is allowed only when those corrections materially
+changed structure, mathematics, or notation and the same strict context budget still applies. If
+any cost or context bound cannot be enforced, do not delegate. Do not approve or hand off the
+edit before the bounded self-review or independent review finishes.
+
+## Replies: say only what the user needs
+
+A successful mark or job reply should be one sentence and must never exceed two. State only what
+changed and, when useful, the reviewed scope: `Corrected the covariance term and reread all six
+slides for continuity.` A clarification reply is exactly one sentence containing only the
+smallest direct question needed, and its final non-whitespace character is `?`. Do not append an
+instruction, explanation, list, or second sentence after that question.
+A failure reply gives the blocking reason in one sentence.
+
+Never restate the request, narrate steps, include reviewer output or internal reasoning, list
+files, add unsolicited suggestions, or claim improvements outside the request. These limits apply
+equally to mark assignments and direct-message jobs before `agent reply`.""",
+
     'paths.md': """\
 # Where things are
 
@@ -669,12 +814,20 @@ assigns to an uploaded image, so a matching name avoids creating a duplicate fig
 
 ## Before relying on a report submission
 
-Before telling the user that a report edit is synchronized—or before making a sequence of edits
-that relies on background synchronization—run `lockedin-scientist doctor` from the project root.
-It verifies that this `.lockedin` directory has a matching, healthy worker and can reach its bound
-LockedIn bubble. If it fails, do not claim the work was submitted; show the user the failure and
-ask whether they want to repair it, in this order. Run these from the connected checkout or
-worktree's own project root:
+Before editing, run `lockedin-scientist doctor` from the project root. It verifies that this
+`.lockedin` directory has a matching, healthy worker and can reach its bound LockedIn bubble. That
+is a readiness check only: it does not prove that a later file edit was accepted. After writing
+and reviewing each changed report or talk file, run `lockedin-scientist await-sync <file>`. Only a
+successful `await-sync` permits saying that file is synchronized. If it reports that the file was
+replaced, recover the intended version from `.lockedin/config/conflicts/`, reapply it to the current
+file, review it again, and repeat `await-sync`. If either command fails, do not claim the work was
+submitted. During a managed job (`LOCKEDIN_JOB_ID` is set), report the failure concisely and stop:
+never run `sync`, `resync`, `stop`, `connect`, `hard-reset`, `upgrade-workers`, or `agent revive`
+from that turn. Those commands can stop or replace the parent worker that is hosting the agent.
+Only a human's explicit command from a regular shell may repair or stop that worker.
+
+Outside a managed job, show the user the failure and ask whether they want to repair it, in this
+order. Run these from the connected checkout or worktree's own project root:
 
 1. `lockedin-scientist ps` — every worker on this machine and the folder each one syncs.
 2. `lockedin-scientist resync` — the usual repair. It resumes whatever bubble this project is
@@ -868,7 +1021,9 @@ reply`. For a mark, the prompt names its kind, where it sits, the quote or drawi
 words, and the exact `jq` command and file to edit. Everything in
 `guides/feedback.md` applies — the kind is the instruction, make the smallest change that answers
 it, keep `<comment-begin>`/`<comment-end>` tags in place, never edit `indexes/`, `feedback/`, or a
-deck's `marks.json`. Do the work directly; there is nobody to ask.
+deck's `marks.json`. Before any content write, follow `guides/reviewing.md`: an unresolved
+ambiguity gets a concise clarification reply and **no edit**, while a completed edit gets its
+bounded coherence review before the reply is posted.
 
 Then end the turn with **exactly one** of:
 
@@ -1020,18 +1175,18 @@ def _write_managed_vendor_file(path: Path, content: str) -> None:
 def _vendor_skill_paths(vendor: str, home: Path) -> tuple[Path, ...]:
     """Return the globally discovered native skill location for a supported agent."""
     try:
-        return agent_vendors.get(vendor).skill_paths(home, APP)
+        return agent_vendors.skill_get(vendor).skill_paths(home, APP)
     except RuntimeError:
-        raise RuntimeError(f"Unknown agent {vendor!r}. Choose one of: {', '.join(VENDORS)}.") from None
+        raise RuntimeError(f"Unknown agent {vendor!r}. Choose one of: {', '.join(SKILL_VENDORS)}.") from None
 
 
 def setup_vendor_skill(vendor: str, *, home: Path | None = None) -> tuple[Path, ...]:
     """Install the named bootstrap in the vendor's native global skill discovery path."""
     vendor = vendor.lower()
     home = Path.home() if home is None else Path(home)
-    try: adapter = agent_vendors.get(vendor)
+    try: adapter = agent_vendors.skill_get(vendor)
     except RuntimeError:
-        raise RuntimeError(f"Unknown agent {vendor!r}. Choose one of: {', '.join(VENDORS)}.") from None
+        raise RuntimeError(f"Unknown agent {vendor!r}. Choose one of: {', '.join(SKILL_VENDORS)}.") from None
     return adapter.install_skill(home, APP, VENDOR_SKILL_BOOTSTRAP,
                                  writer=_write_managed_vendor_file,
                                  binary=_vendor_binary, run=subprocess.run)
@@ -1042,7 +1197,7 @@ def setup_vendor_command(vendor: str) -> None:
     heading(f"{vendor.title()} skill installed", "The bootstrap is global; its report guide remains project-local.")
     for target in targets:
         print(green("✓") + " " + dim(str(target)))
-    print(dim("  " + agent_vendors.get(vendor).setup_hint(APP)))
+    print(dim("  " + agent_vendors.skill_get(vendor).setup_hint(APP)))
 
 
 def _git(args: list[str], cwd: Path, *, capture: bool = False) -> subprocess.CompletedProcess:
@@ -1931,6 +2086,10 @@ def agent_turn_prompt(job: dict, *, cli: str, fresh: bool, mode: str | None = No
 
 def _vendor_binary(vendor: str) -> str:
     found = shutil.which(vendor)
+    if not found and vendor == "opencode":
+        names = ("opencode.exe", "opencode") if os.name == "nt" else ("opencode",)
+        found = next((str(path) for name in names
+                      if (path := Path.home() / ".opencode" / "bin" / name).is_file()), None)
     if not found:
         raise RuntimeError(f"`{vendor}` is not installed on this machine (not on PATH).")
     return found
@@ -2774,6 +2933,7 @@ def agent_reset_command(start: Path, ref: str) -> None:
 
 def agent_revive_command(start: Path, ref: str) -> None:
     """Resume this folder's worker and confirm the selected retained agent is still registered."""
+    _forbid_managed_worker_lifecycle("agent revive")
     project, binding, sync = _agent_context(start)
     agent = _find_agent(sync, ref)
     if agent.get("worker_id") != sync.worker_uid():
@@ -2870,9 +3030,11 @@ def _worker_record(worker_id: str) -> dict | None: return load_workers().get("wo
 
 
 def _update_worker(worker_id: str, **changes) -> None:
-    data = load_workers(); rec = data.setdefault("workers", {}).get(worker_id)
-    if rec is None: return
-    rec.update(changes); save_workers(data)
+    def update(data: dict) -> None:
+        rec = data.setdefault("workers", {}).get(worker_id)
+        if rec is not None:
+            rec.update(changes)
+    _mutate_workers(update)
 
 
 def _run_worker(worker_id: str, project: str) -> None:
@@ -2994,6 +3156,7 @@ def _await_worker_start(worker_id: str, proc, log: Path, *, timeout: float = 5.0
 
 def start_sync(account: dict, bubble: str, project: Path, *, announce: bool = True,
                recovered_identity: dict | None = None) -> None:
+    _forbid_managed_worker_lifecycle("sync")
     # `announce=False` is for callers that already printed their own heading (resync).
     if announce: heading("Synchronizing a bubble", f"{bubble} → {project / '.lockedin'}")
     sync = ProjectSync(account, project, bubble)
@@ -3001,21 +3164,31 @@ def start_sync(account: dict, bubble: str, project: Path, *, announce: bool = Tr
     if recovered_identity and not sync.identity_path.exists():
         _atomic_json(sync.identity_path, recovered_identity, private=True)
     sync.sync_once()
-    data = load_workers()
-    for wid, rec in data.get("workers", {}).items():
-        if Path(rec.get("project", "")).resolve() == project.resolve() and _alive(int(rec.get("pid", 0))):
-            if rec.get("bubble") == bubble:
-                print(green("✓") + f" Already synchronized by worker {bold(wid)}")
-                print(dim("  Use lockedin-scientist ps to inspect it."))
-                return
-            raise RuntimeError("Another bubble worker already manages this project. Use hard-reset first.")
     wid = secrets.token_hex(6); log = data_root() / "runtime" / "workers" / f"{wid}.log"; log.parent.mkdir(parents=True, exist_ok=True)
     rec = {"id": wid, "pid": 0, "project": str(project.resolve()), "server": account["server"], "user": account["user"], "workspace_id": account.get("workspace_id", ""),
            "bubble": bubble, "started_at": time.time(), "last_sync": time.time(), "last_error": "", "status": "starting",
            "client_version": SCIENTIST_CLIENT_VERSION,
            # How this client is invoked here, so a headless agent turn is told the right command.
            "cli": cli_name()}
-    data.setdefault("workers", {})[wid] = rec; save_workers(data)
+    claim: dict[str, str] = {}
+    def claim_project(data: dict) -> None:
+        for existing_id, existing in data.get("workers", {}).items():
+            if Path(existing.get("project", "")).resolve() != project.resolve():
+                continue
+            starting = (existing.get("status") == "starting"
+                        and time.time() - float(existing.get("started_at") or 0) < 30)
+            if not starting and not _alive(int(existing.get("pid", 0))):
+                continue
+            if existing.get("bubble") == bubble:
+                claim["existing"] = existing_id
+                return
+            raise RuntimeError("Another bubble worker already manages this project. Use hard-reset first.")
+        data.setdefault("workers", {})[wid] = rec
+    _mutate_workers(claim_project)
+    if claim.get("existing"):
+        print(green("✓") + f" Already synchronized by worker {bold(claim['existing'])}")
+        print(dim("  Use lockedin-scientist ps to inspect it."))
+        return
     try:
         with log.open("ab") as stream:
             proc = subprocess.Popen(
@@ -3033,18 +3206,22 @@ def start_sync(account: dict, bubble: str, project: Path, *, announce: bool = Tr
 
 
 def ps_command() -> None:
-    data = load_workers()
     heading("Scientist sync workers", "Workers keep their project-local .lockedin directory synchronized.")
-    records = list(data.get("workers", {}).values())
+    snapshot: dict[str, list[dict]] = {}
+    def refresh(data: dict) -> None:
+        records = list(data.get("workers", {}).values())
+        for rec in records:
+            if rec.get("status") in {"running", "starting", "degraded"} and not _alive(int(rec.get("pid", 0))):
+                previous = rec.get("status", "unknown")
+                rec["status"] = "stopped"; rec["stopped_at"] = time.time()
+                if not rec.get("last_error"):
+                    suffix = f" See {rec['log']}." if rec.get("log") else ""
+                    rec["last_error"] = f"worker process exited unexpectedly while {previous}.{suffix}"
+        snapshot["records"] = [dict(rec) for rec in records]
+    _mutate_workers(refresh)
+    records = snapshot["records"]
     if not records:
         print(dim("  No managed workers on this device."))
-    for rec in records:
-        if rec.get("status") in {"running", "starting", "degraded"} and not _alive(int(rec.get("pid", 0))):
-            previous = rec.get("status", "unknown")
-            rec["status"] = "stopped"; rec["stopped_at"] = time.time()
-            if not rec.get("last_error"):
-                suffix = f" See {rec['log']}." if rec.get("log") else ""
-                rec["last_error"] = f"worker process exited unexpectedly while {previous}.{suffix}"
     records.sort(key=lambda rec: (0 if rec.get("status") in ATTENTION_WORKER_STATUSES else
                                   1 if rec.get("status") not in TERMINAL_WORKER_STATUSES else 2,
                                   -rec.get("started_at", 0)))
@@ -3063,11 +3240,25 @@ def ps_command() -> None:
         if status == "failed" and rec.get("error") == "missing .lockedin binding":
             print("    " + orange("recovery: ") +
                   f"copy any unsynced report work, then run `lockedin-scientist hard-reset {rec.get('bubble', '<bubble>')}` from this project")
-    # Persist stale-record cleanup and bounded-history pruning even when no live status changed.
-    save_workers(data)
+def _forbid_managed_worker_lifecycle(command: str) -> None:
+    """Keep a headless turn from stopping or replacing the worker that owns it.
+
+    ``LOCKEDIN_JOB_ID`` is added only by :class:`AgentRunner`. A normal interactive shell has no
+    such marker and retains the complete lifecycle command surface. Checking before any registry
+    or process operation is important: confined turns intentionally cannot write the device-global
+    worker registry, and must never signal their own parent before discovering that fact.
+    """
+    job_id = str(os.environ.get("LOCKEDIN_JOB_ID") or "").strip()
+    if job_id:
+        raise RuntimeError(
+            f"`{command}` cannot run inside managed agent job {job_id}; it could stop or replace "
+            "the worker hosting this turn. Report the synchronization problem to the user and "
+            "leave worker recovery to an explicit command from a regular shell."
+        )
 
 
 def stop_command(worker_id: str) -> None:
+    _forbid_managed_worker_lifecycle("stop")
     data = load_workers(); rec = data.get("workers", {}).get(worker_id)
     if not rec: raise RuntimeError("No such Scientist worker.")
     pid = int(rec.get("pid", 0))
@@ -3075,8 +3266,12 @@ def stop_command(worker_id: str) -> None:
     if alive:
         try: os.kill(pid, signal.SIGTERM)
         except OSError as exc: raise RuntimeError(f"Could not stop worker: {exc}") from exc
-    rec["status"] = "stopping" if alive else "stopped"
-    rec["stopped_at"] = time.time(); save_workers(data)
+    def mark_stopped(current: dict) -> None:
+        target = current.get("workers", {}).get(worker_id)
+        if target is not None:
+            target["status"] = "stopping" if alive else "stopped"
+            target["stopped_at"] = time.time()
+    _mutate_workers(mark_stopped)
     heading("Stopping sync worker")
     print(green("✓") + f" Stop requested for worker {bold(worker_id)}.")
     print(dim("  .lockedin was left unchanged."))
@@ -3129,7 +3324,7 @@ def _worker_is_healthy(rec: dict) -> bool:
             and time.time() - float(rec.get("last_sync", 0) or 0) <= WORKER_STALE_SECONDS)
 
 
-def doctor_command(project: Path) -> None:
+def doctor_command(project: Path, *, allow_busy: bool = False) -> None:
     """Check that this project is bound to a live, current, reachable Scientist worker."""
     root = project.resolve() / ".lockedin"
     binding = read_binding(project)
@@ -3149,7 +3344,7 @@ def doctor_command(project: Path) -> None:
     if status != "running" or not _alive(pid):
         detail = rec.get("last_error") or rec.get("error") or status
         raise RuntimeError(f"Worker {rec.get('id', '?')} is not healthy ({detail}). Run `lockedin-scientist ps` for details, then `lockedin-scientist resync` to resume this project.")
-    if not _worker_is_healthy(rec):
+    if not allow_busy and not _worker_is_healthy(rec):
         raise RuntimeError(f"Worker {rec.get('id', '?')} has not completed a sync recently. Run `lockedin-scientist ps` and repair it before relying on report submission.")
     account = account_for_binding(binding)
     account_request(account, "GET", f"/api/scientist/v2/bubbles/{binding['bubble']}/manifest")
@@ -3163,7 +3358,84 @@ def doctor_command(project: Path) -> None:
               "if this worker already runs as a dedicated user or inside its own VM.")
 
 
-VENDOR_INVOCATION = {vendor: agent_vendors.get(vendor).invocation for vendor in VENDORS}
+
+def _sync_target(project: Path, value: str) -> tuple[Path, str]:
+    """Resolve one user-named writable Scientist file without escaping this project."""
+    project = project.resolve()
+    root = project / ".lockedin"
+    supplied = Path(value).expanduser()
+    if supplied.is_absolute():
+        candidate = supplied
+    elif supplied.parts and supplied.parts[0] == ".lockedin":
+        candidate = project / supplied
+    elif supplied.parts and supplied.parts[0] == "reports":
+        candidate = root / supplied
+    else:
+        candidate = project / supplied
+    if candidate.is_symlink():
+        raise RuntimeError("The synchronization target must be a regular file, not a symlink.")
+    try:
+        target = candidate.resolve(strict=True)
+        rel = target.relative_to(root.resolve()).as_posix()
+    except (FileNotFoundError, ValueError):
+        raise RuntimeError(f"No synchronized Scientist file exists at {value!r}.") from None
+    parts = Path(rel).parts
+    writable = (
+        len(parts) == 3 and parts[:2] in (("reports", "pages"), ("reports", "assets"))
+        or len(parts) == 4 and parts[:2] == ("reports", "talks") and parts[3] == "slides.md"
+    )
+    if not writable or not target.is_file():
+        raise RuntimeError("await-sync accepts only a report page, report figure, or talk slides.md file.")
+    return target, rel
+
+
+def await_sync_command(project: Path, value: str, *, timeout: float = 30.0) -> None:
+    """Wait until the worker records the file's current bytes as synchronized."""
+    project = project.resolve()
+    target, rel = _sync_target(project, value)
+    expected = ProjectSync._rev(target.read_bytes())
+    # A synchronization can itself take longer than the heartbeat freshness threshold. Verify
+    # the live process and server here, but do not mistake a busy worker for a dead one below.
+    try:
+        doctor_command(project, allow_busy=True)
+    except RuntimeError as exc:
+        if os.environ.get("LOCKEDIN_JOB_ID"):
+            raise RuntimeError(
+                f"Worker readiness failed before {rel} synchronized. Report this job as failed; "
+                "do not attempt worker recovery from inside the managed turn."
+            ) from exc
+        raise
+    deadline = time.monotonic() + max(0.0, timeout)
+    state_path = project / ".lockedin" / "config" / "sync-state.json"
+    while True:
+        if not target.exists() or ProjectSync._rev(target.read_bytes()) != expected:
+            raise RuntimeError(
+                f"{rel} was replaced before its edited revision synchronized. Inspect "
+                ".lockedin/config/conflicts/ and reapply the intended change to the current file."
+            )
+        try:
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            state = {"files": {}}
+        if state.get("files", {}).get(rel, {}).get("revision") == expected:
+            print(green("✓") + f" {bold(rel)} is synchronized.")
+            return
+        binding = read_binding(project)
+        rec = _project_worker(project, binding=binding)
+        active = rec and rec.get("status") in {"starting", "running", "degraded"}
+        if not active or not _alive(int((rec or {}).get("pid", 0))):
+            if os.environ.get("LOCKEDIN_JOB_ID"):
+                raise RuntimeError(
+                    f"The worker stopped before {rel} synchronized. Report this job as failed; "
+                    "do not attempt worker recovery from inside the managed turn."
+                )
+            raise RuntimeError(f"The worker stopped before {rel} synchronized. Run `lockedin-scientist resync`.")
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise RuntimeError(f"Timed out waiting for {rel} to synchronize; do not claim it reached LockedIn.")
+        time.sleep(min(0.25, remaining))
+
+VENDOR_INVOCATION = {vendor: agent_vendors.skill_get(vendor).invocation for vendor in SKILL_VENDORS}
 
 
 def _connect_account(server: str, workspace_id: str, ticket: str) -> dict:
@@ -3250,8 +3522,10 @@ def _install_detected_skills() -> list[str]:
     otherwise complete setup.
     """
     installed: list[str] = []
-    for vendor in VENDORS:
-        if not shutil.which(vendor):
+    for vendor in SKILL_VENDORS:
+        try:
+            _vendor_binary(vendor)
+        except RuntimeError:
             print(dim(f"  • {vendor} is not installed here — skipped."))
             continue
         try:
@@ -3298,6 +3572,7 @@ def connect_command(server: str, workspace_id: str, bubble: str, *,
     agents are here, and finish by naming the command to run. Every step is idempotent, so running
     the same link twice is a no-op that reports what already exists.
     """
+    _forbid_managed_worker_lifecycle("connect")
     server = server.rstrip("/")
     heading("Connecting a project to LockedIn", f"bubble {bubble} on {server}")
     account = _connect_account(server, workspace_id, ticket)
@@ -3335,8 +3610,8 @@ def connect_command(server: str, workspace_id: str, bubble: str, *,
         for vendor in installed:
             print(f"  {cyan('•')} {VENDOR_INVOCATION[vendor]}")
     else:
-        print("  " + dim("No agent CLI was found here. Install codex, claude, or agy, then run"))
-        print("  " + cyan("lockedin-scientist codex setup") + dim("  (or claude / agy)"))
+        print("  " + dim("No supported agent CLI was found here. Install codex, claude, agy, or opencode, then run"))
+        print("  " + cyan("lockedin-scientist codex setup") + dim("  (or claude / agy / opencode)"))
     print()
     print("  " + dim("Verify at any time with ") + cyan("lockedin-scientist doctor"))
 
@@ -3599,6 +3874,7 @@ def resync_command(project: Path) -> None:
     and never consults or changes the profile's active workspace. Unlike `hard-reset` it keeps
     the directory intact, including the `worker_uid` that identifies it on the bubble page.
     """
+    _forbid_managed_worker_lifecycle("resync")
     project = project.resolve()
     binding = read_binding(project)
     account = account_for_binding(binding)
@@ -3684,6 +3960,7 @@ def upgrade_workers_command() -> None:
     Workers already marked stopped are intentionally excluded. That is essential to Stop Agents:
     reinstalling software must not undo a security stop or bypass its local reauthorization step.
     """
+    _forbid_managed_worker_lifecycle("upgrade-workers")
     with _upgrade_lock() as acquired:
         if not acquired:
             print(dim("  Another Scientist installer is already finishing this upgrade."))
@@ -3743,6 +4020,7 @@ def _upgrade_workers_locked() -> None:
 
 
 def hard_reset(account: dict, bubble: str, project: Path, *, discard_overleaf: bool = False) -> None:
+    _forbid_managed_worker_lifecycle("hard-reset")
     heading("Hard reset", f"Replacing {project / '.lockedin'} from bubble {bubble}.")
     overleaf = project / ".lockedin" / "overleaf"
     if (overleaf / ".git").is_dir() and not discard_overleaf:
@@ -3770,6 +4048,9 @@ def _main() -> None:
     sync_p = sub.add_parser("sync"); sync_p.add_argument("bubble")
     sub.add_parser("ps")
     sub.add_parser("doctor", help="Verify this project's bound worker and server connection.")
+    await_p = sub.add_parser("await-sync", help="Wait until one edited report file is synchronized.")
+    await_p.add_argument("path", help="A file under .lockedin/reports/.")
+    await_p.add_argument("--timeout", type=float, default=30.0, help="Maximum seconds to wait (default: 30).")
     sub.add_parser("resync", help="Resume the bubble this project is already bound to.")
     assets_p = sub.add_parser("assets", help="Large assets this bubble does not sync automatically.")
     assets_sub = assets_p.add_subparsers(dest="assets_command")
@@ -3794,7 +4075,7 @@ def _main() -> None:
     connect_p.add_argument("--project", default="")
     stop_p = sub.add_parser("stop"); stop_p.add_argument("worker_id")
     reset_p = sub.add_parser("hard-reset"); reset_p.add_argument("bubble"); reset_p.add_argument("--discard-overleaf", action="store_true")
-    for vendor in VENDORS:
+    for vendor in SKILL_VENDORS:
         vendor_parser = sub.add_parser(vendor, help=f"Install the {APP} native skill for {vendor}.")
         vendor_sub = vendor_parser.add_subparsers(dest="vendor_command", required=True)
         vendor_sub.add_parser("setup", help="Install or update the managed native skill.")
@@ -3849,6 +4130,7 @@ def _main() -> None:
     if args.command == "ps": ps_command(); return
     if args.command == "stop": stop_command(args.worker_id); return
     if args.command == "doctor": doctor_command(_project_root(Path.cwd())); return
+    if args.command == "await-sync": await_sync_command(_project_root(Path.cwd()), args.path, timeout=args.timeout); return
     # Also from the project's own binding: an agent registers from wherever its chat was opened.
     if args.command == "agent": agent_command(args); return
     # Deliberately dispatched before choose_account(): resync resolves its account from the

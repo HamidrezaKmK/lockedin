@@ -60,6 +60,14 @@ class SkillFreshnessTests(unittest.TestCase):
                           "the agent's guide must say how to move a large file; "
                           "if you changed this text, bump SKILL_VERSION so projects pick it up")
 
+    def test_report_edits_require_exact_post_write_sync_confirmation(self):
+        document = skill_document()
+        reports_guide = GUIDES["reports.md"]
+        for text in (document, reports_guide):
+            self.assertIn("lockedin-scientist await-sync <file>", text)
+            self.assertIn("prove that", text)
+
+
     def test_the_router_points_an_agent_at_the_agents_guide(self):
         self.assertIn("guides/agents.md", skill_document())
 
@@ -127,6 +135,35 @@ class SkillFreshnessTests(unittest.TestCase):
         self.assertIn("Assets → Agent\nscratch", document)
         self.assertIn("legacy", document.lower())
 
+    def test_skill_version_has_reached_scoped_content_review(self):
+        self.assertGreaterEqual(SKILL_VERSION, 54)
+        router = skill_document()
+        self.assertIn("guides/reviewing.md", router)
+        self.assertIn("## Low-cost exact-edit fast path", router)
+        self.assertIn("do not load `guides/paths.md` or", router)
+        self.assertIn("Do not search, inspect status, delegate", router)
+        guide = GUIDES["reviewing.md"]
+        normalized = " ".join(guide.split())
+        for expected in (
+            "make **no content change**",
+            "at most one reviewer call per edit batch",
+            "no inherited parent conversation",
+            "mechanical spelling, punctuation, or exact-substitution edit never",
+            "If any cost or context bound cannot be enforced, do not delegate",
+            "exact file path",
+            "do not paste the artifact into the prompt",
+            "exactly `PASS` or at most three short findings",
+            "must never exceed two",
+            "exactly one sentence containing only the smallest direct question needed",
+            "final non-whitespace character is `?`",
+            "Do not append an instruction, explanation, list, or second sentence",
+        ):
+            self.assertIn(expected, normalized)
+        self.assertIn("first slide through the last", guide)
+        self.assertIn("next heading of equal or\n  higher level", guide)
+        self.assertIn("an unresolved\nambiguity gets a concise clarification reply and **no edit**",
+                      GUIDES["agents.md"])
+
     def test_skill_version_carries_direct_turns_and_talk_local_theorems(self):
         self.assertGreaterEqual(SKILL_VERSION, 48)
         self.assertIn("send you a direct\nmessage", GUIDES["agents.md"])
@@ -137,6 +174,12 @@ class SkillFreshnessTests(unittest.TestCase):
     def test_skill_version_carries_agent_revival(self):
         self.assertGreaterEqual(SKILL_VERSION, 49)
         self.assertIn("one-use recovery command", GUIDES["agents.md"])
+
+    def test_skill_version_carries_managed_worker_self_protection(self):
+        self.assertGreaterEqual(SKILL_VERSION, 57)
+        guide = GUIDES["reports.md"]
+        self.assertIn("LOCKEDIN_JOB_ID", guide)
+        self.assertIn("Only a human's explicit command", guide)
 
     def test_skill_version_carries_web_registration_presets(self):
         self.assertGreaterEqual(SKILL_VERSION, 50)

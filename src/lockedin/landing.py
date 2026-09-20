@@ -84,7 +84,7 @@ DEFAULT_LANDING: dict[str, Any] = {
              "command": ""},
             {"title": "Paste it in your repo", "text": "Installs the clients and binds the folder.",
              "command": "curl -fsSL https://lockedin.codes/setup/‹ticket›.sh | bash"},
-            {"title": "Run your agent as usual", "text": "claude, codex, agy — the skill is in place, and reports, talks and feedback sync every few seconds.",
+            {"title": "Run your agent as usual", "text": "claude, codex, agy, or opencode — the skill is in place, and reports, talks and feedback sync every few seconds.",
              "command": ""},
         ],
     },

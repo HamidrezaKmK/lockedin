@@ -457,6 +457,30 @@ class CodexAdapter(VendorAdapter):
         except (RuntimeError, OSError, subprocess.SubprocessError): return []
 
 
+class OpenCodeSkillAdapter(VendorAdapter):
+    """Native skill installation only; OpenCode is not a managed lifecycle provider."""
+
+    def home(self) -> Path:
+        return Path.home()
+
+    def skill_paths(self, home: Path, app: str) -> tuple[Path, ...]:
+        # An explicit home is used by isolated installer tests and must not leak into an ambient
+        # XDG directory. Ordinary setup respects OpenCode's config-directory overrides.
+        if home == Path.home():
+            custom = os.environ.get("OPENCODE_CONFIG_DIR", "").strip()
+            if custom:
+                config = Path(custom).expanduser()
+            else:
+                xdg = os.environ.get("XDG_CONFIG_HOME", "").strip()
+                config = (Path(xdg).expanduser() if xdg else home / ".config") / "opencode"
+        else:
+            config = home / ".config" / "opencode"
+        return (config / "skills" / app / "SKILL.md",)
+
+    def setup_hint(self, app: str) -> str:
+        return f"Restart OpenCode if it is open, then ask it to use the {app} skill."
+
+
 COMMON_BUSY_SIGNATURES = (
     "already has an active writer", "thread-store conflict", "session is already in use",
     "another instance is running", "resource temporarily unavailable",
@@ -480,13 +504,32 @@ _ADAPTERS: dict[str, VendorAdapter] = {
                        lost_signatures=COMMON_LOST_SIGNATURES, network_signatures=COMMON_NETWORK_SIGNATURES),
 }
 
+# Skill-only integrations can edit a synchronized project interactively, but are not accepted by
+# the named-agent API or driven by the background worker.
+_SKILL_ADAPTERS: dict[str, VendorAdapter] = {
+    **_ADAPTERS,
+    "opencode": OpenCodeSkillAdapter(
+        name="opencode",
+        invocation="start opencode, then ask it to use the lockedin-scientist skill",
+        state_roots=(),
+    ),
+}
+
 
 def names() -> tuple[str, ...]: return tuple(_ADAPTERS)
+
+
+def skill_names() -> tuple[str, ...]: return tuple(_SKILL_ADAPTERS)
 
 
 def get(name: str) -> VendorAdapter:
     try: return _ADAPTERS[name]
     except KeyError: raise RuntimeError(f"unknown vendor {name!r}") from None
+
+
+def skill_get(name: str) -> VendorAdapter:
+    try: return _SKILL_ADAPTERS[name]
+    except KeyError: raise RuntimeError(f"unknown skill vendor {name!r}") from None
 
 
 def writable_state_paths(home: Path) -> tuple[Path, ...]:

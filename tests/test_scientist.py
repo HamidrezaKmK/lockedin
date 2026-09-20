@@ -4,6 +4,7 @@ from __future__ import annotations
 import base64
 import io
 import json
+import multiprocessing
 import os
 import tempfile
 import time
@@ -16,6 +17,15 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 from lockedin import assets, bubbles, paths, scientist_cli, scientist_sync, service, setup_tickets
 from lockedin import server
+
+
+def _hammer_worker_registry(home: str, worker_id: str, provider: str, barrier, rounds: int) -> None:
+    """Spawn-safe helper: model four provider sessions as simultaneous folder workers."""
+    os.environ["LOCKEDIN_SCIENTIST_HOME"] = home
+    barrier.wait()
+    for sequence in range(rounds):
+        scientist_cli._update_worker(worker_id, provider=provider, sequence=sequence,
+                                     last_sync=time.time())
 
 
 @contextmanager
@@ -202,12 +212,14 @@ class ScientistServerBoundaryTest(unittest.TestCase):
             self.assertEqual(response.status_code, 426)
             self.assertIn("/lockedin/main/install.sh", response.json()["detail"])
 
-    def test_previous_client_remains_compatible_during_windows_launcher_rollout(self):
+    def test_previous_clients_remain_compatible_during_a_rolling_worker_upgrade(self):
         with TestClient(server.build_app()) as client:
-            response = client.post(
-                "/api/scientist/v2/device", json={"client_name": "existing-worker"},
-                headers={"X-LockedIn-Scientist-Version": "2026.09.11.2"})
-        self.assertEqual(response.status_code, 200)
+            for version in ("2026.09.15.1", "2026.09.11.2"):
+                with self.subTest(version=version):
+                    response = client.post(
+                        "/api/scientist/v2/device", json={"client_name": "existing-worker"},
+                        headers={"X-LockedIn-Scientist-Version": version})
+                    self.assertEqual(response.status_code, 200)
 
     def test_overleaf_field_normalizes_and_is_exported_only_when_assigned(self):
         with workspace() as (home, slug):
@@ -735,6 +747,52 @@ class GitWorktreeLayout(unittest.TestCase):
 
 
 class ScientistProfileAndWorkersTest(unittest.TestCase):
+    def test_four_provider_workers_update_one_registry_without_crashing_or_losing_records(self):
+        providers = ("codex", "claude", "agy", "opencode")
+        rounds = 80
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+                os.environ, {"LOCKEDIN_SCIENTIST_HOME": directory}):
+            scientist_cli.save_workers({"workers": {
+                provider: {"id": provider, "provider": provider, "status": "running",
+                           "started_at": time.time(), "sequence": -1}
+                for provider in providers
+            }})
+            context = multiprocessing.get_context("spawn")
+            barrier = context.Barrier(len(providers))
+            processes = [context.Process(
+                target=_hammer_worker_registry,
+                args=(directory, provider, provider, barrier, rounds),
+            ) for provider in providers]
+            for process in processes: process.start()
+            for process in processes: process.join(30)
+            for process in processes:
+                self.assertEqual(process.exitcode, 0)
+
+            workers = scientist_cli.load_workers()["workers"]
+            self.assertEqual(set(workers), set(providers))
+            self.assertTrue(all(workers[name]["sequence"] == rounds - 1 for name in providers))
+            runtime = Path(directory) / "runtime"
+            self.assertEqual(list(runtime.glob(".workers.json.*.tmp")), [])
+
+    def test_a_second_resync_adopts_a_recent_starting_worker_instead_of_duplicating_it(self):
+        with temp_data_home(), tempfile.TemporaryDirectory() as directory, patch.object(
+                scientist_cli.ProjectSync, "validate_or_initialize"), patch.object(
+                scientist_cli.ProjectSync, "sync_once"), patch.object(
+                scientist_cli.subprocess, "Popen") as launch:
+            project = Path(directory).resolve()
+            scientist_cli.save_workers({"workers": {"claimed": {
+                "id": "claimed", "pid": 0, "project": str(project), "bubble": "work",
+                "server": ACCOUNT["server"], "user": ACCOUNT["user"],
+                "workspace_id": ACCOUNT["workspace_id"], "status": "starting",
+                "started_at": time.time(), "last_sync": time.time(),
+            }}})
+            output = io.StringIO()
+            with redirect_stdout(output):
+                scientist_cli.start_sync(dict(ACCOUNT), "work", project, announce=False)
+            launch.assert_not_called()
+            self.assertIn("Already synchronized by worker", output.getvalue())
+            self.assertEqual(set(scientist_cli.load_workers()["workers"]), {"claimed"})
+
     def test_doctor_requires_a_matching_live_worker_and_server_probe(self):
         with temp_data_home(), tempfile.TemporaryDirectory() as directory, patch.object(
                 scientist_cli, "_alive", return_value=True), patch.object(
@@ -777,6 +835,53 @@ class ScientistProfileAndWorkersTest(unittest.TestCase):
             with redirect_stdout(output):
                 scientist_cli.doctor_command(project)
             self.assertIn("is healthy", output.getvalue())
+
+    def test_await_sync_confirms_the_exact_local_revision(self):
+        with temp_data_home(), tempfile.TemporaryDirectory() as directory, patch.object(
+                scientist_cli, "_alive", return_value=True), patch.object(
+                scientist_cli, "account_request", return_value={"files": []}):
+            project = self._bound_project(directory)
+            page = project / ".lockedin" / "reports" / "pages" / "result.md"
+            page.parent.mkdir(parents=True)
+            page.write_text("# Accepted\n")
+            revision = scientist_cli.ProjectSync._rev(page.read_bytes())
+            (project / ".lockedin" / "config" / "sync-state.json").write_text(json.dumps({
+                "files": {"reports/pages/result.md": {"revision": revision}},
+            }))
+            scientist_cli.save_workers({"workers": {"worker": self._worker_record(
+                project, last_sync=time.time(), status="running",
+            )}})
+            output = io.StringIO()
+            with redirect_stdout(output):
+                scientist_cli.await_sync_command(project, ".lockedin/reports/pages/result.md", timeout=0)
+            self.assertIn("reports/pages/result.md", output.getvalue())
+            self.assertIn("is synchronized", output.getvalue())
+
+    def test_await_sync_detects_a_server_copy_replacing_the_edit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory)
+            config = project / ".lockedin" / "config"
+            config.mkdir(parents=True)
+            page = project / ".lockedin" / "reports" / "pages" / "result.md"
+            page.parent.mkdir(parents=True)
+            page.write_text("# Intended edit\n")
+
+            def replace(_project, **_kwargs):
+                page.write_text("# Server copy\n")
+
+            with patch.object(scientist_cli, "doctor_command", side_effect=replace):
+                with self.assertRaisesRegex(RuntimeError, "was replaced before its edited revision synchronized"):
+                    scientist_cli.await_sync_command(project, str(page), timeout=0)
+
+    def test_await_sync_rejects_read_only_scientist_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory)
+            target = project / ".lockedin" / "config" / "binding.json"
+            target.parent.mkdir(parents=True)
+            target.write_text("{}")
+            with self.assertRaisesRegex(RuntimeError, "only a report page"):
+                scientist_cli._sync_target(project, str(target))
+
 
     # ---- resync: resume the bubble this project is already bound to ----
     # A worker dies for ordinary reasons, and resuming it used to mean `workspaces switch` +
@@ -1028,9 +1133,13 @@ class ScientistProfileAndWorkersTest(unittest.TestCase):
 
     def test_connect_installs_skills_only_for_agents_that_are_here(self):
         present = {"claude": "/usr/bin/claude"}
+        def installed(name):
+            if name in present:
+                return present[name]
+            raise RuntimeError("not installed")
         with temp_data_home(), tempfile.TemporaryDirectory() as directory, patch.object(
                 scientist_cli, "account_request", return_value={"files": []}), patch.object(
-                scientist_cli.shutil, "which", side_effect=lambda name: present.get(name)), patch.object(
+                scientist_cli, "_vendor_binary", side_effect=installed), patch.object(
                 scientist_cli, "setup_vendor_skill") as vendor, patch.object(
                 scientist_cli, "start_sync"):
             scientist_cli.save_config({"accounts": [dict(ACCOUNT)]})
@@ -1050,7 +1159,7 @@ class ScientistProfileAndWorkersTest(unittest.TestCase):
             scientist_cli.save_config({"accounts": [dict(ACCOUNT)]})
             out = self._connect(ticket="", project_path=directory)
             self.assertIn("Refusing to overwrite", out)
-            self.assertIn("No agent CLI was found here", out)
+            self.assertIn("No supported agent CLI was found here", out)
 
     def test_connect_without_a_terminal_names_the_project_flag(self):
         """Under `curl | bash` stdin is the script, so there is nobody to ask."""
@@ -1304,12 +1413,13 @@ class ScientistProfileAndWorkersTest(unittest.TestCase):
             codex = scientist_cli.setup_vendor_skill("codex", home=home)
             claude = scientist_cli.setup_vendor_skill("claude", home=home)
             agy = scientist_cli.setup_vendor_skill("agy", home=home)
-            for targets in (codex, claude, agy):
+            opencode = scientist_cli.setup_vendor_skill("opencode", home=home)
+            for targets in (codex, claude, agy, opencode):
                 skill = next(path for path in targets if path.name == "SKILL.md")
                 content = skill.read_text()
                 self.assertIn("name: lockedin-scientist", content)
                 self.assertIn(".lockedin/SKILL.md", content)
-                # All three vendors get the same bootstrap verbatim and the same local-worktree
+                # Every skill integration gets the same bootstrap verbatim and local-worktree
                 # boundary, regardless of their different conversation stores.
                 self.assertIn("--show-toplevel", content)
                 self.assertIn("worktree", content)
@@ -1317,8 +1427,12 @@ class ScientistProfileAndWorkersTest(unittest.TestCase):
                 self.assertIn("Never use `find`, a glob", content)
                 self.assertIn("active workspace directory", content)
             bodies = {next(p for p in t if p.name == "SKILL.md").read_text()
-                      for t in (codex, claude, agy)}
+                      for t in (codex, claude, agy, opencode)}
             self.assertEqual(len(bodies), 1, "every vendor must get the identical bootstrap")
+            self.assertEqual(
+                opencode,
+                (home / ".config" / "opencode" / "skills" / "lockedin-scientist" / "SKILL.md",),
+            )
             plugin = json.loads(agy[0].read_text())
             self.assertEqual(plugin["name"], "lockedin-scientist")
             self.assertEqual(plugin["managed_by"], "lockedin-scientist")
@@ -1326,6 +1440,17 @@ class ScientistProfileAndWorkersTest(unittest.TestCase):
                 ["/usr/bin/agy", "plugin", "install", str(agy[0].parent)],
                 stdin=scientist_cli.subprocess.DEVNULL, capture_output=True, text=True, timeout=60,
             )
+
+    def test_opencode_standard_installer_path_is_detected_outside_path(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            executable = home / ".opencode" / "bin" / "opencode"
+            executable.parent.mkdir(parents=True)
+            executable.write_text("")
+            with patch.object(scientist_cli.shutil, "which", return_value=None), patch.object(
+                    scientist_cli.Path, "home", return_value=home):
+                self.assertEqual(scientist_cli._vendor_binary("opencode"), str(executable))
+
 
     def test_vendor_setup_refuses_to_overwrite_a_user_owned_skill(self):
         with tempfile.TemporaryDirectory() as directory:

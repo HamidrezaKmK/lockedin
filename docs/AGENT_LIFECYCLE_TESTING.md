@@ -40,6 +40,13 @@ person sees must satisfy the same contract.
 8. **Spend is deliberate.** Setup, sync, presence, retirement, recovery checks, and all simulated
    tests use zero model calls. A live gate uses the smallest suitable model, one short response per
    checkpoint, and no exploratory searches unless a failure requires diagnosis.
+9. **Content edits are precise and reviewed.** An exact mechanical edit uses the always-loaded
+   two-batch fast path: one scoped read, then one edit/reread, with no search, status inspection,
+   extra guide, progress narration, or model call. Before any other report or chalk-talk edit, an
+   agent resolves the exact target, transformation, boundary, and intended end state. Material ambiguity
+   produces a concise clarification question and no write. Mechanical edits use a bounded reread
+   in the current turn; a substantive edit may use one cheap reviewer only with fresh,
+   non-inherited, hard-bounded context. Job replies prefer one sentence and never exceed two.
 
 ## Automated gate: run for every agent-related change
 
@@ -106,15 +113,45 @@ The automated gate must prove, for all three provider adapters:
 - a disposable Git main checkout and linked worktree are created under `tests/.tmp`; setup run from
   a nested worktree directory binds `.lockedin` to that worktree, and Codex, Claude, and agy all
   register there without borrowing the main checkout or a sibling worktree's conversation.
+- Codex, Claude, agy, and OpenCode folder workers concurrently update one device-wide worker
+  registry for at least 80 cycles each; every process survives, every record reaches its final
+  sequence, no shared temporary filename is used, and simultaneous resyncs claim one starting
+  worker rather than creating duplicates. A retained provider conversation must remain present
+  and reconnect after the worker is restarted.
 - a mark-tagged scratch figure script synchronizes privately, appears under the bubble's
   Assets → Agent scratch tab,
   downloads byte-for-byte, stays invisible to another workspace member, and is edited in place by
   a second agent assigned to the same mark rather than duplicated; an untagged flat file also
   synchronizes into that bubble as legacy scratch without a fabricated mark association.
+- mechanical report or chalk-talk edits invoke no reviewer and use a bounded reread in the
+  current turn; a substantive batch invokes at most one cheap reviewer unless its corrections
+  materially change structure, mathematics, or notation, and only through fresh, non-inherited,
+  hard-bounded context. The reviewer receives an exact path and boundary, reads no unrelated file,
+  performs no search/edit/test/delegation, and returns only `PASS` or at most three findings;
+- an ambiguous content job leaves file hashes and mtimes unchanged, invokes no reviewer, and posts
+  only a concise clarification question; after the user clarifies in the same conversation, the
+  next job makes only the defined change;
+- successful mark and direct-job replies prefer one sentence, never exceed two, and contain no
+  reviewer transcript, process narration, file inventory, or unsolicited work.
 
 ## Live disposable gate
 
 Run this after automated tests for lifecycle, queue, setup, provider-adapter, or installer changes.
+The repeatable paid editing/worktree probe is:
+
+```bash
+tests/stress-test-agents.sh --paid
+```
+
+Append `codex`, `claude`, `agy`, or `opencode` to run only that provider's paid probes, for example
+`tests/stress-test-agents.sh --paid claude`. The equivalent `--provider <name>` form remains
+available for automation. With no provider, all four run. Use `--keep` to retain the otherwise
+automatically removed fixture. The script deliberately requires `--paid`, uses Codex Luna,
+Claude Haiku with a $0.05 ceiling, and agy's low-effort Flash model by default; it records token
+counts and elapsed time and applies hard input/output ceilings. Codex runs without its inner sandbox because the host test environment
+already confines the disposable worktree and nested user namespaces are unavailable here; never
+point this harness at a real checkout or remove its disposable-fixture guard.
+
 The harness must create its own test account, workspace, bubble, server data, Git repository, linked
 worktree, provider homes, and client state beneath a unique `tests/.tmp/` directory, then remove that
 directory even after failure. Never use a production account, production bubble (including
@@ -170,7 +207,8 @@ the same conversation.
 
 Create one disposable chalk talk with three separate, unmistakable typos. Put one text mark on each
 and assign one to each provider. Ask each agent to change only its typo. Confirm each file diff is
-one word, each mark receives exactly one provider reply, all jobs finish, and all stored conversation
+one word, each agent self-reviews without a reviewer call, each mark receives exactly one
+provider reply of at most two sentences, all jobs finish, and all stored conversation
 ids still match the continuity records. Open each agent popup and confirm that its direct exchanges and
 marked quote/comment/reply thread appear together in chronological job order. Include one inline
 and one display LaTeX reply and confirm both render, exercise the working indicator, and collapse and
@@ -181,6 +219,22 @@ minutes and require repeated lightweight status calls but no repeated full-talk 
 strokes, undo one with Ctrl/Cmd+Z, shrink and move the screenshot box, and require one stored stroke
 plus a cropped PNG. Include a standalone figure whose caption has LaTeX and a wikilink; require a
 visible caption, rendered math, and a working link.
+
+For each provider, confirm the one-word typo invokes no reviewer and only rereads the exact
+`slides.md`. Then use a separate disposable report section containing an undefined symbol, a
+broken transition, a contradictory statement, and a duplicated paragraph. If the provider can
+start a reviewer with no inherited conversation and hard context/output limits, inspect that
+invocation: it must name the exact path and section boundary, must not paste the report into the
+prompt, and must use the cheapest capable model. Require at most three located findings and
+correction without changing an unrelated section. If those bounds are unavailable, require the
+parent's self-review and zero extra calls. Record input/output tokens and estimated incremental
+review cost in either case.
+
+Submit four ambiguous jobs, varying the target, transformation, scope, and intended end state.
+Record the target files' hashes and mtimes first. Each job must ask the smallest direct
+clarification question, change no file, and invoke no reviewer. Answer the question in the same
+agent conversation and confirm the follow-up changes only the clarified target, then performs one
+bounded review. Fail if any success reply exceeds two sentences.
 
 ### E. Cross-agent scratch reuse
 
@@ -247,5 +301,7 @@ A release report should state:
 - per-provider conversation id before/after (abbreviated), job ids, attempts, and replies;
 - attachment wait duration, setup ticket single-use result, and worker health;
 - exact disposable file diff and confirmation that cleanup completed;
+- per-provider reviewer model, call count, declared path/boundary, input/output tokens, and
+  estimated review cost;
 - any skipped provider and the concrete reason. A simulated adapter test is not a substitute for a
   skipped live subscription test; label the two separately.

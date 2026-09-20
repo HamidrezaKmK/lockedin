@@ -677,6 +677,18 @@ class SlideRenderingTests(unittest.TestCase):
         # One line, so the block spacing renderMarkdown lays out a document with comes off.
         self.assertIn(".tk-line>p{margin:0}", self.js)
 
+    def test_a_talk_summary_renders_math_and_citations_on_the_home_screen(self):
+        # The card intent used to be escaped into the template, leaving `$...$` and
+        # `\\cite{...}` visible exactly as written. It needs the same one-line pipeline as a
+        # slide subtitle, with this bubble's references loaded before the home is painted.
+        self.assertNotIn('<div class="i">${esc(t.intent || "")}</div>', self.js)
+        self.assertIn('<div class="i tk-md"></div>', self.js)
+        self.assertIn('renderInline((talk && talk.intent) || "", c.querySelector(".i"));', self.js)
+        home = self.js[self.js.index("async function loadHome"):self.js.index("function syncTitle")]
+        self.assertIn("loadRefs(S.slug)", home)
+        # Clicking a citation or wikilink in the summary must not also open the talk card.
+        self.assertIn('e.target.closest("a,button")', self.js)
+
     def test_the_premise_preview_contains_its_own_text(self):
         # .tk-md and .tk-preview both land on that element and .tk-md is written further down
         # the sheet, so at equal specificity its overflow:visible won: a premise longer than the

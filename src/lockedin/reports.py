@@ -182,9 +182,10 @@ carried by the sync in either direction — see **Scientist CLI** for moving tho
 ## Quick-add a paper
 
 Open **Papers** in the **⋮** menu to see the bubble's attached papers and a **Quick add
-paper** form. Paste a PDF URL, provide a title, and optionally paste BibTeX. Quick add fetches
-the PDF as a new asset, attaches it directly to the current bubble at relevance 5, and saves the
-BibTeX when valid. You can edit or add BibTeX later from the asset detail page.
+paper** form. Paste a PDF URL, provide a title, optionally paste BibTeX, and choose relevance
+from 1 to 5. Quick add fetches the PDF as a new asset, attaches it directly to the current bubble
+at that relevance, and saves the BibTeX when valid. You can edit or add BibTeX later from the
+asset detail page.
 
 Renaming a page updates its display everywhere — existing links that used the old title
 are rewritten automatically.
@@ -622,13 +623,14 @@ Install the `lockedin-scientist` bootstrap once for each agent you use:
 lockedin-scientist codex setup
 lockedin-scientist claude setup
 lockedin-scientist agy setup
+lockedin-scientist opencode setup
 ```
 
 The bootstrap is intentionally short. In a synchronized project it reads the complete current
 guide at `.lockedin/SKILL.md`, including that workspace's math macros and the bubble's editing
-rules. Invoke `$lockedin-scientist` in Codex, `/lockedin-scientist` in Claude Code, or select it
-through agy's `/skills` interface. Setup updates only the managed bootstrap and never overwrites
-a user-owned skill with the same name.
+rules. Invoke `$lockedin-scientist` in Codex, `/lockedin-scientist` in Claude Code, select it
+through agy's `/skills` interface, or ask OpenCode to use the `lockedin-scientist` skill. Setup
+updates only the managed bootstrap and never overwrites a user-owned skill with the same name.
 
 `sync` creates `.lockedin/` and a background worker that pulls/pushes every five seconds. Git
 ignores this directory through the project-local exclude file, leaving tracked project files alone.
@@ -664,8 +666,15 @@ lockedin-scientist doctor
 ```
 
 It verifies that this project has a matching healthy worker and that its bound server/bubble can
-be reached. If it fails, do not claim that local report work synchronized; follow the recovery
-guidance printed by the command.
+be reached. It is a readiness check, not proof that a later edit reached the website. After editing
+one report page, figure, or talk deck, confirm that exact file with:
+
+```
+lockedin-scientist await-sync .lockedin/reports/pages/<page-slug>.md
+```
+
+Only a successful `await-sync` confirms delivery. If either command fails, do not claim that local
+report work synchronized; follow the recovery guidance printed by the command.
 
 ### New report pages
 

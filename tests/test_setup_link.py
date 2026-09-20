@@ -10,6 +10,7 @@ import os
 import tempfile
 import unittest
 from contextlib import contextmanager
+from pathlib import Path
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -62,7 +63,7 @@ class SetupScriptServing(unittest.TestCase):
             self.assertIn("https://testserver/setup/scientist_cli.py", script)
             self.assertIn("https://testserver/setup/agent_vendors.py", script)
             self.assertIn("lockedin-scientist connect", script)
-            self.assertIn(f"--ticket '{ticket}'", script)
+            self.assertIn(f"--ticket='{ticket}'", script)
             self.assertIn(f"--bubble '{slug}'", script)
             # The script itself arrives on stdin from curl, so without this redirect the folder
             # prompt would swallow the rest of the script instead of reaching a human.
@@ -78,8 +79,16 @@ class SetupScriptServing(unittest.TestCase):
             self.assertIn("https://testserver/setup/scientist_cli.py", script)
             self.assertIn("https://testserver/setup/agent_vendors.py", script)
             self.assertIn("lockedin-scientist connect", script)
-            self.assertIn(f"--ticket '{ticket}'", script)
+            self.assertIn(f"--ticket='{ticket}'", script)
             self.assertNotIn("li_sc_", script)
+
+    def test_a_leading_hyphen_ticket_is_one_argument_in_both_shells(self):
+        ticket = "-leading-hyphen"
+        unix = setup_tickets.unix_script("https://testserver", ticket, "workspace", "bubble")
+        powershell = setup_tickets.powershell_script(
+            "https://testserver", ticket, "workspace", "bubble")
+        self.assertIn("--ticket='-leading-hyphen'", unix)
+        self.assertIn("--ticket='-leading-hyphen'", powershell)
 
     def test_an_unknown_ticket_still_answers_with_a_script(self):
         """A JSON 404 piped into a shell is a parse error; an expired link must explain itself."""
@@ -153,17 +162,26 @@ class SetupScriptWithoutATerminal(unittest.TestCase):
             "curl -fsSL 'https://x.test/setup/agent_vendors.py' -o \"$vendors_tmp\"",
             "true")
         script = script.replace("exec lockedin-scientist connect", "echo CHOSE:")
-        with tempfile.TemporaryDirectory() as isolated_home:
+        test_tmp = Path(__file__).resolve().parent / ".tmp"
+        test_tmp.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="setup-no-terminal-", dir=test_tmp) as fixture:
+            fixture_path = Path(fixture)
+            isolated_home = fixture_path / "home"
+            project = fixture_path / "project"
+            isolated_home.mkdir()
+            project.mkdir()
             # The generated setup script intentionally installs a client. Keep that write inside
             # this test even when the developer or CI environment exports XDG_DATA_HOME.
-            env = {**os.environ, "HOME": isolated_home,
-                   "XDG_DATA_HOME": os.path.join(isolated_home, "data")}
+            env = {**os.environ, "HOME": str(isolated_home),
+                   "XDG_DATA_HOME": str(isolated_home / "data"),
+                   "TMPDIR": str(fixture_path)}
             os.makedirs(os.path.join(env["XDG_DATA_HOME"], "lockedin-scientist", "client"))
             run = subprocess.run(["bash", "-c", script], capture_output=True, text=True,
-                                 stdin=subprocess.DEVNULL, cwd="/tmp", env=env)
+                                 stdin=subprocess.DEVNULL, cwd=project, env=env,
+                                 start_new_session=True)
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertIn("CHOSE:", run.stdout)
-        self.assertIn("--project /tmp", run.stdout.replace('"', ""))
+        self.assertIn(f"--project {project}", run.stdout.replace('"', ""))
         self.assertIn("No terminal to ask on", run.stdout)
         # And it must be quiet about it: the failed open has to be silenced *before* it happens,
         # or bash prints "/dev/tty: No such device" into the agent's log for no reason.
@@ -210,9 +228,9 @@ class SetupTicketRedemption(unittest.TestCase):
         with client() as (api, slug):
             ticket = api.post(f"/api/bubbles/{slug}/setup-link").json()["ticket"]
             home = os.environ["LOCKEDIN_HOME"]
-            found = [os.path.join(root, name)
+            found = [str(path)
                      for root, _dirs, names in os.walk(home) for name in names
-                     if ticket in open(os.path.join(root, name), "rb").read().decode("utf-8", "ignore")]
+                     if ticket in (path := Path(root, name)).read_bytes().decode("utf-8", "ignore")]
             self.assertEqual(found, [])
 
 

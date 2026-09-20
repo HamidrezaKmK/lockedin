@@ -44,10 +44,10 @@ _WORKER_PATH_RE = re.compile(r"^/api/scientist/v2/bubbles/([^/]+)(?:/|$)")
 # Keep this equal to ``scientist_cli.SCIENTIST_CLIENT_VERSION``. Bump both when a Scientist
 # release needs an installed client refresh; the dependency-free installed client cannot import
 # package metadata from this server.
-SCIENTIST_CLIENT_VERSION = "2026.09.11.9"
+SCIENTIST_CLIENT_VERSION = "2026.09.16.1"
 # Keep recent releases alive while fresh installers receive responsiveness and launcher fixes.
 # Existing workers need not be interrupted in the middle of a turn.
-SCIENTIST_COMPATIBLE_CLIENT_VERSIONS = {SCIENTIST_CLIENT_VERSION, "2026.09.11.8", "2026.09.11.7", "2026.09.11.6", "2026.09.11.5", "2026.09.11.4", "2026.09.11.3", "2026.09.11.2"}
+SCIENTIST_COMPATIBLE_CLIENT_VERSIONS = {SCIENTIST_CLIENT_VERSION, "2026.09.15.1", "2026.09.12.1", "2026.09.11.9", "2026.09.11.8", "2026.09.11.7", "2026.09.11.6", "2026.09.11.5", "2026.09.11.4", "2026.09.11.3", "2026.09.11.2"}
 DEMO_ACCESS_MESSAGE = (
     "Lockedin is an experimental project and currently on demo, to be able to login "
     "and play with our project, email kamkarih@mit.edu"
@@ -1628,6 +1628,51 @@ def build_app():
         return {"enabled": auth.secure_mode(user), "revoked_clients": revoked,
                 "stopped_agents": stopped, "cancelled_jobs": cancelled,
                 "removed_workers": removed_workers}
+
+    @app.get("/api/settings/agents")
+    def settings_agents(user: str = Depends(current_user)):
+        """A compact, account-wide inventory for the Settings command center.
+
+        Only the signed-in person's active agents are returned. Retired profiles and transcripts
+        remain server-side, and the command center receives no conversation or message history.
+        """
+        rows = []
+        for workspace in workspaces.list_for_user(user):
+            workspace_id = workspace["id"]
+            home = workspaces.workspace_home(workspace_id)
+            with paths.use_root(home):
+                bubble_rows = [row for row in bubbles.all_bubbles() if row.get("approved")]
+            for bubble in bubble_rows:
+                slug = bubble["slug"]
+                snap = presence.snapshot(workspace_id, slug)
+                overview = service.agents_overview(home, slug, workers=snap["workers"], viewer=user)
+                for agent in overview["agents"]:
+                    rows.append({
+                        "id": agent["id"], "name": agent["name"],
+                        "role": agent.get("role", ""), "vendor": agent.get("vendor", ""),
+                        "model": agent.get("model", ""), "status": agent.get("status", "offline"),
+                        "open_jobs": agent.get("open_jobs", 0),
+                        "workspace_id": workspace_id, "workspace_name": workspace["name"],
+                        "bubble": slug, "bubble_name": bubble.get("name") or slug,
+                    })
+        rows.sort(key=lambda row: (row["workspace_name"].lower(), row["bubble_name"].lower(),
+                                   row["name"].lower(), row["id"]))
+        return {"agents": rows, "secure_mode": auth.secure_mode(user)}
+
+    @app.delete("/api/settings/agents/{workspace_id}/{slug}/{agent_id}")
+    def settings_retire_agent(workspace_id: str, slug: str, agent_id: str,
+                              user: str = Depends(current_user)):
+        try:
+            _, home = workspaces.resolve(user, workspace_id)
+            archived = service.remove_agent(home, slug, agent_id, owner=user)
+            return {"agent": {"id": archived["id"], "name": archived["name"],
+                              "status": "retired"}}
+        except PermissionError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from None
+        except workspaces.WorkspaceError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from None
+        except (agents.AgentError, agents.NotFound) as exc:
+            raise agent_failure(exc)
 
     # ---- aesthetics settings ----
     @app.get("/api/settings/aesthetics")

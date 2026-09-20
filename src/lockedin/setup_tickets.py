@@ -129,7 +129,7 @@ def unix_script(origin: str, ticket: str, workspace_id: str, slug: str) -> str:
                    f"    --server {origin!r} \\\n"
                    f"    --workspace {workspace_id!r} \\\n"
                    f"    --bubble {slug!r} \\\n"
-                   f"    --ticket {ticket!r}")
+                   f"    --ticket={ticket!r}")
         return f"""#!/usr/bin/env bash
 set -euo pipefail
 
@@ -165,7 +165,7 @@ fi
                f"    --server {origin!r} \\\n"
                f"    --workspace {workspace_id!r} \\\n"
                f"    --bubble {slug!r} \\\n"
-               f"    --ticket {ticket!r}")
+               f"    --ticket={ticket!r}")
     return f"""#!/usr/bin/env bash
 set -euo pipefail
 
@@ -232,7 +232,7 @@ def powershell_script(origin: str, ticket: str, workspace_id: str, slug: str) ->
                    f"    --server {quote(origin)} `\n"
                    f"    --workspace {quote(workspace_id)} `\n"
                    f"    --bubble {quote(slug)} `\n"
-                   f"    --ticket {quote(ticket)}")
+                   f"    --ticket={quote(ticket)}")
         return f"""$ErrorActionPreference = 'Stop'
 Write-Host "Installing lockedin-scientist…"
 {INSTALL_POWERSHELL}
@@ -261,7 +261,7 @@ if ([Console]::IsInputRedirected) {{
                f"    --server {quote(origin)} `\n"
                f"    --workspace {quote(workspace_id)} `\n"
                f"    --bubble {quote(slug)} `\n"
-               f"    --ticket {quote(ticket)}")
+               f"    --ticket={quote(ticket)}")
     return f"""$ErrorActionPreference = 'Stop'
 Write-Host "Installing {name} (a non-production LockedIn Scientist client)…"
 

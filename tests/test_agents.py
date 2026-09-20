@@ -719,6 +719,45 @@ class HttpFlow(unittest.TestCase):
                                        {"quote": "The variance term", "start": PAGE.index("The variance")})
         return token, personal["id"], home, f"page:{page}:{thread['id']}"
 
+    def test_settings_command_center_lists_status_and_retires_without_exposing_history(self):
+        from lockedin import server
+        from lockedin.scientist_cli import SCIENTIST_CLIENT_VERSION
+        with temp_base():
+            token, workspace_id, _home, _key = self._setup()
+            scientist = {"Authorization": "Bearer " + token,
+                         "X-LockedIn-Workspace": workspace_id,
+                         "X-LockedIn-Scientist-Version": SCIENTIST_CLIENT_VERSION,
+                         "X-LockedIn-Worker": "w1", "X-LockedIn-Worker-Label": "demo"}
+            with TestClient(server.build_app(), base_url="https://testserver") as client:
+                client.post("/api/login", json={"username": "alice", "password": "pw12"})
+                registered = client.post("/api/scientist/v2/bubbles/diffusion/agents",
+                                         headers=scientist,
+                                         json={"name": "Ada", "role": "reviewer", "goal": "g",
+                                               "vendor": "claude", "conversation": "secret-chat",
+                                               "model": "haiku", "worker_id": "w1"})
+                self.assertEqual(registered.status_code, 200, registered.text)
+                agent_id = registered.json()["agent"]["id"]
+
+                command = client.get("/api/settings/agents")
+                self.assertEqual(command.status_code, 200, command.text)
+                self.assertFalse(command.json()["secure_mode"])
+                self.assertEqual(command.json()["agents"], [{
+                    "id": agent_id, "name": "Ada", "role": "reviewer",
+                    "vendor": "claude", "model": "haiku", "status": "idle",
+                    "open_jobs": 0, "workspace_id": workspace_id,
+                    "workspace_name": "Personal", "bubble": "diffusion",
+                    "bubble_name": "Diffusion",
+                }])
+                self.assertNotIn("secret-chat", command.text)
+                self.assertNotIn("history", command.text)
+
+                retired = client.delete(
+                    f"/api/settings/agents/{workspace_id}/diffusion/{agent_id}")
+                self.assertEqual(retired.status_code, 200, retired.text)
+                self.assertEqual(retired.json(), {
+                    "agent": {"id": agent_id, "name": "Ada", "status": "retired"}})
+                self.assertEqual(client.get("/api/settings/agents").json()["agents"], [])
+
     def test_register_assign_heartbeat_reply_end_to_end(self):
         from lockedin import server
         from lockedin.scientist_cli import SCIENTIST_CLIENT_VERSION

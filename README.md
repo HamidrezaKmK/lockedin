@@ -4,6 +4,9 @@
 
 **lockedin** is a FastAPI application designed to help you keep up with research. You can upload papers, extract summaries, group them into "bubbles", maintain TODOs and math-aware Markdown reports (with a switchable LLM backend that summarizes your uploads), plus a Slackbot plugin that helps you keep track with your ideas and papers on your phone even when you cannot open up your laptop.
 
+For a visual overview, see the [feature report](docs/FEATURE_REPORT.md) or its
+[print-ready PDF](docs/LockedIn-Feature-Report.pdf).
+
 By default, the deployment is private and local-only (`127.0.0.1`). For web access, keep it bound to localhost and expose it through an HTTPS tunnel (e.g., Cloudflare Tunnel). Public exposure requires application-layer hardening (see [Security](#-security)).
 
 ---
@@ -69,7 +72,7 @@ Open `http://127.0.0.1:8000/`. The first account becomes an admin and has premiu
 <summary><b>Installed Scientist CLI</b></summary>
 
 The optional, dependency-free `lockedin-scientist` client synchronizes one approved bubble into a
-project-local `.lockedin/` directory. It does **not** install or launch Codex, Claude, agy, or the
+project-local `.lockedin/` directory. It does **not** install or launch Codex, Claude, agy, OpenCode, or the
 LockedIn server. Install its small native bootstrap skill for the agent you use, then start that
 agent normally in the project.
 Python 3.11+ is required.
@@ -106,10 +109,12 @@ always reads the full, bubble-specific guide generated at `.lockedin/SKILL.md`:
 lockedin-scientist codex setup
 lockedin-scientist claude setup
 lockedin-scientist agy setup
+lockedin-scientist opencode setup
 ```
 In Codex, invoke `$lockedin-scientist`; in Claude Code, invoke `/lockedin-scientist`; in agy,
-use `/skills` to select `lockedin-scientist`. Run the respective setup again to update only the
-managed bootstrap skill; it will refuse to overwrite a user-owned skill with the same name.
+use `/skills` to select `lockedin-scientist`; in OpenCode, ask it to use the
+`lockedin-scientist` skill. Run the respective setup again to update only the managed bootstrap
+skill; it will refuse to overwrite a user-owned skill with the same name.
 
 The global profile retains your login and active workspace across projects. `sync` creates a
 single bubble-bound `.lockedin/` directory and starts one background worker for that project. It

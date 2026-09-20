@@ -32,6 +32,12 @@ class VendorRegistryContractTests(unittest.TestCase):
             self.assertTrue(callable(adapter.purge_conversation))
             self.assertTrue(adapter.state_roots)
 
+    def test_opencode_is_skill_only_not_a_worker_vendor(self):
+        self.assertIn("opencode", agent_vendors.skill_names())
+        self.assertNotIn("opencode", agent_vendors.names())
+        with self.assertRaisesRegex(RuntimeError, "unknown vendor"):
+            agent_vendors.get("opencode")
+
     def test_worker_module_contains_no_vendor_cli_flags_or_store_layouts(self):
         source = inspect.getsource(scientist_cli)
         for vendor_detail in (

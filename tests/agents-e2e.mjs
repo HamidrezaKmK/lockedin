@@ -726,10 +726,23 @@ async function main() {
     await page.locator('.navbtn[data-view="settings"]').click();
     await page.waitForSelector("#secureModeSection", { timeout: 10_000 });
     await page.waitForFunction(() =>
-      document.querySelector("#secureModeSection input[type=checkbox]")?.checked === true, { timeout: 5_000 });
+      document.querySelector("#secureModeSection .command-center-stop-switch")?.getAttribute("aria-checked") === "true",
+      { timeout: 5_000 });
+    const commandCenter = page.locator("#secureModeSection");
+    assert.match(await commandCenter.innerText(), /Agent command center/i);
+    const commandAda = commandCenter.locator(".agent-command-row", { hasText: "Ada" });
+    await commandAda.waitFor({ state: "visible", timeout: 5_000 });
+    assert.match(await commandAda.innerText(), /stopped/i,
+      "the command center must show the current derived status");
+    assert.equal(await commandAda.getByRole("button", { name: "Retire Ada" }).count(), 1,
+      "the command center must expose the same compact Retire action as the agent popup");
+    assert.equal(await commandCenter.locator('input[type="checkbox"]').count(), 0,
+      "the old settings checkbox must be replaced by the familiar switch control");
+    await commandCenter.scrollIntoViewIfNeeded();
+    await shoot(page, "agent-command-center");
     assert.equal(await page.locator("#sideSecureSwitch").getAttribute("aria-checked"), "true",
       "the sidebar switch must still read on while looking at Settings");
-    step("the Settings card's own toggle reflects the sidebar switch, with no reload between them");
+    step("the Agent command center shows Ada's status, Retire action, and matching stop switch");
 
     // Back to the bubble (SPA history, not a reload): Ada remains as a stopped identity, her
     // worker is absent, and the unanswered mark cannot dispatch while secure mode is on.

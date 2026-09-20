@@ -678,6 +678,34 @@
     transition:transform .15s,background .15s}
   .side-secure-switch[aria-checked="true"]{border-color:var(--warn);background:color-mix(in srgb,var(--warn) 30%,transparent)}
   .side-secure-switch[aria-checked="true"] .side-secure-thumb{transform:translateX(13px);background:var(--warn)}
+  /* Settings keeps the same compact switch language as the sidebar, then uses plain rows for
+     the account-wide inventory: enough information to identify and retire an agent without
+     turning a small operational control into another dashboard. */
+  .agent-command-head{display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap}
+  .agent-command-title{display:flex;flex-direction:column;gap:3px;min-width:0}
+  .agent-command-title .muted{font-size:12px;font-weight:400}
+  .agent-command-stop{margin-left:auto;display:flex;align-items:center;gap:9px;color:var(--muted);
+    font-size:12.5px;font-weight:600}
+  .agent-command-stop .side-secure-switch{width:38px;height:22px}
+  .agent-command-stop .side-secure-thumb{width:18px;height:18px}
+  .agent-command-stop .side-secure-switch[aria-checked="true"] .side-secure-thumb{transform:translateX(16px)}
+  .agent-command-list{display:flex;flex-direction:column;border-top:1px solid var(--line)}
+  .agent-command-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;
+    gap:14px;padding:10px 0;border-bottom:1px solid var(--line)}
+  .agent-command-row:last-child{border-bottom:0}
+  .agent-command-who{display:grid;grid-template-columns:8px minmax(0,1fr);gap:3px 10px;min-width:0}
+  .agent-command-who .presence-dot{grid-row:1/3;align-self:center}
+  .agent-command-name{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .agent-command-meta{font-size:11.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;
+    white-space:nowrap}
+  .agent-command-status{font-size:12px;color:var(--muted);text-transform:capitalize;white-space:nowrap}
+  .agent-command-empty{padding:14px 0 4px;color:var(--muted);font-size:12.5px}
+  @media (max-width:620px){
+    .agent-command-stop{margin-left:0;width:100%;justify-content:space-between}
+    .agent-command-row{grid-template-columns:minmax(0,1fr) auto;gap:9px}
+    .agent-command-status{grid-column:1;grid-row:2;margin-left:18px}
+    .agent-command-row>button{grid-column:2;grid-row:1/3}
+  }
   /* minimal authorship credit, pinned to the bottom of the side pane */
   .side-credit{padding:12px 8px 4px;font-family:var(--font-ui);font-size:11px;
         color:var(--muted);line-height:1.4}
@@ -1468,6 +1496,17 @@
   .quick-add-paper b{font-family:var(--font-ui);font-size:12px}
   .quick-add-paper input,.quick-add-paper textarea{padding:7px 9px;font-size:12px}
   .quick-add-paper textarea{min-height:68px;resize:vertical;font-family:var(--font-mono);line-height:1.35}
+  .quick-add-paper .quick-add-relevance{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:12px}
+  .quick-add-relevance-options{display:flex;gap:6px}
+  .quick-add-relevance-option{width:34px;min-width:34px;min-height:32px;padding:0;border-radius:9px;
+    border-color:var(--line-strong);background:var(--panel2);color:var(--muted);font-weight:600;
+    font-variant-numeric:tabular-nums;box-shadow:none;transition:border-color .15s,background .15s,color .15s,transform .15s}
+  .quick-add-relevance-option:hover{border-color:var(--accent);color:var(--ink);transform:translateY(-1px)}
+  .quick-add-relevance-option[aria-pressed="true"]{border-color:var(--accent);background:var(--accent);
+    color:var(--on-accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 20%,transparent)}
+  .quick-add-status{flex:1;font-size:11px;line-height:1.4;color:var(--muted)}
+  .quick-add-status.err:not(:empty){padding:8px 10px;border:1px solid color-mix(in srgb,var(--bad) 55%,var(--line));
+    border-radius:8px;background:color-mix(in srgb,var(--bad) 10%,var(--panel));color:var(--bad)}
   .quick-add-paper .row{justify-content:flex-end}
   /* Migrate-resources picker. The base rule above sets width:100% on every input, which stretches
      a bare checkbox across the whole row — its glyph then draws centred in that box, so each row's
@@ -1789,7 +1828,7 @@
         <ol class="scientist-steps">
           <li><b>Hit <svg class="li-ic" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#li-i-agent"/></svg> on the bubble</b>It hands you one command, pre-signed for this machine.</li>
           <li><b>Paste it in your repo</b>Installs the clients and binds the folder.<code class="command">curl -fsSL https://lockedin.codes/setup/‹ticket›.sh | bash</code></li>
-          <li><b>Run your agent as usual</b>claude, codex, agy — the skill is in place, and reports, talks and feedback sync every few seconds.</li>
+          <li><b>Run your agent as usual</b>claude, codex, agy, or opencode — the skill is in place, and reports, talks and feedback sync every few seconds.</li>
         </ol>
         </div>
       </section>
@@ -3543,38 +3582,90 @@
     if(checkHealth)scheduleLiveHealth(S.model.active);
   }
 
-  // A clearly separated card, not folded into account or model settings: this one flag stops
-  // every agent you own, everywhere, so it needs to stand on its own and be impossible to miss.
+  // One compact account-wide control: current state, a familiar stop switch, and fast retirement.
+  // The server intentionally returns no retired profiles or transcripts to this browser view.
   async function renderSecureModeSection(main){
     const old=$("#secureModeSection"); if(old)old.remove();
-    const box=el("div",{id:"secureModeSection",class:"card col stack-card",style:"gap:10px"});
-    box.append(el("b",{},"Stop agents"));
-    const check=el("input",{type:"checkbox",style:"width:auto",checked:!!S.secureMode});
-    box.append(el("label",{class:"row",style:"gap:10px;cursor:pointer;align-items:center"},
-      check,el("span",{},"Stop all agents")));
-    box.append(el("div",{class:"muted",style:"font-size:12px"},
-      "Revokes every Scientist client, cancels open jobs, and stops sync workers. Your registered "+
-      "agents, personalities, conversations, and message history are retained. After turning this "+
-      "off, open an offline agent and copy its one-use recovery command on each machine."));
+    const box=el("div",{id:"secureModeSection",class:"card col stack-card",style:"gap:12px"});
+    const summary=el("span",{id:"agentCommandSummary",class:"muted"},"Loading agents…");
+    const stopSwitch=el("button",{type:"button",class:"side-secure-switch command-center-stop-switch",
+      role:"switch","aria-checked":S.secureMode?"true":"false","aria-label":"Stop all agents"},
+      el("span",{class:"side-secure-thumb"}));
+    box.append(el("div",{class:"agent-command-head"},
+      el("div",{class:"agent-command-title"},el("b",{},"Agent command center"),summary),
+      el("div",{class:"agent-command-stop"},el("span",{},"Stop all agents"),stopSwitch)));
+    box.append(el("div",{id:"agentCommandList",class:"agent-command-list"},
+      el("div",{class:"agent-command-empty"},"Loading…")));
+    box.append(el("div",{class:"muted",style:"font-size:11.5px"},
+      "Stopping revokes Scientist clients and pauses every sync worker, but retains each agent and conversation."));
     main.append(box);
-    check.onchange=async()=>{
-      const enabled=check.checked;
-      check.disabled=true;
+    stopSwitch.onclick=async()=>{
+      const enabled=!S.secureMode;
+      stopSwitch.disabled=true;
       try{
         const result=await setSecureModeEnabled(enabled);
-        if(!result){check.checked=S.secureMode;return;}
+        if(!result)return;
         toast(S.secureMode?"Agents safely stopped":"Stop-agents mode is off");
-      }catch(e){ check.checked=!enabled; toast(e.message); }
-      finally{ check.disabled=false; }
+      }catch(e){toast(e.message);}
+      finally{stopSwitch.disabled=false;}
     };
-    // The checkbox starts from whatever S.secureMode last learned (or false, on a cold load) so
-    // it never flashes empty; this reconciles it — and the sidebar switch and banner alongside
-    // it — against the server the moment settings opens.
     try{
       const r=await api("/api/settings/secure-mode");
-      S.secureMode=!!r.enabled; check.checked=S.secureMode;
+      S.secureMode=!!r.enabled;
       syncSecureModeUI();
     }catch(e){}
+    refreshAgentCommandCenter();
+  }
+
+  function commandCenterStatusClass(status){
+    if(status==="offline"||status==="stopped")return "dead";
+    if(status==="degraded"||status==="queued")return "degraded";
+    return "";
+  }
+
+  async function refreshAgentCommandCenter(){
+    const list=$("#agentCommandList"),summary=$("#agentCommandSummary");
+    if(!list||!summary)return;
+    try{
+      const result=await api("/api/settings/agents");
+      if(!list.isConnected)return;
+      S.secureMode=!!result.secure_mode;syncSecureModeUI();
+      const agents=result.agents||[];
+      summary.textContent=agents.length===1?"1 active agent":agents.length+" active agents";
+      list.replaceChildren();
+      if(!agents.length){
+        list.append(el("div",{class:"agent-command-empty"},"No active agents."));
+        return;
+      }
+      agents.forEach(agent=>{
+        const status=(agent.status||"offline").replace(/_/g," ");
+        const provider=[agent.vendor,agent.model].filter(Boolean).join(" · ");
+        const meta=[agent.workspace_name,agent.bubble_name,provider].filter(Boolean).join(" · ");
+        const retire=el("button",{class:"danger small","aria-label":"Retire "+agent.name},"Retire");
+        retire.onclick=()=>retireCommandCenterAgent(agent,retire);
+        list.append(el("div",{class:"agent-command-row","data-agent-id":agent.id},
+          el("div",{class:"agent-command-who"},
+            el("span",{class:"presence-dot "+commandCenterStatusClass(agent.status)}),
+            el("span",{class:"agent-command-name"},agent.name),
+            el("span",{class:"agent-command-meta",title:meta},meta)),
+          el("span",{class:"agent-command-status"},status+(agent.open_jobs?" · "+agent.open_jobs+" open":"")),
+          retire));
+      });
+    }catch(e){
+      if(list.isConnected){summary.textContent="Could not load agents";
+        list.replaceChildren(el("div",{class:"agent-command-empty err"},e.message));}
+    }
+  }
+
+  async function retireCommandCenterAgent(agent,button){
+    if(!confirm("Retire "+agent.name+"?\n\nThis stops future work and removes the agent and its history from the website. A private server-side archive is retained."))return;
+    button.disabled=true;
+    try{
+      await api("/api/settings/agents/"+encodeURIComponent(agent.workspace_id)+"/"+
+        encodeURIComponent(agent.bubble)+"/"+encodeURIComponent(agent.id),{method:"DELETE"});
+      await refreshAgentCommandCenter();
+      toast(agent.name+" retired");
+    }catch(e){button.disabled=false;toast(e.message||"Could not retire "+agent.name);}
   }
 
   function renderAesthetics(main){
@@ -5068,9 +5159,9 @@
   // One line that installs the client, authorizes this terminal, binds a folder to this bubble and
   // sets up whichever agent CLIs are on that machine. The ticket behind the link is minted lazily,
   // when the dialog opens, so merely rendering a bubble never signs a credential.
-  // Four numbered steps, in the order a person actually does them. The dialog explains the whole
-  // journey — open a terminal, run one line, start your agent, walk away — because someone meeting
-  // this for the first time has no idea a sync worker exists, and shouldn't need to.
+  // Numbered steps in the order a person actually does them. Using the synchronized skill is the
+  // normal path; registration is an optional extra for supported assistants when the user wants
+  // to message or assign work from the website after closing the terminal.
   function openScientistSetup(slug){
     const overlay=el("div",{class:"overlay",role:"dialog","aria-modal":"true","aria-label":"Connect an agent"});
     const box=el("div",{class:"diffbox create-dialog setup-dialog"});
@@ -5103,8 +5194,8 @@
       {
         name:"Ada",
         role:"Generalist",
-        goal:"To keep derivations honest while connecting the project's theory, implementation, experiments, and presentation. This agent moves comfortably across the whole project, spots gaps between specialties, and turns ambiguous questions into concrete next steps.",
-        personality:"The Clear-Headed Generalist. Pragmatic, intellectually flexible, and concise; equally willing to check a proof, inspect an experiment, improve an explanation, or identify the specialist who should take over."
+        goal:"To connect theory, implementation, experiments, and communication; catch inconsistencies early; and turn open-ended research questions into concrete, testable next steps.",
+        personality:"Clear-headed, pragmatic, and concise. Comfortable crossing disciplines, explicit about uncertainty, and quick to involve a specialist when deeper expertise is needed."
       },
       {
         name:"Clippy",
@@ -5137,6 +5228,7 @@
       ["claude","Claude",["claude"],"then type ","/lockedin-scientist","."],
       ["codex","Codex",["codex"],"then type ","$lockedin-scientist","."],
       ["agy","Agy",["agy"],"then type ","/skills"," and pick lockedin-scientist."],
+      ["opencode","OpenCode",["opencode"],"then ask it to use ","lockedin-scientist","."],
     ];
     const commandFor=()=>commands?(os==="windows"?commands.powershell:commands.unix):"";
     function tabRow(host,options,current,pick){
@@ -5148,10 +5240,11 @@
       const v=(input)=>input.value.trim();
       const name=v(nameInput), useFallback=!name;
       const val=input=>useFallback?input.placeholder:v(input);
+      const sentence=value=>value+(/[.!?]$/.test(value)?"":".");
       const personality=val(personalityInput);
       let line="Register yourself as a LockedIn agent on this bubble. Name: "+val(nameInput)+". Role: "
-        +val(roleInput)+". Goal: "+val(goalInput)+".";
-      if(personality) line+=" Personality: "+personality+".";
+        +val(roleInput)+". Goal: "+sentence(val(goalInput));
+      if(personality) line+=" Personality: "+sentence(personality);
       return line;
     }
     function matchingPreset(){
@@ -5197,6 +5290,19 @@
         "Run ", el("code",{class:"setup-inline"},cmd), " in that folder, " + lead,
         el("code",{class:"setup-inline"},invoke),
         tail || "."));
+      const skillOnly=agent==="opencode";
+      for(const number of ["4","5"]){
+        box.querySelector('[data-setup-step="'+number+'"]').style.display=skillOnly?"none":"";
+      }
+      const followup=box.querySelector(".setup-assistant-followup");
+      followup.textContent=skillOnly
+        ? "The setup link installs this skill automatically. Chat normally and ask OpenCode to "
+          + "use it whenever you want to read or change this synchronized bubble."
+        : "Already have one open in that folder? Paste the line from step 2 into that "
+          + "conversation instead — with no terminal to answer from, it just uses the "
+          + "folder the agent is working in. Once the skill has loaded, you can optionally "
+          + "register that chat in the next step for web access.";
+      box.querySelector('[data-setup-step="6"] .setup-step-num').textContent=skillOnly?"4":"6";
     }
     async function mint(){
       commands=null; copy.disabled=true; warn.textContent=""; render();
@@ -5310,7 +5416,7 @@
       last.append(manual);
       return list;
     }
-    const step=(n,title,...body)=>el("div",{class:"setup-step"},
+    const step=(n,title,...body)=>el("div",{class:"setup-step","data-setup-step":String(n)},
       el("div",{class:"setup-step-num"},String(n)),
       el("div",{class:"setup-step-body"},el("b",{},title),...body));
     box.append(
@@ -5331,11 +5437,11 @@
           warn),
         step(3,"Start your AI assistant in the same folder",
           agentTabs, agentBody,
-          el("div",{class:"muted setup-hint"},
+          el("div",{class:"muted setup-hint setup-assistant-followup"},
             "Already have one open in that folder? Paste the line from step 2 into that "
             + "conversation instead — with no terminal to answer from, it just uses the "
             + "folder the agent is working in. Once the skill has loaded, name it in the next step.")),
-        step(4,"Give it a name and a personality",
+        step(4,"Optional: register this chat for web access",
           el("div",{class:"setup-preset-label"},"Start from a preset"),
           presetPicker,
           el("div",{class:"setup-persona"},
@@ -5346,13 +5452,14 @@
           el("div",{class:"setup-run"}, personaSnippet,
             el("div",{class:"setup-run-actions"}, copy2)),
           el("div",{class:"muted setup-hint"},
-            "Paste that into the chat you just opened. The session registers itself — LockedIn "
-            + "cannot create an agent for you, because the agent is that conversation."),
+            "Paste that into the chat you just opened only if you want to use it from the website. "
+            + "Registration connects this exact conversation — LockedIn cannot create one for "
+            + "you, because the agent is that conversation."),
           el("div",{class:"muted setup-hint"},
-            "From then on every mark gets an ",chip("assign")," button, and the agent answers "
-            + "assigned marks while the chat is closed. It shows up under this folder in the chip "
-            + "at the top of this page.")),
-        step(5,"Already have one? Attach it instead",
+            "Once registered, you can send it messages and every mark gets an ",chip("assign"),
+            " button. The agent answers from the background while its terminal chat is closed, "
+            + "and appears under this folder in the chip at the top of this page.")),
+        step(5,"Already registered one? Reopen it instead",
           attachRows, attachAgentsBody,
           el("div",{class:"muted setup-hint"},
             "Assigned marks wait while a chat is open and run once you close it. Detaching is "
@@ -6200,13 +6307,30 @@
     const url=el("input",{type:"url",placeholder:"PDF link",autocomplete:"url"});
     const title=el("input",{type:"text",placeholder:"Paper title",maxlength:"240",autocomplete:"off"});
     const bibliography=el("textarea",{rows:"3",placeholder:"BibTeX (optional)",spellcheck:"false"});
-    const status=el("span",{class:"muted",style:"font-size:11px;flex:1"});
+    let selectedRelevance=5;
+    const relevance=el("div",{class:"quick-add-relevance-options",role:"group","aria-label":"Relevance"});
+    [1,2,3,4,5].forEach(score=>{
+      const option=el("button",{type:"button",class:"quick-add-relevance-option",
+        "aria-pressed":score===selectedRelevance?"true":"false",title:"Set relevance to "+score},String(score));
+      option.onclick=()=>{
+        selectedRelevance=score;
+        relevance.querySelectorAll("button").forEach(button=>
+          button.setAttribute("aria-pressed",button===option?"true":"false"));
+      };
+      relevance.append(option);
+    });
+    const status=el("span",{class:"quick-add-status"+(b.quickAddError?" err":""),
+      role:b.quickAddError?"alert":"status","aria-live":"polite"},b.quickAddError||"");
+    const setStatus=(message,error=false)=>{
+      status.textContent=message; status.classList.toggle("err",error);
+      status.setAttribute("role",error?"alert":"status");
+    };
     const add=el("button",{type:"button",class:"primary small"},"Quick add");
     const submit=async()=>{
       const link=url.value.trim(), paperTitle=title.value.trim(), bibtex=bibliography.value.trim();
       if(!link){url.focus();return;}
       if(!paperTitle){title.focus();return;}
-      add.disabled=true; status.textContent="Fetching PDF…";
+      add.disabled=true; setStatus("Fetching PDF…");
       try{
         const uploaded=await api("/api/assets/upload-url",
           {method:"POST",body:JSON.stringify({url:link,title:paperTitle,tags:""})});
@@ -6219,21 +6343,24 @@
               {method:"PUT",body:JSON.stringify({bibliography:bibtex})});
           }catch(e){ bibtexError=e.message; }
         }
-        // Make the intended default explicit even if an existing asset is re-used later.
+        // Make the chosen score explicit even if an existing asset is re-used later.
         const scored=await api("/api/bubbles/"+b.slug+"/papers/"+uploaded.pdf_id,
-          {method:"PATCH",body:JSON.stringify({score:5})});
+          {method:"PATCH",body:JSON.stringify({score:selectedRelevance})});
         S.bubbleAssets=(scored.bubble||attached.bubble||{}).assets||[];
-        renderBubblePdfs(container,{slug:b.slug,assets:S.bubbleAssets});
+        renderBubblePdfs(container,{slug:b.slug,assets:S.bubbleAssets,
+          quickAddError:bibtexError?"Paper added without BibTeX. "+bibtexError:""});
         if(bibtexError){
           toast("Paper added, but BibTeX was not saved: "+bibtexError);
-        }else toast(bibtex?"Added with BibTeX at relevance 5":"Added to this bubble at relevance 5");
-      }catch(e){ status.textContent=e.message; add.disabled=false; }
+        }else toast((bibtex?"Added with BibTeX":"Added to this bubble")+
+          " at relevance "+selectedRelevance);
+      }catch(e){ setStatus(e.message,true); add.disabled=false; }
     };
     add.onclick=submit;
     title.onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();submit();}};
     bibliography.onkeydown=e=>{if((e.ctrlKey||e.metaKey)&&e.key==="Enter"){e.preventDefault();submit();}};
     const quick=el("div",{class:"quick-add-paper"},
       el("b",{},"Quick add paper"),url,title,bibliography,
+      el("div",{class:"quick-add-relevance"},el("span",{},"Relevance"),relevance),
       el("div",{class:"row"},status,add));
     container.append(quick);
   }
@@ -7625,6 +7752,7 @@
     // Agent rows carry a derived stopped/offline state. Refresh immediately so turning the
     // switch off exposes the recovery command without waiting for the next ambient poll.
     if(S.bubble)await loadAgents();
+    if(S.view==="settings")await refreshAgentCommandCenter();
     return r;
   }
 
@@ -7636,8 +7764,8 @@
     if(sw)sw.setAttribute("aria-checked",on?"true":"false");
     const icon=document.getElementById("sideSecureIcon");
     if(icon)icon.setAttribute("href",on?"#li-i-lock":"#li-i-lock-open");
-    const check=document.querySelector("#secureModeSection input[type=checkbox]");
-    if(check)check.checked=on;
+    const commandSwitch=document.querySelector("#secureModeSection .command-center-stop-switch");
+    if(commandSwitch)commandSwitch.setAttribute("aria-checked",on?"true":"false");
     if(S.agentChatEl){
       const textarea=S.agentChatEl.querySelector("textarea"),send=S.agentChatEl.querySelector(".agent-message-compose button");
       if(textarea)textarea.disabled=on;if(send)send.disabled=on;

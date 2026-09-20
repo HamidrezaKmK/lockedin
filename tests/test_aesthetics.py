@@ -276,6 +276,19 @@ class AestheticsConfigTests(unittest.TestCase):
         self.assertIn('"/add-pdf"', source)
         self.assertIn('"/papers/"+encodeURIComponent(d.pdf_id)', source)
 
+    def test_quick_add_paper_uses_the_selected_relevance(self):
+        source = (Path(server.WEB_DIR) / "index.html").read_text()
+        self.assertIn('let selectedRelevance=5', source)
+        self.assertIn('class:"quick-add-relevance-options",role:"group"', source)
+        self.assertIn('[1,2,3,4,5].forEach(score=>{', source)
+        self.assertIn('class:"quick-add-relevance-option"', source)
+        self.assertIn('button.setAttribute("aria-pressed",button===option?"true":"false")', source)
+        self.assertIn('JSON.stringify({score:selectedRelevance})', source)
+        self.assertIn('el("div",{class:"quick-add-relevance"}', source)
+        self.assertIn('quickAddError:bibtexError?"Paper added without BibTeX. "+bibtexError:""', source)
+        self.assertIn('role:b.quickAddError?"alert":"status"', source)
+        self.assertIn('setStatus(e.message,true)', source)
+
     def test_bubble_assets_modal_previews_images_and_gifs(self):
         source = (Path(server.WEB_DIR) / "index.html").read_text()
         self.assertIn('/\\.(?:apng|avif|gif|jpe?g|png|svg|webp)$/i.test(item.name)', source)

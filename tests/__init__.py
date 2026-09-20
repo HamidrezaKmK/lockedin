@@ -13,3 +13,9 @@ which returns immediately — no heartbeat, no job start, no process spawn — w
 import os
 
 os.environ.setdefault("LOCKEDIN_AGENT_TURNS", "off")
+
+# The stress harness deliberately makes hundreds of denied cross-owner requests. Keep their
+# assertions active while hiding per-request INFO chatter from the human-facing report.
+if os.environ.get("LOCKEDIN_QUIET_TEST_HTTP") == "1":
+    import logging
+    logging.getLogger("httpx").setLevel(logging.WARNING)

@@ -193,8 +193,8 @@ async function main() {
       return style.color === resolved;
     }), "the expiry warning must use the theme's warning colour");
 
-    // Six numbered steps: install in the folder, start and name the agent, reconnect an existing
-    // one, and keep recovery commands close at hand.
+    // Six numbered steps: install in the folder, start the assistant, optionally register a
+    // supported chat for web access, reconnect an existing one, and keep recovery commands close.
     const steps = await dialog.locator(".setup-step").count();
     assert.equal(steps, 6, "the dialog must walk through all six steps");
     const stepText = (await dialog.locator(".setup-step").allInnerTexts()).join("\n").toLowerCase();
@@ -234,14 +234,42 @@ async function main() {
 
     // Step 3 names each agent's own way of loading the skill.
     for (const [agent, invoke] of [["Claude", "/lockedin-scientist"], ["Codex", "$lockedin-scientist"],
-                                   ["Agy", "/skills"]]) {
+                                   ["Agy", "/skills"], ["OpenCode", "lockedin-scientist"]]) {
       await dialog.locator(".setup-step", { hasText: "assistant" })
         .locator(".help-tab", { hasText: agent }).click();
       const shown = await dialog.locator(".setup-agent").innerText();
       assert.ok(shown.includes(invoke), `${agent} must show ${invoke}:\n${shown}`);
       assert.ok(shown.toLowerCase().includes(agent.toLowerCase()), `${agent} must name its command`);
+      const registration = dialog.locator('[data-setup-step="4"]');
+      const reopen = dialog.locator('[data-setup-step="5"]');
+      if (agent === "OpenCode") {
+        assert.ok(await registration.isHidden(),
+          "skill-only OpenCode must not offer named/background-agent registration");
+        assert.ok(await reopen.isHidden(),
+          "skill-only OpenCode must not offer registered-conversation reopening");
+      } else {
+        assert.ok(await registration.isVisible(), `${agent} must offer optional registration`);
+        const registrationText = (await registration.innerText()).toLowerCase();
+        for (const expected of ["optional", "register", "web", "terminal chat is closed"]) {
+          assert.ok(registrationText.includes(expected),
+            `${agent} registration must explain ${expected}:\n${registrationText}`);
+        }
+      }
     }
     step("each agent tab explains how to load the skill");
+
+    await dialog.locator(".setup-step", { hasText: "assistant" })
+      .locator(".help-tab", { hasText: "Claude" }).click();
+    await dialog.getByRole("button", { name: /Ada/ }).click();
+    const adaRegistration = (await dialog.locator('[data-setup-step="4"]').innerText()).toLowerCase();
+    for (const expected of ["research generalist", "concrete, testable next steps",
+                            "explicit about uncertainty", "deeper expertise"]) {
+      assert.ok(adaRegistration.includes(expected),
+        `Ada's rephrased profile is missing ${expected}:\n${adaRegistration}`);
+    }
+    assert.ok(!adaRegistration.includes(".."),
+      `preset values that already end in punctuation must not gain a second period:\n${adaRegistration}`);
+    step("Ada is framed as a pragmatic cross-disciplinary research generalist");
 
     await installStep.locator("button", { hasText: /^Copy$/ }).click();
     await page.waitForFunction(
@@ -274,7 +302,7 @@ async function main() {
       cwd, env: clientEnv, encoding: "utf8", timeout: 30_000,
     });
     const connected = runClient(["connect", "--server", baseUrl, "--workspace", workspaceId,
-      "--bubble", slug, "--ticket", ticket, "--project", nested], worktree);
+      "--bubble", slug, `--ticket=${ticket}`, "--project", nested], worktree);
     assert.equal(connected.status, 0, `real setup failed:\n${connected.stdout}\n${connected.stderr}`);
     assert.ok(fs.existsSync(path.join(worktree, ".lockedin", "config", "binding.json")),
       "setup must put .lockedin in the linked worktree");

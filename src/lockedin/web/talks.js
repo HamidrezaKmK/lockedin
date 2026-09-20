@@ -1673,6 +1673,10 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     const [b, t] = await Promise.all([
       api(`/api/bubbles/${encodeURIComponent(S.slug)}`),
       api(`/api/bubbles/${encodeURIComponent(S.slug)}/talks`),
+      // Talk summaries on the home screen are Markdown too, and may cite an attached paper.
+      // Refresh this bubble's registry before rendering them so a citation cannot inherit the
+      // previous bubble's numbering or appear as raw source until the deck itself is opened.
+      loadRefs(S.slug),
     ]);
     S.bubble = b.bubble; S.data = t;
     S.name = S.bubble.name || S.slug;
@@ -2024,7 +2028,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
         <div class="d">${esc(t.date)}</div>
         <div style="flex:1;min-width:0">
           <div class="t">${esc(t.title)}</div>
-          <div class="i">${esc(t.intent || "")}</div>
+          <div class="i tk-md"></div>
           <div class="tk-meta">
             <span class="tk-tag">${t.slides} slide${t.slides === 1 ? "" : "s"}</span>
             ${t.open ? `<span class="tk-tag open">${t.open} open note${t.open === 1 ? "" : "s"}</span>`
@@ -2034,7 +2038,16 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
           </div>
         </div></div>`).join("")}
     </div>`).firstChild;
-    body.querySelectorAll(".tk-card").forEach(c => (c.onclick = () => loadTalk(c.dataset.id)));
+    body.querySelectorAll(".tk-card").forEach(c => {
+      const talk = talks.find(t => t.id === c.dataset.id);
+      renderInline((talk && talk.intent) || "", c.querySelector(".i"));
+      c.onclick = e => {
+        // A rendered summary can contain citations and document links. Let those keep their
+        // own destination instead of also navigating into the talk card underneath them.
+        if (e.target.closest && e.target.closest("a,button")) return;
+        loadTalk(c.dataset.id);
+      };
+    });
     body.querySelectorAll(".tk-del").forEach(b => (b.onclick = async e => {
       e.stopPropagation();
       const t = talks.find(x => x.id === b.dataset.del) || {};
