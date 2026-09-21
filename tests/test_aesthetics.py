@@ -18,6 +18,7 @@ class AestheticsConfigTests(unittest.TestCase):
             ("Sheldon", "Literature Expert"),
             ("Ada", "Generalist"),
             ("Clippy", "Formatting Expert"),
+            ("Oversync", "Overleaf Curator"),
         ):
             self.assertIn(f'name:"{name}"', page)
             self.assertIn(f'role:"{role}"', page)
@@ -26,6 +27,8 @@ class AestheticsConfigTests(unittest.TestCase):
         self.assertIn("goalInput.value=preset.goal", page)
         self.assertIn("personalityInput.value=preset.personality", page)
         self.assertIn('el("textarea",{rows:"3",placeholder:', page)
+        self.assertIn("Never removes, deletes, or silently rewrites shared content", page)
+        self.assertIn("% OVERSYNC NOTE: ...", page)
 
     def test_default_dark_theme_uses_teal_and_blue_without_the_old_purple(self):
         page = (Path(server.WEB_DIR) / "index.html").read_text()

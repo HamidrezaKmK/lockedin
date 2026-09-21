@@ -213,9 +213,13 @@ personality, provider, model, folder, activity, and retirement control.
 
 ## Registration presets
 
-Open **Connect an agent** and go to step 4. Choose **Picasso**, **Spock**, **Sheldon**, **Ada**, or
-**Clippy** to fill in a reusable Name, Role, Goal, and Personality, then edit any field you want
-before copying the registration prompt. Editing a preset never changes the saved template.
+Open **Connect an agent** and go to step 4. Choose **Picasso**, **Spock**, **Sheldon**, **Ada**,
+**Clippy**, or **Oversync** to fill in a reusable Name, Role, Goal, and Personality, then edit any
+field you want before copying the registration prompt. Editing a preset never changes its
+saved template. Oversync is the conservative Overleaf curator: it carries verified material from bubble
+reports and chalk talks into the shared manuscript, preserves collaborators' work, and leaves a
+nearby LaTeX comment on doubtful material instead of removing or deleting it unless explicitly
+asked.
 
 ## Direct messages
 

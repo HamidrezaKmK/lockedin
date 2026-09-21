@@ -262,7 +262,7 @@ async function main() {
       .locator(".help-tab", { hasText: "Claude" }).click();
     await dialog.getByRole("button", { name: /Ada/ }).click();
     const adaRegistration = (await dialog.locator('[data-setup-step="4"]').innerText()).toLowerCase();
-    for (const expected of ["research generalist", "concrete, testable next steps",
+    for (const expected of ["role: generalist", "concrete, testable next steps",
                             "explicit about uncertainty", "deeper expertise"]) {
       assert.ok(adaRegistration.includes(expected),
         `Ada's rephrased profile is missing ${expected}:\n${adaRegistration}`);
@@ -270,6 +270,16 @@ async function main() {
     assert.ok(!adaRegistration.includes(".."),
       `preset values that already end in punctuation must not gain a second period:\n${adaRegistration}`);
     step("Ada is framed as a pragmatic cross-disciplinary research generalist");
+
+    await dialog.getByRole("button", { name: /Oversync/ }).click();
+    const oversyncRegistration = (await dialog.locator('[data-setup-step="4"]').innerText()).toLowerCase();
+    for (const expected of ["overleaf curator", "reports and chalk talks", "collaborators' contributions",
+                            "never removes, deletes, or silently rewrites", "% oversync note",
+                            "unless the user explicitly requests it"]) {
+      assert.ok(oversyncRegistration.includes(expected),
+        `Oversync's conservative publication profile is missing ${expected}:\n${oversyncRegistration}`);
+    }
+    step("Oversync preserves shared manuscript content and comments doubtful material");
 
     await installStep.locator("button", { hasText: /^Copy$/ }).click();
     await page.waitForFunction(

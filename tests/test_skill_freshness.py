@@ -194,8 +194,10 @@ class SkillFreshnessTests(unittest.TestCase):
     def test_web_help_covers_direct_agent_turns_and_chalk_talk_theorems(self):
         agents_help = reports.guide_section("Agents")
         for expected in ("Send", "one real agent turn", "open lock", "closed lock",
-                         "Picasso", "Spock", "Sheldon", "Clippy", "saved template"):
+                         "Picasso", "Spock", "Sheldon", "Clippy", "Oversync",
+                         "conservative Overleaf curator", "saved template"):
             self.assertIn(expected, agents_help)
+        self.assertIn("instead of removing or deleting it unless explicitly", agents_help)
         chalk_help = reports.guide_section("Chalk talks")
         self.assertIn(r"\begin{theorem}[Title]", chalk_help)
         self.assertIn("another slide or inside math", chalk_help)
