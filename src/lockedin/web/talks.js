@@ -1154,6 +1154,11 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
       html = html.split(`@@LICAP${i}@@`).join(esc(cap));
     });
     into.innerHTML = html;
+    // Capture only the placeholders created by this render pass. Rendering a theorem body
+    // recursively inserts its own `.tk-math` nodes below `into`; querying after that insertion
+    // made the outer pass claim those nested nodes by their reused data-i values and overwrite
+    // the lemma's formulas with unrelated math from later paragraphs on the slide.
+    const ownMathNodes = Array.from(into.querySelectorAll(".tk-math"));
     into.querySelectorAll(".tk-theorem-slot").forEach(node => {
       const item = theorems.found[Number(node.dataset.i)];
       if (!item) return;
@@ -1188,7 +1193,7 @@ input.tk-ekind::placeholder{color:color-mix(in srgb,var(--bg) 58%,transparent)}
     });
     linkifyWikilinks(into);
     watchFigures();
-    into.querySelectorAll(".tk-math").forEach(node => {
+    ownMathNodes.forEach(node => {
       const m = found[Number(node.dataset.i)];
       if (!m) return;
       // The span carries its own source, so anchoring can recover it from a selection.

@@ -630,6 +630,8 @@ class SlideRenderingTests(unittest.TestCase):
         self.assertIn(r"/\\thmref\{([^}]+)\}/g", self.js)
         self.assertIn('box.className = "tk-theorem " + item.env;', self.js)
         self.assertIn(r'item.body.replace(/\\label\{[^}]+\}/g, "")', self.js)
+        self.assertIn('const ownMathNodes = Array.from(into.querySelectorAll(".tk-math"));', self.js)
+        self.assertIn("ownMathNodes.forEach(node =>", self.js)
         # Rendered references remain source-addressable for chalk-talk marks.
         self.assertIn('el.classList.contains("tk-thm-ref")', self.js)
         self.assertIn('frag.querySelectorAll(".tk-thm-ref")', self.js)

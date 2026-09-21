@@ -42,10 +42,15 @@ The conditional expectation is sufficient for the endpoint observable.
 \end{theorem}
 
 \begin{lemma}\label{lem:clock}
-The clock is measurable. This uses \thmref{thm:bridge}.
+For every $s$ and $t$, the density $p_s^{\pi_t}$ obeys
+
+$$I(\nu\Vert p_s^{\pi_t}) \geq \alpha\,\mathrm{KL}(\nu\Vert p_s^{\pi_t}).$$
+
+This uses \thmref{thm:bridge}.
 \end{lemma}
 
-Thus \thmref{lem:clock} applies within this talk.
+Thus \thmref{lem:clock} applies within this talk, while the surrounding Gaussian is
+$\mathcal N(0,\tau/\beta I)$.
 
 | clock | what it needs | what it resolves | on which process |
 |---|---|---|---|
@@ -165,6 +170,9 @@ async function main(){
         rawWiki:(md.textContent.match(/\[\[[^\]]+\]\]/g)||[]),
         theoremTitles:[...md.querySelectorAll(".tk-theorem-title")].map(x=>x.textContent),
         theoremRefs:[...md.querySelectorAll(".tk-thm-ref")].map(x=>x.textContent),
+        lemmaMath:[...md.querySelectorAll(".tk-theorem.lemma .tk-math")].map(x=>x.dataset.md),
+        outsideGaussian:[...md.querySelectorAll(":scope > p .tk-math")].map(x=>x.dataset.md)
+          .filter(x=>/mathcal N/.test(x||"")),
         rawTheorem:/\\begin\{(?:theorem|lemma)\}/.test(md.textContent),
         captions:md.querySelectorAll("figure>figcaption").length,
         captionText:md.querySelector("figure>figcaption")?.textContent || "",
@@ -175,6 +183,11 @@ async function main(){
     });
     assert.deepEqual(probe.theoremTitles,["Theorem 1 (Bridge readout)","Lemma 1"]);
     assert.deepEqual(probe.theoremRefs,["Theorem 1","Lemma 1"]);
+    assert.deepEqual(probe.lemmaMath,["$s$","$t$","$p_s^{\\pi_t}$",
+      "$$I(\\nu\\Vert p_s^{\\pi_t}) \\geq \\alpha\\,\\mathrm{KL}(\\nu\\Vert p_s^{\\pi_t}).$$"],
+      "the outer slide render must not replace math created inside a lemma");
+    assert.deepEqual(probe.outsideGaussian,["$\\mathcal N(0,\\tau/\\beta I)$"],
+      "math after a lemma must remain owned by the outer slide render");
     assert.equal(probe.rawTheorem,false,"theorem source syntax must not leak onto the slide");
     assert.equal(probe.captions,1,"standalone slide image must have a visible caption");
     assert.ok(probe.captionKatex>0,"caption LaTeX must render through KaTeX");
